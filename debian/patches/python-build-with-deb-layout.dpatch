@@ -1,0 +1,24 @@
+#! /bin/sh /usr/share/dpatch/dpatch-run
+## python-build-with-deb-layout.dpatch by Mathias Gug <mathiaz@ubuntu.com>
+##
+## All lines beginning with `## DP:' are a description of the patch.
+## DP: tell setup.py to use debian install-layout in order to have python
+## DP: modules installed in the correct dist-package/ directory.
+## DP: Debian/Ubuntu specific.
+
+@DPATCH@
+diff -urNad l-new-upstream~/server/Makefile.am l-new-upstream/server/Makefile.am
+--- l-new-upstream~/server/Makefile.am	2010-01-18 23:33:04.000000000 -0500
++++ l-new-upstream/server/Makefile.am	2010-01-18 23:32:18.000000000 -0500
+@@ -815,9 +815,9 @@
+ 
+ install-exec-hook: installsssddirs
+ 	if [ "$(DESTDIR)" = "" ]; then \
+-		cd $(srcdir)/config; $(PYTHON) setup.py build --build-base $(abs_builddir)/config install --prefix=$(PYTHON_PREFIX) --record=$(abs_builddir)/config/.files; \
++		cd $(srcdir)/config; $(PYTHON) setup.py build --build-base $(abs_builddir)/config install --install-layout=deb --prefix=$(PYTHON_PREFIX) --record=$(abs_builddir)/config/.files; \
+ 	else \
+-		cd $(srcdir)/config; $(PYTHON) setup.py build --build-base $(abs_builddir)/config install --prefix=$(PYTHON_PREFIX) --root=$(DESTDIR) --record=$(abs_builddir)/config/.files; \
++		cd $(srcdir)/config; $(PYTHON) setup.py build --build-base $(abs_builddir)/config install --install-layout=deb --prefix=$(PYTHON_PREFIX) --root=$(DESTDIR) --record=$(abs_builddir)/config/.files; \
+ 	fi
+ 
+ uninstall-hook:

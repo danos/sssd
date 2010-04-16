@@ -1,0 +1,46 @@
+sssd (1.0.5-0ubuntu1) lucid; urgency=low
+
+  * New upstream bugfix release. (LP: #510290)
+  * sssd.dirs: Add /var/lib/sss/pubconf (LP: #557394)
+
+ -- Timo Aaltonen <tjaalton@ubuntu.com>  Fri, 16 Apr 2010 11:37:16 +0300
+
+sssd (1.0.2-0ubuntu2) lucid; urgency=low
+
+  * No change rebuild due to libldb downgrade
+
+ -- Scott Kitterman <scott@kitterman.com>  Fri, 02 Apr 2010 17:48:19 -0400
+
+sssd (1.0.2-0ubuntu1) lucid; urgency=low
+
+  * New upstream release (LP: #473262):
+    - python API for managing sssd daemon configuration and
+      native SSSD users.
+    - support for asynchronous cache refreshes.
+    - support password changing in LDAP and Kerberos providers. 
+    - support for server failover.
+  * debian/control:
+    - update tdb build dependency to use libtdb-dev.
+    - add libselinux1-dev and libsasl2-dev build dependencies.
+  * debian/sssd.upstart: replace init script with an upstart job.
+  * Turn sssd.conf into a configuration file.  
+  * Create sssd log directory.
+
+ -- Mathias Gug <mathiaz@ubuntu.com>  Tue, 19 Jan 2010 15:17:13 -0500
+
+sssd (0.5.0-0ubuntu2) karmic; urgency=low
+
+  * debian/libnss-sss.overrides, debian/sssd.overrides:
+    + Fix linitian errors and warnings (LP: #425697):
+      sssd ships an nss library - these are false-positives.
+  * debian/fix-dbus-watch.dpatch: Update dbus-patch to final
+    upstream version. 
+  * debian/fix-proxy-segfault.dpatch: Fix proxy enumeration.
+
+ -- Mathias Gug <mathiaz@ubuntu.com>  Wed, 09 Sep 2009 20:21:04 -0400
+
+sssd (0.5.0-0ubuntu1) karmic; urgency=low
+
+  * Initial release.
+
+ -- Mathias Gug <mathiaz@ubuntu.com>  Mon, 24 Aug 2009 16:35:11 -0400

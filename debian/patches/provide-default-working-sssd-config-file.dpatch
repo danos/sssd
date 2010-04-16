@@ -1,0 +1,38 @@
+#! /bin/sh /usr/share/dpatch/dpatch-run
+## provide-default-working-sssd-config-file.dpatch by Mathias Gug <mathiaz@ubuntu.com>
+##
+## All lines beginning with `## DP:' are a description of the patch.
+## Description: Provide a default configuration that is working.
+
+@DPATCH@
+diff -urNad l-new-upstream~/server/examples/sssd.conf l-new-upstream/server/examples/sssd.conf
+--- l-new-upstream~/server/examples/sssd.conf	2010-01-18 13:09:10.000000000 -0500
++++ l-new-upstream/server/examples/sssd.conf	2010-01-18 13:18:18.000000000 -0500
+@@ -6,7 +6,7 @@
+ # if a backend is particularly slow you can raise this timeout here
+ sbus_timeout = 30
+ services = nss, pam
+-; domains = LOCAL,LDAP
++domains = LOCAL
+ # SSSD will not start if you don't configure any domain.
+ # Add new domains condifgurations as [domain/<NAME>] sections.
+ # Then add the list of domains (in the order you want them to be
+@@ -36,12 +36,12 @@
+ # Example LOCAL domain that stores all users natively in the SSSD internal
+ # directory. These local users and groups are not visibile in /etc/passwd, it
+ # now contains only root and system accounts.
+-; [domain/LOCAL]
+-; description = LOCAL Users domain
+-; id_provider = local
+-; enumerate = true
+-; min_id = 500
+-; max_id = 999
++[domain/LOCAL]
++description = LOCAL Users domain
++id_provider = local
++enumerate = true
++min_id = 500
++max_id = 999
+ 
+ # Example native LDAP domain
+ ; [domain/LDAP]

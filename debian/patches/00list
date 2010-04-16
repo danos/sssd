@@ -1,0 +1,2 @@
+provide-default-working-sssd-config-file.dpatch
+python-build-with-deb-layout.dpatch
