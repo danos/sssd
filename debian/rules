@@ -4,9 +4,6 @@ include /usr/share/cdbs/1/rules/debhelper.mk
 include /usr/share/cdbs/1/class/autotools.mk
 include /usr/share/cdbs/1/rules/dpatch.mk
 
-post-patches::
-	autoreconf -i -f
-
 install/libnss-sss::
 	mkdir -p $(CURDIR)/debian/tmp/lib/
 	mv $(CURDIR)/debian/tmp/usr/lib/libnss_sss.so.2 $(CURDIR)/debian/tmp/lib/libnss_sss.so.2
@@ -16,12 +13,18 @@ install/libnss-sss::
 install/libpam-sss::
 	mkdir -p $(CURDIR)/debian/tmp/lib/security/
 	mv $(CURDIR)/debian/tmp/usr/lib/security/pam_sss.so $(CURDIR)/debian/tmp/lib/security/pam_sss.so
+	mkdir -p $(CURDIR)/debian/libpam-sss/usr/share/pam-configs
+	install -m644 debian/libpam-sss.pam-auth-update \
+		$(CURDIR)/debian/libpam-sss/usr/share/pam-configs/sssd
 
 install/sssd::
-	install -D -m640 $(CURDIR)/server/config/etc/sssd.api.conf $(CURDIR)/debian/sss/etc/sssd/sssd/sssd.api.conf
+	install -D -m640 $(CURDIR)/server/config/etc/sssd.api.conf $(CURDIR)/debian/sssd/etc/sssd/sssd.api.conf
 	mkdir -p $(CURDIR)/debian/sssd/etc/sssd/sssd.api.d/
 	install -m640 $(CURDIR)/server/config/etc/sssd.api.d/* $(CURDIR)/debian/sssd/etc/sssd/sssd.api.d/ 
 
 binary-install/python-sss::
 	find $(CURDIR)/debian/python-sss/ -name '*.la' -exec rm '{}' ';'
 	dh_pycentral -ppython-sss
+
+clean::
+	rm -f server/config/.files

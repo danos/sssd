@@ -1,5 +1,6 @@
 #! /bin/sh /usr/share/dpatch/dpatch-run
-## python-build-with-deb-layout.dpatch by Mathias Gug <mathiaz@ubuntu.com>
+## python-build-with-deb-layout.dpatch based on patch
+## by Mathias Gug <mathiaz@ubuntu.com>
 ##
 ## All lines beginning with `## DP:' are a description of the patch.
 ## DP: tell setup.py to use debian install-layout in order to have python
@@ -8,9 +9,9 @@
 
 @DPATCH@
 diff -urNad l-new-upstream~/server/Makefile.am l-new-upstream/server/Makefile.am
---- l-new-upstream~/server/Makefile.am	2010-01-18 23:33:04.000000000 -0500
-+++ l-new-upstream/server/Makefile.am	2010-01-18 23:32:18.000000000 -0500
-@@ -815,9 +815,9 @@
+--- l-new-upstream~/server/Makefile.in	2010-01-18 23:33:04.000000000 -0500
++++ l-new-upstream/server/Makefile.in	2010-01-18 23:32:18.000000000 -0500
+@@ -7333,9 +7333,9 @@
  
  install-exec-hook: installsssddirs
  	if [ "$(DESTDIR)" = "" ]; then \

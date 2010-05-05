@@ -29,6 +29,8 @@ case "$1" in
     if dpkg --compare-versions "$2" lt-nl 1.0.2-0ubuntu1; then
         /usr/lib/sssd/sssd/upgrade_config.py
     fi
+
+    pam-auth-update --package
     ;;
 
     abort-upgrade|abort-remove|abort-deconfigure)

@@ -1,3 +1,22 @@
+sssd (1.0.5-1) unstable; urgency=low
+
+  * Initial upload based on package from Ubuntu (Closes: #579593).
+  * Update standards-version from 3.8.3 to 3.8.4.  No changes needed.
+  * Add init.d script and rename sssd.upstart to sssd.upstart.ubuntu
+    to make sure init.d script is installed instead of upstart job.
+  * Add draft pam-auth-update configuration based on proposals in
+    Launcepad bug #557398.
+  * Update address to FSF in copyright file.  Thanks lintian.
+  * Set section for python-sss to python after advice from lintian.
+  * Rewrite python-build-with-deb-layout.dpatch to patch Makefile.in
+    instead of Makefile.am, to avoid having to run autoreconf.
+  * Make sssd depend on python for its upgrade script.
+  * Extend clean rule to remove generated file server/config/.files.
+  * Make sure sssd.api.conf is installed into the sssd package, and
+    put it in /etc/sssd/sssd.api.conf.  Fixes typo in Ubuntu package.
+
+ -- Petter Reinholdtsen <pere@debian.org>  Wed, 05 May 2010 21:53:29 +0200
+
 sssd (1.0.5-0ubuntu1) lucid; urgency=low
 
   * New upstream bugfix release. (LP: #510290)
