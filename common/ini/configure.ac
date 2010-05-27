@@ -1,4 +1,4 @@
-AC_INIT([ini_config],[0.3.3],[sssd-devel@lists.fedorahosted.org])
+AC_INIT([ini_config],[0.4.0],[sssd-devel@lists.fedorahosted.org])
 AC_CONFIG_SRCDIR([ini_config.c])
 AC_CONFIG_AUX_DIR([build])
 AM_INIT_AUTOMAKE([-Wall -Werror foreign])
@@ -23,5 +23,8 @@ AS_IF([test ["$trace_level" -gt "0"] -a ["$trace_level" -lt "8"] ],[AC_SUBST([TR
 
 AC_DEFINE([MAX_KEY], [1024], [Max length of the key in the INI file.])
 
-AC_CONFIG_FILES([Makefile ini_config.pc])
+AC_PATH_PROG([DOXYGEN], [doxygen], [false])
+AM_CONDITIONAL([HAVE_DOXYGEN], [test x$DOXYGEN != xfalse ])
+
+AC_CONFIG_FILES([Makefile ini_config.cfg.doxy ini_config.pc])
 AC_OUTPUT

@@ -79,7 +79,8 @@ am__installdirs = "$(DESTDIR)$(libdir)"
 LTLIBRARIES = $(lib_LTLIBRARIES)
 @SINGLELIB_TRUE@libsssd_util_la_DEPENDENCIES =  \
 @SINGLELIB_TRUE@	collection/libcollection.la \
-@SINGLELIB_TRUE@	ini/libini_config.la dhash/libdhash.la
+@SINGLELIB_TRUE@	ini/libini_config.la dhash/libdhash.la \
+@SINGLELIB_TRUE@	refarray/libref_array.la
 am_libsssd_util_la_OBJECTS =
 libsssd_util_la_OBJECTS = $(am_libsssd_util_la_OBJECTS)
 libsssd_util_la_LINK = $(LIBTOOL) --tag=CC $(AM_LIBTOOLFLAGS) \
@@ -200,6 +201,7 @@ PACKAGE_BUGREPORT = @PACKAGE_BUGREPORT@
 PACKAGE_NAME = @PACKAGE_NAME@
 PACKAGE_STRING = @PACKAGE_STRING@
 PACKAGE_TARNAME = @PACKAGE_TARNAME@
+PACKAGE_URL = @PACKAGE_URL@
 PACKAGE_VERSION = @PACKAGE_VERSION@
 PATH_SEPARATOR = @PATH_SEPARATOR@
 RANLIB = @RANLIB@
@@ -263,7 +265,8 @@ top_build_prefix = @top_build_prefix@
 top_builddir = @top_builddir@
 top_srcdir = @top_srcdir@
 ACLOCAL_AMFLAGS = -I m4
-SUBDIRS = trace collection ini dhash path_utils
+SUBDIRS = trace collection ini dhash path_utils refarray
+DOCDIRS = collection ini path_utils refarray
 dist_noinst_DATA = \
     m4
 
@@ -274,13 +277,14 @@ dist_noinst_DATA = \
 @SINGLELIB_TRUE@libsssd_util_la_LIBADD = \
 @SINGLELIB_TRUE@    collection/libcollection.la \
 @SINGLELIB_TRUE@    ini/libini_config.la \
-@SINGLELIB_TRUE@    dhash/libdhash.la
+@SINGLELIB_TRUE@    dhash/libdhash.la \
+@SINGLELIB_TRUE@    refarray/libref_array.la
 
 @SINGLELIB_TRUE@libsssd_util_la_CFLAGS = $(AM_CFLAGS) \
 @SINGLELIB_TRUE@    -I ./collection \
 @SINGLELIB_TRUE@    -I ./ini \
 @SINGLELIB_TRUE@    -I ./dhash \
-@SINGLELIB_TRUE@    -I ./elapi \
+@SINGLELIB_TRUE@    -I ./refarray \
 @SINGLELIB_TRUE@    -I ./trace
 
 all: config.h
@@ -827,6 +831,11 @@ uninstall-am: uninstall-libLTLIBRARIES
 
 tests: all
 	for subdir in $(SUBDIRS); do \
+		$(MAKE) -C $$subdir $@; \
+	done
+
+docs:
+	for subdir in $(DOCDIRS); do \
 		$(MAKE) -C $$subdir $@; \
 	done
 

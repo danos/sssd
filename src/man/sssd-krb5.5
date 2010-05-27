@@ -1,0 +1,218 @@
+'\" t
+.\"     Title: sssd-krb5
+.\"    Author: The SSSD upstream - http://fedorahosted.org/sssd
+.\" Generator: DocBook XSL Stylesheets v1.75.2 <http://docbook.sf.net/>
+.\"      Date: 05/24/2010
+.\"    Manual: File Formats and Conventions
+.\"    Source: SSSD
+.\"  Language: English
+.\"
+.TH "SSSD\-KRB5" "5" "05/24/2010" "SSSD" "File Formats and Conventions"
+.\" -----------------------------------------------------------------
+.\" * set default formatting
+.\" -----------------------------------------------------------------
+.\" disable hyphenation
+.nh
+.\" disable justification (adjust text to left margin only)
+.ad l
+.\" -----------------------------------------------------------------
+.\" * MAIN CONTENT STARTS HERE *
+.\" -----------------------------------------------------------------
+.SH "NAME"
+sssd-krb5 \- the configuration file for SSSD
+.SH "DESCRIPTION"
+.PP
+This manual page describes the configuration of the Kerberos 5 authentication backend for
+\fBsssd\fR(8)\&. For a detailed syntax reference, please refer to the
+\(lqFILE FORMAT\(rq
+section of the
+\fBsssd.conf\fR(5)
+manual page
+.PP
+The Kerberos 5 authentication backend does not contain an identity provider and must be paired with one in order to function properly (for example, id_provider = ldap)\&. Some information required by the Kerberos 5 authentication backend must be provided by the identity provider, such as the user\'s Kerberos Principal Name (UPN)\&. The configuration of the identity provider should have an entry to specify the UPN\&. Please refer to the man page for the applicable identity provider for details on how to configure this\&.
+.PP
+In the case where the UPN is not available in the identity backend
+\fBsssd\fR
+will construct a UPN using the format
+\fIusername\fR@\fIkrb5_realm\fR\&.
+.SH "CONFIGURATION OPTIONS"
+.PP
+If the auth\-module krb5 is used in a SSSD domain, the following options must be used\&. See the
+\fBsssd.conf\fR(5)
+manual page, section
+\(lqDOMAIN SECTIONS\(rq
+for details on the configuration of a SSSD domain\&.
+.PP
+krb5_kdcip (string)
+.RS 4
+Specifies the list of IP addresses or hostnames of the Kerberos servers to which SSSD should connect in the order of preference\&. For more information on failover and server redundancy, see the
+\(lqFAILOVER\(rq
+section\&. An optional port number (preceded by a colon) may be appended to the addresses or hostnames\&. If empty, service discovery is enabled \- for more information, refer to the
+\(lqSERVICE DISCOVERY\(rq
+section\&.
+.RE
+.PP
+krb5_realm (string)
+.RS 4
+The name of the Kerberos realm\&.
+.RE
+.PP
+krb5_changepw_principal (string)
+.RS 4
+The priciple of the change password service\&. If only the \'identifier/instance\' part of the principal are given the realm part is added automatically\&.
+.sp
+Default: kadmin/changepw
+.RE
+.PP
+krb5_kpasswd (string)
+.RS 4
+If the change password service is not running on the KDC alternative servers can be defined here\&. An optional port number (preceded by a colon) may be appended to the addresses or hostnames\&.
+.sp
+For more information on failover and server redundancy, see the
+\(lqFAILOVER\(rq
+section\&. Please note that even if there are no more kpasswd servers to try the back end is not switch to offline if authentication against the KDC is still possible\&.
+.RE
+.PP
+krb5_ccachedir (string)
+.RS 4
+Directory to store credential caches\&. All the substitution sequences of krb5_ccname_template can be used here, too, except %d and %P\&. If the directory does not exist it will be created\&. If %u, %U, %p or %h are used a private directory belonging to the user is created\&. Otherwise a public directory with restricted deletion flag (aka sticky bit, see
+\fBchmod\fR(1)
+for details) is created\&.
+.sp
+Default: /tmp
+.RE
+.PP
+krb5_ccname_template (string)
+.RS 4
+Location of the user\'s credential cache\&. Currently only file based credential caches are supported\&. In the template the following sequences are substituted:
+.PP
+%u
+.RS 4
+login name
+.RE
+.PP
+%U
+.RS 4
+login UID
+.RE
+.PP
+%p
+.RS 4
+principal name
+.RE
+.PP
+%r
+.RS 4
+realm name
+.RE
+.PP
+%h
+.RS 4
+home directory
+.RE
+.PP
+%d
+.RS 4
+value of krb5ccache_dir
+.RE
+.PP
+%P
+.RS 4
+the process ID of the sssd client
+.RE
+.PP
+%%
+.RS 4
+a literal \'%\'
+.RE
+.sp
+If the template ends with \'XXXXXX\' mkstemp(3) is used to create a unique filename in a safe way\&.
+.sp
+Default: FILE:%d/krb5cc_%U_XXXXXX
+.RE
+.PP
+krb5_auth_timeout (integer)
+.RS 4
+Timeout in seconds after an online authentication or change password request is aborted\&. If possible the authentication request is continued offline\&.
+.sp
+Default: 15
+.RE
+.PP
+krb5_validate (boolean)
+.RS 4
+Verify with the help of krb5_keytab that the TGT obtained has not been spoofed\&.
+.sp
+Default: false
+.RE
+.PP
+krb5_keytab (string)
+.RS 4
+The location of the keytab to use when validating credentials obtained from KDCs\&.
+.sp
+Default: /etc/krb5\&.keytab
+.RE
+.PP
+krb5_store_password_if_offline (boolean)
+.RS 4
+Store the password of the user if the provider is offline and use it to request a TGT when the provider gets online again\&.
+.sp
+Please note that this feature currently only available on a Linux plattform\&.
+.sp
+Default: false
+.RE
+.SH "FAILOVER"
+.PP
+The failover feature allows back ends to automatically switch to a different server if the primary server fails\&.
+.SS "Failover Syntax"
+.PP
+The list of servers is given as a comma\-separated list; any number of spaces is allowed around the comma\&. The servers are listed in order of preference\&. The list can contain any number of servers\&.
+.SS "The Failover Mechanism"
+.PP
+The failover mechanism distinguishes between a machine and a service\&. The back end first tries to resolve the hostname of a given machine; if this resolution attempt fails, the machine is considered offline\&. No further attempts are made to connect to this machine for any other service\&. If the resolution attempt succeeds, the back end tries to connect to a service on this machine\&. If the service connection attempt fails, then only this particular service is considered offline and the back end automatically switches over to the next service\&. The machine is still considered online and might still be tried for another service\&.
+.PP
+Further connection attempts are made to machines or services marked as offline after a specified period of time; this is currently hard coded to 30 seconds\&.
+.PP
+If there are no more machines to try, the back end as a whole switches to offline mode, and then attempts to reconnect every 30 seconds\&.
+.SH "SERVICE DISCOVERY"
+.PP
+The service discovery feature allows back ends to automatically find the appropriate servers to connect to using a special DNS query\&.
+.SS "Configuration"
+.PP
+If no servers are specified, the back end automatically uses service discovery to try to find a server\&. Optionally, the user may choose to use both fixed server addresses and service discovery by inserting a special keyword,
+\(lq_srv_\(rq, in the list of servers\&. The order of preference is maintained\&. This feature is useful if, for example, the user prefers to use service discovery whenever possible, and fall back to a specific server when no servers can be discovered using DNS\&.
+.SS "The domain name"
+.PP
+The name of the SSSD domain is used as the domain part of the service discovery DNS query\&.
+.SS "See Also"
+.PP
+For more information on the service discovery mechanism, refer to RFC 2782\&.
+.SH "EXAMPLE"
+.PP
+The following example assumes that SSSD is correctly configured and FOO is one of the domains in the
+\fI[sssd]\fR
+section\&. This example shows only configuration of Kerberos authentication, it does not include any identity provider\&.
+.PP
+
+.sp
+.if n \{\
+.RS 4
+.\}
+.nf
+    [domain/FOO]
+    auth_provider = krb5
+    krb5_kdcip = 192\&.168\&.1\&.1
+    krb5_realm = EXAMPLE\&.COM
+.fi
+.if n \{\
+.RE
+.\}
+.sp
+.SH "SEE ALSO"
+.PP
+
+\fBsssd.conf\fR(5),
+\fBsssd-ldap\fR(5),
+\fBsssd\fR(8)
+.SH "AUTHORS"
+.PP
+\fBThe SSSD upstream \- http://fedorahosted\&.org/sssd\fR
