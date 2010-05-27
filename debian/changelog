@@ -5,6 +5,9 @@ sssd (1.2.0-1) UNRELEASED; urgency=low
     - Drop python-build-with-deb-layout.dpatch, now handled upstream.
     - Adjust provide-default-working-sssd-config-file.dpatch to
       work with new package source layout and config file content.
+    - Adjust build rules to cope with server/ changing to src/ in the
+      source tarball.
+    - Add --enable-krb5-locator-plugin to keep building the plugin.
 
  -- Petter Reinholdtsen <pere@debian.org>  Thu, 27 May 2010 20:31:19 +0200
 

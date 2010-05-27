@@ -1,4 +1,5 @@
 usr/lib/sssd/*
+usr/lib/lib*.so.*
 usr/lib/ldb/memberof.so
 usr/lib/krb5/plugins/libkrb5/*
 usr/share/locale/*/LC_MESSAGES/*
