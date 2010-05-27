@@ -1,4 +1,4 @@
-AC_INIT([dhash], [0.3.3], [jdennis@redhat.com])
+AC_INIT([dhash], [0.4.0], [jdennis@redhat.com])
 AC_CONFIG_SRCDIR([dhash.c])
 AC_CONFIG_AUX_DIR([build])
 AM_INIT_AUTOMAKE([-Wall -Werror foreign])
@@ -20,6 +20,12 @@ AC_ARG_ENABLE([trace],
               [trace_level="$enableval"],
               [trace_level="0"])
 AS_IF([test ["$trace_level" -gt "0"] -a ["$trace_level" -lt "8"] ],[AC_SUBST([TRACE_VAR],["-DTRACE_LEVEL=$trace_level"])])
+
+#Support old versions of autotools that don't provide docdir
+AC_SUBST([docdir])
+if test x$docdir = x; then
+    AC_SUBST([docdir], ${datadir}/doc/AC_PACKAGE_NAME)
+fi
 
 AC_CONFIG_FILES([Makefile dhash.pc])
 AC_OUTPUT

@@ -33,7 +33,7 @@ NORMAL_UNINSTALL = :
 PRE_UNINSTALL = :
 POST_UNINSTALL = :
 subdir = .
-DIST_COMMON = $(am__configure_deps) $(dist_noinst_DATA) \
+DIST_COMMON = README $(am__configure_deps) $(dist_noinst_DATA) \
 	$(srcdir)/Makefile.am $(srcdir)/Makefile.in \
 	$(top_srcdir)/configure $(top_srcdir)/contrib/sssd.spec.in \
 	COPYING build/install-sh build/missing
@@ -127,6 +127,7 @@ PACKAGE_BUGREPORT = @PACKAGE_BUGREPORT@
 PACKAGE_NAME = @PACKAGE_NAME@
 PACKAGE_STRING = @PACKAGE_STRING@
 PACKAGE_TARNAME = @PACKAGE_TARNAME@
+PACKAGE_URL = @PACKAGE_URL@
 PACKAGE_VERSION = @PACKAGE_VERSION@
 PATH_SEPARATOR = @PATH_SEPARATOR@
 PRERELEASE_VERSION = @PRERELEASE_VERSION@
@@ -174,7 +175,7 @@ target_alias = @target_alias@
 top_build_prefix = @top_build_prefix@
 top_builddir = @top_builddir@
 top_srcdir = @top_srcdir@
-SUBDIRS = common server sss_client
+SUBDIRS = common src
 DISTCHECK_CONFIGURE_FLAGS = --with-ldb-lib-dir="$$dc_install_base"/lib/ldb
 dist_noinst_DATA = \
     m4 \
@@ -670,7 +671,7 @@ rpms: dist-gzip rpmroot
 
 @GIT_CHECKOUT_TRUE@prerelease-rpms:
 @GIT_CHECKOUT_TRUE@	cp $(srcdir)/version.m4 $(srcdir)/version.m4.orig
-@GIT_CHECKOUT_TRUE@	sed -e "s/m4_define(\[PRERELEASE_VERSION_NUMBER\], \[.*\])/m4_define(\[PRERELEASE_VERSION_NUMBER\], \[.`date +%Y%m%d`git`git log -1 --pretty=format:%h`\])/" < $(srcdir)/version.m4.orig > $(srcdir)/version.m4
+@GIT_CHECKOUT_TRUE@	sed -e "s/m4_define(\[PRERELEASE_VERSION_NUMBER\], \[.*\])/m4_define(\[PRERELEASE_VERSION_NUMBER\], \[.`date +%Y%m%d%H`git`git log -1 --pretty=format:%h`\])/" < $(srcdir)/version.m4.orig > $(srcdir)/version.m4
 @GIT_CHECKOUT_TRUE@	$(MAKE) rpms
 @GIT_CHECKOUT_TRUE@	mv $(srcdir)/version.m4.orig $(srcdir)/version.m4
 
@@ -686,11 +687,16 @@ srpms: dist-gzip rpmroot
 
 @GIT_CHECKOUT_TRUE@prerelease-srpms:
 @GIT_CHECKOUT_TRUE@	cp $(srcdir)/version.m4 $(srcdir)/version.m4.orig
-@GIT_CHECKOUT_TRUE@	sed -e "s/m4_define(\[PRERELEASE_VERSION_NUMBER\], \[.*\])/m4_define(\[PRERELEASE_VERSION_NUMBER\], \[.`date +%Y%m%d`git`git log -1 --pretty=format:%h`\])/" < $(srcdir)/version.m4.orig > $(srcdir)/version.m4
+@GIT_CHECKOUT_TRUE@	sed -e "s/m4_define(\[PRERELEASE_VERSION_NUMBER\], \[.*\])/m4_define(\[PRERELEASE_VERSION_NUMBER\], \[.`date +%Y%m%d%H`git`git log -1 --pretty=format:%h`\])/" < $(srcdir)/version.m4.orig > $(srcdir)/version.m4
 @GIT_CHECKOUT_TRUE@	$(MAKE) srpms
 @GIT_CHECKOUT_TRUE@	mv $(srcdir)/version.m4.orig $(srcdir)/version.m4
 
 tests: all
+	for subdir in $(SUBDIRS); do \
+		$(MAKE) -C $$subdir $@; \
+	done
+
+docs:
 	for subdir in $(SUBDIRS); do \
 		$(MAKE) -C $$subdir $@; \
 	done

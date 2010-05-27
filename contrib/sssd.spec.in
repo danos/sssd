@@ -1,16 +1,23 @@
-%{!?python_sitearch: %global python_sitearch %(%{__python} -c "from distutils.sysconfig import *; import sys; sys.stdout.write(get_python_lib(1))")}
-%{!?python_sitelib: %global python_sitelib %(%{__python} -c "from distutils.sysconfig import *; import sys; sys.stdout.write(get_python_lib())")}
+%if ! (0%{?fedora} > 12 || 0%{?rhel} > 5)
+%{!?python_sitelib: %global python_sitelib %(%{__python} -c "from distutils.sysconfig import get_python_lib; print(get_python_lib())")}
+%{!?python_sitearch: %global python_sitearch %(%{__python} -c "from distutils.sysconfig import get_python_lib; print(get_python_lib(1))")}
+%endif
 
 Name: @PACKAGE_NAME@
 Version: @PACKAGE_VERSION@
 Release: 0@PRERELEASE_VERSION@%{?dist}
 Group: Applications/System
 Summary: System Security Services Daemon
-# The entire source code is GPLv3+ except replace/ which is LGPLv3+
 License: GPLv3+
-URL: http://www.freeipa.org/
+URL: http://fedorahosted.org/sssd/
 Source0: %{name}-%{version}.tar.gz
 BuildRoot: %(mktemp -ud %{_tmppath}/%{name}-%{version}-%{release}-XXXXXX)
+
+%define dhash_version 0.4.0
+%define path_utils_version 0.2.0
+%define collection_version 0.4.0
+%define ini_config_version 0.4.0
+%define refarray_version 0.1.0
 
 ### Patches ###
 
@@ -19,7 +26,11 @@ BuildRoot: %(mktemp -ud %{_tmppath}/%{name}-%{version}-%{release}-XXXXXX)
 Requires: libldb >= 0.9.3
 Requires: libtdb >= 1.1.3
 Requires: sssd-client = %{version}-%{release}
+Requires: libdhash = %{dhash_version}-%{release}
+Requires: libcollection = %{collection_version}-%{release}
+Requires: libini_config = %{ini_config_version}-%{release}
 Requires: cyrus-sasl-gssapi
+Requires: keyutils-libs
 Requires(post): python
 Requires(preun):  initscripts chkconfig
 Requires(postun): /sbin/service
@@ -60,6 +71,12 @@ BuildRequires: docbook-style-xsl
 BuildRequires: krb5-devel
 BuildRequires: c-ares-devel
 BuildRequires: python-devel
+BuildRequires: check-devel
+BuildRequires: doxygen
+BuildRequires: libselinux-devel
+BuildRequires: libsemanage-devel
+BuildRequires: keyutils-libs-devel
+BuildRequires: bind-utils
 
 %description
 Provides a set of daemons to manage access to remote directories and
@@ -77,46 +94,175 @@ License: LGPLv3+
 Provides the libraries needed by the PAM and NSS stacks to connect to the SSSD
 service.
 
+%package -n libdhash
+Summary: Dynamic hash table
+Group: Development/Libraries
+Version: %{dhash_version}
+License: LGPLv3+
+
+%description -n libdhash
+A hash table which will dynamically resize to achieve optimal storage & access
+time properties
+
+%package -n libdhash-devel
+Summary: Development files for libdhash
+Group: Development/Libraries
+Version: %{dhash_version}
+Requires: libdhash = %{dhash_version}-%{release}
+License: LGPLv3+
+
+%description -n libdhash-devel
+A hash table which will dynamically resize to achieve optimal storage & access
+time properties
+
+%package -n libpath_utils
+Summary: Filesystem Path Utilities
+Group: Development/Libraries
+Version: %{path_utils_version}
+License: LGPLv3+
+
+%description -n libpath_utils
+Utility functions to manipulate filesystem pathnames
+
+%package -n libpath_utils-devel
+Summary: Development files for libpath_utils
+Group: Development/Libraries
+Version: %{path_utils_version}
+Requires: libpath_utils = %{path_utils_version}-%{release}
+License: LGPLv3+
+
+%description -n libpath_utils-devel
+Utility functions to manipulate filesystem pathnames
+
+%package -n libcollection
+Summary: Collection data-type for C
+Group: Development/Libraries
+Version: %{collection_version}
+License: LGPLv3+
+
+%description -n libcollection
+A data-type to collect data in a heirarchical structure for easy iteration
+and serialization
+
+%package -n libcollection-devel
+Summary: Development files for libcollection
+Group: Development/Libraries
+Version: %{collection_version}
+Requires: libcollection = %{collection_version}-%{release}
+License: LGPLv3+
+
+%description -n libcollection-devel
+A data-type to collect data in a heirarchical structure for easy iteration
+and serialization
+
+%package -n libini_config
+Summary: INI file parser for C
+Group: Development/Libraries
+Version: %{ini_config_version}
+Requires: libcollection = %{collection_version}-%{release}
+License: LGPLv3+
+
+%description -n libini_config
+Library to process config files in INI format into a libcollection data
+structure
+
+%package -n libini_config-devel
+Summary: Development files for libini_config
+Group: Development/Libraries
+Version: %{ini_config_version}
+Requires: libini_config = %{ini_config_version}-%{release}
+License: LGPLv3+
+
+%description -n libini_config-devel
+Library to process config files in INI format into a libcollection data
+structure
+
+%package -n libref_array
+Summary: A refcounted array for C
+Group: Development/Libraries
+Version: %{refarray_version}
+License: LGPLv3+
+
+%description -n libref_array
+A dynamically-growing, reference-counted array
+
+%package -n libref_array-devel
+Summary: Development files for libref_array
+Group: Development/Libraries
+Version: %{refarray_version}
+Requires: libref_array = %{refarray_version}-%{release}
+License: LGPLv3+
+
+%description -n libref_array-devel
+A dynamically-growing, reference-counted array
+
 %prep
 %setup -q
 
 %build
-NSS_LIBS=-lnss3 \
-KRB5_LIBS=-lkrb5 \
 %configure \
-    --without-tests \
     --with-db-path=%{dbpath} \
     --with-pipe-path=%{pipepath} \
     --with-pubconf-path=%{pubconfpath} \
     --with-init-dir=%{_initrddir} \
-    --enable-nsslibdir=/%{_lib}
+    --enable-nsslibdir=/%{_lib} \
+    --disable-static \
+    --disable-rpath
 
 make %{?_smp_mflags}
+
+pushd common
+make %{?_smp_mflags} docs
+popd
+
+%check
+make %{?_smp_mflags} check
 
 %install
 rm -rf $RPM_BUILD_ROOT
 
 make install DESTDIR=$RPM_BUILD_ROOT
 
+# Remove the example files from the output directory
+# We will copy them directly from the source directory
+# for packaging
+rm -f \
+    $RPM_BUILD_ROOT/usr/share/doc/dhash/README \
+    $RPM_BUILD_ROOT/usr/share/doc/dhash/examples/dhash_example.c \
+    $RPM_BUILD_ROOT/usr/share/doc/dhash/examples/dhash_test.c
+
 # Prepare language files
 /usr/lib/rpm/find-lang.sh $RPM_BUILD_ROOT sss_daemon
-/usr/lib/rpm/find-lang.sh $RPM_BUILD_ROOT sss_client
 
 # Copy default sssd.conf file
 mkdir -p $RPM_BUILD_ROOT/%{_sysconfdir}/sssd
-install -m600 server/examples/sssd.conf $RPM_BUILD_ROOT%{_sysconfdir}/sssd/sssd.conf
-install -m400 server/config/etc/sssd.api.conf $RPM_BUILD_ROOT%{_sysconfdir}/sssd/sssd.api.conf
-install -m400 server/config/etc/sssd.api.d/* $RPM_BUILD_ROOT%{_sysconfdir}/sssd/sssd.api.d/
+install -m600 src/examples/sssd.conf $RPM_BUILD_ROOT%{_sysconfdir}/sssd/sssd.conf
+install -m400 src/config/etc/sssd.api.conf $RPM_BUILD_ROOT%{_sysconfdir}/sssd/sssd.api.conf
+install -m400 src/config/etc/sssd.api.d/* $RPM_BUILD_ROOT%{_sysconfdir}/sssd/sssd.api.d/
+
+# Copy default logrotate file
+mkdir -p $RPM_BUILD_ROOT/%{_sysconfdir}/logrotate.d
+install -m644 src/examples/logrotate $RPM_BUILD_ROOT%{_sysconfdir}/logrotate.d/sssd
+
+# Make sure SSSD is able to run on read-only root
+mkdir -p $RPM_BUILD_ROOT/%{_sysconfdir}/rwtab.d
+install -m644 src/examples/rwtab $RPM_BUILD_ROOT%{_sysconfdir}/rwtab.d/sssd
 
 # Remove .la files created by libtool
 rm -f \
     $RPM_BUILD_ROOT/%{_lib}/libnss_sss.la \
     $RPM_BUILD_ROOT/%{_lib}/security/pam_sss.la \
+    $RPM_BUILD_ROOT/%{_libdir}/libdhash.la \
+    $RPM_BUILD_ROOT/%{_libdir}/libpath_utils.la \
+    $RPM_BUILD_ROOT/%{_libdir}/libcollection.la \
+    $RPM_BUILD_ROOT/%{_libdir}/libini_config.la \
+    $RPM_BUILD_ROOT/%{_libdir}/libref_array.la \
     $RPM_BUILD_ROOT/%{_libdir}/ldb/memberof.la \
     $RPM_BUILD_ROOT/%{_libdir}/sssd/libsss_ldap.la \
     $RPM_BUILD_ROOT/%{_libdir}/sssd/libsss_proxy.la \
     $RPM_BUILD_ROOT/%{_libdir}/sssd/libsss_krb5.la \
     $RPM_BUILD_ROOT/%{_libdir}/sssd/libsss_ipa.la \
+    $RPM_BUILD_ROOT/%{_libdir}/sssd/libsss_simple.la \
     $RPM_BUILD_ROOT/%{_libdir}/krb5/plugins/libkrb5/sssd_krb5_locator_plugin.la \
     $RPM_BUILD_ROOT/%{python_sitearch}/pysss.la
 
@@ -145,6 +291,7 @@ rm -rf $RPM_BUILD_ROOT
 %{_sbindir}/sss_groupadd
 %{_sbindir}/sss_groupdel
 %{_sbindir}/sss_groupmod
+%{_sbindir}/sss_groupshow
 %{_libexecdir}/%{servicename}/
 %{_libdir}/%{name}/
 %{_libdir}/ldb/memberof.so
@@ -156,6 +303,8 @@ rm -rf $RPM_BUILD_ROOT
 %attr(750,root,root) %dir %{_var}/log/%{name}
 %attr(700,root,root) %dir %{_sysconfdir}/sssd
 %config(noreplace) %{_sysconfdir}/sssd/sssd.conf
+%config(noreplace) %{_sysconfdir}/logrotate.d/sssd
+%config(noreplace) %{_sysconfdir}/rwtab.d/sssd
 %config %{_sysconfdir}/sssd/sssd.api.conf
 %attr(700,root,root) %dir %{_sysconfdir}/sssd/sssd.api.d
 %config %{_sysconfdir}/sssd/sssd.api.d/
@@ -163,10 +312,12 @@ rm -rf $RPM_BUILD_ROOT
 %{_mandir}/man5/sssd-ipa.5*
 %{_mandir}/man5/sssd-krb5.5*
 %{_mandir}/man5/sssd-ldap.5*
+%{_mandir}/man5/sssd-simple.5*
 %{_mandir}/man8/sssd.8*
 %{_mandir}/man8/sss_groupadd.8*
 %{_mandir}/man8/sss_groupdel.8*
 %{_mandir}/man8/sss_groupmod.8*
+%{_mandir}/man8/sss_groupshow.8*
 %{_mandir}/man8/sss_useradd.8*
 %{_mandir}/man8/sss_userdel.8*
 %{_mandir}/man8/sss_usermod.8*
@@ -175,12 +326,89 @@ rm -rf $RPM_BUILD_ROOT
 %{python_sitelib}/*.py*
 
 
-%files client -f sss_client.lang
+%files client
 %defattr(-,root,root,-)
-%doc sss_client/COPYING sss_client/COPYING.LESSER
+%doc src/sss_client/COPYING src/sss_client/COPYING.LESSER
 /%{_lib}/libnss_sss.so.2
 /%{_lib}/security/pam_sss.so
 %{_mandir}/man8/pam_sss.8*
+
+%files -n libdhash
+%defattr(-,root,root,-)
+%doc common/dhash/COPYING
+%doc common/dhash/COPYING.LESSER
+%{_libdir}/libdhash.so.1
+%{_libdir}/libdhash.so.1.0.0
+
+%files -n libdhash-devel
+%defattr(-,root,root,-)
+%{_includedir}/dhash.h
+%{_libdir}/libdhash.so
+%{_libdir}/pkgconfig/dhash.pc
+%doc common/dhash/README
+%doc common/dhash/examples
+
+%files -n libpath_utils
+%defattr(-,root,root,-)
+%doc common/path_utils/COPYING
+%doc common/path_utils/COPYING.LESSER
+%{_libdir}/libpath_utils.so.1
+%{_libdir}/libpath_utils.so.1.0.0
+
+%files -n libpath_utils-devel
+%defattr(-,root,root,-)
+%{_includedir}/path_utils.h
+%{_libdir}/libpath_utils.so
+%{_libdir}/pkgconfig/path_utils.pc
+%doc common/path_utils/README
+%doc common/path_utils/doc/html/
+
+%files -n libcollection
+%defattr(-,root,root,-)
+%doc common/collection/COPYING
+%doc common/collection/COPYING.LESSER
+%{_libdir}/libcollection.so.1
+%{_libdir}/libcollection.so.1.0.0
+
+%files -n libcollection-devel
+%defattr(-,root,root,-)
+%{_includedir}/collection.h
+%{_includedir}/collection_tools.h
+%{_includedir}/collection_queue.h
+%{_includedir}/collection_stack.h
+%{_libdir}/libcollection.so
+%{_libdir}/pkgconfig/collection.pc
+%doc common/collection/doc/html/
+
+%files -n libini_config
+%defattr(-,root,root,-)
+%doc common/ini/COPYING
+%doc common/ini/COPYING.LESSER
+%{_libdir}/libini_config.so.1
+%{_libdir}/libini_config.so.1.0.0
+
+%files -n libini_config-devel
+%defattr(-,root,root,-)
+%{_includedir}/ini_config.h
+%{_libdir}/libini_config.so
+%{_libdir}/pkgconfig/ini_config.pc
+%doc common/ini/doc/html/
+
+%files -n libref_array
+%defattr(-,root,root,-)
+%doc common/refarray/COPYING
+%doc common/refarray/COPYING.LESSER
+%{_libdir}/libref_array.so.1
+%{_libdir}/libref_array.so.1.0.0
+
+%files -n libref_array-devel
+%defattr(-,root,root,-)
+%{_includedir}/ref_array.h
+%{_libdir}/libref_array.so
+%{_libdir}/pkgconfig/ref_array.pc
+%doc common/refarray/README
+%doc common/refarray/doc/html/
+
 
 %post
 /sbin/ldconfig
@@ -206,44 +434,23 @@ fi
 
 %postun client -p /sbin/ldconfig
 
+%post -n libdhash -p /sbin/ldconfig
+
+%postun -n libdhash -p /sbin/ldconfig
+
+%post -n libpath_utils -p /sbin/ldconfig
+%postun -n libpath_utils -p /sbin/ldconfig
+
+%post -n libcollection -p /sbin/ldconfig
+%postun -n libcollection -p /sbin/ldconfig
+
+%post -n libini_config -p /sbin/ldconfig
+%postun -n libini_config -p /sbin/ldconfig
+
+%post -n libref_array -p /sbin/ldconfig
+%postun -n libref_array -p /sbin/ldconfig
+
 %changelog
-* Mon Sep 28 2009 Sumit Bose <sbose@redhat.com> - 0.6.0-0
-- New upstream release 0.6.0
+* Mon Mar 15 2010 Stephen Gallagher <sgallagh@redhat.com> - @PACKAGE_VERSION@-0@PRERELEASE_VERSION@
+- Automated build of the SSSD
 
-* Fri Sep 25 2009 Simo Sorce <ssorce@redhat.com> - 0.5.0-1
-- Split package into server and clients components
-- Convert to new config file format
-
-* Wed Sep 02 2009 Stephen Gallagher <sgallagh@redhat.com> - 0.5.0-0
-- New upstream release 0.5.0
-
-* Mon May 18 2009 Stephen Gallagher <sgallagh@redhat.com> - 0.4.0-1
-- Convert build system to automake
-
-* Mon Apr 20 2009 Jakub Hrozek <jhrozek@redhat.com> - 0.3.2-1
-- bugfix release 0.3.2
-
-* Mon Apr 13 2009 Simo Sorce <ssorce@redhat.com> - 0.3.1-1
-- bugfix release
-
-* Sun Apr 12 2009 Stephen Gallagher <sgallagh@redhat.com> - 0.3.0-2
-- Remove InfoPipe from RPM build
-
-* Sun Apr 12 2009 Stephen Gallagher <sgallagh@redhat.com> - 0.3.0-1
-- Convert to using /etc/sssd/sssd.conf for configuration
-
-* Tue Mar 10 2009 Simo Sorce <ssorce@redhat.com> - 0.2.1-1
-- Bump up to version 0.2.1
-
-* Fri Mar 06 2009 Jakub Hrozek <jhrozek@redhat.com> - 0.1.0-4
-- fixed items found during review
-- added initscript
-
-* Thu Mar 05 2009 Sumit Bose <sbose@redhat.com> - 0.1.0-3
-- added sss_client
-
-* Mon Feb 23 2009 Jakub Hrozek <jhrozek@redhat.com> - 0.1.0-2
-- Small cleanup and fixes in the spec file
-
-* Thu Feb 12 2009 Stephen Gallagher <sgallagh@redhat.com> - 0.1.0-1
-- Initial release (based on version 0.1.0 upstream code)

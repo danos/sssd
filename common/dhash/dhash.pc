@@ -5,7 +5,7 @@ includedir=${prefix}/include
 
 Name: dhash
 Description: A hash table which will dynamically resize to achieve optimal storage & access time properties
-Version: 0.3.3
+Version: 0.4.0
 Libs: -L${libdir} -ldhash
 Cflags: -I${includedir}
 URL: http://fedorahosted.org/sssd/

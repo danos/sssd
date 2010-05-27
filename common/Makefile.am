@@ -1,5 +1,6 @@
 ACLOCAL_AMFLAGS = -I m4
-SUBDIRS = trace collection ini dhash path_utils
+SUBDIRS = trace collection ini dhash path_utils refarray
+DOCDIRS = collection ini path_utils refarray
 
 dist_noinst_DATA = \
     m4
@@ -11,16 +12,22 @@ libsssd_util_la_SOURCES =
 libsssd_util_la_LIBADD = \
     collection/libcollection.la \
     ini/libini_config.la \
-    dhash/libdhash.la
+    dhash/libdhash.la \
+    refarray/libref_array.la
 libsssd_util_la_CFLAGS = $(AM_CFLAGS) \
     -I ./collection \
     -I ./ini \
     -I ./dhash \
-    -I ./elapi \
+    -I ./refarray \
     -I ./trace
 endif
 
 tests: all
 	for subdir in $(SUBDIRS); do \
+		$(MAKE) -C $$subdir $@; \
+	done
+
+docs:
+	for subdir in $(DOCDIRS); do \
 		$(MAKE) -C $$subdir $@; \
 	done
