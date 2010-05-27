@@ -3,6 +3,8 @@ sssd (1.2.0-1) UNRELEASED; urgency=low
   * New upstream release.
     - Add libsemanage1-dev as build dependency, as it is now required.
     - Drop python-build-with-deb-layout.dpatch, now handled upstream.
+    - Adjust provide-default-working-sssd-config-file.dpatch to
+      work with new package source layout and config file content.
 
  -- Petter Reinholdtsen <pere@debian.org>  Thu, 27 May 2010 20:31:19 +0200
 

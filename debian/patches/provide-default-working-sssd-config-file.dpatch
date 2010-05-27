@@ -6,20 +6,20 @@
 
 @DPATCH@
 diff -urNad l-new-upstream~/server/examples/sssd.conf l-new-upstream/server/examples/sssd.conf
---- l-new-upstream~/server/examples/sssd.conf	2010-01-18 13:09:10.000000000 -0500
-+++ l-new-upstream/server/examples/sssd.conf	2010-01-18 13:18:18.000000000 -0500
-@@ -6,7 +6,7 @@
- # if a backend is particularly slow you can raise this timeout here
- sbus_timeout = 30
- services = nss, pam
+--- l-new-upstream~/src/examples/sssd.conf	2010-01-18 13:09:10.000000000 -0500
++++ l-new-upstream/src/examples/sssd.conf	2010-01-18 13:18:18.000000000 -0500
+@@ -13,7 +13,7 @@
+ # Add new domain configurations as [domain/<NAME>] sections, and
+ # then add the list of domains (in the order you want them to be
+ # queried) to the "domains" attribute below and uncomment it.
 -; domains = LOCAL,LDAP
 +domains = LOCAL
- # SSSD will not start if you don't configure any domain.
- # Add new domains condifgurations as [domain/<NAME>] sections.
- # Then add the list of domains (in the order you want them to be
-@@ -36,12 +36,12 @@
+ 
+ [nss]
+ # The following prevents SSSD from searching for the root user/group in
+@@ -45,12 +45,12 @@
  # Example LOCAL domain that stores all users natively in the SSSD internal
- # directory. These local users and groups are not visibile in /etc/passwd, it
+ # directory. These local users and groups are not visible in /etc/passwd; it
  # now contains only root and system accounts.
 -; [domain/LOCAL]
 -; description = LOCAL Users domain
@@ -35,4 +35,4 @@ diff -urNad l-new-upstream~/server/examples/sssd.conf l-new-upstream/server/exam
 +max_id = 999
  
  # Example native LDAP domain
- ; [domain/LDAP]
+ # ldap_schema can be set to "rfc2307", which uses the "memberuid" attribute
