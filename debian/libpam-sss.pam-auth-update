@@ -18,4 +18,4 @@ Password-Initial:
 Session-Type: Additional
 Session-Interactive-Only: yes
 Session:
-	sufficient					pam_sss.so
+	optional					pam_sss.so
