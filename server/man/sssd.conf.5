@@ -1,0 +1,470 @@
+'\" t
+.\"     Title: sssd.conf
+.\"    Author: The SSSD upstream - http://fedorahosted.org/sssd
+.\" Generator: DocBook XSL Stylesheets v1.75.2 <http://docbook.sf.net/>
+.\"      Date: 02/19/2010
+.\"    Manual: File Formats and Conventions
+.\"    Source: SSSD
+.\"  Language: English
+.\"
+.TH "SSSD\&.CONF" "5" "02/19/2010" "SSSD" "File Formats and Conventions"
+.\" -----------------------------------------------------------------
+.\" * set default formatting
+.\" -----------------------------------------------------------------
+.\" disable hyphenation
+.nh
+.\" disable justification (adjust text to left margin only)
+.ad l
+.\" -----------------------------------------------------------------
+.\" * MAIN CONTENT STARTS HERE *
+.\" -----------------------------------------------------------------
+.SH "NAME"
+sssd.conf \- the configuration file for SSSD
+.SH "FILE FORMAT"
+.PP
+The file has an ini\-style syntax and consists of sections and parameters\&. A section begins with the name of the section in square brackets and continues until the next section begins\&. An example of section with single and multi\-valued parameters:
+.sp
+.if n \{\
+.RS 4
+.\}
+.nf
+                \fI[section]\fR
+                \fIkey\fR = \fIvalue\fR
+                \fIkey2\fR = \fIvalue2,value3\fR
+            
+.fi
+.if n \{\
+.RE
+.\}
+.PP
+The data types used are string (no quotes needed), integer and bool (with values of
+\(lqTRUE/FALSE\(rq)\&.
+.PP
+A line comment starts with a hash sign (\(lq#\(rq) or a semicolon (\(lq;\(rq)
+.PP
+All sections can have an optional
+\fIdescription\fR
+parameter\&. Its function is only as a label for the section\&.
+.PP
+
+sssd\&.conf
+must be a regular file, owned by root and only root may read from or write to the file\&.
+.SH "SPECIAL SECTIONS"
+.SS "The [sssd] section"
+.PP
+Individual pieces of SSSD functionality are provided by special SSSD services that are started and stopped together with SSSD\&. The services are managed by a special service frequently called
+\(lqmonitor\(rq\&. The
+\(lq[sssd]\(rq
+section is used to configure the monitor as well as some other important options like the identity domains\&.
+.PP
+\fBSection parameters\fR
+.PP
+config_file_version (integer)
+.RS 4
+Indicates what is the syntax of the config file\&. SSSD 0\&.6\&.0 and later use version 2\&.
+.RE
+.PP
+services
+.RS 4
+Comma separated list of services that are started when sssd itself starts\&.
+.sp
+Supported services: nss, pam
+.RE
+.PP
+reconnection_retries (integer)
+.RS 4
+Number of times services should attempt to reconnect in the event of a Data Provider crash or restart before they give up
+.sp
+Default: 3
+.RE
+.PP
+domains
+.RS 4
+A domain is a database containing user information\&. SSSD can use more domains at the same time, but at least one must be configured or SSSD won\'t start\&. This parameter described the list of domains in the order you want them to be queried\&.
+.RE
+.PP
+re_expression (string)
+.RS 4
+Regular expression that describes how to parse the string containing user name and domain into these components\&.
+.sp
+Default:
+\(lq(?P<name>[^@]+)@?(?P<domain>[^@]*$)\(rq
+which translates to "the name is everything up to the
+\(lq@\(rq
+sign, the domain everything after that"
+.sp
+PLEASE NOTE: the support for non\-unique named subpatterns is not available on all plattforms (e\&.g\&. RHEL5 and SLES10)\&. Only plattforms with libpcre version 7 or higher can support non\-unique named subpatterns\&.
+.sp
+PLEASE NOTE ALSO: older version of libpcre only support the Python syntax (?P<name>) to label subpatterns\&.
+.RE
+.PP
+full_name_format (string)
+.RS 4
+A
+\fBprintf\fR(3)\-compatible format that describes how to translate a (name, domain) tuple into a fully qualified name\&.
+.sp
+Default:
+\(lq%1$s@%2$s\(rq\&.
+.RE
+.SH "SERVICES SECTIONS"
+.PP
+Settings that can be used to configure different services are described in this section\&. They should reside in the [\fI$NAME\fR] section, for example, for NSS service, the section would be
+\(lq[nss]\(rq
+.SS "General service configuration options"
+.PP
+These options can be used to configure any service\&.
+.PP
+debug_level (integer)
+.RS 4
+Sets the debug level for the service\&. The value can be in range from 0 (only critical messages) to 10 (very verbose)\&.
+.sp
+Default: 0
+.RE
+.PP
+debug_timestamps (bool)
+.RS 4
+Add a timestamp to the debug messages
+.sp
+Default: false
+.RE
+.PP
+reconnection_retries (integer)
+.RS 4
+Number of times services should attempt to reconnect in the event of a Data Provider crash or restart before they give up
+.sp
+Default: 3
+.RE
+.PP
+command (string)
+.RS 4
+By default, the executable representing this service is called
+\fBsssd_${service_name}\fR\&. This directive allows to change the executable name for the service\&. In the vast majority of configurations, the default values should suffice\&.
+.sp
+Default:
+\fBsssd_${service_name}\fR
+.RE
+.SS "NSS configuration options"
+.PP
+These options can be used to configure the Name Service Switch (NSS) service\&.
+.PP
+enum_cache_timeout (integer)
+.RS 4
+How long should nss_sss cache enumerations (requests for info about all users)
+.sp
+Default: 120
+.RE
+.PP
+entry_cache_nowait_percentage (integer)
+.RS 4
+The entry cache can be set to automatically update entries in the background if they are requested beyond a percentage of the entry_cache_timeout value for the domain\&.
+.sp
+For example, if the domain\'s entry_cache_timeout is set to 30s and entry_cache_nowait_percentage is set to 50 (percent), entries that come in after 15 seconds past the last cache update will be returned immediately, but the SSSD will go and update the cache on its own, so that future requests will not need to block waiting for a cache update\&.
+.sp
+Valid values for this option are 0\-99 and represent a percentage of the entry_cache_timeout for each domain\&. For performance reasons, this percentage will never reduce the nowait timeout to less than 10 seconds\&. (0 disables this feature)
+.sp
+Default: 0
+.RE
+.PP
+entry_negative_timeout (integer)
+.RS 4
+Specifies for how long nss_sss should cache negative cache hits (that is, queries for invalid database entries, like nonexistent ones) before asking the back end again\&.
+.sp
+Default: 15
+.RE
+.PP
+filter_users, filter_groups (string)
+.RS 4
+Exclude certain users from being fetched from the sss NSS database\&. This is particulary useful for system accounts\&.
+.sp
+Default: root
+.RE
+.PP
+filter_users_in_groups (bool)
+.RS 4
+If you want filtered user still be group members set this option to false\&.
+.sp
+Default: true
+.RE
+.SS "PAM configuration options"
+.PP
+These options can be used to configure the Pluggable Authentication Module (PAM) service\&.
+.PP
+offline_credentials_expiration (integer)
+.RS 4
+If the authentication provider is offline, how long should we allow cached logins (in days)\&.
+.sp
+Default: 0 (No limit)
+.RE
+.SH "DOMAIN SECTIONS"
+.PP
+These configuration options can be present in a domain configuration section, that is, in a section called
+\(lq[domain/\fINAME\fR]\(rq
+.PP
+min_id,max_id (integer)
+.RS 4
+UID limits for the domain\&. If a domain contains entry that is outside these limits, it is ignored
+.sp
+Default: 1000 for min_id, 0 (no limit) for max_id
+.RE
+.PP
+timeout (integer)
+.RS 4
+Timeout in seconds between heartbeats for this domain\&. This is used to ensure that the backend process is alive and capable of answering requests\&.
+.sp
+Default: 10
+.RE
+.PP
+enumerate (bool)
+.RS 4
+Determines if a domain can be enumerated\&. This parameter can have one of the following values:
+.sp
+TRUE = Users and groups are enumerated
+.sp
+FALSE = No enumerations for this domain
+.sp
+Default: TRUE
+.RE
+.PP
+entry_cache_timeout (integer)
+.RS 4
+How long should nss_sss consider entries valid before asking the backend again
+.sp
+Default: 600
+.RE
+.PP
+cache_credentials (bool)
+.RS 4
+Determines if user credentials are also cached in the local LDB cache
+.sp
+Default: FALSE
+.RE
+.PP
+store_legacy_passwords (bool)
+.RS 4
+Whether to also store passwords in a legacy domain
+.sp
+Default: FALSE
+.RE
+.PP
+id_provider (string)
+.RS 4
+The Data Provider identity backend to use for this domain\&.
+.sp
+Supported backends:
+.sp
+proxy: Support a legacy NSS provider
+.sp
+local: SSSD internal local provider
+.sp
+ldap: LDAP provider
+.RE
+.PP
+use_fully_qualified_names (bool)
+.RS 4
+If set to TRUE, all requests to this domain must use fully qualified names\&. For example, if used in LOCAL domain that contains a "test" user,
+\fBgetent passwd test\fR
+wouldn\'t find the user while
+\fBgetent passwd test@LOCAL\fR
+would\&.
+.sp
+Default: FALSE
+.RE
+.PP
+auth_provider (string)
+.RS 4
+The authentication provider used for the domain\&. Supported auth providers are:
+.sp
+
+\(lqldap\(rq
+for native LDAP authentication\&. See
+\fBsssd-ldap\fR(5)
+for more information on configuring LDAP\&.
+.sp
+
+\(lqkrb5\(rq
+for Kerberos authentication\&. See
+\fBsssd-krb5\fR(5)
+for more information on configuring Kerberos\&.
+.sp
+
+\(lqproxy\(rq
+for relaying authentication to some other PAM target\&.
+.sp
+
+\(lqnone\(rq
+disables authentication explicitly\&.
+.sp
+Default:
+\(lqid_provider\(rq
+is used if it is set and can handle authentication requests\&.
+.RE
+.PP
+access_provider (string)
+.RS 4
+The access control provider used for the domain\&. There are two built\-in access providers (in addition to any included in installed backends) Internal special providers are:
+.sp
+
+\(lqpermit\(rq
+always allow access\&.
+.sp
+
+\(lqdeny\(rq
+always deny access\&.
+.sp
+Default:
+\(lqpermit\(rq
+.RE
+.PP
+chpass_provider (string)
+.RS 4
+The provider which should handle change password operations for the domain\&. Supported change password providers are:
+.sp
+
+\(lqldap\(rq
+to change a password stored in a LDAP server\&. See
+\fBsssd-ldap\fR(5)
+for more information on configuring LDAP\&.
+.sp
+
+\(lqkrb5\(rq
+to change the Kerberos password\&. See
+\fBsssd-krb5\fR(5)
+for more information on configuring Kerberos\&.
+.sp
+
+\(lqproxy\(rq
+for relaying password changes to some other PAM target\&.
+.sp
+
+\(lqnone\(rq
+disallows password changes explicitly\&.
+.sp
+Default:
+\(lqauth_provider\(rq
+is used if it is set and can handle change password requests\&.
+.RE
+.PP
+Options valid for proxy domains\&.
+.PP
+proxy_pam_target (string)
+.RS 4
+The proxy target PAM proxies to\&.
+.sp
+Default: not set by default, you have to take an existing pam configuration or create a new one and add the service name here\&.
+.RE
+.PP
+proxy_lib_name (string)
+.RS 4
+The name of the NSS library to use in proxy domains\&. The NSS functions searched for in the library are in the form of _nss_$(libName)_$(function), for example _nss_files_getpwent\&.
+.RE
+.SS "The local domain section"
+.PP
+This section contains settings for domain that stores users and groups in SSSD native database, that is, a domain that uses
+\fIid_provider=local\fR\&.
+.PP
+\fBSection parameters\fR
+.PP
+default_shell (string)
+.RS 4
+The default shell for users created with SSSD userspace tools\&.
+.sp
+Default:
+/bin/bash
+.RE
+.PP
+base_directory (string)
+.RS 4
+The tools append the login name to
+\fIbase_directory\fR
+and use that as the home directory\&.
+.sp
+Default:
+/home
+.RE
+.PP
+create_homedir (bool)
+.RS 4
+Indicate if a home directory should be created by default for new users\&. Can be overriden on command line\&.
+.sp
+Default: TRUE
+.RE
+.PP
+remove_homedir (bool)
+.RS 4
+Indicate if a home directory should be removed by default for deleted users\&. Can be overriden on command line\&.
+.sp
+Default: TRUE
+.RE
+.PP
+homedir_umask (integer)
+.RS 4
+Used by
+\fBsss_useradd\fR(8)
+to specify the default permissions on a newly created home directory\&.
+.sp
+Default: 077
+.RE
+.PP
+skel_dir (string)
+.RS 4
+The skeleton directory, which contains files and directories to be copied in the user\'s home directory, when the home directory is created by
+\fBsss_useradd\fR(8)
+.sp
+Default:
+/etc/skel
+.RE
+.PP
+mail_dir (string)
+.RS 4
+The mail spool directory\&. This is needed to manipulate the mailbox when its corresponding user account is modified or deleted\&. If not specified, a default value is used\&.
+.sp
+Default:
+/var/mail
+.RE
+.SH "EXAMPLE"
+.PP
+The following example shows a typical SSSD config\&. It does not describe configuration of the domains themselves \- refer to documentation on configuring domains for more details\&.
+.sp
+.if n \{\
+.RS 4
+.\}
+.nf
+[sssd]
+domains = LOCAL
+services = nss, pam
+config_file_version = 2
+sbus_timeout = 30
+
+[nss]
+filter_groups = root
+filter_users = root
+
+[pam]
+
+[domain/LOCAL]
+id_provider = local
+min_id = 1000
+max_id = 5000
+default_shell = /bin/ksh
+enumerate = true
+.fi
+.if n \{\
+.RE
+.\}
+.sp
+.SH "SEE ALSO"
+.PP
+
+\fBsssd.conf\fR(5),
+\fBsssd-ldap\fR(5),
+\fBsssd-krb5\fR(5),
+\fBsss_groupadd\fR(8),
+\fBsss_groupdel\fR(8),
+\fBsss_groupmod\fR(8),
+\fBsss_useradd\fR(8),
+\fBsss_userdel\fR(8),
+\fBsss_usermod\fR(8),
+\fBpam_sss\fR(8)\&.
+.SH "AUTHORS"
+.PP
+\fBThe SSSD upstream \- http://fedorahosted\&.org/sssd\fR

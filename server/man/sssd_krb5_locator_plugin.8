@@ -1,0 +1,56 @@
+'\" t
+.\"     Title: sssd_krb5_locator_plugin
+.\"    Author: The SSSD upstream - http://fedorahosted.org/sssd
+.\" Generator: DocBook XSL Stylesheets v1.75.2 <http://docbook.sf.net/>
+.\"      Date: 02/19/2010
+.\"    Manual: SSSD Manual pages
+.\"    Source: SSSD
+.\"  Language: English
+.\"
+.TH "SSSD_KRB5_LOCATOR_PL" "8" "02/19/2010" "SSSD" "SSSD Manual pages"
+.\" -----------------------------------------------------------------
+.\" * set default formatting
+.\" -----------------------------------------------------------------
+.\" disable hyphenation
+.nh
+.\" disable justification (adjust text to left margin only)
+.ad l
+.\" -----------------------------------------------------------------
+.\" * MAIN CONTENT STARTS HERE *
+.\" -----------------------------------------------------------------
+.SH "NAME"
+sssd_krb5_locator_plugin \- the configuration file for SSSD
+.SH "DESCRIPTION"
+.PP
+The Kerberos locator plugin
+\fBsssd_krb5_locator_plugin\fR
+is used by the Kerberos provider of
+\fBsssd\fR(8)
+to tell the Kerberos libraries what Realm and which KDC to use\&. Typically this is done in
+\fBkrb5.conf\fR(5)
+which is always read by the Kerberos libraries\&. To simplyfy the configuration the Realm and the KDC can be defined in
+\fBsssd.conf\fR(5)
+as described in
+\fBsssd-krb5.conf\fR(5)
+.PP
+
+\fBsssd\fR(8)
+puts the Realm and the name or IP address of the KDC into the enviroment variables SSSD_KRB5_REALM and SSSD_KRB5_KDC respectively\&. When
+\fBsssd_krb5_locator_plugin\fR
+is called by the kerberos libraries it reads and evaluates these variable and returns them to the libraries\&.
+.SH "NOTES"
+.PP
+Not all Kerberos implementations support the use of plugins\&. If
+\fBsssd_krb5_locator_plugin\fR
+is not available on your system you have to edit /etc/krb5\&.conf to reflect your Kerberos setup\&.
+.PP
+If the enviroment variable SSSD_KRB5_LOCATOR_DEBUG is set to any value debug messages will be sent to stderr\&.
+.SH "SEE ALSO"
+.PP
+
+\fBsssd-krb5\fR(5),
+\fBsssd.conf\fR(5),
+\fBsssd\fR(8)
+.SH "AUTHORS"
+.PP
+\fBThe SSSD upstream \- http://fedorahosted\&.org/sssd\fR
