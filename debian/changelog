@@ -11,6 +11,8 @@ sssd (1.2.0-1) UNRELEASED; urgency=low
   * Change the pam-auth-update configuration to make the session
     script optional instead of sufficient, to make sure the other
     session modules are executed too.
+  * Rename pam-configs/sssd to pam-configs/sss, to have name that
+    is consistent with the package name libpam-sss.
   * Add VCS links to the GIT repository.
 
  -- Petter Reinholdtsen <pere@debian.org>  Thu, 27 May 2010 20:31:19 +0200

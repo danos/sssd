@@ -17,7 +17,7 @@ install/libpam-sss::
 	mv $(CURDIR)/debian/tmp/usr/lib/security/pam_sss.so $(CURDIR)/debian/tmp/lib/security/pam_sss.so
 	mkdir -p $(CURDIR)/debian/libpam-sss/usr/share/pam-configs
 	install -m644 debian/libpam-sss.pam-auth-update \
-		$(CURDIR)/debian/libpam-sss/usr/share/pam-configs/sssd
+		$(CURDIR)/debian/libpam-sss/usr/share/pam-configs/sss
 
 install/sssd::
 	install -D -m640 $(CURDIR)/src/config/etc/sssd.api.conf $(CURDIR)/debian/sssd/etc/sssd/sssd.api.conf
