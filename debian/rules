@@ -6,6 +6,8 @@ include /usr/share/cdbs/1/rules/dpatch.mk
 
 DEB_CONFIGURE_EXTRA_FLAGS = --enable-krb5-locator-plugin
 
+APIDOCDIR = /usr/share/doc/sssd
+
 install/libnss-sss::
 	mkdir -p $(CURDIR)/debian/tmp/lib/
 	mv $(CURDIR)/debian/tmp/usr/lib/libnss_sss.so.2 $(CURDIR)/debian/tmp/lib/libnss_sss.so.2
@@ -20,9 +22,9 @@ install/libpam-sss::
 		$(CURDIR)/debian/libpam-sss/usr/share/pam-configs/sss
 
 install/sssd::
-	install -D -m640 $(CURDIR)/src/config/etc/sssd.api.conf $(CURDIR)/debian/sssd/etc/sssd/sssd.api.conf
-	mkdir -p $(CURDIR)/debian/sssd/etc/sssd/sssd.api.d/
-	install -m640 $(CURDIR)/src/config/etc/sssd.api.d/* $(CURDIR)/debian/sssd/etc/sssd/sssd.api.d/ 
+	mkdir -p $(CURDIR)/debian/sssd$(APIDOCDIR)/sssd.api.d/
+	install -D -m640 $(CURDIR)/src/config/etc/sssd.api.conf $(CURDIR)/debian/sssd$(APIDOCDIR)/sssd.api.conf
+	install -m640 $(CURDIR)/src/config/etc/sssd.api.d/* $(CURDIR)/debian/sssd/$(APIDOCDIR)/sssd.api.d/ 
 
 binary-install/python-sss::
 	find $(CURDIR)/debian/python-sss/ -name '*.la' -exec rm '{}' ';'
