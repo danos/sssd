@@ -4,7 +4,6 @@ Priority: extra
 Maintainer: Petter Reinholdtsen <pere@debian.org>
 Uploaders: Morten Werner Forsbring <werner@debian.org>
 Build-Depends: cdbs, debhelper (>= 7), dpatch,
-    autoconf, automake, libtool, m4, autotools-dev,
     libpopt-dev, libdbus-1-dev, libldap2-dev, 
     libpam-dev, libnss3-dev, libnspr4-dev, libpcre3-dev, 
     libselinux1-dev, libsasl2-dev,
