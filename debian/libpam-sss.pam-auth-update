@@ -14,7 +14,7 @@ Password-Type: Primary
 Password:
 	sufficient					pam_sss.so use_authtok
 Password-Initial:
-	requisite					pam_sss.so
+	sufficient					pam_sss.so
 Session-Type: Additional
 Session-Interactive-Only: yes
 Session:

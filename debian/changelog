@@ -11,6 +11,9 @@ sssd (1.2.0-1) UNRELEASED; urgency=low
   * Change the pam-auth-update configuration to make the session
     script optional instead of sufficient, to make sure the other
     session modules are executed too.
+  * Change initial pam password entry from requisite to sufficient,
+    to make sure local users can have their password set even if
+    sssd is enabled.
   * Rename pam-configs/sssd to pam-configs/sss, to have a name that
     is consistent with the package name libpam-sss.
   * Add VCS links to the GIT repository.
