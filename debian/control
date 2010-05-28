@@ -15,6 +15,8 @@ Build-Depends: cdbs, debhelper (>= 7), dpatch,
     libsemanage1-dev
 Standards-Version: 3.8.4
 XS-Python-Version: current
+Vcs-Git: git://git.debian.org/git/collab-maint/pkg-sssd
+Vcs-Browser: http://git.debian.org/?p=collab-maint/pkg-sssd.git
 Homepage: https://fedorahosted.org/sssd/
 
 Package: sssd
