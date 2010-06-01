@@ -1,4 +1,4 @@
-sssd (1.2.0-1) UNRELEASED; urgency=low
+sssd (1.2.0-1) unstable; urgency=low
 
   [ Petter Reinholdtsen ]
   * New upstream release.
@@ -28,7 +28,7 @@ sssd (1.2.0-1) UNRELEASED; urgency=low
   [ Morten Werner Forsbring ]
   * Add dnsutils as build-dependency.
 
- -- Morten Werner Forsbring <werner@debian.org>  Mon, 31 May 2010 13:49:34 +0200
+ -- Morten Werner Forsbring <werner@debian.org>  Tue, 01 Jun 2010 20:41:59 +0200
 
 sssd (1.0.5-1) unstable; urgency=low
 
