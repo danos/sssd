@@ -20,15 +20,7 @@ set -e
 
 case "$1" in
     configure)
-    # Install default configuration file on package install
-    if [ -z "$2" ] && [ ! -e /etc/sssd/sssd.conf ]; then
-        cp /usr/share/doc/sssd/examples/sssd.conf /etc/sssd/sssd.conf
-	chmod 0600 /etc/sssd/sssd.conf
-    fi
-    # Fix configuration file on package upgrade
-    if dpkg --compare-versions "$2" lt-nl 1.0.2-0ubuntu1; then
-        /usr/lib/sssd/sssd/upgrade_config.py
-    fi
+        pam-auth-update --package
     ;;
 
     abort-upgrade|abort-remove|abort-deconfigure)

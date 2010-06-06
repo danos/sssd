@@ -1,5 +1,3 @@
 #! /bin/sh -e
 
-pam-auth-update --package --remove tmpdir
-
 #DEBHELPER#
