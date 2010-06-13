@@ -32,7 +32,7 @@ Description: System Security Services Daemon
 
 Package: libnss-sss
 Architecture: any
-Depends: ${shlibs:Depends}, ${misc:Depends}
+Depends: ${shlibs:Depends}, ${misc:Depends}, perl
 Recommends: sssd
 Description: Nss library for the System Security Services Daemon 
  Provides a set of daemons to manage access to remote directories and
