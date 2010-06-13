@@ -9,10 +9,10 @@ log() {
     echo "$*"
 }
 
-# try to insert sss entries to the "hosts" line in /etc/nsswitch.conf
-# to automatically enable libnss-sss support; do not change the
-# configuration if the "hosts" line already references some sss
-# lookups
+# try to insert sss entries to the passwd, group and shadow lines in
+# /etc/nsswitch.conf to automatically enable libnss-sss support; do
+# not change the configuration if the lines already references some
+# sss lookups
 insert_nss_entry() {
     log "Checking NSS setup..."
     # abort if /etc/nsswitch.conf does not exist
@@ -24,7 +24,7 @@ insert_nss_entry() {
         sub insert {
             # this also splits on tab
             my @bits=split(" ", shift);
-            # do not break configuration if the "hosts" line already
+            # do not break configuration if the line already
             # references sss
             if (grep { $_ eq "sss"} @bits) {
                 return join " ", @bits;
