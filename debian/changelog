@@ -3,6 +3,8 @@ sssd (1.2.0-2) UNRELEASED; urgency=low
   [ Petter Reinholdtsen ]
   * Move calls to pam-auth-update from the package scripts in sssd to
     libpam-sss, and correct prerm call to remove the correct pam config.
+    Add versioned dependency on libpam-runtime to make sure
+    pam-auth-update is available.
   * Add code to the postinst and postrm of libnss-sss to update
     passwd, group and shadow entries in /etc/nsswitch.conf.
 

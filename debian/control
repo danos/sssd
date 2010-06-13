@@ -45,7 +45,7 @@ Description: Nss library for the System Security Services Daemon
 
 Package: libpam-sss
 Architecture: any
-Depends: ${shlibs:Depends}, ${misc:Depends}
+Depends: ${shlibs:Depends}, ${misc:Depends}, libpam-runtime (>= 1.0.1-6)
 Recommends: sssd
 Description: Pam module for the System Security Services Daemon 
  Provides a set of daemons to manage access to remote directories and
