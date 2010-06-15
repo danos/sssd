@@ -7,6 +7,8 @@ sssd (1.2.0-2) UNRELEASED; urgency=low
     pam-auth-update is available.
   * Add code to the postinst and postrm of libnss-sss to update
     passwd, group and shadow entries in /etc/nsswitch.conf.
+  * Make sure init.d/sssd start after $named, to ensure it can look up
+    in DNS also when the DNS server is on the local machine.
 
  -- Petter Reinholdtsen <pere@debian.org>  Sun, 06 Jun 2010 13:50:57 +0200
 
