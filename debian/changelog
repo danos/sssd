@@ -1,4 +1,4 @@
-sssd (1.2.1-1) UNRELEASED; urgency=low
+sssd (1.2.1-1) unstable; urgency=low
 
   [ Petter Reinholdtsen ]
   * Move calls to pam-auth-update from the package scripts in sssd to
@@ -13,7 +13,7 @@ sssd (1.2.1-1) UNRELEASED; urgency=low
   [ Morten Werner Forsbring ]
   * New upstream release.
   
- -- Morten Werner Forsbring <werner@debian.org>  Thu, 24 Jun 2010 07:57:45 +0200
+ -- Morten Werner Forsbring <werner@debian.org>  Thu, 24 Jun 2010 14:16:30 +0200
 
 sssd (1.2.0-1) unstable; urgency=low
 
