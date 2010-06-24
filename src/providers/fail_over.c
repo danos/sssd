@@ -444,7 +444,7 @@ get_server_common(TALLOC_CTX *mem_ctx, struct fo_ctx *ctx, const char *name,
     DLIST_FOR_EACH(common, ctx->server_common_list) {
         if (!strcasecmp(name, common->name)) {
             *_common = rc_reference(mem_ctx, struct server_common, common);
-            if (_common == NULL)
+            if (*_common == NULL)
                 return ENOMEM;
             return EOK;
         }
@@ -1122,8 +1122,11 @@ fo_get_server_port(struct fo_server *server)
 
 const char *fo_get_server_name(struct fo_server *server)
 {
-    if (!server->common && fo_is_srv_lookup(server)) {
-        return "SRV lookup meta-server";
+    if (!server->common) {
+        if (fo_is_srv_lookup(server)) {
+            return "SRV lookup meta-server";
+        }
+        return "unknown name";
     }
 
     return server->common->name;

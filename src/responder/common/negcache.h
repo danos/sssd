@@ -22,30 +22,38 @@
 #ifndef _NSS_NEG_CACHE_H_
 #define _NSS_NEG_CACHE_H_
 
-struct nss_nc_ctx;
+struct sss_nc_ctx;
 
 /* init the in memory negative cache */
-int nss_ncache_init(TALLOC_CTX *memctx, struct nss_nc_ctx **_ctx);
+int sss_ncache_init(TALLOC_CTX *memctx, struct sss_nc_ctx **_ctx);
 
 /* check if the user is expired according to the passed in time to live */
-int nss_ncache_check_user(struct nss_nc_ctx *ctx, int ttl,
+int sss_ncache_check_user(struct sss_nc_ctx *ctx, int ttl,
                           const char *domain, const char *name);
-int nss_ncache_check_group(struct nss_nc_ctx *ctx, int ttl,
+int sss_ncache_check_group(struct sss_nc_ctx *ctx, int ttl,
                           const char *domain, const char *name);
-int nss_ncache_check_uid(struct nss_nc_ctx *ctx, int ttl, uid_t uid);
-int nss_ncache_check_gid(struct nss_nc_ctx *ctx, int ttl, gid_t gid);
+int sss_ncache_check_uid(struct sss_nc_ctx *ctx, int ttl, uid_t uid);
+int sss_ncache_check_gid(struct sss_nc_ctx *ctx, int ttl, gid_t gid);
 
 /* add a new neg-cache entry setting the timestamp to "now" unless
  * "permanent" is set to true, in which case the timestamps is set to 0
  * and the negative cache never expires (used to permanently filter out
  * users and groups) */
-int nss_ncache_set_user(struct nss_nc_ctx *ctx, bool permanent,
+int sss_ncache_set_user(struct sss_nc_ctx *ctx, bool permanent,
                         const char *domain, const char *name);
-int nss_ncache_set_group(struct nss_nc_ctx *ctx, bool permanent,
+int sss_ncache_set_group(struct sss_nc_ctx *ctx, bool permanent,
                         const char *domain, const char *name);
-int nss_ncache_set_uid(struct nss_nc_ctx *ctx, bool permanent, uid_t uid);
-int nss_ncache_set_gid(struct nss_nc_ctx *ctx, bool permanent, gid_t gid);
+int sss_ncache_set_uid(struct sss_nc_ctx *ctx, bool permanent, uid_t uid);
+int sss_ncache_set_gid(struct sss_nc_ctx *ctx, bool permanent, gid_t gid);
 
-int nss_ncache_reset_permament(struct nss_nc_ctx *ctx);
+int sss_ncache_reset_permament(struct sss_nc_ctx *ctx);
+
+/* Set up the negative cache with values from filter_users and
+ * filter_groups in the sssd.conf
+ */
+errno_t sss_ncache_prepopulate(struct sss_nc_ctx *ncache,
+                               struct confdb_ctx *cdb,
+                               struct sss_names_ctx *names_ctx,
+                               struct sss_domain_info *domain_list);
 
 #endif /* _NSS_NEG_CACHE_H_ */

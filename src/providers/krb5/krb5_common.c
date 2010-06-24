@@ -92,7 +92,7 @@ errno_t check_and_export_options(struct dp_option *opts,
 
     dummy = dp_opt_get_cstring(opts, KRB5_CHANGEPW_PRINC);
     if (dummy == NULL) {
-        DEBUG(1, ("Missing change password principle.\n"));
+        DEBUG(1, ("Missing change password principal.\n"));
         return EINVAL;
     }
     if (strchr(dummy, '@') == NULL) {
@@ -109,10 +109,10 @@ errno_t check_and_export_options(struct dp_option *opts,
         dummy = value;
     }
 
-    ret = setenv(SSSD_KRB5_CHANGEPW_PRINCIPLE, dummy, 1);
+    ret = setenv(SSSD_KRB5_CHANGEPW_PRINCIPAL, dummy, 1);
     if (ret != EOK) {
         DEBUG(2, ("setenv %s failed, password change might fail.\n",
-                  SSSD_KRB5_CHANGEPW_PRINCIPLE));
+                  SSSD_KRB5_CHANGEPW_PRINCIPAL));
     }
 
     return EOK;
@@ -158,6 +158,7 @@ errno_t write_krb5info_file(const char *realm, const char *server,
     TALLOC_CTX *tmp_ctx = NULL;
     const char *name_tmpl = NULL;
     int server_len;
+    ssize_t written;
 
     if (realm == NULL || *realm == '\0' || server == NULL || *server == '\0' ||
         service == NULL || service == '\0') {
@@ -203,14 +204,24 @@ errno_t write_krb5info_file(const char *realm, const char *server,
         goto done;
     }
 
-    ret = write(fd, server, server_len);
-    if (ret == -1) {
-        DEBUG(1, ("write failed [%d][%s].\n", errno, strerror(errno)));
-        goto done;
+    written = 0;
+    while (written < server_len) {
+        ret = write(fd, server+written, server_len-written);
+        if (ret == -1) {
+            if (errno == EINTR || errno == EAGAIN) {
+                continue;
+            }
+            DEBUG(1, ("write failed [%d][%s].\n", errno, strerror(errno)));
+            goto done;
+        }
+        else {
+            written += ret;
+        }
     }
-    if (ret != server_len) {
-        DEBUG(1, ("Partial write occured, this should never happen.\n"));
-        ret = EINTR;
+
+    if (written != server_len) {
+        DEBUG(1, ("Write error, wrote [%d] bytes, expected [%d]\n",
+                   written, server_len));
         goto done;
     }
 

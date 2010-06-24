@@ -63,7 +63,7 @@ struct krb5_child_ctx {
 
     char *kdcip;
     char *realm;
-    char *changepw_principle;
+    char *changepw_principal;
     char *ccache_dir;
     char *ccname_template;
     int auth_timeout;
@@ -421,7 +421,7 @@ static krb5_error_code validate_tgt(struct krb5_req *kr)
 {
     krb5_error_code kerr;
     krb5_error_code kt_err;
-    char *principal;
+    char *principal = NULL;
     krb5_keytab keytab;
     krb5_kt_cursor cursor;
     krb5_keytab_entry entry;
@@ -588,7 +588,7 @@ static errno_t changepw_child(int fd, struct krb5_req *kr)
 
     kerr = krb5_get_init_creds_password(kr->ctx, kr->creds, kr->princ,
                                         pass_str, prompter, kr, 0,
-                                        kr->krb5_ctx->changepw_principle,
+                                        kr->krb5_ctx->changepw_principal,
                                         kr->options);
     if (kerr != 0) {
         KRB5_DEBUG(1, kerr);
@@ -721,7 +721,7 @@ static errno_t tgt_req_child(int fd, struct krb5_req *kr)
     if (kerr == KRB5KDC_ERR_KEY_EXP) {
         kerr = krb5_get_init_creds_password(kr->ctx, kr->creds, kr->princ,
                                             pass_str, sss_krb5_prompter, kr, 0,
-                                            kr->krb5_ctx->changepw_principle,
+                                            kr->krb5_ctx->changepw_principal,
                                             kr->options);
         krb5_free_cred_contents(kr->ctx, kr->creds);
         if (kerr == 0) {
@@ -872,10 +872,10 @@ static int krb5_setup(struct krb5_req *kr, uint32_t offline)
         goto failed;
     }
 
-    kr->krb5_ctx->changepw_principle = getenv(SSSD_KRB5_CHANGEPW_PRINCIPLE);
-    if (kr->krb5_ctx->changepw_principle == NULL) {
+    kr->krb5_ctx->changepw_principal = getenv(SSSD_KRB5_CHANGEPW_PRINCIPAL);
+    if (kr->krb5_ctx->changepw_principal == NULL) {
         DEBUG(1, ("Cannot read [%s] from environment.\n",
-                  SSSD_KRB5_CHANGEPW_PRINCIPLE));
+                  SSSD_KRB5_CHANGEPW_PRINCIPAL));
         if (kr->pd->cmd == SSS_PAM_CHAUTHTOK) {
             goto failed;
         }
@@ -1004,7 +1004,7 @@ int main(int argc, const char *argv[])
 
     DEBUG(7, ("krb5_child started.\n"));
 
-    pd = talloc(NULL, struct pam_data);
+    pd = talloc_zero(NULL, struct pam_data);
     if (pd == NULL) {
         DEBUG(1, ("malloc failed.\n"));
         _exit(-1);

@@ -33,7 +33,7 @@
 #include "providers/krb5/krb5_common.h"
 
 #define CCACHE_ENV_NAME "KRB5CCNAME"
-#define SSSD_KRB5_CHANGEPW_PRINCIPLE "SSSD_KRB5_CHANGEPW_PRINCIPLE"
+#define SSSD_KRB5_CHANGEPW_PRINCIPAL "SSSD_KRB5_CHANGEPW_PRINCIPAL"
 
 #define ILLEGAL_PATH_PATTERN "//|/\\./|/\\.\\./"
 
@@ -48,6 +48,7 @@ struct krb5child_req {
     struct tevent_timer *timeout_handler;
 
     const char *ccname;
+    const char *old_ccname;
     const char *homedir;
     const char *upn;
     uid_t uid;

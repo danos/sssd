@@ -218,7 +218,7 @@ libsss_ipa_la_LINK = $(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) \
 	$(LIBTOOLFLAGS) --mode=link $(CCLD) $(libsss_ipa_la_CFLAGS) \
 	$(CFLAGS) $(libsss_ipa_la_LDFLAGS) $(LDFLAGS) -o $@
 libsss_krb5_la_DEPENDENCIES = $(am__DEPENDENCIES_3) \
-	$(am__DEPENDENCIES_1)
+	$(am__DEPENDENCIES_1) $(am__DEPENDENCIES_1)
 am_libsss_krb5_la_OBJECTS = util/libsss_krb5_la-find_uid.lo \
 	providers/libsss_krb5_la-child_common.lo \
 	providers/krb5/libsss_krb5_la-krb5_utils.lo \
@@ -863,13 +863,13 @@ sssd_be_DEPENDENCIES = $(am__DEPENDENCIES_7) $(am__DEPENDENCIES_1)
 sssd_be_LINK = $(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) \
 	$(LIBTOOLFLAGS) --mode=link $(CCLD) $(AM_CFLAGS) $(CFLAGS) \
 	$(sssd_be_LDFLAGS) $(LDFLAGS) -o $@
-am__objects_42 = responder/common/responder_cmd.$(OBJEXT) \
+am__objects_42 = responder/common/negcache.$(OBJEXT) \
+	responder/common/responder_cmd.$(OBJEXT) \
 	responder/common/responder_common.$(OBJEXT) \
 	responder/common/responder_dp.$(OBJEXT) \
 	responder/common/responder_packet.$(OBJEXT)
 am_sssd_nss_OBJECTS = responder/nss/nsssrv.$(OBJEXT) \
-	responder/nss/nsssrv_cmd.$(OBJEXT) \
-	responder/nss/nsssrv_nc.$(OBJEXT) $(am__objects_37) \
+	responder/nss/nsssrv_cmd.$(OBJEXT) $(am__objects_37) \
 	$(am__objects_42)
 sssd_nss_OBJECTS = $(am_sssd_nss_OBJECTS)
 sssd_nss_DEPENDENCIES = $(am__DEPENDENCIES_1) $(am__DEPENDENCIES_7)
@@ -879,7 +879,7 @@ am_sssd_pam_OBJECTS = responder/pam/pam_LOCAL_domain.$(OBJEXT) \
 	responder/pam/pamsrv_dp.$(OBJEXT) $(am__objects_37) \
 	$(am__objects_42)
 sssd_pam_OBJECTS = $(am_sssd_pam_OBJECTS)
-sssd_pam_DEPENDENCIES = $(am__DEPENDENCIES_7)
+sssd_pam_DEPENDENCIES = $(am__DEPENDENCIES_1) $(am__DEPENDENCIES_7)
 am_stress_tests_OBJECTS = tests/stress-tests.$(OBJEXT) \
 	$(am__objects_37)
 stress_tests_OBJECTS = $(am_stress_tests_OBJECTS)
@@ -1452,6 +1452,7 @@ SSSD_UTIL_OBJ = \
     $(SSSD_DEBUG_OBJ)
 
 SSSD_RESPONDER_OBJ = \
+    responder/common/negcache.c \
     responder/common/responder_cmd.c \
     responder/common/responder_common.c \
     responder/common/responder_dp.c \
@@ -1513,7 +1514,7 @@ dist_noinst_HEADERS = \
     responder/common/responder_packet.h \
     responder/pam/pamsrv.h \
     responder/nss/nsssrv.h \
-    responder/nss/nsssrv_nc.h \
+    responder/common/negcache.h \
     sbus/sbus_client.h \
     sbus/sssd_dbus.h \
     sbus/sssd_dbus_private.h \
@@ -1565,7 +1566,6 @@ sssd_LDADD = \
 sssd_nss_SOURCES = \
     responder/nss/nsssrv.c \
     responder/nss/nsssrv_cmd.c \
-    responder/nss/nsssrv_nc.c \
     $(SSSD_UTIL_OBJ) \
     $(SSSD_RESPONDER_OBJ)
 
@@ -1582,6 +1582,7 @@ sssd_pam_SOURCES = \
     $(SSSD_RESPONDER_OBJ)
 
 sssd_pam_LDADD = \
+    $(TDB_LIBS) \
     $(SSSD_LIBS)
 
 sssd_be_SOURCES = \
@@ -1981,7 +1982,7 @@ libsss_krb5_la_CFLAGS = \
 
 libsss_krb5_la_LIBADD = \
     $(DHASH_LIBS) \
-    $(KEYUITLS_LIB) \
+    $(KEYUTILS_LIBS) \
     $(KRB5_LIBS)
 
 libsss_krb5_la_LDFLAGS = \
@@ -3480,14 +3481,14 @@ responder/nss/nsssrv.$(OBJEXT): responder/nss/$(am__dirstamp) \
 	responder/nss/$(DEPDIR)/$(am__dirstamp)
 responder/nss/nsssrv_cmd.$(OBJEXT): responder/nss/$(am__dirstamp) \
 	responder/nss/$(DEPDIR)/$(am__dirstamp)
-responder/nss/nsssrv_nc.$(OBJEXT): responder/nss/$(am__dirstamp) \
-	responder/nss/$(DEPDIR)/$(am__dirstamp)
 responder/common/$(am__dirstamp):
 	@$(MKDIR_P) responder/common
 	@: > responder/common/$(am__dirstamp)
 responder/common/$(DEPDIR)/$(am__dirstamp):
 	@$(MKDIR_P) responder/common/$(DEPDIR)
 	@: > responder/common/$(DEPDIR)/$(am__dirstamp)
+responder/common/negcache.$(OBJEXT): responder/common/$(am__dirstamp) \
+	responder/common/$(DEPDIR)/$(am__dirstamp)
 responder/common/responder_cmd.$(OBJEXT):  \
 	responder/common/$(am__dirstamp) \
 	responder/common/$(DEPDIR)/$(am__dirstamp)
@@ -3880,13 +3881,13 @@ mostlyclean-compile:
 	-rm -f resolv/fail_over_tests-async_resolv.$(OBJEXT)
 	-rm -f resolv/krb5_utils_tests-async_resolv.$(OBJEXT)
 	-rm -f resolv/resolv_tests-async_resolv.$(OBJEXT)
+	-rm -f responder/common/negcache.$(OBJEXT)
 	-rm -f responder/common/responder_cmd.$(OBJEXT)
 	-rm -f responder/common/responder_common.$(OBJEXT)
 	-rm -f responder/common/responder_dp.$(OBJEXT)
 	-rm -f responder/common/responder_packet.$(OBJEXT)
 	-rm -f responder/nss/nsssrv.$(OBJEXT)
 	-rm -f responder/nss/nsssrv_cmd.$(OBJEXT)
-	-rm -f responder/nss/nsssrv_nc.$(OBJEXT)
 	-rm -f responder/pam/pam_LOCAL_domain.$(OBJEXT)
 	-rm -f responder/pam/pamsrv.$(OBJEXT)
 	-rm -f responder/pam/pamsrv_cmd.$(OBJEXT)
@@ -4306,13 +4307,13 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@resolv/ares/$(DEPDIR)/resolv_tests-ares_data.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@resolv/ares/$(DEPDIR)/resolv_tests-ares_parse_srv_reply.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@resolv/ares/$(DEPDIR)/resolv_tests-ares_parse_txt_reply.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@responder/common/$(DEPDIR)/negcache.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@responder/common/$(DEPDIR)/responder_cmd.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@responder/common/$(DEPDIR)/responder_common.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@responder/common/$(DEPDIR)/responder_dp.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@responder/common/$(DEPDIR)/responder_packet.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@responder/nss/$(DEPDIR)/nsssrv.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@responder/nss/$(DEPDIR)/nsssrv_cmd.Po@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@responder/nss/$(DEPDIR)/nsssrv_nc.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@responder/pam/$(DEPDIR)/pam_LOCAL_domain.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@responder/pam/$(DEPDIR)/pamsrv.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@responder/pam/$(DEPDIR)/pamsrv_cmd.Po@am__quote@
