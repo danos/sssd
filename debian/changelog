@@ -1,4 +1,4 @@
-sssd (1.2.0-2) UNRELEASED; urgency=low
+sssd (1.2.1-1) UNRELEASED; urgency=low
 
   [ Petter Reinholdtsen ]
   * Move calls to pam-auth-update from the package scripts in sssd to
@@ -10,7 +10,10 @@ sssd (1.2.0-2) UNRELEASED; urgency=low
   * Make sure init.d/sssd start after $named, to ensure it can look up
     in DNS also when the DNS server is on the local machine.
 
- -- Petter Reinholdtsen <pere@debian.org>  Sun, 06 Jun 2010 13:50:57 +0200
+  [ Morten Werner Forsbring ]
+  * New upstream release.
+  
+ -- Morten Werner Forsbring <werner@debian.org>  Thu, 24 Jun 2010 07:57:45 +0200
 
 sssd (1.2.0-1) unstable; urgency=low
 
