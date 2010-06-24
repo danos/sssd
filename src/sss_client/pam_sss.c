@@ -212,6 +212,7 @@ static void overwrite_and_free_pam_items(struct pam_items *pi)
     pi->pamstack_oldauthtok = NULL;
 
     free(pi->domain_name);
+    pi->domain_name = NULL;
 }
 
 static int pack_message_v3(struct pam_items *pi, size_t *size,
@@ -278,6 +279,7 @@ static int pack_message_v3(struct pam_items *pi, size_t *size,
 
     if (rp != len) {
         D(("error during packet creation."));
+        free(buf);
         return PAM_BUF_ERR;
     }
 
@@ -487,7 +489,7 @@ static errno_t display_pw_reset_message(pam_handle_t *pamh,
     while (total_len < stat_buf.st_size) {
         ret = read(fd, msg_buf + total_len, stat_buf.st_size - total_len);
         if (ret == -1) {
-            if (errno == EINTR) continue;
+            if (errno == EINTR || errno == EAGAIN) continue;
             ret = errno;
             D(("read failed [%d][%s].", ret, strerror(ret)));
             goto done;

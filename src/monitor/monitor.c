@@ -1372,7 +1372,7 @@ static void process_config_file(struct tevent_context *ev,
         len = read(file_ctx->mt_ctx->inotify_fd, buf+total_len,
                    event_size-total_len);
         if (len == -1) {
-            if (errno == EINTR) continue;
+            if (errno == EINTR || errno == EAGAIN) continue;
             DEBUG(0, ("Critical error reading inotify file descriptor.\n"));
             goto done;
         }
@@ -1393,7 +1393,7 @@ static void process_config_file(struct tevent_context *ev,
         while (total_len < in_event->len) {
             len = read(file_ctx->mt_ctx->inotify_fd, &name, in_event->len);
             if (len == -1) {
-                if (errno == EINTR) continue;
+                if (errno == EINTR || errno == EAGAIN) continue;
                 DEBUG(0, ("Critical error reading inotify file descriptor.\n"));
                 goto done;
             }
@@ -1435,7 +1435,7 @@ static void process_config_file(struct tevent_context *ev,
         rw_ctx->file_ctx = file_ctx;
 
         tev = tevent_add_timer(ev, rw_ctx, tv, rewatch_config_file, rw_ctx);
-        if (te == NULL) {
+        if (tev == NULL) {
             DEBUG(0, ("Could not restore inotify watch. Quitting!\n"));
             close(file_ctx->mt_ctx->inotify_fd);
             kill(getpid(), SIGTERM);
@@ -1488,7 +1488,7 @@ static void rewatch_config_file(struct tevent_context *ev,
                   cb->filename, err, strerror(err)));
 
         tev = tevent_add_timer(ev, ev, tv, rewatch_config_file, rw_ctx);
-        if (te == NULL) {
+        if (tev == NULL) {
             DEBUG(0, ("Could not restore inotify watch. Quitting!\n"));
             close(file_ctx->mt_ctx->inotify_fd);
             kill(getpid(), SIGTERM);

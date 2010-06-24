@@ -2,12 +2,12 @@
 .\"     Title: sssd.conf
 .\"    Author: The SSSD upstream - http://fedorahosted.org/sssd
 .\" Generator: DocBook XSL Stylesheets v1.75.2 <http://docbook.sf.net/>
-.\"      Date: 05/24/2010
+.\"      Date: 06/18/2010
 .\"    Manual: File Formats and Conventions
 .\"    Source: SSSD
 .\"  Language: English
 .\"
-.TH "SSSD\&.CONF" "5" "05/24/2010" "SSSD" "File Formats and Conventions"
+.TH "SSSD\&.CONF" "5" "06/18/2010" "SSSD" "File Formats and Conventions"
 .\" -----------------------------------------------------------------
 .\" * set default formatting
 .\" -----------------------------------------------------------------
@@ -167,7 +167,7 @@ Default: 0
 .PP
 entry_negative_timeout (integer)
 .RS 4
-Specifies for how long nss_sss should cache negative cache hits (that is, queries for invalid database entries, like nonexistent ones) before asking the back end again\&.
+Specifies for how many seconds nss_sss should cache negative cache hits (that is, queries for invalid database entries, like nonexistent ones) before asking the back end again\&.
 .sp
 Default: 15
 .RE
@@ -218,9 +218,11 @@ These configuration options can be present in a domain configuration section, th
 .PP
 min_id,max_id (integer)
 .RS 4
-UID limits for the domain\&. If a domain contains entry that is outside these limits, it is ignored
+UID and GID limits for the domain\&. If a domain contains an entry that is outside these limits, it is ignored\&.
 .sp
-Default: 1000 for min_id, 0 (no limit) for max_id
+For users, this affects the primary GID limit\&. The user will not be returned to NSS if either the UID or the primary GID is outside the range\&. For non\-primary group memberships, those that are in range will be reported as expected\&.
+.sp
+Default: 1 for min_id, 0 (no limit) for max_id
 .RE
 .PP
 timeout (integer)

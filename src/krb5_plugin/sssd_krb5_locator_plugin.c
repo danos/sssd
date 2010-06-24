@@ -67,12 +67,11 @@ void debug_fn(const char *format, ...)
     va_start(ap, format);
 
     ret = vasprintf(&s, format, ap);
+    va_end(ap);
     if (ret < 0) {
         /* ENOMEM */
         return;
     }
-
-    va_end(ap);
 
     fprintf(stderr, DEBUG_KEY "%s", s);
     free(s);
@@ -133,7 +132,7 @@ static int get_krb5info(const char *realm, struct sssd_ctx *ctx,
     memset(buf, 0, BUFSIZE+1);
     while (len != 0 && (ret = read(fd, p, len)) != 0) {
         if (ret == -1) {
-            if (errno == EINTR) continue;
+            if (errno == EINTR || errno == EAGAIN) continue;
             PLUGIN_DEBUG(("read failed [%d][%s].\n", errno, strerror(errno)));
             close(fd);
             goto done;

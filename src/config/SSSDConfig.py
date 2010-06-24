@@ -103,7 +103,6 @@ option_strings = {
     'krb5_store_password_if_offline' : _("Store password if offline for later online authentication"),
 
     # [provider/krb5/chpass]
-    'krb5_changepw_principal' : _('The principal of the change password service'),
     'krb5_kpasswd' : _('Server where the change password service is running if not on the KDC'),
 
     # [provider/ldap]
@@ -944,7 +943,10 @@ class SSSDDomain(SSSDConfigObject):
         is_provider = option.rfind('_provider')
         if (is_provider > 0):
             provider = option[:is_provider]
-            self.add_provider(value, provider)
+            try:
+                self.add_provider(value, provider)
+            except NoSuchProviderError:
+                raise NoOptionError
         else:
             self.options[option] = value
 
@@ -1251,8 +1253,13 @@ class SSSDConfig(SSSDChangeConf):
             raise NoServiceError
 
         service = SSSDService(name, self.schema)
-        [service.set_option(opt['name'], opt['value'])
-         for opt in self.strip_comments_empty(self.options(name)) ]
+        for opt in self.strip_comments_empty(self.options(name)):
+            try:
+                service.set_option(opt['name'], opt['value'])
+            except NoOptionError:
+                # If we come across an option that we don't recognize,
+                # we should just ignore it and continue
+                pass
 
         return service
 
@@ -1448,12 +1455,24 @@ class SSSDConfig(SSSDChangeConf):
         # errors trying to read in their options
         providers = [ (x['name'],x['value']) for x in self.strip_comments_empty(self.options('domain/%s' % name))
                      if x['name'].rfind('_provider') > 0]
-        [domain.set_option(option, value)
-         for (option, value) in providers]
 
-        [domain.set_option(opt['name'], opt['value'])
-         for opt in self.strip_comments_empty(self.options('domain/%s' % name))
-         if (opt['name'], opt['value']) not in providers]
+        for (option, value) in providers:
+            try:
+                domain.set_option(option, value)
+            except NoOptionError:
+                # If we come across an option that we don't recognize,
+                # we should just ignore it and continue
+                pass
+
+        # Read in all the options from the configuration
+        for opt in self.strip_comments_empty(self.options('domain/%s' % name)):
+            if (opt['name'], opt['value']) not in providers:
+                try:
+                    domain.set_option(opt['name'], opt['value'])
+                except NoOptionError:
+                    # If we come across an option that we don't recognize,
+                    # we should just ignore it and continue
+                    pass
 
         # Determine if this domain is currently active
         domain.active = self.is_domain_active(name)

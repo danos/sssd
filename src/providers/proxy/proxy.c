@@ -191,11 +191,17 @@ static int proxy_child_destructor(TALLOC_CTX *ctx)
     struct proxy_child_ctx *child_ctx =
             talloc_get_type(ctx, struct proxy_child_ctx);
     hash_key_t key;
+    int hret;
 
     DEBUG(8, ("Removing proxy child id [%d]\n", child_ctx->id));
     key.type = HASH_KEY_ULONG;
     key.ul = child_ctx->id;
-    hash_delete(child_ctx->auth_ctx->request_table, &key);
+    hret = hash_delete(child_ctx->auth_ctx->request_table, &key);
+    if (!(hret == HASH_SUCCESS ||
+          hret == HASH_ERROR_KEY_NOT_FOUND)) {
+        DEBUG(1, ("Hash error [%d][%s]\n", hret, hash_error_string(hret)));
+        /* Nothing we can do about this, so just continue */
+    }
     return 0;
 }
 
@@ -462,13 +468,9 @@ static void pc_init_timeout(struct tevent_context *ev,
                             struct timeval t, void *ptr)
 {
     struct tevent_req *req;
-    struct pc_init_ctx *state;
 
     DEBUG(2, ("Client timed out before Identification!\n"));
-
     req = talloc_get_type(ptr, struct tevent_req);
-    state = tevent_req_data(req, struct pc_init_ctx);
-
     tevent_req_error(req, ETIMEDOUT);
 }
 

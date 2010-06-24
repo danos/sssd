@@ -110,7 +110,7 @@ static int remove_tree_with_ctx(TALLOC_CTX *mem_ctx,
     struct dirent direntp;
     struct stat statres;
     DIR *rootdir = NULL;
-    int ret;
+    int ret, err;
 
     rootdir = opendir(root);
     if (rootdir == NULL) {
@@ -174,6 +174,7 @@ static int remove_tree_with_ctx(TALLOC_CTX *mem_ctx,
     }
 
     ret = closedir(rootdir);
+    rootdir = NULL;
     if (ret != 0) {
         ret = errno;
         goto fail;
@@ -185,7 +186,15 @@ static int remove_tree_with_ctx(TALLOC_CTX *mem_ctx,
         goto fail;
     }
 
+    ret = EOK;
+
 fail:
+    if (rootdir) {  /* clean up on abnormal exit but retain return code */
+        err = closedir(rootdir);
+        if (err) {
+            DEBUG(1, ("closedir failed, bad dirp?\n"));
+        }
+    }
     return ret;
 }
 
@@ -402,7 +411,7 @@ static int copy_file(const char *src,
     int ifd = -1;
     int ofd = -1;
     char buf[1024];
-    ssize_t cnt, written, offset;
+    ssize_t cnt, written, res;
     struct stat fstatbuf;
 
     ifd = open(src, O_RDONLY);
@@ -454,27 +463,44 @@ static int copy_file(const char *src,
         goto fail;
     }
 
-    while ((cnt = read(ifd, buf, sizeof(buf))) > 0) {
-        offset = 0;
-        while (cnt > 0) {
-            written = write(ofd, buf+offset, (size_t)cnt);
-            if (written == -1) {
-                ret = errno;
-                DEBUG(1, ("Cannot write() to source file '%s': [%d][%s].\n",
-                            dst, ret, strerror(ret)));
-                goto fail;
+    while ((cnt = read(ifd, buf, sizeof(buf))) != 0) {
+        if (cnt == -1) {
+            if (errno == EINTR || errno == EAGAIN) {
+                continue;
             }
-            offset += written;
-            cnt -= written;
+
+            DEBUG(1, ("Cannot read() from source file '%s': [%d][%s].\n",
+                        src, ret, strerror(ret)));
+            goto fail;
+        }
+        else if (cnt > 0) {
+            /* Copy the buffer to the new file */
+            written = 0;
+            while (written < cnt) {
+                res = write(ofd, buf+written, (size_t)cnt-written);
+                if (res == -1) {
+                    ret = errno;
+                    if (ret == EINTR || ret == EAGAIN) {
+                        /* retry the write */
+                        continue;
+                    }
+                    DEBUG(1, ("Cannot write() to destination file '%s': [%d][%s].\n",
+                                dst, ret, strerror(ret)));
+                    goto fail;
+                }
+                else if (res <= 0) {
+                    DEBUG(1, ("Unexpected result from write(): [%d]\n", res));
+                    goto fail;
+                }
+
+                written += res;
+            }
+        }
+        else {
+            DEBUG(1, ("Unexpected return code of read [%d]\n", cnt));
+            goto fail;
         }
     }
-    if (cnt == -1) {
-        ret = errno;
-        DEBUG(1, ("Cannot read() from source file '%s': [%d][%s].\n",
-                    dst, ret, strerror(ret)));
-        goto fail;
-    }
-
 
     ret = close(ifd);
     ifd = -1;
@@ -586,8 +612,8 @@ static int copy_tree_ctx(struct copy_ctx *cctx,
                          uid_t uid,
                          gid_t gid)
 {
-    DIR *src_dir;
-    int ret;
+    DIR *src_dir = NULL;
+    int ret, err;
     struct dirent *result;
     struct dirent direntp;
     char *src_name, *dst_name;
@@ -634,12 +660,20 @@ static int copy_tree_ctx(struct copy_ctx *cctx,
     }
 
     ret = closedir(src_dir);
+    src_dir = NULL;
     if (ret != 0) {
         ret = errno;
         goto fail;
     }
 
+    ret = EOK;
 fail:
+    if (src_dir) {  /* clean up on abnormal exit but retain return code */
+        err = closedir(src_dir);
+        if (err) {
+            DEBUG(1, ("closedir failed, bad dirp?\n"));
+        }
+    }
     talloc_free(tmp_ctx);
     return ret;
 }

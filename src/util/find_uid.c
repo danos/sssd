@@ -64,6 +64,7 @@ static errno_t get_uid_from_pid(const pid_t pid, uid_t *uid)
     char *e;
     char *endptr;
     long num=0;
+    errno_t error;
 
     ret = snprintf(path, PATHLEN, "/proc/%d/status", pid);
     if (ret < 0) {
@@ -74,15 +75,28 @@ static errno_t get_uid_from_pid(const pid_t pid, uid_t *uid)
         return EINVAL;
     }
 
-    ret = lstat(path, &stat_buf);
-    if (ret == -1) {
-        if (errno == ENOENT) {
+    fd = open(path, O_RDONLY);
+    if (fd == -1) {
+        error = errno;
+        if (error == ENOENT) {
             DEBUG(7, ("Proc file [%s] is not available anymore, continuing.\n",
                       path));
             return EOK;
         }
-        DEBUG(1, ("lstat failed [%d][%s].\n", errno, strerror(errno)));
-        return errno;
+        DEBUG(1, ("open failed [%d][%s].\n", error, strerror(error)));
+        return error;
+    }
+
+    ret = fstat(fd, &stat_buf);
+    if (ret == -1) {
+        error = errno;
+        if (error == ENOENT) {
+            DEBUG(7, ("Proc file [%s] is not available anymore, continuing.\n",
+                      path));
+            return EOK;
+        }
+        DEBUG(1, ("fstat failed [%d][%s].\n", error, strerror(error)));
+        return error;
     }
 
     if (!S_ISREG(stat_buf.st_mode)) {
@@ -90,25 +104,21 @@ static errno_t get_uid_from_pid(const pid_t pid, uid_t *uid)
         return EINVAL;
     }
 
-    fd = open(path, O_RDONLY);
-    if (fd == -1) {
-        if (errno == ENOENT) {
-            DEBUG(7, ("Proc file [%s] is not available anymore, continuing.\n",
-                      path));
-            return EOK;
+    while ((ret = read(fd, buf, BUFSIZE)) != 0) {
+        if (ret == -1) {
+            error = errno;
+            if (error == EINTR || error == EAGAIN) {
+                continue;
+            }
+            DEBUG(1, ("read failed [%d][%s].\n", error, strerror(error)));
+            return error;
         }
-        DEBUG(1, ("open failed [%d][%s].\n", errno, strerror(errno)));
-        return errno;
-    }
-    ret = read(fd, buf, BUFSIZE);
-    if (ret == -1) {
-        DEBUG(1, ("read failed [%d][%s].\n", errno, strerror(errno)));
-        return errno;
     }
 
     ret = close(fd);
     if (ret == -1) {
-        DEBUG(1, ("close failed [%d][%s].\n", errno, strerror(errno)));
+        error = errno;
+        DEBUG(1, ("close failed [%d][%s].\n", error, strerror(error)));
     }
 
     p = strstr(buf, "\nUid:\t");
@@ -121,10 +131,12 @@ static errno_t get_uid_from_pid(const pid_t pid, uid_t *uid)
         } else {
             *e = '\0';
         }
+        errno = 0;
         num = strtol(p, &endptr, 10);
-        if(errno == ERANGE) {
-            DEBUG(1, ("strtol failed [%s].\n", strerror(errno)));
-            return errno;
+        error = errno;
+        if (error == ERANGE) {
+            DEBUG(1, ("strtol failed [%s].\n", strerror(error)));
+            return error;
         }
         if (*endptr != '\0') {
             DEBUG(1, ("uid contains extra characters\n"));
@@ -150,12 +162,14 @@ static errno_t name_to_pid(const char *name, pid_t *pid)
 {
     long num;
     char *endptr;
+    errno_t error;
 
     errno = 0;
     num = strtol(name, &endptr, 10);
-    if(errno == ERANGE) {
+    error = errno;
+    if (error == ERANGE) {
         perror("strtol");
-        return errno;
+        return error;
     }
 
     if (*endptr != '\0') {
@@ -183,7 +197,7 @@ static errno_t get_active_uid_linux(hash_table_t *table, uid_t search_uid)
 {
     DIR *proc_dir = NULL;
     struct dirent *dirent;
-    int ret;
+    int ret, err;
     pid_t pid = -1;
     uid_t uid;
 
@@ -192,8 +206,8 @@ static errno_t get_active_uid_linux(hash_table_t *table, uid_t search_uid)
 
     proc_dir = opendir("/proc");
     if (proc_dir == NULL) {
-        DEBUG(1, ("Cannot open proc dir.\n"));
         ret = errno;
+        DEBUG(1, ("Cannot open proc dir.\n"));
         goto done;
     };
 
@@ -235,15 +249,15 @@ static errno_t get_active_uid_linux(hash_table_t *table, uid_t search_uid)
         errno = 0;
     }
     if (errno != 0 && dirent == NULL) {
-        DEBUG(1 ,("readdir failed.\n"));
         ret = errno;
+        DEBUG(1, ("readdir failed.\n"));
         goto done;
     }
 
     ret = closedir(proc_dir);
     proc_dir = NULL;
     if (ret == -1) {
-        DEBUG(1 ,("closedir failed, watch out.\n"));
+        DEBUG(1, ("closedir failed, watch out.\n"));
     }
 
     if (table != NULL) {
@@ -253,7 +267,12 @@ static errno_t get_active_uid_linux(hash_table_t *table, uid_t search_uid)
     }
 
 done:
-    if (proc_dir != NULL) closedir(proc_dir);
+    if (proc_dir != NULL) {
+        err = closedir(proc_dir);
+        if (err) {
+            DEBUG(1, ("closedir failed, bad dirp?\n"));
+        }
+    }
     return ret;
 }
 
