@@ -22,7 +22,7 @@ sssd (1.2.1-1) unstable; urgency=low
 
   [ Morten Werner Forsbring ]
   * New upstream release.
-  
+
  -- Morten Werner Forsbring <werner@debian.org>  Thu, 24 Jun 2010 14:16:30 +0200
 
 sssd (1.2.0-1) unstable; urgency=low
@@ -95,13 +95,13 @@ sssd (1.0.2-0ubuntu1) lucid; urgency=low
     - python API for managing sssd daemon configuration and
       native SSSD users.
     - support for asynchronous cache refreshes.
-    - support password changing in LDAP and Kerberos providers. 
+    - support password changing in LDAP and Kerberos providers.
     - support for server failover.
   * debian/control:
     - update tdb build dependency to use libtdb-dev.
     - add libselinux1-dev and libsasl2-dev build dependencies.
   * debian/sssd.upstart: replace init script with an upstart job.
-  * Turn sssd.conf into a configuration file.  
+  * Turn sssd.conf into a configuration file.
   * Create sssd log directory.
 
  -- Mathias Gug <mathiaz@ubuntu.com>  Tue, 19 Jan 2010 15:17:13 -0500
@@ -112,7 +112,7 @@ sssd (0.5.0-0ubuntu2) karmic; urgency=low
     + Fix linitian errors and warnings (LP: #425697):
       sssd ships an nss library - these are false-positives.
   * debian/fix-dbus-watch.dpatch: Update dbus-patch to final
-    upstream version. 
+    upstream version.
   * debian/fix-proxy-segfault.dpatch: Fix proxy enumeration.
 
  -- Mathias Gug <mathiaz@ubuntu.com>  Wed, 09 Sep 2009 20:21:04 -0400
