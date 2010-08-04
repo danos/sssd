@@ -33,14 +33,14 @@ lookup_ldap_uri() {
 
 lookup_ldap_base() {
     ldapuri="$1"
-    defaultcontext="$(ldapsearch -LLL -H "$ldapuri" -x -b '' -s base defaultNamingContext | awk '/^defaultNamingContext: / { print $2}')"
+    defaultcontext="$(ldapsearch -LLL -H "$ldapuri" -x -b '' -s base defaultNamingContext | awk '/^defaultNamingContext: / { print $2}' 2>/dev/null)"
     if [ -z "$defaultcontext" ] ; then
 	# Using tail to pick dc= entries over cn= entries, assuming
 	# dc= entries are for the site domain.  Sorting to get the
 	# same result every time independent of LDAP result attribute
 	# ordering
 	defaultcontext="$(ldapsearch -LLL -H "$ldapuri" -x -b '' \
-	    -s base namingContexts |
+	    -s base namingContexts 2>/dev/null |
 	    awk '/^namingContexts: / { print $2}' | sort | tail -1)"
     fi
     echo $defaultcontext
