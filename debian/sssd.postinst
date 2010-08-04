@@ -56,7 +56,6 @@ lookup_kerberos_server() {
 
 generate_config() {
     domain="$(hostname -d)"
-domain=uio.no
     kerberosrealm=$(echo $domain | tr a-z A-Z)
     ldapuri=$(lookup_ldap_uri "$domain")
     if [ -z "$ldapuri" ];  then
