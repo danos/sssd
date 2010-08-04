@@ -9,6 +9,8 @@ sssd (1.2.1-2) UNRELEASED; urgency=low
     file dynamically for LDAP and Kerberos using DNS entries on first
     time installation, and fall back to the static example
     configuration if this fail.
+  * Let sssd suggest libnss-sss and libpam-sss, to make those
+    installing sssd aware of the other packages.
 
  -- Petter Reinholdtsen <pere@debian.org>  Thu, 08 Jul 2010 14:23:36 +0200
 
