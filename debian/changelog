@@ -5,6 +5,10 @@ sssd (1.2.1-2) UNRELEASED; urgency=low
     from dpkg during upgrades.
   * Make sure to only remove obsolete sssd conffiles on upgrades, not
     on first time installation.
+  * Add code in the sssd postinst to try to generate the sssd.conf
+    file dynamically for LDAP and Kerberos using DNS entries on first
+    time installation, and fall back to the static example
+    configuration if this fail.
 
  -- Petter Reinholdtsen <pere@debian.org>  Thu, 08 Jul 2010 14:23:36 +0200
 

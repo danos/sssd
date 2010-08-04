@@ -17,13 +17,120 @@ set -e
 # for details, see http://www.debian.org/doc/debian-policy/ or
 # the debian-policy package
 
+# See if we can find an LDAP server.  Prefer ldap.domain, but also
+# accept SRV records if no ldap.domain server is found.
+lookup_ldap_uri() {
+    domain="$1"
+    if ping -c2 ldap.$domain > /dev/null 2>&1; then
+	echo ldap://ldap.$domain
+    else
+	host=$(host -N 2 -t SRV _ldap._tcp | awk '{print $NF}' | head -1)
+	if [ "$host" ] ; then
+	    echo ldap://$host
+	fi
+    fi
+}
+
+lookup_ldap_base() {
+    ldapuri="$1"
+    base=
+    defaultcontext=$(ldapsearch -LLL -H "$ldapuri" -x -b '' -s base defaultNamingContext | awk '/^defaultNamingContext: / { print $2}')
+    if [ -z "$defaultcontext" ] ; then
+	# Using tail to pick dc= entries over cn= entries, assuming
+	# dc= entries are for the site domain.  Sorting to get the
+	# same result every time independent of LDAP result attribute
+	# ordering
+	defaultcontext=$(ldapsearch -LLL -H "$ldapuri" -x -b '' \
+	    -s base namingContexts |
+	    awk '/^namingContexts: / { print $2}' | sort | tail -1)
+    fi
+    echo $defaultcontext
+}
+
+lookup_kerberos_server() {
+    domain="$1"
+    host=$(host -t SRV _kerberos._tcp.$domain|awk '{print $NF}'|head -1)
+    if [ "$host" ] ; then
+	echo $host
+    fi
+}
+
+generate_config() {
+    domain="$(hostname -d)"
+domain=uio.no
+    kerberosrealm=$(echo $domain | tr a-z A-Z)
+    ldapuri=$(lookup_ldap_uri "$domain")
+    if [ -z "$ldapuri" ];  then
+	# autodetection failed, use static example
+        cat /usr/share/doc/sssd/examples/sssd.conf
+	return
+    fi
+
+    ldapbase="$(lookup_ldap_base "$ldapuri")"
+    if [ -z "$ldapbase" ];  then
+	# autodetection failed, use static example
+        cat /usr/share/doc/sssd/examples/sssd.conf
+	return
+    fi
+    kerberosserver=$(lookup_kerberos_server "$domain")
+
+cat <<EOF
+[sssd]
+config_file_version = 2
+reconnection_retries = 3
+sbus_timeout = 30
+services = nss, pam
+domains = $domain
+
+[nss]
+filter_groups = root
+filter_users = root
+reconnection_retries = 3
+
+[pam]
+reconnection_retries = 3
+EOF
+if [ "$kerberosserver" ] ; then
+    auth="krb5"
+    chpass="krb5"
+else
+    auth="ldap"
+    chpass="ldap";
+fi
+
+cat <<EOF
+[domain/$domain]
+; Using enumerate = true leads to high load and slow response
+enumerate = false
+cache_credentials = true
+
+id_provider = ldap
+auth_provider = $auth
+chpass_provider = $chpass
+
+ldap_uri = $ldapuri
+ldap_search_base = $ldapbase
+ldap_tls_reqcert = demand
+ldap_tls_cacert = /etc/ssl/certs/ca-certificates.crt
+EOF
+
+if [ "$kerberosserver" ] ; then
+    cat <<EOF
+
+krb5_kdcip = $kerberosserver
+krb5_realm = $kerberosrealm
+krb5_changepw_principle = kadmin/changepw
+krb5_auth_timeout = 15
+EOF
+fi
+}
 
 case "$1" in
     configure)
     # Install default configuration file on package install
     if [ -z "$2" ] && [ ! -e /etc/sssd/sssd.conf ]; then
-        cp /usr/share/doc/sssd/examples/sssd.conf /etc/sssd/sssd.conf
-	chmod 0600 /etc/sssd/sssd.conf
+        generate_config > /etc/sssd/sssd.conf
+        chmod 0600 /etc/sssd/sssd.conf
     fi
     # Fix configuration file on package upgrade
     if dpkg --compare-versions "$2" lt-nl 1.0.2-0ubuntu1; then
