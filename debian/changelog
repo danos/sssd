@@ -3,7 +3,7 @@ sssd (1.2.1-2) UNRELEASED; urgency=low
   * Make sure init.d script sources /etc/default/sssd (Closes: #588252).
   * Drop /etc/default/sssd from package, to avoid conffile question
     from dpkg during upgrades.
-  * Make sure to only obsolete remove sssd conffiles on upgrades, not
+  * Make sure to only remove obsolete sssd conffiles on upgrades, not
     on first time installation.
 
  -- Petter Reinholdtsen <pere@debian.org>  Thu, 08 Jul 2010 14:23:36 +0200
