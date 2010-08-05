@@ -11,6 +11,9 @@ sssd (1.2.1-2) UNRELEASED; urgency=low
     back to the static example configuration if this fail.
   * Let sssd suggest libnss-sss and libpam-sss, to make those
     installing sssd aware of the other packages.
+  * Add netgroup to nsswitch.conf entries added at first time
+    installation, to make sure those installing now get working
+    netgroups when sssd get netgroup support
 
  -- Petter Reinholdtsen <pere@debian.org>  Thu, 08 Jul 2010 14:23:36 +0200
 

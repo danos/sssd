@@ -27,7 +27,7 @@ remove_nss_entry() {
             }
             return $s;
         }
-        s/^(passwd:|group:|shadow:)(.*)/$1.remove($2)/e;
+        s/^(passwd:|group:|shadow:|netgroup:)(.*)/$1.remove($2)/e;
     ' /etc/nsswitch.conf
 }
 
