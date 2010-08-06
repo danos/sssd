@@ -25,7 +25,7 @@ install/sssd::
 	mkdir -p $(CURDIR)/debian/sssd$(APIDOCDIR)/sssd.api.d/
 	install -D -m640 $(CURDIR)/src/config/etc/sssd.api.conf $(CURDIR)/debian/sssd$(APIDOCDIR)/sssd.api.conf
 	install -m640 $(CURDIR)/src/config/etc/sssd.api.d/* $(CURDIR)/debian/sssd/$(APIDOCDIR)/sssd.api.d/ 
-	install -D -m755 $(CURDIR)/debian/generate-config $(CURDIR)/debian/sssd/usr/lib/sssd/.
+	install -D -m755 $(CURDIR)/debian/generate-config $(CURDIR)/debian/sssd/usr/lib/sssd/generate-config
 
 binary-install/python-sss::
 	find $(CURDIR)/debian/python-sss/ -name '*.la' -exec rm '{}' ';'
