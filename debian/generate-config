@@ -64,6 +64,7 @@ generate_config() {
     kerberosserver=$(lookup_kerberos_server "$domain")
 
 cat <<EOF
+# SSSD configuration generated using $0
 [sssd]
 config_file_version = 2
 reconnection_retries = 3
