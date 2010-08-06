@@ -14,6 +14,8 @@ sssd (1.2.1-2) UNRELEASED; urgency=low
   * Add netgroup to nsswitch.conf entries added at first time
     installation, to make sure those installing now get working
     netgroups when sssd get netgroup support
+  * Let sssd recommend ldap-utils as ldapsearch is used for generating
+    the configuration.
 
  -- Petter Reinholdtsen <pere@debian.org>  Thu, 08 Jul 2010 14:23:36 +0200
 

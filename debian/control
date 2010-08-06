@@ -21,6 +21,7 @@ Homepage: https://fedorahosted.org/sssd/
 Package: sssd
 Architecture: any
 Depends: ${shlibs:Depends}, ${misc:Depends}, python, python-sss
+Recommends: ldap-utils
 Suggests: libnss-sss, libpam-sss
 Description: System Security Services Daemon 
  Provides a set of daemons to manage access to remote directories and
