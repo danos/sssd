@@ -41,9 +41,13 @@ lookup_ldap_base() {
 
 lookup_kerberos_server() {
     domain="$1"
-    host=$(host -t SRV _kerberos._tcp.$domain|awk '{print $NF}'|head -1)
-    if [ "$host" ] ; then
-	echo $host | sed 's/\.$//'
+    if ping -c2 kerberos.$domain > /dev/null 2>&1; then
+	echo kerberos.$domain
+    else
+	host=$(host -t SRV _kerberos._tcp.$domain|awk '{print $NF}'|head -1)
+	if [ "$host" ] ; then
+	    echo $host | sed 's/\.$//'
+	fi
     fi
 }
 
