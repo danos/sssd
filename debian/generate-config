@@ -12,7 +12,7 @@ lookup_ldap_uri() {
     if ping -c2 ldap.$domain > /dev/null 2>&1; then
 	echo ldap://ldap.$domain
     else
-	host=$(host -N 2 -t SRV _ldap._tcp | awk '{print $NF}' | head -1)
+	host=$(host -N 2 -t SRV _ldap._tcp | grep -v NXDOMAIN | awk '{print $NF}' | head -1)
 	if [ "$host" ] ; then
 	    echo ldap://$host | sed 's/\.$//'
 	fi
@@ -44,7 +44,7 @@ lookup_kerberos_server() {
     if ping -c2 kerberos.$domain > /dev/null 2>&1; then
 	echo kerberos.$domain
     else
-	host=$(host -t SRV _kerberos._tcp.$domain|awk '{print $NF}'|head -1)
+	host=$(host -t SRV _kerberos._tcp.$domain | grep -v NXDOMAIN | awk '{print $NF}'|head -1)
 	if [ "$host" ] ; then
 	    echo $host | sed 's/\.$//'
 	fi
