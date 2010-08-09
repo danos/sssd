@@ -13,7 +13,7 @@ sssd (1.2.1-2) unstable; urgency=low
   * Make sure to only remove obsolete sssd conffiles on upgrades, not
     on first time installation.
   * Add new script generate-config and call it from the sssd postinst
-    during first time instalation to try to generate the sssd.conf
+    during first time installation to try to generate the sssd.conf
     file dynamically for LDAP and Kerberos using DNS entries, and fall
     back to the static example configuration if this fail.
   * Let sssd suggest libnss-sss and libpam-sss, to make those
