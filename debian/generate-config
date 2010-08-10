@@ -51,9 +51,23 @@ lookup_kerberos_server() {
     fi
 }
 
+lookup_kerberos_realm() {
+    domain="$1"
+    realm=$(host -t txt _kerberos.$domain | grep -v NXDOMAIN | awk '{print $NF}'|head -1|tr -d '"')
+    if [ -z "$realm" ] ; then
+	realm=$(echo $domain | tr a-z A-Z)
+    fi
+    echo $realm
+}
+
+
 generate_config() {
-    domain="$(hostname -d)"
-    kerberosrealm=$(echo $domain | tr a-z A-Z)
+    if [ "$1" ] ; then
+	domain=$1
+    else
+	domain="$(hostname -d)"
+    fi
+    kerberosrealm=$(lookup_kerberos_realm $domain)
     ldapuri=$(lookup_ldap_uri "$domain")
     if [ -z "$ldapuri" ];  then
 	# autodetection failed
@@ -118,4 +132,4 @@ krb5_auth_timeout = 15
 EOF
 fi
 }
-generate_config
+generate_config "$@"
