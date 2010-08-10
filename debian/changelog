@@ -1,5 +1,7 @@
 sssd (1.2.1-3) UNRELEASED; urgency=low
 
+  * Look for /etc/default/sssd, not /etc/defaults/sssd in init.d
+    script (Closes: #588252).
   * Make sssd.conf generation more robust, and make sure missing SRV
     records are ignored and not handled as host names.
 
