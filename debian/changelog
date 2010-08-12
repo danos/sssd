@@ -9,8 +9,12 @@ sssd (1.2.1-3) unstable; urgency=low
     _kerberos TXT record in DNS if it exist.
   * Recommend bind9-host used by generate-config for SRV and TXT
     lookups.
+  
+  [ Morten Werner Forsbring ]
+  * Check if /etc/default/sssd is a file and executable, not a directory,
+    before sourcing in init-script. Thanks to lintian.
 
- -- Morten Werner Forsbring <werner@debian.org>  Thu, 12 Aug 2010 16:15:21 +0200
+ -- Morten Werner Forsbring <werner@debian.org>  Thu, 12 Aug 2010 16:31:14 +0200
 
 sssd (1.2.1-2) unstable; urgency=low
 
