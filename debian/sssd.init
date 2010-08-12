@@ -32,7 +32,7 @@ PIDFILE=/var/run/$NAME.pid
 # and status_of_proc is working.
 . /lib/lsb/init-functions
 
-if [ -d /etc/default/sssd ] ; then
+if [ -x /etc/default/sssd ] ; then
     . /etc/default/sssd
 fi
 
