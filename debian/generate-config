@@ -107,6 +107,7 @@ else
 fi
 
 cat <<EOF
+
 [domain/$domain]
 ; Using enumerate = true leads to high load and slow response
 enumerate = false
