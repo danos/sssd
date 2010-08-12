@@ -1,5 +1,6 @@
-sssd (1.2.1-3) UNRELEASED; urgency=low
+sssd (1.2.1-3) unstable; urgency=low
 
+  [ Petter Reinholdtsen ]
   * Look for /etc/default/sssd, not /etc/defaults/sssd in init.d
     script (Closes: #588252).
   * Make sssd.conf generation more robust, and make sure missing SRV
@@ -9,7 +10,7 @@ sssd (1.2.1-3) UNRELEASED; urgency=low
   * Recommend bind9-host used by generate-config for SRV and TXT
     lookups.
 
- -- Petter Reinholdtsen <pere@debian.org>  Sun, 08 Aug 2010 21:46:00 +0200
+ -- Morten Werner Forsbring <werner@debian.org>  Thu, 12 Aug 2010 16:15:21 +0200
 
 sssd (1.2.1-2) unstable; urgency=low
 
