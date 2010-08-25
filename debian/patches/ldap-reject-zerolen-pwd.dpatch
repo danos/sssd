@@ -1,3 +1,6 @@
+#! /bin/sh /usr/share/dpatch/dpatch-run
+
+@DPATCH@
 Patch fetched from 'https://bugzilla.redhat.com/attachment.cgi?id=439496'
 CVE-2010-2940
 
@@ -32,4 +35,3 @@ index b05e3075ce117fad17b87ffde257c80fc035b8c4..1a959d4cc45980fe5dd12db3460cc23f
      state->username = username;
 -- 
 1.7.2.1
-
