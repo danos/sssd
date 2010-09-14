@@ -1,6 +1,10 @@
 sssd (1.2.3-1) unstable; urgency=low
 
   * New Upstream Version
+    - Speed up user login when using LDAP with groups with many members
+      (Closes: #595564)
+  * Disable patch to ensure LDAP authentication never accept a zero
+    length password, which is now included upstream.
 
  -- Petter Reinholdtsen <pere@minerva.hungry.com>  Tue, 14 Sep 2010 12:06:37 +0200
 
