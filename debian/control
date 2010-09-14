@@ -65,7 +65,7 @@ Depends: ${shlibs:Depends}, ${misc:Depends}, ${python:Depends}
 Provides: ${python:Provides}
 Recommends: sssd
 XB-Python-Version: ${python:Versions}
-Description: Pam module for the System Security Services Daemon 
+Description: Python module for the System Security Services Daemon
  Provides a set of daemons to manage access to remote directories and
  authentication mechanisms. It provides an NSS and PAM interface toward
  the system and a pluggable backend system to connect to multiple different

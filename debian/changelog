@@ -5,6 +5,7 @@ sssd (1.2.3-1) unstable; urgency=low
       (Closes: #595564)
   * Disable patch to ensure LDAP authentication never accept a zero
     length password, which is now included upstream.
+  * Correct package description for python-sss (Closes: #596215).
 
  -- Petter Reinholdtsen <pere@minerva.hungry.com>  Tue, 14 Sep 2010 12:06:37 +0200
 
