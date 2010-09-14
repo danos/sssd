@@ -212,6 +212,18 @@ int open_debug_file_ex(const char *filename, FILE **filep);
 int open_debug_file(void);
 int rotate_debug_files(void);
 
+/* From sss_log.c */
+#define SSS_LOG_EMERG   0   /* system is unusable */
+#define SSS_LOG_ALERT   1   /* action must be taken immediately */
+#define SSS_LOG_CRIT    2   /* critical conditions */
+#define SSS_LOG_ERR     3   /* error conditions */
+#define SSS_LOG_WARNING 4   /* warning conditions */
+#define SSS_LOG_NOTICE  5   /* normal but significant condition */
+#define SSS_LOG_INFO    6   /* informational */
+#define SSS_LOG_DEBUG   7   /* debug-level messages */
+
+void sss_log(int priority, const char *format, ...);
+
 /* from server.c */
 struct main_context {
     struct tevent_context *event_ctx;
@@ -319,4 +331,23 @@ int split_on_separator(TALLOC_CTX *mem_ctx, const char *str,
                        const char sep, bool trim, char ***_list, int *size);
 
 char **parse_args(const char *str);
+
+
+/* Copy a NULL-terminated string list
+ * Returns NULL on out of memory error or invalid input
+ */
+char **dup_string_list(TALLOC_CTX *memctx, const char **str_list);
+
+/* Take two string lists (terminated on a NULL char*)
+ * and return up to three arrays of strings based on
+ * shared ownership.
+ *
+ * Pass NULL to any return type you don't care about
+ */
+errno_t diff_string_lists(TALLOC_CTX *memctx,
+                          char **string1,
+                          char **string2,
+                          char ***string1_only,
+                          char ***string2_only,
+                          char ***both_strings);
 #endif /* __SSSD_UTIL_H__ */

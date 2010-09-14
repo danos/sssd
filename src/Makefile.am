@@ -82,7 +82,8 @@ if HAVE_CHECK
         find_uid-tests \
         auth-tests \
         ipa_ldap_opt-tests \
-        simple_access-tests
+        simple_access-tests \
+        util-tests
 endif
 
 check_PROGRAMS = \
@@ -218,7 +219,8 @@ AM_CPPFLAGS = -Wall \
 EXTRA_DIST = build/config.rpath
 
 SSSD_DEBUG_OBJ = \
-    util/debug.c
+    util/debug.c \
+    util/sss_log.c
 
 SSSD_UTIL_OBJ = \
     confdb/confdb.c \
@@ -676,6 +678,17 @@ simple_access_tests_CFLAGS = \
 simple_access_tests_LDADD = \
     $(SSSD_LIBS) \
     $(CHECK_LIBS)
+
+util_tests_SOURCES = \
+    tests/util-tests.c \
+    $(SSSD_UTIL_OBJ)
+util_tests_CFLAGS = \
+    $(AM_CFLAGS) \
+    $(CHECK_CFLAGS)
+util_tests_LDADD = \
+    $(SSSD_LIBS) \
+    $(CHECK_LIBS) \
+    libsss_test_common.la
 
 endif
 

@@ -153,11 +153,14 @@ struct tevent_req *sdap_connect_send(TALLOC_CTX *memctx,
             DEBUG(3, ("ldap_start_tls failed: [%s] [%s]\n",
                       ldap_err2string(lret),
                       errmsg));
+            sss_log(SSS_LOG_ERR, "Could not start TLS. %s", errmsg);
             ldap_memfree(errmsg);
         }
         else {
             DEBUG(3, ("ldap_start_tls failed: [%s]\n",
                       ldap_err2string(lret)));
+            sss_log(SSS_LOG_ERR, "Could not start TLS. "
+                                 "Check for certificate issues.");
         }
         goto fail;
     }
@@ -236,11 +239,14 @@ static void sdap_connect_done(struct sdap_op *op,
             DEBUG(3, ("ldap_install_tls failed: [%s] [%s]\n",
                       ldap_err2string(ret),
                       tlserr));
+            sss_log(SSS_LOG_ERR, "Could not start TLS encryption. %s", tlserr);
             ldap_memfree(tlserr);
         }
         else {
             DEBUG(3, ("ldap_install_tls failed: [%s]\n",
                       ldap_err2string(ret)));
+            sss_log(SSS_LOG_ERR, "Could not start TLS encryption. "
+                                 "Check for certificate issues.");
         }
 
         state->result = ret;
@@ -571,7 +577,7 @@ static int sdap_sasl_interact(LDAP *ld, unsigned flags,
 
         switch (in->id) {
         case SASL_CB_GETREALM:
-        case SASL_CB_AUTHNAME:
+        case SASL_CB_USER:
         case SASL_CB_PASS:
             if (in->defresult) {
                 in->result = in->defresult;
@@ -580,7 +586,7 @@ static int sdap_sasl_interact(LDAP *ld, unsigned flags,
             }
             in->len = strlen(in->result);
             break;
-        case SASL_CB_USER:
+        case SASL_CB_AUTHNAME:
             if (state->sasl_user) {
                 in->result = state->sasl_user;
             } else if (in->defresult) {
@@ -1052,8 +1058,20 @@ static void sdap_cli_rootdse_done(struct tevent_req *subreq)
             return;
         }
 
-        tevent_req_error(req, ret);
-        return;
+        else if (ret == ENOENT) {
+            /* RootDSE was not available on
+             * the server.
+             * Continue, and just assume that the
+             * features requested by the config
+             * work properly.
+             */
+            state->use_rootdse = false;
+        }
+
+        else {
+            tevent_req_error(req, ret);
+            return;
+        }
     }
 
     sasl_mech = dp_opt_get_string(state->opts->basic, SDAP_SASL_MECH);
