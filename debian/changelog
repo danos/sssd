@@ -1,8 +1,20 @@
 sssd (1.2.3-1) unstable; urgency=low
 
-  * New Upstream Version
-    - Speed up user login when using LDAP with groups with many members
-      (Closes: #595564)
+  * New Upstream Version 1.2.3:
+    - Resolves CVE-2010-2940.
+  * New Upstream Version 1.2.2:
+    - The LDAP provider no longer requires access to the LDAP
+      RootDSE. If it is unavailable, we will continue on with our best
+      guess.
+    - The LDAP provider will now log issues with TLS and GSSAPI to the
+      syslog.
+    - Significant performance improvement when performing initgroups
+      on users who are members of large groups in LDAP (Closes:
+      #595564).
+    - The sss_client will now reconnect properly to the SSSD if the
+      daemon is restarted.
+      * This resolves an issue causing GDM to crash when logging out
+        of a user after the SSSD had been restarted.
   * Disable patch to ensure LDAP authentication never accept a zero
     length password, which is now included upstream.
   * Correct package description for python-sss (Closes: #596215).
