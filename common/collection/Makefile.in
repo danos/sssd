@@ -305,7 +305,7 @@ libcollection_la_SOURCES = \
     ../trace/trace.h
 
 libcollection_la_LDFLAGS = \
-    -version-info 1:0:0
+    -version-info 2:0:0
 
 collection_ut_SOURCES = collection_ut.c
 collection_ut_LDADD = libcollection.la

@@ -637,6 +637,17 @@ struct tevent_req *sdap_get_rootdse_send(TALLOC_CTX *memctx,
 {
     struct tevent_req *req, *subreq;
     struct sdap_get_rootdse_state *state;
+    const char *attrs[] = {
+	    "*",
+	    "altServer",
+	    "namingContexts",
+	    "supportedControl",
+	    "supportedExtension",
+	    "supportedFeatures",
+	    "supportedLDAPVersion",
+	    "supportedSASLMechanisms",
+	    NULL
+    };
 
     DEBUG(9, ("Getting rootdse\n"));
 
@@ -650,7 +661,7 @@ struct tevent_req *sdap_get_rootdse_send(TALLOC_CTX *memctx,
 
     subreq = sdap_get_generic_send(state, ev, opts, sh,
                                    "", LDAP_SCOPE_BASE,
-                                   "(objectclass=*)", NULL, NULL, 0);
+                                   "(objectclass=*)", attrs, NULL, 0);
     if (!subreq) {
         talloc_zfree(req);
         return NULL;
@@ -678,7 +689,9 @@ static void sdap_get_rootdse_done(struct tevent_req *subreq)
     }
 
     if (num_results == 0 || !results) {
-        DEBUG(2, ("No RootDSE for server ?!\n"));
+        DEBUG(2, ("RootDSE could not be retrieved. "
+                  "Please check that anonymous access to RootDSE is allowed\n"
+              ));
         tevent_req_error(req, ENOENT);
         return;
     }
@@ -751,7 +764,9 @@ struct tevent_req *sdap_get_generic_send(TALLOC_CTX *memctx,
 {
     struct tevent_req *req = NULL;
     struct sdap_get_generic_state *state = NULL;
+    char *errmsg;
     int lret;
+    int optret;
     int ret;
     int msgid;
 
@@ -792,7 +807,21 @@ struct tevent_req *sdap_get_generic_send(TALLOC_CTX *memctx,
         DEBUG(3, ("ldap_search_ext failed: %s\n", ldap_err2string(lret)));
         if (lret == LDAP_SERVER_DOWN) {
             ret = ETIMEDOUT;
-        } else {
+            optret = ldap_get_option(state->sh->ldap,
+                                     SDAP_DIAGNOSTIC_MESSAGE,
+                                     (void*)&errmsg);
+            if (optret == LDAP_SUCCESS) {
+                DEBUG(3, ("Connection error: %s\n", errmsg));
+                sss_log(SSS_LOG_ERR, "LDAP connection error: %s", errmsg);
+                ldap_memfree(errmsg);
+            }
+            else {
+                sss_log(SSS_LOG_ERR, "LDAP connection error, %s",
+                                     ldap_err2string(lret));
+            }
+        }
+
+        else {
             ret = EIO;
         }
         goto fail;
