@@ -2,6 +2,7 @@ sssd (1.3.1-1) unstable; urgency=low
 
   [ Morten Werner Forsbring ]
   * New Upstream Version 1.3.1.
+    - Added build-dependency to libnl-1.
 
   [ Petter Reinholdtsen ]
   * New Upstream Version 1.2.3:
@@ -24,7 +25,7 @@ sssd (1.3.1-1) unstable; urgency=low
   * Correct package description for python-sss (Closes: #596215).
   * Update Standards-Version from 3.8.4 to 3.9.1.  No changes needed.
 
- -- Morten Werner Forsbring <werner@debian.org>  Thu, 23 Sep 2010 07:36:18 +0200
+ -- Morten Werner Forsbring <werner@debian.org>  Thu, 23 Sep 2010 18:24:12 +0200
 
 sssd (1.2.1-4) unstable; urgency=low
 
