@@ -2,7 +2,7 @@
 /* config.h.in.  Generated from configure.ac by autoheader.  */
 
 /* Absolute path to the build directory */
-#define ABS_BUILD_DIR "/home/bos/sgallagh/workspace/sssd.upstream/sssd-1.2.1/src"
+#define ABS_BUILD_DIR "/home/bos/sgallagh/workspace/sssd.upstream/sssd-1.3.1/src"
 
 /* Path to the SSSD data provider plugins */
 #define DATA_PROVIDER_PLUGINS_PATH ""LIBDIR"/sssd"
@@ -78,6 +78,12 @@
 /* Define to 1 if you have the <ldb_module.h> header file. */
 #define HAVE_LDB_MODULE_H 1
 
+/* Build with libnetlink support */
+#define HAVE_LIBNL 1
+
+/* Does libnl have pre-1.1 API? */
+/* #undef HAVE_LIBNL_OLDER_THAN_1_1 */
+
 /* Define if libpcre version is less than 7 */
 /* #undef HAVE_LIBPCRE_LESSER_THAN_7 */
 
@@ -86,6 +92,18 @@
 
 /* Define to 1 if you have the <memory.h> header file. */
 #define HAVE_MEMORY_H 1
+
+/* Define to 1 if you have the <netlink.h> header file. */
+/* #undef HAVE_NETLINK_H */
+
+/* Does libnl have nl_set_passcred? */
+#define HAVE_NL_SET_PASSCRED 1
+
+/* Does libnl have nl_socket_add_membership? */
+#define HAVE_NL_SOCKET_ADD_MEMBERSHIP 1
+
+/* Does libnl have nl_socket_modify_cb? */
+#define HAVE_NL_SOCKET_MODIFY_CB 1
 
 /* flush nscd cache after local domain operations */
 #define HAVE_NSCD 1
@@ -200,7 +218,7 @@
 #define PACKAGE_NAME "sss_daemon"
 
 /* Define to the full name and version of this package. */
-#define PACKAGE_STRING "sss_daemon 1.2.1"
+#define PACKAGE_STRING "sss_daemon 1.3.1"
 
 /* Define to the one symbol short name of this package. */
 #define PACKAGE_TARNAME "sss_daemon"
@@ -209,7 +227,7 @@
 #define PACKAGE_URL ""
 
 /* Define to the version of this package. */
-#define PACKAGE_VERSION "1.2.1"
+#define PACKAGE_VERSION "1.3.1"
 
 /* Where to store pid files for the SSSD */
 #define PID_PATH ""VARDIR"/run"
@@ -254,7 +272,7 @@
 #define USE_KEYRING 1
 
 /* Version number of package */
-#define VERSION "1.2.1"
+#define VERSION "1.3.1"
 
 /* Define to `short' if <sys/types.h> does not define. */
 /* #undef int16_t */

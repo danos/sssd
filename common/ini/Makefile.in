@@ -40,8 +40,8 @@ host_triplet = @host@
 @HAVE_GCC_TRUE@        -Wall -Wshadow -Wstrict-prototypes -Wpointer-arith -Wcast-qual \
 @HAVE_GCC_TRUE@        -Wcast-align -Wwrite-strings
 
-check_PROGRAMS = ini_config_ut$(EXEEXT)
-TESTS = ini_config_ut$(EXEEXT)
+check_PROGRAMS = ini_config_ut$(EXEEXT) ini_comment_ut$(EXEEXT)
+TESTS = ini_config_ut$(EXEEXT) ini_comment_ut$(EXEEXT)
 subdir = .
 DIST_COMMON = $(am__configure_deps) $(dist_include_HEADERS) \
 	$(dist_noinst_DATA) $(dist_pkgconfig_DATA) \
@@ -88,7 +88,9 @@ am__installdirs = "$(DESTDIR)$(libdir)" "$(DESTDIR)$(pkgconfigdir)" \
 	"$(DESTDIR)$(includedir)"
 LTLIBRARIES = $(lib_LTLIBRARIES)
 libini_config_la_DEPENDENCIES =
-am_libini_config_la_OBJECTS = ini_config.lo
+am_libini_config_la_OBJECTS = ini_config.lo ini_get_value.lo \
+	ini_get_array.lo ini_list.lo ini_print.lo ini_parse.lo \
+	ini_metadata.lo ini_comment.lo
 libini_config_la_OBJECTS = $(am_libini_config_la_OBJECTS)
 AM_V_lt = $(am__v_lt_$(V))
 am__v_lt_ = $(am__v_lt_$(AM_DEFAULT_VERBOSITY))
@@ -97,6 +99,9 @@ libini_config_la_LINK = $(LIBTOOL) $(AM_V_lt) --tag=CC \
 	$(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=link $(CCLD) \
 	$(AM_CFLAGS) $(CFLAGS) $(libini_config_la_LDFLAGS) $(LDFLAGS) \
 	-o $@
+am_ini_comment_ut_OBJECTS = ini_comment_ut.$(OBJEXT)
+ini_comment_ut_OBJECTS = $(am_ini_comment_ut_OBJECTS)
+ini_comment_ut_DEPENDENCIES = libini_config.la
 am_ini_config_ut_OBJECTS = ini_config_ut.$(OBJEXT)
 ini_config_ut_OBJECTS = $(am_ini_config_ut_OBJECTS)
 ini_config_ut_DEPENDENCIES = libini_config.la
@@ -126,8 +131,10 @@ am__v_CCLD_0 = @echo "  CCLD  " $@;
 AM_V_GEN = $(am__v_GEN_$(V))
 am__v_GEN_ = $(am__v_GEN_$(AM_DEFAULT_VERBOSITY))
 am__v_GEN_0 = @echo "  GEN   " $@;
-SOURCES = $(libini_config_la_SOURCES) $(ini_config_ut_SOURCES)
-DIST_SOURCES = $(libini_config_la_SOURCES) $(ini_config_ut_SOURCES)
+SOURCES = $(libini_config_la_SOURCES) $(ini_comment_ut_SOURCES) \
+	$(ini_config_ut_SOURCES)
+DIST_SOURCES = $(libini_config_la_SOURCES) $(ini_comment_ut_SOURCES) \
+	$(ini_config_ut_SOURCES)
 DATA = $(dist_noinst_DATA) $(dist_pkgconfig_DATA)
 HEADERS = $(dist_include_HEADERS)
 ETAGS = etags
@@ -265,7 +272,9 @@ TRACE_LEVEL = @TRACE_VAR@
 topdir = $(srcdir)/..
 topbuilddir = $(builddir)/..
 AM_CFLAGS = $(am__append_1)
-AM_CPPFLAGS = -I$(topdir) -I$(topdir)/trace -I$(topdir)/collection $(TRACE_LEVEL)
+AM_CPPFLAGS = -I$(topdir) -I$(topdir)/trace -I$(topdir)/collection \
+              -I$(topdir)/path_utils -I$(topdir)/refarray $(TRACE_LEVEL)
+
 ACLOCAL_AMFLAGS = -I m4
 
 # Set up the pkg-config file
@@ -284,17 +293,35 @@ dist_include_HEADERS = \
 # Build library
 lib_LTLIBRARIES = libini_config.la
 libini_config_la_SOURCES = \
-    ini_config.c
+    ini_config.c \
+    ini_config.h \
+    ini_get_value.c \
+    ini_get_array.c \
+    ini_list.c \
+    ini_print.c \
+    ini_parse.c \
+    ini_parse.h \
+    ini_metadata.c \
+    ini_metadata.h \
+    ini_defines.h \
+    ini_comment.c \
+    ini_comment.h
 
 libini_config_la_LIBADD = \
     -L$(topbuilddir)/collection \
-    -lcollection
+    -L$(topbuilddir)/path_utils \
+    -L$(topbuilddir)/refarray \
+    -lcollection \
+    -lref_array \
+    -lpath_utils
 
 libini_config_la_LDFLAGS = \
-    -version-info 1:0:0
+    -version-info 2:0:0
 
 ini_config_ut_SOURCES = ini_config_ut.c
-ini_config_ut_LDADD = libini_config.la -lcollection
+ini_config_ut_LDADD = libini_config.la -L$(topbuilddir)/collection -lcollection
+ini_comment_ut_SOURCES = ini_comment_ut.c
+ini_comment_ut_LDADD = libini_config.la
 all: config.h
 	$(MAKE) $(AM_MAKEFLAGS) all-am
 
@@ -397,6 +424,9 @@ clean-checkPROGRAMS:
 	list=`for p in $$list; do echo "$$p"; done | sed 's/$(EXEEXT)$$//'`; \
 	echo " rm -f" $$list; \
 	rm -f $$list
+ini_comment_ut$(EXEEXT): $(ini_comment_ut_OBJECTS) $(ini_comment_ut_DEPENDENCIES) 
+	@rm -f ini_comment_ut$(EXEEXT)
+	$(AM_V_CCLD)$(LINK) $(ini_comment_ut_OBJECTS) $(ini_comment_ut_LDADD) $(LIBS)
 ini_config_ut$(EXEEXT): $(ini_config_ut_OBJECTS) $(ini_config_ut_DEPENDENCIES) 
 	@rm -f ini_config_ut$(EXEEXT)
 	$(AM_V_CCLD)$(LINK) $(ini_config_ut_OBJECTS) $(ini_config_ut_LDADD) $(LIBS)
@@ -407,8 +437,16 @@ mostlyclean-compile:
 distclean-compile:
 	-rm -f *.tab.c
 
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/ini_comment.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/ini_comment_ut.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/ini_config.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/ini_config_ut.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/ini_get_array.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/ini_get_value.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/ini_list.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/ini_metadata.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/ini_parse.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/ini_print.Plo@am__quote@
 
 .c.o:
 @am__fastdepCC_TRUE@	$(AM_V_CC)$(COMPILE) -MT $@ -MD -MP -MF $(DEPDIR)/$*.Tpo -c -o $@ $<

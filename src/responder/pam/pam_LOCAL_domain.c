@@ -50,7 +50,6 @@ struct LOCAL_request {
     struct tevent_context *ev;
     struct sysdb_ctx *dbctx;
     struct sysdb_attrs *mod_attrs;
-    struct sysdb_handle *handle;
 
     struct ldb_result *res;
     int error;
@@ -70,89 +69,8 @@ static void prepare_reply(struct LOCAL_request *lreq)
     lreq->preq->callback(lreq->preq);
 }
 
-static void set_user_attr_done(struct tevent_req *req)
-{
-    struct LOCAL_request *lreq;
-    int ret;
-
-    lreq = tevent_req_callback_data(req, struct LOCAL_request);
-
-    ret = sysdb_transaction_commit_recv(req);
-    if (ret) {
-        DEBUG(2, ("set_user_attr failed.\n"));
-        lreq->error =ret;
-    }
-
-    prepare_reply(lreq);
-}
-
-static void set_user_attr_req_done(struct tevent_req *subreq);
-static void set_user_attr_req(struct tevent_req *req)
-{
-    struct LOCAL_request *lreq = tevent_req_callback_data(req,
-                                                          struct LOCAL_request);
-    struct tevent_req *subreq;
-    int ret;
-
-    DEBUG(4, ("entering set_user_attr_req\n"));
-
-    ret = sysdb_transaction_recv(req, lreq, &lreq->handle);
-    if (ret) {
-        lreq->error = ret;
-        return prepare_reply(lreq);
-    }
-
-    subreq = sysdb_set_user_attr_send(lreq, lreq->ev, lreq->handle,
-                                      lreq->preq->domain,
-                                      lreq->preq->pd->user,
-                                      lreq->mod_attrs, SYSDB_MOD_REP);
-    if (!subreq) {
-        /* cancel transaction */
-        talloc_zfree(lreq->handle);
-        lreq->error = ret;
-        return prepare_reply(lreq);
-    }
-    tevent_req_set_callback(subreq, set_user_attr_req_done, lreq);
-}
-
-static void set_user_attr_req_done(struct tevent_req *subreq)
-{
-    struct LOCAL_request *lreq = tevent_req_callback_data(subreq,
-                                                          struct LOCAL_request);
-    struct tevent_req *req;
-    int ret;
-
-    ret = sysdb_set_user_attr_recv(subreq);
-    talloc_zfree(subreq);
-
-    DEBUG(4, ("set_user_attr_callback, status [%d][%s]\n", ret, strerror(ret)));
-
-    if (ret) {
-        lreq->error = ret;
-        goto fail;
-    }
-
-    req = sysdb_transaction_commit_send(lreq, lreq->ev, lreq->handle);
-    if (!req) {
-        lreq->error = ENOMEM;
-        goto fail;
-    }
-    tevent_req_set_callback(req, set_user_attr_done, lreq);
-
-    return;
-
-fail:
-    DEBUG(2, ("set_user_attr failed.\n"));
-
-    /* cancel transaction */
-    talloc_zfree(lreq->handle);
-
-    prepare_reply(lreq);
-}
-
 static void do_successful_login(struct LOCAL_request *lreq)
 {
-    struct tevent_req *req;
     int ret;
 
     lreq->mod_attrs = sysdb_new_attrs(lreq);
@@ -168,23 +86,19 @@ static void do_successful_login(struct LOCAL_request *lreq)
     NEQ_CHECK_OR_JUMP(ret, EOK, ("sysdb_attrs_add_long failed.\n"),
                       lreq->error, ret, done);
 
-    req = sysdb_transaction_send(lreq, lreq->ev, lreq->dbctx);
-    if (!req) {
-        lreq->error = ENOMEM;
-        goto done;
-    }
-    tevent_req_set_callback(req, set_user_attr_req, lreq);
-
-    return;
+    ret = sysdb_set_user_attr(lreq, lreq->dbctx,
+                              lreq->preq->domain,
+                              lreq->preq->pd->user,
+                              lreq->mod_attrs, SYSDB_MOD_REP);
+    NEQ_CHECK_OR_JUMP(ret, EOK, ("sysdb_set_user_attr failed.\n"),
+                      lreq->error, ret, done);
 
 done:
-
-    prepare_reply(lreq);
+    return;
 }
 
 static void do_failed_login(struct LOCAL_request *lreq)
 {
-    struct tevent_req *req;
     int ret;
     int failedLoginAttempts;
     struct pam_data *pd;
@@ -214,18 +128,15 @@ static void do_failed_login(struct LOCAL_request *lreq)
     NEQ_CHECK_OR_JUMP(ret, EOK, ("sysdb_attrs_add_long failed.\n"),
                       lreq->error, ret, done);
 
-    req = sysdb_transaction_send(lreq, lreq->ev, lreq->dbctx);
-    if (!req) {
-        lreq->error = ENOMEM;
-        goto done;
-    }
-    tevent_req_set_callback(req, set_user_attr_req, lreq);
-
-    return;
+    ret = sysdb_set_user_attr(lreq, lreq->dbctx,
+                              lreq->preq->domain,
+                              lreq->preq->pd->user,
+                              lreq->mod_attrs, SYSDB_MOD_REP);
+    NEQ_CHECK_OR_JUMP(ret, EOK, ("sysdb_set_user_attr failed.\n"),
+                      lreq->error, ret, done);
 
 done:
-
-    prepare_reply(lreq);
+    return;
 }
 
 static void do_pam_acct_mgmt(struct LOCAL_request *lreq)
@@ -242,13 +153,10 @@ static void do_pam_acct_mgmt(struct LOCAL_request *lreq)
         (strncasecmp(disabled, "no",2) != 0) ) {
         pd->pam_status = PAM_PERM_DENIED;
     }
-
-    prepare_reply(lreq);
 }
 
 static void do_pam_chauthtok(struct LOCAL_request *lreq)
 {
-    struct tevent_req *req;
     int ret;
     char *newauthtok;
     char *salt;
@@ -266,7 +174,7 @@ static void do_pam_chauthtok(struct LOCAL_request *lreq)
     if (strlen(newauthtok) == 0) {
         /* TODO: should we allow null passwords via a config option ? */
         DEBUG(1, ("Empty passwords are not allowed!\n"));
-        ret = EINVAL;
+        lreq->error = EINVAL;
         goto done;
     }
 
@@ -294,40 +202,67 @@ static void do_pam_chauthtok(struct LOCAL_request *lreq)
     NEQ_CHECK_OR_JUMP(ret, EOK, ("sysdb_attrs_add_long failed.\n"),
                       lreq->error, ret, done);
 
-    req = sysdb_transaction_send(lreq, lreq->ev, lreq->dbctx);
-    if (!req) {
-        lreq->error = ENOMEM;
-        goto done;
-    }
-    tevent_req_set_callback(req, set_user_attr_req, lreq);
+    ret = sysdb_set_user_attr(lreq, lreq->dbctx,
+                              lreq->preq->domain,
+                              lreq->preq->pd->user,
+                              lreq->mod_attrs, SYSDB_MOD_REP);
+    NEQ_CHECK_OR_JUMP(ret, EOK, ("sysdb_set_user_attr failed.\n"),
+                      lreq->error, ret, done);
 
-    return;
 done:
-
-    prepare_reply(lreq);
+    return;
 }
 
-static void local_handler_callback(void *pvt, int ldb_status,
-                                   struct ldb_result *res)
+int LOCAL_pam_handler(struct pam_auth_req *preq)
 {
     struct LOCAL_request *lreq;
+    static const char *attrs[] = {SYSDB_NAME,
+                                  SYSDB_PWD,
+                                  SYSDB_DISABLED,
+                                  SYSDB_LAST_LOGIN,
+                                  "lastPasswordChange",
+                                  "accountExpires",
+                                  SYSDB_FAILED_LOGIN_ATTEMPTS,
+                                  "passwordHint",
+                                  "passwordHistory",
+                                  SYSDB_LAST_FAILED_LOGIN,
+                                  NULL};
+    struct ldb_result *res;
     const char *username = NULL;
     const char *password = NULL;
     char *newauthtok = NULL;
     char *new_hash = NULL;
     char *authtok = NULL;
-    struct pam_data *pd;
+    struct pam_data *pd = preq->pd;
     int ret;
 
-    lreq = talloc_get_type(pvt, struct LOCAL_request);
-    pd = lreq->preq->pd;
+    DEBUG(4, ("LOCAL pam handler.\n"));
 
-    DEBUG(4, ("pam_handler_callback called with ldb_status [%d].\n",
-              ldb_status));
+    lreq = talloc_zero(preq, struct LOCAL_request);
+    if (!lreq) {
+        return ENOMEM;
+    }
 
-    NEQ_CHECK_OR_JUMP(ldb_status, LDB_SUCCESS, ("ldb search failed.\n"),
-                      lreq->error, sysdb_error_to_errno(ldb_status), done);
+    ret = sysdb_get_ctx_from_list(preq->cctx->rctx->db_list,
+                                  preq->domain, &lreq->dbctx);
+    if (ret != EOK) {
+        DEBUG(0, ("Fatal: Sysdb CTX not found for this domain!\n"));
+        talloc_free(lreq);
+        return ret;
+    }
+    lreq->ev = preq->cctx->ev;
+    lreq->preq = preq;
 
+    pd->pam_status = PAM_SUCCESS;
+
+    ret = sysdb_get_user_attr(lreq, lreq->dbctx,
+                              preq->domain, preq->pd->user,
+                              attrs, &res);
+    if (ret != EOK) {
+        DEBUG(1, ("sysdb_get_user_attr failed.\n"));
+        talloc_free(lreq);
+        return ret;
+    }
 
     if (res->count < 1) {
         DEBUG(4, ("No user found with filter ["SYSDB_PWNAM_FILTER"]\n",
@@ -381,7 +316,7 @@ static void local_handler_callback(void *pvt, int ldb_status,
             if (strcmp(new_hash, password) != 0) {
                 DEBUG(1, ("Passwords do not match.\n"));
                 do_failed_login(lreq);
-                return;
+                goto done;
             }
 
             break;
@@ -390,15 +325,12 @@ static void local_handler_callback(void *pvt, int ldb_status,
     switch (pd->cmd) {
         case SSS_PAM_AUTHENTICATE:
             do_successful_login(lreq);
-            return;
             break;
         case SSS_PAM_CHAUTHTOK:
             do_pam_chauthtok(lreq);
-            return;
             break;
         case SSS_PAM_ACCT_MGMT:
             do_pam_acct_mgmt(lreq);
-            return;
             break;
         case SSS_PAM_SETCRED:
             break;
@@ -424,53 +356,6 @@ done:
         memset(newauthtok, 0, pd->newauthtok_size);
 
     prepare_reply(lreq);
-}
-
-int LOCAL_pam_handler(struct pam_auth_req *preq)
-{
-    int ret;
-    struct LOCAL_request *lreq;
-
-    static const char *attrs[] = {SYSDB_NAME,
-                                  SYSDB_PWD,
-                                  SYSDB_DISABLED,
-                                  SYSDB_LAST_LOGIN,
-                                  "lastPasswordChange",
-                                  "accountExpires",
-                                  SYSDB_FAILED_LOGIN_ATTEMPTS,
-                                  "passwordHint",
-                                  "passwordHistory",
-                                  SYSDB_LAST_FAILED_LOGIN,
-                                  NULL};
-
-    DEBUG(4, ("LOCAL pam handler.\n"));
-
-    lreq = talloc_zero(preq, struct LOCAL_request);
-    if (!lreq) {
-        return ENOMEM;
-    }
-
-    ret = sysdb_get_ctx_from_list(preq->cctx->rctx->db_list,
-                                  preq->domain, &lreq->dbctx);
-    if (ret != EOK) {
-        DEBUG(0, ("Fatal: Sysdb CTX not found for this domain!\n"));
-        talloc_free(lreq);
-        return ret;
-    }
-    lreq->ev = preq->cctx->ev;
-    lreq->preq = preq;
-
-    preq->pd->pam_status = PAM_SUCCESS;
-
-    ret = sysdb_get_user_attr(lreq, lreq->dbctx,
-                              preq->domain, preq->pd->user, attrs,
-                              local_handler_callback, lreq);
-
-    if (ret != EOK) {
-        DEBUG(1, ("sysdb_get_user_attr failed.\n"));
-        talloc_free(lreq);
-        return ret;
-    }
-
     return EOK;
 }
+

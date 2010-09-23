@@ -228,7 +228,8 @@ void sig_term(int sig)
 		kill(-getpgrp(), SIGTERM);
 	}
 #endif
-	exit(0);
+    sss_log(SSS_LOG_INFO, "Shutting down");
+    exit(0);
 }
 
 #ifndef HAVE_PRCTL
@@ -261,6 +262,9 @@ static void setup_signals(void)
 
 	/* We are no longer interested in USR1 */
 	BlockSignals(true, SIGUSR1);
+
+	/* We are no longer interested in SIGINT except for monitor */
+	BlockSignals(true, SIGINT);
 
 #if defined(SIGUSR2)
 	/* We are no longer interested in USR2 */
@@ -459,6 +463,8 @@ int server_setup(const char *name, int flags,
             return ret;
         }
     }
+
+    sss_log(SSS_LOG_INFO, "Starting up");
 
     DEBUG(3, ("CONFDB: %s\n", conf_db));
 

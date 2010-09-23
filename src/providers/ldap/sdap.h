@@ -80,6 +80,8 @@ struct ldap_cb_data {
 struct sdap_handle {
     LDAP *ldap;
     bool connected;
+    /* Authentication ticket expiration time (if any) */
+    time_t expire_time;
 
     struct sdap_fd_events *sdap_fd_events;
 
@@ -144,6 +146,7 @@ enum sdap_basic_opt {
     SDAP_GROUP_SEARCH_SCOPE,
     SDAP_GROUP_SEARCH_FILTER,
     SDAP_SCHEMA,
+    SDAP_OFFLINE_TIMEOUT,
     SDAP_FORCE_UPPER_CASE_REALM,
     SDAP_ENUM_REFRESH_TIMEOUT,
     SDAP_CACHE_PURGE_TIMEOUT,
@@ -160,8 +163,8 @@ enum sdap_basic_opt {
     SDAP_REFERRALS,
     SDAP_ACCOUNT_CACHE_EXPIRATION,
     SDAP_DNS_SERVICE_NAME,
-    SDAP_ACCESS_FILTER,
     SDAP_KRB5_TICKET_LIFETIME,
+    SDAP_ACCESS_FILTER,
 
     SDAP_OPTS_BASIC /* opts counter */
 };

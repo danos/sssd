@@ -165,9 +165,10 @@ int be_fo_add_service(struct be_ctx *ctx, const char *service_name);
 int be_fo_service_add_callback(TALLOC_CTX *memctx,
                                struct be_ctx *ctx, const char *service_name,
                                be_svc_callback_fn_t *fn, void *private_data);
+int be_fo_get_server_count(struct be_ctx *ctx, const char *service_name);
 int be_fo_add_srv_server(struct be_ctx *ctx, const char *service_name,
                          const char *query_service, const char *proto,
-                         const char *domain, void *user_data);
+                         void *user_data);
 int be_fo_add_server(struct be_ctx *ctx, const char *service_name,
                      const char *server, int port, void *user_data);
 
@@ -176,7 +177,14 @@ struct tevent_req *be_resolve_server_send(TALLOC_CTX *memctx,
                                           struct be_ctx *ctx,
                                           const char *service_name);
 int be_resolve_server_recv(struct tevent_req *req, struct fo_server **srv);
+/*
+ * Instruct fail-over to try next server on the next connect attempt.
+ * Should be used after connection to service was unexpectedly dropped
+ * but there is no authoritative information on whether active server is down.
+ */
+void be_fo_try_next_server(struct be_ctx *ctx, const char *service_name);
 
 int be_fo_run_callbacks_at_next_request(struct be_ctx *ctx,
                                         const char *service_name);
+
 #endif /* __DP_BACKEND_H___ */

@@ -138,6 +138,7 @@ struct tevent_req *sdap_connect_send(TALLOC_CTX *memctx,
     /* if we do not use start_tls the connection is not really connected yet
      * just fake an async procedure and leave connection to the bind call */
     if (!use_start_tls) {
+        tevent_req_done(req);
         tevent_req_post(req, ev);
         return req;
     }
@@ -153,11 +154,14 @@ struct tevent_req *sdap_connect_send(TALLOC_CTX *memctx,
             DEBUG(3, ("ldap_start_tls failed: [%s] [%s]\n",
                       ldap_err2string(lret),
                       errmsg));
+            sss_log(SSS_LOG_ERR, "Could not start TLS. %s", errmsg);
             ldap_memfree(errmsg);
         }
         else {
             DEBUG(3, ("ldap_start_tls failed: [%s]\n",
                       ldap_err2string(lret)));
+            sss_log(SSS_LOG_ERR, "Could not start TLS. "
+                                 "Check for certificate issues.");
         }
         goto fail;
     }
@@ -236,11 +240,14 @@ static void sdap_connect_done(struct sdap_op *op,
             DEBUG(3, ("ldap_install_tls failed: [%s] [%s]\n",
                       ldap_err2string(ret),
                       tlserr));
+            sss_log(SSS_LOG_ERR, "Could not start TLS encryption. %s", tlserr);
             ldap_memfree(tlserr);
         }
         else {
             DEBUG(3, ("ldap_install_tls failed: [%s]\n",
                       ldap_err2string(ret)));
+            sss_log(SSS_LOG_ERR, "Could not start TLS encryption. "
+                                 "Check for certificate issues.");
         }
 
         state->result = ret;
@@ -257,16 +264,8 @@ int sdap_connect_recv(struct tevent_req *req,
 {
     struct sdap_connect_state *state = tevent_req_data(req,
                                                   struct sdap_connect_state);
-    enum tevent_req_state tstate;
-    uint64_t err = EIO;
 
-    if (tevent_req_is_error(req, &tstate, &err)) {
-        /* if tstate shows in progress, it is because
-         * we did not ask to perform tls, just pretend all is fine */
-        if (tstate != TEVENT_REQ_IN_PROGRESS) {
-            return err;
-        }
-    }
+    TEVENT_REQ_RETURN_ON_ERROR(req);
 
     *sh = talloc_steal(memctx, state->sh);
     if (!*sh) {
@@ -571,7 +570,7 @@ static int sdap_sasl_interact(LDAP *ld, unsigned flags,
 
         switch (in->id) {
         case SASL_CB_GETREALM:
-        case SASL_CB_AUTHNAME:
+        case SASL_CB_USER:
         case SASL_CB_PASS:
             if (in->defresult) {
                 in->result = in->defresult;
@@ -580,7 +579,7 @@ static int sdap_sasl_interact(LDAP *ld, unsigned flags,
             }
             in->len = strlen(in->result);
             break;
-        case SASL_CB_USER:
+        case SASL_CB_AUTHNAME:
             if (state->sasl_user) {
                 in->result = state->sasl_user;
             } else if (in->defresult) {
@@ -626,6 +625,7 @@ static int sasl_bind_recv(struct tevent_req *req, int *ldaperr)
 
 struct sdap_kinit_state {
     int result;
+    time_t expire_time;
 };
 
 static void sdap_kinit_done(struct tevent_req *subreq);
@@ -686,8 +686,9 @@ static void sdap_kinit_done(struct tevent_req *subreq)
     int ret;
     int result;
     char *ccname = NULL;
+    time_t expire_time;
 
-    ret = sdap_get_tgt_recv(subreq, state, &result, &ccname);
+    ret = sdap_get_tgt_recv(subreq, state, &result, &ccname, &expire_time);
     talloc_zfree(subreq);
     if (ret != EOK) {
         state->result = SDAP_AUTH_FAILED;
@@ -704,6 +705,7 @@ static void sdap_kinit_done(struct tevent_req *subreq)
             tevent_req_error(req, EFAULT);
         }
 
+        state->expire_time = expire_time;
         state->result = SDAP_AUTH_SUCCESS;
         tevent_req_done(req);
         return;
@@ -714,7 +716,9 @@ static void sdap_kinit_done(struct tevent_req *subreq)
     tevent_req_error(req, EIO);
 }
 
-int sdap_kinit_recv(struct tevent_req *req, enum sdap_result *result)
+int sdap_kinit_recv(struct tevent_req *req,
+                    enum sdap_result *result,
+                    time_t *expire_time)
 {
     struct sdap_kinit_state *state = tevent_req_data(req,
                                                      struct sdap_kinit_state);
@@ -729,6 +733,7 @@ int sdap_kinit_recv(struct tevent_req *req, enum sdap_result *result)
     }
 
     *result = state->result;
+    *expire_time = state->expire_time;
     return EOK;
 }
 
@@ -913,6 +918,9 @@ static int sdap_cli_resolve_next(struct tevent_req *req)
                                              struct sdap_cli_connect_state);
     struct tevent_req *subreq;
 
+    /* Before stepping to next server  destroy any connection from previous attempt */
+    talloc_zfree(state->sh);
+
     /* NOTE: this call may cause service->uri to be refreshed
      * with a new valid server. Do not use service->uri before */
     subreq = be_resolve_server_send(state, state->ev,
@@ -962,6 +970,7 @@ static void sdap_cli_connect_done(struct tevent_req *subreq)
     const char *sasl_mech;
     int ret;
 
+    talloc_zfree(state->sh);
     ret = sdap_connect_recv(subreq, state, &state->sh);
     talloc_zfree(subreq);
     if (ret) {
@@ -1052,8 +1061,20 @@ static void sdap_cli_rootdse_done(struct tevent_req *subreq)
             return;
         }
 
-        tevent_req_error(req, ret);
-        return;
+        else if (ret == ENOENT) {
+            /* RootDSE was not available on
+             * the server.
+             * Continue, and just assume that the
+             * features requested by the config
+             * work properly.
+             */
+            state->use_rootdse = false;
+        }
+
+        else {
+            tevent_req_error(req, ret);
+            return;
+        }
     }
 
     sasl_mech = dp_opt_get_string(state->opts->basic, SDAP_SASL_MECH);
@@ -1109,9 +1130,10 @@ static void sdap_cli_kinit_done(struct tevent_req *subreq)
     struct sdap_cli_connect_state *state = tevent_req_data(req,
                                              struct sdap_cli_connect_state);
     enum sdap_result result;
+    time_t expire_time;
     int ret;
 
-    ret = sdap_kinit_recv(subreq, &result);
+    ret = sdap_kinit_recv(subreq, &result, &expire_time);
     talloc_zfree(subreq);
     if (ret) {
         if (ret == ETIMEDOUT) { /* child timed out, retry another server */
@@ -1130,6 +1152,7 @@ static void sdap_cli_kinit_done(struct tevent_req *subreq)
         tevent_req_error(req, EACCES);
         return;
     }
+    state->sh->expire_time = expire_time;
 
     sdap_cli_auth_step(req);
 }
@@ -1164,8 +1187,6 @@ static void sdap_cli_auth_done(struct tevent_req *subreq)
 {
     struct tevent_req *req = tevent_req_callback_data(subreq,
                                                       struct tevent_req);
-    struct sdap_cli_connect_state *state = tevent_req_data(req,
-                                             struct sdap_cli_connect_state);
     enum sdap_result result;
     int ret;
 
@@ -1180,11 +1201,6 @@ static void sdap_cli_auth_done(struct tevent_req *subreq)
         return;
     }
 
-    /* Reconnection succeeded
-     * Run any post-connection routines
-     */
-    be_run_online_cb(state->be);
-
     tevent_req_done(req);
 }
 
@@ -1193,15 +1209,31 @@ int sdap_cli_connect_recv(struct tevent_req *req,
                           struct sdap_handle **gsh,
                           struct sysdb_attrs **rootdse)
 {
+    return sdap_cli_connect_recv_ext(req, memctx, NULL, gsh, rootdse);
+}
+
+int sdap_cli_connect_recv_ext(struct tevent_req *req,
+                              TALLOC_CTX *memctx,
+                              bool *can_retry,
+                              struct sdap_handle **gsh,
+                              struct sysdb_attrs **rootdse)
+{
     struct sdap_cli_connect_state *state = tevent_req_data(req,
                                              struct sdap_cli_connect_state);
     enum tevent_req_state tstate;
     uint64_t err;
 
+    if (can_retry) {
+        *can_retry = true;
+    }
     if (tevent_req_is_error(req, &tstate, &err)) {
         /* mark the server as bad if connection failed */
         if (state->srv) {
             fo_set_port_status(state->srv, PORT_NOT_WORKING);
+        } else {
+            if (can_retry) {
+                *can_retry = false;
+            }
         }
 
         if (tstate == TEVENT_REQ_USER_ERROR) {

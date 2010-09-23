@@ -225,7 +225,6 @@ struct ipa_auth_state {
 
 static void ipa_auth_handler_done(struct tevent_req *req);
 static void ipa_get_migration_flag_done(struct tevent_req *req);
-static void ipa_auth_get_user_dn_done(struct tevent_req *req);
 static void ipa_auth_ldap_done(struct tevent_req *req);
 static void ipa_auth_handler_retry_done(struct tevent_req *req);
 
@@ -331,6 +330,9 @@ static void ipa_get_migration_flag_done(struct tevent_req *req)
     int ret;
     int dp_err = DP_ERR_FATAL;
     const char **attrs;
+    struct ldb_message *user_msg;
+    const char *dn;
+    struct dp_opt_blob password;
 
     ret = get_password_migration_flag_recv(req, state,
                                            &state->password_migration,
@@ -358,17 +360,35 @@ static void ipa_get_migration_flag_done(struct tevent_req *req)
         attrs[0] = SYSDB_ORIG_DN;
         attrs[1] = NULL;
 
-        req = sysdb_search_user_by_name_send(state, state->ev,
-                                             state->be_req->be_ctx->sysdb, NULL,
-                                             state->be_req->be_ctx->domain,
-                                             state->pd->user, attrs);
-        if (req == NULL) {
-            DEBUG(1, ("sysdb_search_user_by_name_send failed.\n"));
+        ret = sysdb_search_user_by_name(state, state->be_req->be_ctx->sysdb,
+                                        state->be_req->be_ctx->domain,
+                                        state->pd->user, attrs, &user_msg);
+        if (ret != EOK) {
+            DEBUG(1, ("sysdb_search_user_by_name failed.\n"));
             goto done;
         }
 
-        tevent_req_set_callback(req, ipa_auth_get_user_dn_done, state);
+        dn = ldb_msg_find_attr_as_string(user_msg, SYSDB_ORIG_DN, NULL);
+        if (dn == NULL) {
+            DEBUG(1, ("Missing original DN for user [%s].\n", state->pd->user));
+            state->pd->pam_status = PAM_SYSTEM_ERR;
+            dp_err = DP_ERR_OK;
+            goto done;
+        }
+
+        password.data = state->pd->authtok;
+        password.length = state->pd->authtok_size;
+
+        req = sdap_auth_send(state, state->ev, state->sh, NULL, NULL, dn,
+                             "password", password);
+        if (req == NULL) {
+            DEBUG(1, ("sdap_auth_send failed.\n"));
+            goto done;
+        }
+
+        tevent_req_set_callback(req, ipa_auth_ldap_done, state);
         return;
+
     } else {
         DEBUG(5, ("Password migration is not enabled.\n"));
     }
@@ -378,51 +398,6 @@ static void ipa_get_migration_flag_done(struct tevent_req *req)
 done:
     ipa_auth_reply(state->be_req, dp_err, state->pd->pam_status);
 }
-
-void ipa_auth_get_user_dn_done(struct tevent_req *req)
-{
-    struct ipa_auth_state *state = tevent_req_callback_data(req,
-                                                         struct ipa_auth_state);
-    int ret;
-    int dp_err = DP_ERR_FATAL;
-    struct dp_opt_blob password;
-    struct ldb_message *msg;
-    const char *dn;
-
-    ret = sysdb_search_user_recv(req, state, &msg);
-    talloc_zfree(req);
-    if (ret != EOK) {
-        DEBUG(1, ("sysdb_search_user request failed.\n"));
-        state->pd->pam_status = PAM_SYSTEM_ERR;
-        dp_err = DP_ERR_OK;
-        goto done;
-    }
-
-    dn = ldb_msg_find_attr_as_string(msg, SYSDB_ORIG_DN, NULL);
-    if (dn == NULL) {
-        DEBUG(1, ("Missing original DN for user [%s].\n", state->pd->user));
-        state->pd->pam_status = PAM_SYSTEM_ERR;
-        dp_err = DP_ERR_OK;
-        goto done;
-    }
-
-    password.data = state->pd->authtok;
-    password.length = state->pd->authtok_size;
-
-    req = sdap_auth_send(state, state->ev, state->sh, NULL, NULL, dn,
-                         "password", password);
-    if (req == NULL) {
-        DEBUG(1, ("sdap_auth_send failed.\n"));
-        goto done;
-    }
-
-    tevent_req_set_callback(req, ipa_auth_ldap_done, state);
-    return;
-
-done:
-    ipa_auth_reply(state->be_req, dp_err, state->pd->pam_status);
-}
-
 
 static void ipa_auth_ldap_done(struct tevent_req *req)
 {

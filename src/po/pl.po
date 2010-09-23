@@ -5,10 +5,11 @@ msgid ""
 msgstr ""
 "Project-Id-Version: pl\n"
 "Report-Msgid-Bugs-To: sssd-devel@lists.fedorahosted.org\n"
-"POT-Creation-Date: 2010-06-18 14:09-0400\n"
-"PO-Revision-Date: 2010-05-18 23:10+0200\n"
+"POT-Creation-Date: 2010-08-03 18:24-0400\n"
+"PO-Revision-Date: 2010-07-15 16:47+0200\n"
 "Last-Translator: Piotr Drąg <piotrdrag@gmail.com>\n"
 "Language-Team: Polish <trans-pl@lists.fedoraproject.org>\n"
+"Language: pl\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
@@ -167,261 +168,270 @@ msgstr ""
 #: config/SSSDConfig.py:84
 msgid "How long to wait for replies from DNS when resolving servers (seconds)"
 msgstr ""
-"Jak długo czekać na odpowiedzi od DNS podczas rozwiązywania serwerów "
+"Jak długo czekać na odpowiedzi od serwera DNS podczas rozwiązywania serwerów "
 "(sekundy)"
 
-#: config/SSSDConfig.py:87
+#: config/SSSDConfig.py:85
+msgid "The domain part of service discovery DNS query"
+msgstr "Część domeny zapytania DNS wykrywania usługi"
+
+#: config/SSSDConfig.py:88
 msgid "IPA domain"
 msgstr "Domena IPA"
 
-#: config/SSSDConfig.py:88
+#: config/SSSDConfig.py:89
 msgid "IPA server address"
 msgstr "Adres serwera IPA"
 
-#: config/SSSDConfig.py:89
+#: config/SSSDConfig.py:90
 msgid "IPA client hostname"
 msgstr "Nazwa komputera klienta IPA"
 
-#: config/SSSDConfig.py:90
-msgid "Whether to automatically update the client's DNS entry in FreeIPA"
-msgstr "Czy automatycznie aktualizować wpis DNS klienta w FreeIPA"
-
 #: config/SSSDConfig.py:91
+msgid "Whether to automatically update the client's DNS entry in FreeIPA"
+msgstr ""
+"Czy automatycznie aktualizować wpis DNS klienta w oprogramowaniu FreeIPA"
+
+#: config/SSSDConfig.py:92
 msgid "The interface whose IP should be used for dynamic DNS updates"
 msgstr ""
 "Interfejs, którego adres IP powinien być używany do dynamicznych "
 "aktualizacji DNS"
 
-#: config/SSSDConfig.py:94 config/SSSDConfig.py:122
+#: config/SSSDConfig.py:95 config/SSSDConfig.py:124
 msgid "Kerberos server address"
 msgstr "Adres serwera Kerberos"
 
-#: config/SSSDConfig.py:95 config/SSSDConfig.py:123
+#: config/SSSDConfig.py:96 config/SSSDConfig.py:125
 msgid "Kerberos realm"
 msgstr "Obszar Kerberos"
 
-#: config/SSSDConfig.py:96
+#: config/SSSDConfig.py:97
 msgid "Authentication timeout"
 msgstr "Czas oczekiwania na uwierzytelnienie"
 
-#: config/SSSDConfig.py:99
+#: config/SSSDConfig.py:100
 msgid "Directory to store credential caches"
 msgstr ""
 "Katalog do przechowywania pamięci podręcznych danych uwierzytelniających"
 
-#: config/SSSDConfig.py:100
+#: config/SSSDConfig.py:101
 msgid "Location of the user's credential cache"
 msgstr "Położenie pamięci podręcznej danych uwierzytelniających użytkownika"
 
-#: config/SSSDConfig.py:101
+#: config/SSSDConfig.py:102
 msgid "Location of the keytab to validate credentials"
 msgstr "Położenie tablicy kluczy do sprawdzania danych uwierzytelniających"
 
-#: config/SSSDConfig.py:102
+#: config/SSSDConfig.py:103
 msgid "Enable credential validation"
 msgstr "Włącza sprawdzanie danych uwierzytelniających"
 
-#: config/SSSDConfig.py:103
+#: config/SSSDConfig.py:104
 msgid "Store password if offline for later online authentication"
 msgstr ""
-"Przechowuje hasło, jeśli znajduje się w trybie offline do dalszego "
-"uwierzytelnienia w trybie online"
+"Przechowuje hasło, jeśli w trybie offline do późniejszego uwierzytelnienia w "
+"trybie online"
 
-#: config/SSSDConfig.py:106
+#: config/SSSDConfig.py:107
 msgid "Server where the change password service is running if not on the KDC"
 msgstr ""
 "Serwer, w którym jest uruchomiona usługa zmiany haseł, jeśli nie znajduje "
 "się w KDC"
 
-#: config/SSSDConfig.py:109
+#: config/SSSDConfig.py:110
 msgid "ldap_uri, The URI of the LDAP server"
 msgstr "ldap_uri, adres URI serwera LDAP"
 
-#: config/SSSDConfig.py:110
+#: config/SSSDConfig.py:111
 msgid "The default base DN"
 msgstr "Domyślna podstawowa DN"
 
-#: config/SSSDConfig.py:111
+#: config/SSSDConfig.py:112
 msgid "The Schema Type in use on the LDAP server, rfc2307"
 msgstr "Typ Schema do użycia na serwerze LDAP, RFC2307"
 
-#: config/SSSDConfig.py:112
+#: config/SSSDConfig.py:113
 msgid "The default bind DN"
 msgstr "Domyślne DN dowiązania"
 
-#: config/SSSDConfig.py:113
+#: config/SSSDConfig.py:114
 msgid "The type of the authentication token of the default bind DN"
 msgstr "Typ tokenu uwierzytelniania domyślnego DN dowiązania"
 
-#: config/SSSDConfig.py:114
+#: config/SSSDConfig.py:115
 msgid "The authentication token of the default bind DN"
 msgstr "Token uwierzytelniania domyślnego DN dowiązania"
 
-#: config/SSSDConfig.py:115
+#: config/SSSDConfig.py:116
 msgid "Length of time to attempt connection"
 msgstr "Czas do próby połączenia"
 
-#: config/SSSDConfig.py:116
+#: config/SSSDConfig.py:117
 msgid "Length of time to attempt synchronous LDAP operations"
 msgstr "Czas do próby synchronicznych działań LDAP"
 
-#: config/SSSDConfig.py:117
+#: config/SSSDConfig.py:118
+msgid "Length of time between attempts to reconnect while offline"
+msgstr "Czas między próbami ponownego połączenia w trybie offline"
+
+#: config/SSSDConfig.py:119
 msgid "File that contains CA certificates"
 msgstr "Plik zawierający certyfikaty CA"
 
-#: config/SSSDConfig.py:118
+#: config/SSSDConfig.py:120
 msgid "Path to CA certificate directory"
 msgstr "Ścieżka do katalogu certyfikatów CA"
 
-#: config/SSSDConfig.py:119
+#: config/SSSDConfig.py:121
 msgid "Require TLS certificate verification"
 msgstr "Wymaga sprawdzenia certyfikatu TLS"
 
-#: config/SSSDConfig.py:120
+#: config/SSSDConfig.py:122
 msgid "Specify the sasl mechanism to use"
 msgstr "Podaje używany mechanizm SASL"
 
-#: config/SSSDConfig.py:121
+#: config/SSSDConfig.py:123
 msgid "Specify the sasl authorization id to use"
 msgstr "Podaje używany identyfikator upoważnienia SASL"
 
-#: config/SSSDConfig.py:124
+#: config/SSSDConfig.py:126
 msgid "Kerberos service keytab"
 msgstr "Tablica kluczy usługi Kerberos"
 
-#: config/SSSDConfig.py:125
+#: config/SSSDConfig.py:127
 msgid "Use Kerberos auth for LDAP connection"
 msgstr "Używa uwierzytelniania Kerberos dla połączenia LDAP"
 
-#: config/SSSDConfig.py:126
+#: config/SSSDConfig.py:128
 msgid "Follow LDAP referrals"
 msgstr "Podąża za odsyłaniami LDAP"
 
-#: config/SSSDConfig.py:127
+#: config/SSSDConfig.py:129
 msgid "Lifetime of TGT for LDAP connection"
 msgstr "Czas trwania TGT dla połączenia LDAP"
 
-#: config/SSSDConfig.py:130
+#: config/SSSDConfig.py:132
 msgid "Length of time to wait for a search request"
 msgstr "Czas oczekiwania na żądanie wyszukiwania"
 
-#: config/SSSDConfig.py:131
+#: config/SSSDConfig.py:133
 msgid "Length of time between enumeration updates"
 msgstr "Czas między aktualizacjami wyliczania"
 
-#: config/SSSDConfig.py:132
+#: config/SSSDConfig.py:134
 msgid "Require TLS for ID lookups"
 msgstr "Wymaga TLS dla wyszukiwania identyfikatorów"
 
-#: config/SSSDConfig.py:133
+#: config/SSSDConfig.py:135
 msgid "Base DN for user lookups"
 msgstr "Podstawowe DN dla wyszukiwania użytkowników"
 
-#: config/SSSDConfig.py:134
+#: config/SSSDConfig.py:136
 msgid "Scope of user lookups"
 msgstr "Zakres wyszukiwania użytkowników"
 
-#: config/SSSDConfig.py:135
+#: config/SSSDConfig.py:137
 msgid "Filter for user lookups"
 msgstr "Filtruje wyszukiwania użytkowników"
 
-#: config/SSSDConfig.py:136
+#: config/SSSDConfig.py:138
 msgid "Objectclass for users"
 msgstr "Klasa obiektów dla użytkowników"
 
-#: config/SSSDConfig.py:137
+#: config/SSSDConfig.py:139
 msgid "Username attribute"
 msgstr "Atrybut nazwy użytkownika"
 
-#: config/SSSDConfig.py:138
+#: config/SSSDConfig.py:140
 msgid "UID attribute"
 msgstr "Atrybut UID"
 
-#: config/SSSDConfig.py:139
+#: config/SSSDConfig.py:141
 msgid "Primary GID attribute"
 msgstr "Pierwszy atrybut GID"
 
-#: config/SSSDConfig.py:140
+#: config/SSSDConfig.py:142
 msgid "GECOS attribute"
 msgstr "Atrybut GECOS"
 
-#: config/SSSDConfig.py:141
+#: config/SSSDConfig.py:143
 msgid "Home directory attribute"
 msgstr "Atrybut katalogu domowego"
 
-#: config/SSSDConfig.py:142
+#: config/SSSDConfig.py:144
 msgid "Shell attribute"
 msgstr "Atrybut powłoki"
 
-#: config/SSSDConfig.py:143
+#: config/SSSDConfig.py:145
 msgid "UUID attribute"
 msgstr "Atrybut UUID"
 
-#: config/SSSDConfig.py:144
+#: config/SSSDConfig.py:146
 msgid "User principal attribute (for Kerberos)"
 msgstr "Atrybut głównego użytkownika (dla Kerberos)"
 
-#: config/SSSDConfig.py:145
+#: config/SSSDConfig.py:147
 msgid "Full Name"
 msgstr "Imię i nazwisko"
 
-#: config/SSSDConfig.py:146
+#: config/SSSDConfig.py:148
 msgid "memberOf attribute"
 msgstr "Atrybut memberOf"
 
-#: config/SSSDConfig.py:147
+#: config/SSSDConfig.py:149
 msgid "Modification time attribute"
 msgstr "Atrybut czasu modyfikacji"
 
-#: config/SSSDConfig.py:150
+#: config/SSSDConfig.py:152
 msgid "Policy to evaluate the password expiration"
 msgstr "Polityka do oszacowania wygaszenia hasła"
 
-#: config/SSSDConfig.py:153
+#: config/SSSDConfig.py:155
 msgid "LDAP filter to determine access privileges"
 msgstr "Filtr LDAP do określenia uprawnień dostępu"
 
-#: config/SSSDConfig.py:156
+#: config/SSSDConfig.py:158
 msgid "Comma separated list of allowed users"
 msgstr "Lista dozwolonych użytkowników oddzielonych przecinkami"
 
-#: config/SSSDConfig.py:157
+#: config/SSSDConfig.py:159
 msgid "Comma separated list of prohibited users"
 msgstr "Lista zabronionych użytkowników oddzielonych przecinkami"
 
-#: config/SSSDConfig.py:160
+#: config/SSSDConfig.py:162
 msgid "Default shell, /bin/bash"
 msgstr "Domyślna powłoka, /bin/bash"
 
-#: config/SSSDConfig.py:161
+#: config/SSSDConfig.py:163
 msgid "Base for home directories"
 msgstr "Podstawa katalogów domowych"
 
-#: config/SSSDConfig.py:164
+#: config/SSSDConfig.py:166
 msgid "The name of the NSS library to use"
 msgstr "Nazwa używanej biblioteki NSS"
 
-#: config/SSSDConfig.py:167
+#: config/SSSDConfig.py:169
 msgid "PAM stack to use"
 msgstr "Używany stos PAM"
 
-#: monitor/monitor.c:2089
+#: monitor/monitor.c:2137
 msgid "Become a daemon (default)"
 msgstr "Uruchamia jako demon (domyślnie)"
 
-#: monitor/monitor.c:2091
+#: monitor/monitor.c:2139
 msgid "Run interactive (not a daemon)"
 msgstr "Uruchamia interaktywnie (nie jako demon)"
 
-#: monitor/monitor.c:2093
+#: monitor/monitor.c:2141
 msgid "Specify a non-default config file"
 msgstr "Podaje niedomyślny plik konfiguracji"
 
-#: monitor/monitor.c:2119
+#: monitor/monitor.c:2167
 msgid "sssd must be run as root\n"
 msgstr "sssd musi zostać uruchomione jako root\n"
 
-#: monitor/monitor.c:2154
+#: monitor/monitor.c:2202
 msgid ""
 "nscd socket was detected.  As nscd caching capabilities may conflict with "
 "SSSD, it is recommended to not run nscd in parallel with SSSD\n"
@@ -429,7 +439,7 @@ msgstr ""
 "Wykryto gniazdo nscd. Możliwości pamięci podręcznej nscd mogą konfliktować z "
 "SSSD, więc nie jest zalecane uruchamianie nscd jednocześnie z SSSD\n"
 
-#: monitor/monitor.c:2164
+#: monitor/monitor.c:2212
 #, c-format
 msgid ""
 "Cannot read config file %s, please check if permissions are 0600 and the "
@@ -438,49 +448,49 @@ msgstr ""
 "Nie można odczytać pliku konfiguracji %s. Proszę sprawdzić, czy uprawnienia "
 "wynoszą 0600, a właścicielem pliku jest root.root\n"
 
-#: monitor/monitor.c:2169
+#: monitor/monitor.c:2217
 msgid "Cannot load configuration database\n"
 msgstr "Nie można wczytać bazy danych konfiguracji\n"
 
-#: providers/krb5/krb5_child.c:983 providers/ldap/ldap_child.c:321
+#: providers/krb5/krb5_child.c:993 providers/ldap/ldap_child.c:361
 #: util/util.h:61
 msgid "Debug level"
 msgstr "Poziom debugowania"
 
-#: providers/krb5/krb5_child.c:985 providers/ldap/ldap_child.c:323
+#: providers/krb5/krb5_child.c:995 providers/ldap/ldap_child.c:363
 #: util/util.h:65
 msgid "Add debug timestamps"
 msgstr "Dodaje czasy debugowania"
 
-#: providers/krb5/krb5_child.c:987 providers/ldap/ldap_child.c:325
+#: providers/krb5/krb5_child.c:997 providers/ldap/ldap_child.c:365
 msgid "An open file descriptor for the debug logs"
 msgstr "Otwiera deskryptor pliku dla dzienników debugowania"
 
-#: providers/data_provider_be.c:1153
+#: providers/data_provider_be.c:1165
 msgid "Domain of the information provider (mandatory)"
 msgstr "Domena dostawcy informacji (wymagane)"
 
-#: sss_client/common.c:743
+#: sss_client/common.c:742
 msgid "Privileged socket has wrong ownership or permissions."
 msgstr "Uprawnione gniazdo posiada błędnego właściciela lub uprawnienia."
 
-#: sss_client/common.c:746
+#: sss_client/common.c:745
 msgid "Public socket has wrong ownership or permissions."
-msgstr "Publiczne gniazdo posiada błędnego właściciela lub uprawnienia."
+msgstr "Publiczne gniazdo posiada błędnego właściciela lub uprawnienia"
 
-#: sss_client/common.c:749
+#: sss_client/common.c:748
 msgid "Unexpected format of the server credential message."
 msgstr "Nieoczekiwany format komunikatu uwierzytelniającego serwera."
 
-#: sss_client/common.c:752
+#: sss_client/common.c:751
 msgid "SSSD is not run by root."
-msgstr "SSSD nie zostało uruchomione jako root."
+msgstr "SSSD nie zostało uruchomione w trybie roota."
 
-#: sss_client/common.c:757
+#: sss_client/common.c:756
 msgid "An error occurred, but no description can be found."
-msgstr "Wystąpił błąd, ale nie można odnaleźć opisu."
+msgstr "Wystąpił błąd, ale nie odnaleziono jego opisu."
 
-#: sss_client/common.c:763
+#: sss_client/common.c:762
 msgid "Unexpected error while looking for an error description"
 msgstr "Nieoczekiwany błąd podczas wyszukiwania opisu błędu"
 
@@ -490,12 +500,11 @@ msgstr "Hasła nie zgadzają się"
 
 #: sss_client/pam_sss.c:556
 msgid "Password reset by root is not supported."
-msgstr "Przywrócenie hasło przez roota nie jest obsługiwane."
+msgstr "Przywrócenie hasła przez użytkownika root nie jest obsługiwane."
 
 #: sss_client/pam_sss.c:597
 msgid "Authenticated with cached credentials"
-msgstr ""
-"Uwierzytelniono za pomocą danych uwierzytelniających w pamięci podręcznej"
+msgstr "Uwierzytelniono za pomocą danych z pamięci podręcznej"
 
 #: sss_client/pam_sss.c:598
 msgid ", your cached password will expire at: "
@@ -548,7 +557,7 @@ msgid "Password expired. Change your password now."
 msgstr "Hasło wygasło. Proszę je zmienić teraz."
 
 #: tools/sss_useradd.c:48 tools/sss_groupadd.c:41 tools/sss_groupdel.c:43
-#: tools/sss_groupmod.c:42 tools/sss_groupshow.c:1016 tools/sss_userdel.c:142
+#: tools/sss_groupmod.c:42 tools/sss_groupshow.c:620 tools/sss_userdel.c:131
 #: tools/sss_usermod.c:47
 msgid "The debug level to run with"
 msgstr "Poziom debugowania, z jakim uruchomić"
@@ -590,7 +599,7 @@ msgid "The SELinux user for user's login"
 msgstr "Użytkownik SELinuksa dla loginu użytkownika"
 
 #: tools/sss_useradd.c:71 tools/sss_groupadd.c:56 tools/sss_groupdel.c:52
-#: tools/sss_groupmod.c:63 tools/sss_groupshow.c:1027 tools/sss_userdel.c:159
+#: tools/sss_groupmod.c:63 tools/sss_groupshow.c:631 tools/sss_userdel.c:148
 #: tools/sss_usermod.c:72
 msgid "Error setting the locale\n"
 msgstr "Błąd podczas ustawiania lokalizacji\n"
@@ -600,19 +609,19 @@ msgid "Specify user to add\n"
 msgstr "Proszę podać użytkownika do dodania\n"
 
 #: tools/sss_useradd.c:118 tools/sss_groupadd.c:86 tools/sss_groupdel.c:81
-#: tools/sss_groupmod.c:111 tools/sss_groupshow.c:1064 tools/sss_userdel.c:208
+#: tools/sss_groupmod.c:111 tools/sss_groupshow.c:668 tools/sss_userdel.c:197
 #: tools/sss_usermod.c:128
 msgid "Error initializing the tools - no local domain\n"
 msgstr "Błąd podczas inicjowania narzędzi - brak lokalnej domeny\n"
 
 #: tools/sss_useradd.c:120 tools/sss_groupadd.c:88 tools/sss_groupdel.c:83
-#: tools/sss_groupmod.c:113 tools/sss_groupshow.c:1066 tools/sss_userdel.c:210
+#: tools/sss_groupmod.c:113 tools/sss_groupshow.c:670 tools/sss_userdel.c:199
 #: tools/sss_usermod.c:130
 msgid "Error initializing the tools\n"
 msgstr "Błąd podczas inicjowania narzędzi\n"
 
 #: tools/sss_useradd.c:129 tools/sss_groupadd.c:97 tools/sss_groupdel.c:92
-#: tools/sss_groupmod.c:121 tools/sss_groupshow.c:1075 tools/sss_userdel.c:219
+#: tools/sss_groupmod.c:121 tools/sss_groupshow.c:679 tools/sss_userdel.c:208
 #: tools/sss_usermod.c:139
 msgid "Invalid domain specified in FQDN\n"
 msgstr "Podano nieprawidłową domenę w FQDN\n"
@@ -631,7 +640,7 @@ msgstr "Grupy muszą być w tej samej domenie co użytkownik\n"
 msgid "Cannot find group %s in local domain\n"
 msgstr "Nie można odnaleźć grupy %s w lokalnej domenie\n"
 
-#: tools/sss_useradd.c:169 tools/sss_userdel.c:229
+#: tools/sss_useradd.c:169 tools/sss_userdel.c:218
 msgid "Cannot set default values\n"
 msgstr "Nie można ustawić domyślnych wartości\n"
 
@@ -639,9 +648,9 @@ msgstr "Nie można ustawić domyślnych wartości\n"
 msgid "The selected UID is outside the allowed range\n"
 msgstr "Wybrany UID jest spoza dozwolonego zakresu\n"
 
-#: tools/sss_useradd.c:202 tools/sss_usermod.c:242
+#: tools/sss_useradd.c:203 tools/sss_usermod.c:240
 msgid "Cannot set SELinux login context\n"
-msgstr "Nie można ustawić kontekstu logowania SELinuksa\n"
+msgstr "Nie można ustawić kontekstu loginu SELinuksa\n"
 
 #: tools/sss_useradd.c:219
 msgid "Cannot get info about the user\n"
@@ -689,15 +698,15 @@ msgstr "Proszę podać grupę do dodania\n"
 msgid "The selected GID is outside the allowed range\n"
 msgstr "Wybrany GID jest spoza dozwolonego zakresu\n"
 
-#: tools/sss_groupadd.c:133
+#: tools/sss_groupadd.c:131
 msgid "Could not allocate ID for the group - domain full?\n"
 msgstr "Nie można przydzielić identyfikatora grupie - czy domena jest pełna?\n"
 
-#: tools/sss_groupadd.c:137
+#: tools/sss_groupadd.c:135
 msgid "A group with the same name or GID already exists\n"
 msgstr "Grupa o tej samej nazwie lub GID już istnieje\n"
 
-#: tools/sss_groupadd.c:142
+#: tools/sss_groupadd.c:140
 msgid "Transaction error. Could not add group.\n"
 msgstr "Błąd transakcji. Nie można dodać grupy.\n"
 
@@ -710,7 +719,7 @@ msgstr "Proszę podać grupę do usunięcia\n"
 msgid "Group %s is outside the defined ID range for domain\n"
 msgstr "Grupa %s jest poza określonym zakresem identyfikatorów dla domeny\n"
 
-#: tools/sss_groupdel.c:136
+#: tools/sss_groupdel.c:121
 msgid ""
 "No such group in local domain. Removing groups only allowed in local "
 "domain.\n"
@@ -718,7 +727,7 @@ msgstr ""
 "Nie ma takiej grupy w lokalnej domenie. Usuwanie grup jest dozwolone tylko w "
 "lokalnej domenie.\n"
 
-#: tools/sss_groupdel.c:141
+#: tools/sss_groupdel.c:126
 msgid "Internal error. Could not remove group.\n"
 msgstr "Wewnętrzny błąd. Nie można usunąć grupy.\n"
 
@@ -756,42 +765,42 @@ msgstr ""
 "Nie można odnaleźć grupy %s w lokalnej domenie, tylko grupy w lokalnej "
 "domenie są dozwolone\n"
 
-#: tools/sss_groupmod.c:222
+#: tools/sss_groupmod.c:220
 msgid "Could not modify group - check if member group names are correct\n"
 msgstr ""
 "Nie można zmodyfikować grupy - proszę sprawdzić, czy nazwy członków grupy są "
 "poprawne\n"
 
-#: tools/sss_groupmod.c:226
+#: tools/sss_groupmod.c:224
 msgid "Could not modify group - check if groupname is correct\n"
 msgstr ""
 "Nie można zmodyfikować grupy - proszę sprawdzić, czy nazwa grupy jest "
 "poprawna\n"
 
-#: tools/sss_groupmod.c:230
+#: tools/sss_groupmod.c:228
 msgid "Transaction error. Could not modify group.\n"
 msgstr "Błąd transakcji. Nie można zmodyfikować grupy.\n"
 
-#: tools/sss_groupshow.c:962
+#: tools/sss_groupshow.c:567
 #, c-format
 msgid "%s%sGroup: %s\n"
 msgstr "%s%sGrupa: %s\n"
 
-#: tools/sss_groupshow.c:963
+#: tools/sss_groupshow.c:568
 msgid "Magic Private "
 msgstr "Prywatne magic "
 
-#: tools/sss_groupshow.c:965
+#: tools/sss_groupshow.c:570
 #, c-format
 msgid "%sGID number: %d\n"
 msgstr "%sNumer GID: %d\n"
 
-#: tools/sss_groupshow.c:967
+#: tools/sss_groupshow.c:572
 #, c-format
 msgid "%sMember users: "
 msgstr "%sUżytkownicy będący członkami: "
 
-#: tools/sss_groupshow.c:974
+#: tools/sss_groupshow.c:579
 #, c-format
 msgid ""
 "\n"
@@ -800,7 +809,7 @@ msgstr ""
 "\n"
 "%sJest członkiem: "
 
-#: tools/sss_groupshow.c:981
+#: tools/sss_groupshow.c:586
 #, c-format
 msgid ""
 "\n"
@@ -809,19 +818,15 @@ msgstr ""
 "\n"
 "%sGrupy będące członkami: "
 
-#: tools/sss_groupshow.c:1018
+#: tools/sss_groupshow.c:622
 msgid "Print indirect group members recursively"
 msgstr "Rekursywnie drukuje niebezpośrednich członków grupy"
 
-#: tools/sss_groupshow.c:1053
+#: tools/sss_groupshow.c:657
 msgid "Specify group to show\n"
 msgstr "Proszę podać grupę do wyświetlenia\n"
 
-#: tools/sss_groupshow.c:1089 tools/sss_groupshow.c:1107
-msgid "Cannot initiate search\n"
-msgstr "Nie można zainicjować wyszukiwania\n"
-
-#: tools/sss_groupshow.c:1123
+#: tools/sss_groupshow.c:698
 msgid ""
 "No such group in local domain. Printing groups only allowed in local "
 "domain.\n"
@@ -829,77 +834,77 @@ msgstr ""
 "Nie ma takiej grupy w lokalnej domenie. Drukowanie grup jest dozwolone tylko "
 "w lokalnej domenie.\n"
 
-#: tools/sss_groupshow.c:1128
+#: tools/sss_groupshow.c:703
 msgid "Internal error. Could not print group.\n"
 msgstr "Wewnętrzny błąd. Nie można wydrukować grupy.\n"
 
-#: tools/sss_userdel.c:144
+#: tools/sss_userdel.c:133
 msgid "Remove home directory and mail spool"
 msgstr "Usuwa katalog domowy i bufor poczty"
 
-#: tools/sss_userdel.c:146
+#: tools/sss_userdel.c:135
 msgid "Do not remove home directory and mail spool"
 msgstr "Nie usuwa katalogu domowego i bufora poczty"
 
-#: tools/sss_userdel.c:148
+#: tools/sss_userdel.c:137
 msgid "Force removal of files not owned by the user"
 msgstr "Wymusza usunięcie plików, których właścicielem nie jest użytkownik"
 
-#: tools/sss_userdel.c:150
+#: tools/sss_userdel.c:139
 msgid "Kill users' processes before removing him"
 msgstr "Usuwa procesy użytkownika przed jego usunięciem"
 
-#: tools/sss_userdel.c:197
+#: tools/sss_userdel.c:186
 msgid "Specify user to delete\n"
 msgstr "Proszę podać użytkownika do usunięcia\n"
 
-#: tools/sss_userdel.c:247
+#: tools/sss_userdel.c:235
 #, c-format
 msgid "User %s is outside the defined ID range for domain\n"
 msgstr ""
 "Użytkownik %s jest poza określonym zakresem identyfikatorów dla domeny\n"
 
-#: tools/sss_userdel.c:285
+#: tools/sss_userdel.c:260
 msgid "Cannot reset SELinux login context\n"
-msgstr "Nie można przywrócić kontekstu logowania SELinuksa\n"
+msgstr "Nie można przywrócić kontekstu loginu SELinuksa\n"
 
-#: tools/sss_userdel.c:297
+#: tools/sss_userdel.c:272
 #, c-format
 msgid "WARNING: The user (uid %lu) was still logged in when deleted.\n"
 msgstr ""
-"OSTRZEŻENIE: użytkownik (UID %lu) był zalogowany podczas jego usuwania.\n"
+"OSTRZEŻENIE: użytkownik (UID %lu) był zalogowany podczas jego usunięcia.\n"
 
-#: tools/sss_userdel.c:302
+#: tools/sss_userdel.c:277
 msgid "Cannot determine if the user was logged in on this platform"
 msgstr "Nie można określić, czy użytkownik był zalogowany na tej platformie"
 
-#: tools/sss_userdel.c:307
+#: tools/sss_userdel.c:282
 msgid "Error while checking if the user was logged in\n"
 msgstr "Błąd podczas sprawdzania, czy użytkownik był zalogowany\n"
 
-#: tools/sss_userdel.c:314
+#: tools/sss_userdel.c:289
 #, c-format
 msgid "The post-delete command failed: %s\n"
-msgstr "Polecenie po usunięciu się nie powiodło: %s\n"
+msgstr "Polecenie po usunięciu nie powiodło się: %s\n"
 
-#: tools/sss_userdel.c:326
+#: tools/sss_userdel.c:301
 msgid "Not removing home dir - not owned by user\n"
 msgstr ""
 "Katalog domowy nie zostanie usunięty - użytkownik nie jest właścicielem\n"
 
-#: tools/sss_userdel.c:328
+#: tools/sss_userdel.c:303
 #, c-format
 msgid "Cannot remove homedir: %s\n"
 msgstr "Nie można usunąć katalogu domowego: %s\n"
 
-#: tools/sss_userdel.c:340
+#: tools/sss_userdel.c:314
 msgid ""
 "No such user in local domain. Removing users only allowed in local domain.\n"
 msgstr ""
 "Nie ma takiego użytkownika w lokalnej domenie. Usuwanie użytkowników jest "
 "dozwolone tylko w lokalnej domenie.\n"
 
-#: tools/sss_userdel.c:345
+#: tools/sss_userdel.c:319
 msgid "Internal error. Could not remove user.\n"
 msgstr "Wewnętrzny błąd. Nie można usunąć użytkownika.\n"
 
@@ -935,23 +940,23 @@ msgstr ""
 "Nie można odnaleźć użytkownika w lokalnej domenie, modyfikowanie "
 "użytkowników jest dozwolone tylko w lokalnej domenie\n"
 
-#: tools/sss_usermod.c:252
+#: tools/sss_usermod.c:250
 msgid "Could not modify user - check if group names are correct\n"
 msgstr ""
 "Nie można zmodyfikować użytkownika - proszę sprawdzić, czy nazwy grup są "
 "poprawne\n"
 
-#: tools/sss_usermod.c:256
+#: tools/sss_usermod.c:254
 msgid "Could not modify user - user already member of groups?\n"
 msgstr ""
 "Nie można zmodyfikować użytkownika - czy użytkownik jest już członkiem "
 "grup?\n"
 
-#: tools/sss_usermod.c:260
+#: tools/sss_usermod.c:258
 msgid "Transaction error. Could not modify user.\n"
 msgstr "Błąd transakcji. Nie można zmodyfikować użytkownika.\n"
 
-#: tools/tools_util.c:293
+#: tools/tools_util.c:285
 msgid "Out of memory\n"
 msgstr "Brak pamięci\n"
 
@@ -964,12 +969,3 @@ msgstr "%s musi zostać uruchomione jako root\n"
 msgid "Send the debug output to files instead of stderr"
 msgstr ""
 "Wysyła wyjście debugowania do plików, zamiast do standardowego wyjścia błędów"
-
-#~ msgid "The principal of the change password service"
-#~ msgstr "Główna usługa zmiany hasła"
-
-#~ msgid "The GID or group name of the user"
-#~ msgstr "GID nazwy grupy użytkownika"
-
-#~ msgid "Cannot get group information for the user\n"
-#~ msgstr "Nie można uzyskać informacji o grupie dla użytkownika\n"

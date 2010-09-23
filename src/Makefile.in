@@ -115,9 +115,10 @@ am__aclocal_m4_deps = $(top_srcdir)/m4/gettext.m4 \
 	$(top_srcdir)/external/selinux.m4 \
 	$(top_srcdir)/external/crypto.m4 \
 	$(top_srcdir)/external/nscd.m4 \
-	$(top_srcdir)/external/libkeyutils.m4 \
 	$(top_srcdir)/external/nsupdate.m4 \
-	$(top_srcdir)/util/signal.m4 $(top_srcdir)/configure.ac
+	$(top_srcdir)/external/libkeyutils.m4 \
+	$(top_srcdir)/external/libnl.m4 $(top_srcdir)/util/signal.m4 \
+	$(top_srcdir)/configure.ac
 am__configure_deps = $(am__aclocal_m4_deps) $(CONFIGURE_DEPENDENCIES) \
 	$(ACLOCAL_M4)
 am__CONFIG_DISTCLEAN_FILES = config.status config.cache config.log \
@@ -204,6 +205,7 @@ am_libsss_ipa_la_OBJECTS = providers/libsss_ipa_la-child_common.lo \
 	providers/ldap/libsss_ipa_la-sdap_async_connection.lo \
 	providers/ldap/libsss_ipa_la-sdap_child_helpers.lo \
 	providers/ldap/libsss_ipa_la-sdap_fd_events.lo \
+	providers/ldap/libsss_ipa_la-sdap_id_op.lo \
 	providers/ldap/libsss_ipa_la-sdap.lo \
 	util/libsss_ipa_la-user_info_msg.lo \
 	util/libsss_ipa_la-sss_ldap.lo util/libsss_ipa_la-sss_krb5.lo \
@@ -234,7 +236,7 @@ libsss_krb5_la_LINK = $(LIBTOOL) $(AM_V_lt) --tag=CC \
 	$(libsss_krb5_la_CFLAGS) $(CFLAGS) $(libsss_krb5_la_LDFLAGS) \
 	$(LDFLAGS) -o $@
 libsss_ldap_la_DEPENDENCIES = $(am__DEPENDENCIES_1) \
-	$(am__DEPENDENCIES_1)
+	$(am__DEPENDENCIES_3) $(am__DEPENDENCIES_1)
 am_libsss_ldap_la_OBJECTS = util/libsss_ldap_la-find_uid.lo \
 	providers/libsss_ldap_la-child_common.lo \
 	providers/ldap/libsss_ldap_la-ldap_id.lo \
@@ -249,6 +251,7 @@ am_libsss_ldap_la_OBJECTS = util/libsss_ldap_la-find_uid.lo \
 	providers/ldap/libsss_ldap_la-sdap_async_connection.lo \
 	providers/ldap/libsss_ldap_la-sdap_child_helpers.lo \
 	providers/ldap/libsss_ldap_la-sdap_fd_events.lo \
+	providers/ldap/libsss_ldap_la-sdap_id_op.lo \
 	providers/ldap/libsss_ldap_la-sdap.lo \
 	util/libsss_ldap_la-user_info_msg.lo \
 	util/libsss_ldap_la-sss_ldap.lo \
@@ -259,7 +262,11 @@ libsss_ldap_la_LINK = $(LIBTOOL) $(AM_V_lt) --tag=CC \
 	$(libsss_ldap_la_CFLAGS) $(CFLAGS) $(libsss_ldap_la_LDFLAGS) \
 	$(LDFLAGS) -o $@
 libsss_proxy_la_DEPENDENCIES = $(am__DEPENDENCIES_1)
-am_libsss_proxy_la_OBJECTS = providers/proxy/libsss_proxy_la-proxy.lo
+am_libsss_proxy_la_OBJECTS =  \
+	providers/proxy/libsss_proxy_la-proxy_common.lo \
+	providers/proxy/libsss_proxy_la-proxy_init.lo \
+	providers/proxy/libsss_proxy_la-proxy_id.lo \
+	providers/proxy/libsss_proxy_la-proxy_auth.lo
 libsss_proxy_la_OBJECTS = $(am_libsss_proxy_la_OBJECTS)
 libsss_proxy_la_LINK = $(LIBTOOL) $(AM_V_lt) --tag=CC \
 	$(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=link $(CCLD) \
@@ -306,9 +313,9 @@ am__pysss_la_SOURCES_DIST = confdb/confdb.c db/sysdb.c db/sysdb_ops.c \
 	util/util.c util/memory.c util/server.c util/signal.c \
 	util/usertools.c util/backup_file.c util/strtonum.c \
 	util/check_and_open.c util/refcount.c util/debug.c \
-	tools/sss_sync_ops.c tools/tools_util.c tools/files.c \
-	tools/selinux.c tools/nscd.c python/pysss.c
-am__objects_3 = util/pysss_la-debug.lo
+	util/sss_log.c tools/sss_sync_ops.c tools/tools_util.c \
+	tools/files.c tools/selinux.c tools/nscd.c python/pysss.c
+am__objects_3 = util/pysss_la-debug.lo util/pysss_la-sss_log.lo
 am__objects_4 = confdb/pysss_la-confdb.lo db/pysss_la-sysdb.lo \
 	db/pysss_la-sysdb_ops.lo db/pysss_la-sysdb_search.lo \
 	monitor/pysss_la-monitor_sbus.lo \
@@ -355,7 +362,8 @@ sssd_krb5_locator_plugin_la_LINK = $(LIBTOOL) $(AM_V_lt) --tag=CC \
 @HAVE_CHECK_TRUE@	fail_over-tests$(EXEEXT) \
 @HAVE_CHECK_TRUE@	find_uid-tests$(EXEEXT) auth-tests$(EXEEXT) \
 @HAVE_CHECK_TRUE@	ipa_ldap_opt-tests$(EXEEXT) \
-@HAVE_CHECK_TRUE@	simple_access-tests$(EXEEXT)
+@HAVE_CHECK_TRUE@	simple_access-tests$(EXEEXT) \
+@HAVE_CHECK_TRUE@	util-tests$(EXEEXT)
 PROGRAMS = $(noinst_PROGRAMS) $(sbin_PROGRAMS) $(sssdlibexec_PROGRAMS)
 am__auth_tests_SOURCES_DIST = tests/auth-tests.c confdb/confdb.c \
 	db/sysdb.c db/sysdb_ops.c db/sysdb_search.c \
@@ -365,8 +373,10 @@ am__auth_tests_SOURCES_DIST = tests/auth-tests.c confdb/confdb.c \
 	sbus/sssd_dbus_connection.c sbus/sssd_dbus_server.c \
 	util/util.c util/memory.c util/server.c util/signal.c \
 	util/usertools.c util/backup_file.c util/strtonum.c \
-	util/check_and_open.c util/refcount.c util/debug.c
-am__objects_6 = util/auth_tests-debug.$(OBJEXT)
+	util/check_and_open.c util/refcount.c util/debug.c \
+	util/sss_log.c
+am__objects_6 = util/auth_tests-debug.$(OBJEXT) \
+	util/auth_tests-sss_log.$(OBJEXT)
 am__objects_7 = confdb/auth_tests-confdb.$(OBJEXT) \
 	db/auth_tests-sysdb.$(OBJEXT) \
 	db/auth_tests-sysdb_ops.$(OBJEXT) \
@@ -406,9 +416,10 @@ am__DEPENDENCIES_7 = $(am__DEPENDENCIES_1) $(am__DEPENDENCIES_1) \
 auth_tests_LINK = $(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) \
 	$(LIBTOOLFLAGS) --mode=link $(CCLD) $(auth_tests_CFLAGS) \
 	$(CFLAGS) $(AM_LDFLAGS) $(LDFLAGS) -o $@
-am__check_and_open_tests_SOURCES_DIST = util/debug.c \
+am__check_and_open_tests_SOURCES_DIST = util/debug.c util/sss_log.c \
 	tests/check_and_open-tests.c util/check_and_open.c
-am__objects_8 = util/check_and_open_tests-debug.$(OBJEXT)
+am__objects_8 = util/check_and_open_tests-debug.$(OBJEXT) \
+	util/check_and_open_tests-sss_log.$(OBJEXT)
 @HAVE_CHECK_TRUE@am_check_and_open_tests_OBJECTS = $(am__objects_8) \
 @HAVE_CHECK_TRUE@	tests/check_and_open_tests-check_and_open-tests.$(OBJEXT) \
 @HAVE_CHECK_TRUE@	util/check_and_open_tests-check_and_open.$(OBJEXT)
@@ -429,14 +440,16 @@ am__fail_over_tests_SOURCES_DIST = tests/fail_over-tests.c \
 	sbus/sssd_dbus_connection.c sbus/sssd_dbus_server.c \
 	util/util.c util/memory.c util/server.c util/signal.c \
 	util/usertools.c util/backup_file.c util/strtonum.c \
-	util/check_and_open.c util/refcount.c util/debug.c
+	util/check_and_open.c util/refcount.c util/debug.c \
+	util/sss_log.c
 @BUILD_ARES_DATA_TRUE@am__objects_9 = resolv/ares/fail_over_tests-ares_parse_srv_reply.$(OBJEXT) \
 @BUILD_ARES_DATA_TRUE@	resolv/ares/fail_over_tests-ares_data.$(OBJEXT)
 am__objects_10 = resolv/fail_over_tests-async_resolv.$(OBJEXT) \
 	$(am__objects_9)
 am__objects_11 = providers/fail_over_tests-fail_over.$(OBJEXT) \
 	$(am__objects_10)
-am__objects_12 = util/fail_over_tests-debug.$(OBJEXT)
+am__objects_12 = util/fail_over_tests-debug.$(OBJEXT) \
+	util/fail_over_tests-sss_log.$(OBJEXT)
 am__objects_13 = confdb/fail_over_tests-confdb.$(OBJEXT) \
 	db/fail_over_tests-sysdb.$(OBJEXT) \
 	db/fail_over_tests-sysdb_ops.$(OBJEXT) \
@@ -468,9 +481,11 @@ fail_over_tests_LINK = $(LIBTOOL) $(AM_V_lt) --tag=CC \
 	$(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=link $(CCLD) \
 	$(fail_over_tests_CFLAGS) $(CFLAGS) $(AM_LDFLAGS) $(LDFLAGS) \
 	-o $@
-am__files_tests_SOURCES_DIST = util/debug.c tests/files-tests.c \
-	util/check_and_open.c tools/selinux.c tools/files.c
-am__objects_14 = util/files_tests-debug.$(OBJEXT)
+am__files_tests_SOURCES_DIST = util/debug.c util/sss_log.c \
+	tests/files-tests.c util/check_and_open.c tools/selinux.c \
+	tools/files.c
+am__objects_14 = util/files_tests-debug.$(OBJEXT) \
+	util/files_tests-sss_log.$(OBJEXT)
 @HAVE_CHECK_TRUE@am_files_tests_OBJECTS = $(am__objects_14) \
 @HAVE_CHECK_TRUE@	tests/files_tests-files-tests.$(OBJEXT) \
 @HAVE_CHECK_TRUE@	util/files_tests-check_and_open.$(OBJEXT) \
@@ -491,8 +506,9 @@ files_tests_LINK = $(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) \
 	$(LIBTOOLFLAGS) --mode=link $(CCLD) $(files_tests_CFLAGS) \
 	$(CFLAGS) $(AM_LDFLAGS) $(LDFLAGS) -o $@
 am__find_uid_tests_SOURCES_DIST = tests/find_uid-tests.c \
-	util/find_uid.c util/debug.c
-am__objects_15 = util/find_uid_tests-debug.$(OBJEXT)
+	util/find_uid.c util/debug.c util/sss_log.c
+am__objects_15 = util/find_uid_tests-debug.$(OBJEXT) \
+	util/find_uid_tests-sss_log.$(OBJEXT)
 @HAVE_CHECK_TRUE@am_find_uid_tests_OBJECTS = tests/find_uid_tests-find_uid-tests.$(OBJEXT) \
 @HAVE_CHECK_TRUE@	util/find_uid_tests-find_uid.$(OBJEXT) \
 @HAVE_CHECK_TRUE@	$(am__objects_15)
@@ -517,8 +533,9 @@ ipa_ldap_opt_tests_LINK = $(LIBTOOL) $(AM_V_lt) --tag=CC \
 	$(ipa_ldap_opt_tests_CFLAGS) $(CFLAGS) $(AM_LDFLAGS) \
 	$(LDFLAGS) -o $@
 am__ipa_timerules_tests_SOURCES_DIST = providers/ipa/ipa_timerules.c \
-	tests/ipa_timerules-tests.c util/debug.c
-am__objects_16 = util/ipa_timerules_tests-debug.$(OBJEXT)
+	tests/ipa_timerules-tests.c util/debug.c util/sss_log.c
+am__objects_16 = util/ipa_timerules_tests-debug.$(OBJEXT) \
+	util/ipa_timerules_tests-sss_log.$(OBJEXT)
 @HAVE_CHECK_TRUE@am_ipa_timerules_tests_OBJECTS = providers/ipa/ipa_timerules_tests-ipa_timerules.$(OBJEXT) \
 @HAVE_CHECK_TRUE@	tests/ipa_timerules_tests-ipa_timerules-tests.$(OBJEXT) \
 @HAVE_CHECK_TRUE@	$(am__objects_16)
@@ -543,14 +560,16 @@ am__krb5_utils_tests_SOURCES_DIST = tests/krb5_utils-tests.c \
 	sbus/sssd_dbus_connection.c sbus/sssd_dbus_server.c \
 	util/util.c util/memory.c util/server.c util/signal.c \
 	util/usertools.c util/backup_file.c util/strtonum.c \
-	util/check_and_open.c util/refcount.c util/debug.c
+	util/check_and_open.c util/refcount.c util/debug.c \
+	util/sss_log.c
 @BUILD_ARES_DATA_TRUE@am__objects_17 = resolv/ares/krb5_utils_tests-ares_parse_srv_reply.$(OBJEXT) \
 @BUILD_ARES_DATA_TRUE@	resolv/ares/krb5_utils_tests-ares_data.$(OBJEXT)
 am__objects_18 = resolv/krb5_utils_tests-async_resolv.$(OBJEXT) \
 	$(am__objects_17)
 am__objects_19 = providers/krb5_utils_tests-fail_over.$(OBJEXT) \
 	$(am__objects_18)
-am__objects_20 = util/krb5_utils_tests-debug.$(OBJEXT)
+am__objects_20 = util/krb5_utils_tests-debug.$(OBJEXT) \
+	util/krb5_utils_tests-sss_log.$(OBJEXT)
 am__objects_21 = confdb/krb5_utils_tests-confdb.$(OBJEXT) \
 	db/krb5_utils_tests-sysdb.$(OBJEXT) \
 	db/krb5_utils_tests-sysdb_ops.$(OBJEXT) \
@@ -587,7 +606,8 @@ krb5_utils_tests_LINK = $(LIBTOOL) $(AM_V_lt) --tag=CC \
 	$(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=link $(CCLD) \
 	$(krb5_utils_tests_CFLAGS) $(CFLAGS) $(AM_LDFLAGS) $(LDFLAGS) \
 	-o $@
-am__objects_22 = util/krb5_child-debug.$(OBJEXT)
+am__objects_22 = util/krb5_child-debug.$(OBJEXT) \
+	util/krb5_child-sss_log.$(OBJEXT)
 am_krb5_child_OBJECTS = $(am__objects_22) \
 	providers/krb5/krb5_child-krb5_become_user.$(OBJEXT) \
 	providers/krb5/krb5_child-krb5_child.$(OBJEXT) \
@@ -601,7 +621,8 @@ krb5_child_DEPENDENCIES = $(am__DEPENDENCIES_1) $(am__DEPENDENCIES_1) \
 krb5_child_LINK = $(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) \
 	$(LIBTOOLFLAGS) --mode=link $(CCLD) $(krb5_child_CFLAGS) \
 	$(CFLAGS) $(AM_LDFLAGS) $(LDFLAGS) -o $@
-am__objects_23 = util/ldap_child-debug.$(OBJEXT)
+am__objects_23 = util/ldap_child-debug.$(OBJEXT) \
+	util/ldap_child-sss_log.$(OBJEXT)
 am_ldap_child_OBJECTS = $(am__objects_23) \
 	providers/ldap/ldap_child-ldap_child.$(OBJEXT) \
 	providers/ldap_child-child_common.$(OBJEXT) \
@@ -620,7 +641,8 @@ pam_test_client_LINK = $(LIBTOOL) $(AM_V_lt) --tag=CC \
 	$(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=link $(CCLD) \
 	$(AM_CFLAGS) $(CFLAGS) $(pam_test_client_LDFLAGS) $(LDFLAGS) \
 	-o $@
-am__objects_24 = util/proxy_child-debug.$(OBJEXT)
+am__objects_24 = util/proxy_child-debug.$(OBJEXT) \
+	util/proxy_child-sss_log.$(OBJEXT)
 am__objects_25 = confdb/proxy_child-confdb.$(OBJEXT) \
 	db/proxy_child-sysdb.$(OBJEXT) \
 	db/proxy_child-sysdb_ops.$(OBJEXT) \
@@ -657,8 +679,10 @@ am__refcount_tests_SOURCES_DIST = tests/refcount-tests.c \
 	sbus/sssd_dbus_connection.c sbus/sssd_dbus_server.c \
 	util/util.c util/memory.c util/server.c util/signal.c \
 	util/usertools.c util/backup_file.c util/strtonum.c \
-	util/check_and_open.c util/refcount.c util/debug.c
-am__objects_26 = util/refcount_tests-debug.$(OBJEXT)
+	util/check_and_open.c util/refcount.c util/debug.c \
+	util/sss_log.c
+am__objects_26 = util/refcount_tests-debug.$(OBJEXT) \
+	util/refcount_tests-sss_log.$(OBJEXT)
 am__objects_27 = confdb/refcount_tests-confdb.$(OBJEXT) \
 	db/refcount_tests-sysdb.$(OBJEXT) \
 	db/refcount_tests-sysdb_ops.$(OBJEXT) \
@@ -698,9 +722,11 @@ am__resolv_tests_SOURCES_DIST = tests/resolv-tests.c confdb/confdb.c \
 	util/util.c util/memory.c util/server.c util/signal.c \
 	util/usertools.c util/backup_file.c util/strtonum.c \
 	util/check_and_open.c util/refcount.c util/debug.c \
-	resolv/async_resolv.c resolv/ares/ares_parse_srv_reply.c \
-	resolv/ares/ares_data.c resolv/ares/ares_parse_txt_reply.c
-am__objects_28 = util/resolv_tests-debug.$(OBJEXT)
+	util/sss_log.c resolv/async_resolv.c \
+	resolv/ares/ares_parse_srv_reply.c resolv/ares/ares_data.c \
+	resolv/ares/ares_parse_txt_reply.c
+am__objects_28 = util/resolv_tests-debug.$(OBJEXT) \
+	util/resolv_tests-sss_log.$(OBJEXT)
 am__objects_29 = confdb/resolv_tests-confdb.$(OBJEXT) \
 	db/resolv_tests-sysdb.$(OBJEXT) \
 	db/resolv_tests-sysdb_ops.$(OBJEXT) \
@@ -746,8 +772,10 @@ am__simple_access_tests_SOURCES_DIST = tests/simple_access-tests.c \
 	sbus/sssd_dbus_connection.c sbus/sssd_dbus_server.c \
 	util/util.c util/memory.c util/server.c util/signal.c \
 	util/usertools.c util/backup_file.c util/strtonum.c \
-	util/check_and_open.c util/refcount.c util/debug.c
-am__objects_34 = util/simple_access_tests-debug.$(OBJEXT)
+	util/check_and_open.c util/refcount.c util/debug.c \
+	util/sss_log.c
+am__objects_34 = util/simple_access_tests-debug.$(OBJEXT) \
+	util/simple_access_tests-sss_log.$(OBJEXT)
 am__objects_35 = confdb/simple_access_tests-confdb.$(OBJEXT) \
 	db/simple_access_tests-sysdb.$(OBJEXT) \
 	db/simple_access_tests-sysdb_ops.$(OBJEXT) \
@@ -779,7 +807,7 @@ simple_access_tests_LINK = $(LIBTOOL) $(AM_V_lt) --tag=CC \
 	$(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=link $(CCLD) \
 	$(simple_access_tests_CFLAGS) $(CFLAGS) $(AM_LDFLAGS) \
 	$(LDFLAGS) -o $@
-am__objects_36 = util/debug.$(OBJEXT)
+am__objects_36 = util/debug.$(OBJEXT) util/sss_log.$(OBJEXT)
 am__objects_37 = confdb/confdb.$(OBJEXT) db/sysdb.$(OBJEXT) \
 	db/sysdb_ops.$(OBJEXT) db/sysdb_search.$(OBJEXT) \
 	monitor/monitor_sbus.$(OBJEXT) \
@@ -834,9 +862,10 @@ am_sss_usermod_OBJECTS = tools/sss_usermod.$(OBJEXT) $(am__objects_37) \
 sss_usermod_OBJECTS = $(am_sss_usermod_OBJECTS)
 sss_usermod_DEPENDENCIES = $(am__DEPENDENCIES_13)
 am_sssd_OBJECTS = monitor/monitor.$(OBJEXT) \
+	monitor/monitor_netlink.$(OBJEXT) \
 	confdb/confdb_setup.$(OBJEXT) $(am__objects_37)
 sssd_OBJECTS = $(am_sssd_OBJECTS)
-sssd_DEPENDENCIES = $(am__DEPENDENCIES_7)
+sssd_DEPENDENCIES = $(am__DEPENDENCIES_7) $(am__DEPENDENCIES_1)
 am__sssd_be_SOURCES_DIST = providers/data_provider_be.c \
 	providers/data_provider_fo.c providers/data_provider_opts.c \
 	providers/data_provider_callbacks.c providers/fail_over.c \
@@ -848,7 +877,8 @@ am__sssd_be_SOURCES_DIST = providers/data_provider_be.c \
 	sbus/sssd_dbus_connection.c sbus/sssd_dbus_server.c \
 	util/util.c util/memory.c util/server.c util/signal.c \
 	util/usertools.c util/backup_file.c util/strtonum.c \
-	util/check_and_open.c util/refcount.c util/debug.c
+	util/check_and_open.c util/refcount.c util/debug.c \
+	util/sss_log.c
 @BUILD_ARES_DATA_TRUE@am__objects_39 = resolv/ares/ares_parse_srv_reply.$(OBJEXT) \
 @BUILD_ARES_DATA_TRUE@	resolv/ares/ares_data.$(OBJEXT)
 am__objects_40 = resolv/async_resolv.$(OBJEXT) $(am__objects_39)
@@ -905,8 +935,10 @@ am__sysdb_tests_SOURCES_DIST = tests/sysdb-tests.c confdb/confdb.c \
 	sbus/sssd_dbus_connection.c sbus/sssd_dbus_server.c \
 	util/util.c util/memory.c util/server.c util/signal.c \
 	util/usertools.c util/backup_file.c util/strtonum.c \
-	util/check_and_open.c util/refcount.c util/debug.c
-am__objects_43 = util/sysdb_tests-debug.$(OBJEXT)
+	util/check_and_open.c util/refcount.c util/debug.c \
+	util/sss_log.c
+am__objects_43 = util/sysdb_tests-debug.$(OBJEXT) \
+	util/sysdb_tests-sss_log.$(OBJEXT)
 am__objects_44 = confdb/sysdb_tests-confdb.$(OBJEXT) \
 	db/sysdb_tests-sysdb.$(OBJEXT) \
 	db/sysdb_tests-sysdb_ops.$(OBJEXT) \
@@ -934,6 +966,48 @@ am__objects_44 = confdb/sysdb_tests-confdb.$(OBJEXT) \
 sysdb_tests_OBJECTS = $(am_sysdb_tests_OBJECTS)
 sysdb_tests_LINK = $(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) \
 	$(LIBTOOLFLAGS) --mode=link $(CCLD) $(sysdb_tests_CFLAGS) \
+	$(CFLAGS) $(AM_LDFLAGS) $(LDFLAGS) -o $@
+am__util_tests_SOURCES_DIST = tests/util-tests.c confdb/confdb.c \
+	db/sysdb.c db/sysdb_ops.c db/sysdb_search.c \
+	monitor/monitor_sbus.c providers/dp_auth_util.c \
+	providers/dp_pam_data_util.c providers/dp_sbus.c \
+	sbus/sbus_client.c sbus/sssd_dbus_common.c \
+	sbus/sssd_dbus_connection.c sbus/sssd_dbus_server.c \
+	util/util.c util/memory.c util/server.c util/signal.c \
+	util/usertools.c util/backup_file.c util/strtonum.c \
+	util/check_and_open.c util/refcount.c util/debug.c \
+	util/sss_log.c
+am__objects_45 = util/util_tests-debug.$(OBJEXT) \
+	util/util_tests-sss_log.$(OBJEXT)
+am__objects_46 = confdb/util_tests-confdb.$(OBJEXT) \
+	db/util_tests-sysdb.$(OBJEXT) \
+	db/util_tests-sysdb_ops.$(OBJEXT) \
+	db/util_tests-sysdb_search.$(OBJEXT) \
+	monitor/util_tests-monitor_sbus.$(OBJEXT) \
+	providers/util_tests-dp_auth_util.$(OBJEXT) \
+	providers/util_tests-dp_pam_data_util.$(OBJEXT) \
+	providers/util_tests-dp_sbus.$(OBJEXT) \
+	sbus/util_tests-sbus_client.$(OBJEXT) \
+	sbus/util_tests-sssd_dbus_common.$(OBJEXT) \
+	sbus/util_tests-sssd_dbus_connection.$(OBJEXT) \
+	sbus/util_tests-sssd_dbus_server.$(OBJEXT) \
+	util/util_tests-util.$(OBJEXT) \
+	util/util_tests-memory.$(OBJEXT) \
+	util/util_tests-server.$(OBJEXT) \
+	util/util_tests-signal.$(OBJEXT) \
+	util/util_tests-usertools.$(OBJEXT) \
+	util/util_tests-backup_file.$(OBJEXT) \
+	util/util_tests-strtonum.$(OBJEXT) \
+	util/util_tests-check_and_open.$(OBJEXT) \
+	util/util_tests-refcount.$(OBJEXT) $(am__objects_45)
+@HAVE_CHECK_TRUE@am_util_tests_OBJECTS =  \
+@HAVE_CHECK_TRUE@	tests/util_tests-util-tests.$(OBJEXT) \
+@HAVE_CHECK_TRUE@	$(am__objects_46)
+util_tests_OBJECTS = $(am_util_tests_OBJECTS)
+@HAVE_CHECK_TRUE@util_tests_DEPENDENCIES = $(am__DEPENDENCIES_7) \
+@HAVE_CHECK_TRUE@	$(am__DEPENDENCIES_1) libsss_test_common.la
+util_tests_LINK = $(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) \
+	$(LIBTOOLFLAGS) --mode=link $(CCLD) $(util_tests_CFLAGS) \
 	$(CFLAGS) $(AM_LDFLAGS) $(LDFLAGS) -o $@
 am__dist_init_SCRIPTS_DIST = sysv/SUSE/sssd sysv/sssd
 SCRIPTS = $(dist_init_SCRIPTS) $(dist_noinst_SCRIPTS) \
@@ -983,7 +1057,7 @@ SOURCES = $(libnss_sss_la_SOURCES) $(libsss_crypt_la_SOURCES) \
 	$(sss_userdel_SOURCES) $(sss_usermod_SOURCES) $(sssd_SOURCES) \
 	$(sssd_be_SOURCES) $(sssd_nss_SOURCES) $(sssd_pam_SOURCES) \
 	$(stress_tests_SOURCES) $(strtonum_tests_SOURCES) \
-	$(sysdb_tests_SOURCES)
+	$(sysdb_tests_SOURCES) $(util_tests_SOURCES)
 DIST_SOURCES = $(libnss_sss_la_SOURCES) \
 	$(am__libsss_crypt_la_SOURCES_DIST) $(libsss_ipa_la_SOURCES) \
 	$(libsss_krb5_la_SOURCES) $(libsss_ldap_la_SOURCES) \
@@ -1011,7 +1085,7 @@ DIST_SOURCES = $(libnss_sss_la_SOURCES) \
 	$(am__sssd_be_SOURCES_DIST) $(sssd_nss_SOURCES) \
 	$(sssd_pam_SOURCES) $(stress_tests_SOURCES) \
 	$(am__strtonum_tests_SOURCES_DIST) \
-	$(am__sysdb_tests_SOURCES_DIST)
+	$(am__sysdb_tests_SOURCES_DIST) $(am__util_tests_SOURCES_DIST)
 RECURSIVE_TARGETS = all-recursive check-recursive dvi-recursive \
 	html-recursive info-recursive install-data-recursive \
 	install-dvi-recursive install-exec-recursive \
@@ -1108,6 +1182,7 @@ EXEEXT = @EXEEXT@
 FGREP = @FGREP@
 GMSGFMT = @GMSGFMT@
 GREP = @GREP@
+HAVE_LIBNL = @HAVE_LIBNL@
 HAVE_MANPAGES = @HAVE_MANPAGES@
 HAVE_PYTHON_BINDINGS = @HAVE_PYTHON_BINDINGS@
 HAVE_SELINUX = @HAVE_SELINUX@
@@ -1129,6 +1204,8 @@ LDB_OBJ = @LDB_OBJ@
 LDFLAGS = @LDFLAGS@
 LIBICONV = @LIBICONV@
 LIBINTL = @LIBINTL@
+LIBNL_CFLAGS = @LIBNL_CFLAGS@
+LIBNL_LIBS = @LIBNL_LIBS@
 LIBOBJS = @LIBOBJS@
 LIBS = @LIBS@
 LIBTOOL = @LIBTOOL@
@@ -1249,6 +1326,8 @@ krb5pluginpath = @krb5pluginpath@
 ldblibdir = @ldblibdir@
 libdir = @libdir@
 libexecdir = @libexecdir@
+libnl_CFLAGS = @libnl_CFLAGS@
+libnl_LIBS = @libnl_LIBS@
 localedir = @localedir@
 localstatedir = @localstatedir@
 logpath = @logpath@
@@ -1307,7 +1386,8 @@ dist_sssdlibexec_SCRIPTS = \
 @HAVE_CHECK_TRUE@        find_uid-tests \
 @HAVE_CHECK_TRUE@        auth-tests \
 @HAVE_CHECK_TRUE@        ipa_ldap_opt-tests \
-@HAVE_CHECK_TRUE@        simple_access-tests
+@HAVE_CHECK_TRUE@        simple_access-tests \
+@HAVE_CHECK_TRUE@        util-tests
 
 sssdlib_LTLIBRARIES = \
     libsss_ldap.la \
@@ -1410,6 +1490,7 @@ AM_CPPFLAGS = -Wall \
     $(COLLECTION_CFLAGS) \
     $(INI_CFG_CFLAGS) \
     $(DHASH_CFLAGS) \
+    $(LIBNL_CFLAGS) \
     -DLIBDIR=\"$(libdir)\" \
     -DVARDIR=\"$(localstatedir)\" \
     -DSHLIBEXT=\"$(SHLIBEXT)\" \
@@ -1425,7 +1506,8 @@ AM_CPPFLAGS = -Wall \
 
 EXTRA_DIST = build/config.rpath
 SSSD_DEBUG_OBJ = \
-    util/debug.c
+    util/debug.c \
+    util/sss_log.c
 
 SSSD_UTIL_OBJ = \
     confdb/confdb.c \
@@ -1537,6 +1619,7 @@ dist_noinst_HEADERS = \
     providers/ldap/sdap_access.h \
     providers/ldap/sdap_async.h \
     providers/ldap/sdap_async_private.h \
+    providers/ldap/sdap_id_op.h \
     providers/ipa/ipa_common.h \
     providers/ipa/ipa_access.h \
     providers/ipa/ipa_timerules.h \
@@ -1557,11 +1640,13 @@ dist_noinst_HEADERS = \
 ####################
 sssd_SOURCES = \
     monitor/monitor.c \
+    monitor/monitor_netlink.c \
     confdb/confdb_setup.c \
     $(SSSD_UTIL_OBJ)
 
 sssd_LDADD = \
-    $(SSSD_LIBS)
+    $(SSSD_LIBS) \
+    $(LIBNL_LIBS)
 
 sssd_nss_SOURCES = \
     responder/nss/nsssrv.c \
@@ -1863,6 +1948,19 @@ libsss_test_common_la_SOURCES = tests/common.c $(am__append_7)
 @HAVE_CHECK_TRUE@    $(SSSD_LIBS) \
 @HAVE_CHECK_TRUE@    $(CHECK_LIBS)
 
+@HAVE_CHECK_TRUE@util_tests_SOURCES = \
+@HAVE_CHECK_TRUE@    tests/util-tests.c \
+@HAVE_CHECK_TRUE@    $(SSSD_UTIL_OBJ)
+
+@HAVE_CHECK_TRUE@util_tests_CFLAGS = \
+@HAVE_CHECK_TRUE@    $(AM_CFLAGS) \
+@HAVE_CHECK_TRUE@    $(CHECK_CFLAGS)
+
+@HAVE_CHECK_TRUE@util_tests_LDADD = \
+@HAVE_CHECK_TRUE@    $(SSSD_LIBS) \
+@HAVE_CHECK_TRUE@    $(CHECK_LIBS) \
+@HAVE_CHECK_TRUE@    libsss_test_common.la
+
 stress_tests_SOURCES = \
     tests/stress-tests.c \
     $(SSSD_UTIL_OBJ)
@@ -1921,6 +2019,7 @@ libsss_ldap_la_SOURCES = \
     providers/ldap/sdap_async_connection.c \
     providers/ldap/sdap_child_helpers.c \
     providers/ldap/sdap_fd_events.c \
+    providers/ldap/sdap_id_op.c \
     providers/ldap/sdap.c \
     util/user_info_msg.c \
     util/sss_ldap.c \
@@ -1933,6 +2032,7 @@ libsss_ldap_la_CFLAGS = \
 
 libsss_ldap_la_LIBADD = \
     $(OPENLDAP_LIBS) \
+    $(DHASH_LIBS) \
     $(KRB5_LIBS)
 
 libsss_ldap_la_LDFLAGS = \
@@ -1940,7 +2040,10 @@ libsss_ldap_la_LDFLAGS = \
     -module
 
 libsss_proxy_la_SOURCES = \
-    providers/proxy/proxy.c
+    providers/proxy/proxy_common.c \
+    providers/proxy/proxy_init.c \
+    providers/proxy/proxy_id.c \
+    providers/proxy/proxy_auth.c
 
 libsss_proxy_la_CFLAGS = \
     $(AM_CFLAGS)
@@ -2008,6 +2111,7 @@ libsss_ipa_la_SOURCES = \
     providers/ldap/sdap_async_connection.c \
     providers/ldap/sdap_child_helpers.c \
     providers/ldap/sdap_fd_events.c \
+    providers/ldap/sdap_id_op.c \
     providers/ldap/sdap.c \
     util/user_info_msg.c \
     util/sss_ldap.c \
@@ -2503,6 +2607,9 @@ providers/ldap/libsss_ipa_la-sdap_child_helpers.lo:  \
 providers/ldap/libsss_ipa_la-sdap_fd_events.lo:  \
 	providers/ldap/$(am__dirstamp) \
 	providers/ldap/$(DEPDIR)/$(am__dirstamp)
+providers/ldap/libsss_ipa_la-sdap_id_op.lo:  \
+	providers/ldap/$(am__dirstamp) \
+	providers/ldap/$(DEPDIR)/$(am__dirstamp)
 providers/ldap/libsss_ipa_la-sdap.lo: providers/ldap/$(am__dirstamp) \
 	providers/ldap/$(DEPDIR)/$(am__dirstamp)
 util/libsss_ipa_la-user_info_msg.lo: util/$(am__dirstamp) \
@@ -2602,6 +2709,9 @@ providers/ldap/libsss_ldap_la-sdap_child_helpers.lo:  \
 providers/ldap/libsss_ldap_la-sdap_fd_events.lo:  \
 	providers/ldap/$(am__dirstamp) \
 	providers/ldap/$(DEPDIR)/$(am__dirstamp)
+providers/ldap/libsss_ldap_la-sdap_id_op.lo:  \
+	providers/ldap/$(am__dirstamp) \
+	providers/ldap/$(DEPDIR)/$(am__dirstamp)
 providers/ldap/libsss_ldap_la-sdap.lo: providers/ldap/$(am__dirstamp) \
 	providers/ldap/$(DEPDIR)/$(am__dirstamp)
 util/libsss_ldap_la-user_info_msg.lo: util/$(am__dirstamp) \
@@ -2618,7 +2728,16 @@ providers/proxy/$(am__dirstamp):
 providers/proxy/$(DEPDIR)/$(am__dirstamp):
 	@$(MKDIR_P) providers/proxy/$(DEPDIR)
 	@: > providers/proxy/$(DEPDIR)/$(am__dirstamp)
-providers/proxy/libsss_proxy_la-proxy.lo:  \
+providers/proxy/libsss_proxy_la-proxy_common.lo:  \
+	providers/proxy/$(am__dirstamp) \
+	providers/proxy/$(DEPDIR)/$(am__dirstamp)
+providers/proxy/libsss_proxy_la-proxy_init.lo:  \
+	providers/proxy/$(am__dirstamp) \
+	providers/proxy/$(DEPDIR)/$(am__dirstamp)
+providers/proxy/libsss_proxy_la-proxy_id.lo:  \
+	providers/proxy/$(am__dirstamp) \
+	providers/proxy/$(DEPDIR)/$(am__dirstamp)
+providers/proxy/libsss_proxy_la-proxy_auth.lo:  \
 	providers/proxy/$(am__dirstamp) \
 	providers/proxy/$(DEPDIR)/$(am__dirstamp)
 libsss_proxy.la: $(libsss_proxy_la_OBJECTS) $(libsss_proxy_la_DEPENDENCIES) 
@@ -2725,6 +2844,8 @@ util/pysss_la-check_and_open.lo: util/$(am__dirstamp) \
 util/pysss_la-refcount.lo: util/$(am__dirstamp) \
 	util/$(DEPDIR)/$(am__dirstamp)
 util/pysss_la-debug.lo: util/$(am__dirstamp) \
+	util/$(DEPDIR)/$(am__dirstamp)
+util/pysss_la-sss_log.lo: util/$(am__dirstamp) \
 	util/$(DEPDIR)/$(am__dirstamp)
 tools/$(am__dirstamp):
 	@$(MKDIR_P) tools
@@ -2913,10 +3034,14 @@ util/auth_tests-refcount.$(OBJEXT): util/$(am__dirstamp) \
 	util/$(DEPDIR)/$(am__dirstamp)
 util/auth_tests-debug.$(OBJEXT): util/$(am__dirstamp) \
 	util/$(DEPDIR)/$(am__dirstamp)
+util/auth_tests-sss_log.$(OBJEXT): util/$(am__dirstamp) \
+	util/$(DEPDIR)/$(am__dirstamp)
 auth-tests$(EXEEXT): $(auth_tests_OBJECTS) $(auth_tests_DEPENDENCIES) 
 	@rm -f auth-tests$(EXEEXT)
 	$(AM_V_CCLD)$(auth_tests_LINK) $(auth_tests_OBJECTS) $(auth_tests_LDADD) $(LIBS)
 util/check_and_open_tests-debug.$(OBJEXT): util/$(am__dirstamp) \
+	util/$(DEPDIR)/$(am__dirstamp)
+util/check_and_open_tests-sss_log.$(OBJEXT): util/$(am__dirstamp) \
 	util/$(DEPDIR)/$(am__dirstamp)
 tests/check_and_open_tests-check_and_open-tests.$(OBJEXT):  \
 	tests/$(am__dirstamp) tests/$(DEPDIR)/$(am__dirstamp)
@@ -2993,10 +3118,14 @@ util/fail_over_tests-refcount.$(OBJEXT): util/$(am__dirstamp) \
 	util/$(DEPDIR)/$(am__dirstamp)
 util/fail_over_tests-debug.$(OBJEXT): util/$(am__dirstamp) \
 	util/$(DEPDIR)/$(am__dirstamp)
+util/fail_over_tests-sss_log.$(OBJEXT): util/$(am__dirstamp) \
+	util/$(DEPDIR)/$(am__dirstamp)
 fail_over-tests$(EXEEXT): $(fail_over_tests_OBJECTS) $(fail_over_tests_DEPENDENCIES) 
 	@rm -f fail_over-tests$(EXEEXT)
 	$(AM_V_CCLD)$(fail_over_tests_LINK) $(fail_over_tests_OBJECTS) $(fail_over_tests_LDADD) $(LIBS)
 util/files_tests-debug.$(OBJEXT): util/$(am__dirstamp) \
+	util/$(DEPDIR)/$(am__dirstamp)
+util/files_tests-sss_log.$(OBJEXT): util/$(am__dirstamp) \
 	util/$(DEPDIR)/$(am__dirstamp)
 tests/files_tests-files-tests.$(OBJEXT): tests/$(am__dirstamp) \
 	tests/$(DEPDIR)/$(am__dirstamp)
@@ -3015,6 +3144,8 @@ util/find_uid_tests-find_uid.$(OBJEXT): util/$(am__dirstamp) \
 	util/$(DEPDIR)/$(am__dirstamp)
 util/find_uid_tests-debug.$(OBJEXT): util/$(am__dirstamp) \
 	util/$(DEPDIR)/$(am__dirstamp)
+util/find_uid_tests-sss_log.$(OBJEXT): util/$(am__dirstamp) \
+	util/$(DEPDIR)/$(am__dirstamp)
 find_uid-tests$(EXEEXT): $(find_uid_tests_OBJECTS) $(find_uid_tests_DEPENDENCIES) 
 	@rm -f find_uid-tests$(EXEEXT)
 	$(AM_V_CCLD)$(find_uid_tests_LINK) $(find_uid_tests_OBJECTS) $(find_uid_tests_LDADD) $(LIBS)
@@ -3032,6 +3163,8 @@ providers/ipa/ipa_timerules_tests-ipa_timerules.$(OBJEXT):  \
 tests/ipa_timerules_tests-ipa_timerules-tests.$(OBJEXT):  \
 	tests/$(am__dirstamp) tests/$(DEPDIR)/$(am__dirstamp)
 util/ipa_timerules_tests-debug.$(OBJEXT): util/$(am__dirstamp) \
+	util/$(DEPDIR)/$(am__dirstamp)
+util/ipa_timerules_tests-sss_log.$(OBJEXT): util/$(am__dirstamp) \
 	util/$(DEPDIR)/$(am__dirstamp)
 ipa_timerules-tests$(EXEEXT): $(ipa_timerules_tests_OBJECTS) $(ipa_timerules_tests_DEPENDENCIES) 
 	@rm -f ipa_timerules-tests$(EXEEXT)
@@ -3104,10 +3237,14 @@ util/krb5_utils_tests-refcount.$(OBJEXT): util/$(am__dirstamp) \
 	util/$(DEPDIR)/$(am__dirstamp)
 util/krb5_utils_tests-debug.$(OBJEXT): util/$(am__dirstamp) \
 	util/$(DEPDIR)/$(am__dirstamp)
+util/krb5_utils_tests-sss_log.$(OBJEXT): util/$(am__dirstamp) \
+	util/$(DEPDIR)/$(am__dirstamp)
 krb5-utils-tests$(EXEEXT): $(krb5_utils_tests_OBJECTS) $(krb5_utils_tests_DEPENDENCIES) 
 	@rm -f krb5-utils-tests$(EXEEXT)
 	$(AM_V_CCLD)$(krb5_utils_tests_LINK) $(krb5_utils_tests_OBJECTS) $(krb5_utils_tests_LDADD) $(LIBS)
 util/krb5_child-debug.$(OBJEXT): util/$(am__dirstamp) \
+	util/$(DEPDIR)/$(am__dirstamp)
+util/krb5_child-sss_log.$(OBJEXT): util/$(am__dirstamp) \
 	util/$(DEPDIR)/$(am__dirstamp)
 providers/krb5/krb5_child-krb5_become_user.$(OBJEXT):  \
 	providers/krb5/$(am__dirstamp) \
@@ -3127,6 +3264,8 @@ krb5_child$(EXEEXT): $(krb5_child_OBJECTS) $(krb5_child_DEPENDENCIES)
 	@rm -f krb5_child$(EXEEXT)
 	$(AM_V_CCLD)$(krb5_child_LINK) $(krb5_child_OBJECTS) $(krb5_child_LDADD) $(LIBS)
 util/ldap_child-debug.$(OBJEXT): util/$(am__dirstamp) \
+	util/$(DEPDIR)/$(am__dirstamp)
+util/ldap_child-sss_log.$(OBJEXT): util/$(am__dirstamp) \
 	util/$(DEPDIR)/$(am__dirstamp)
 providers/ldap/ldap_child-ldap_child.$(OBJEXT):  \
 	providers/ldap/$(am__dirstamp) \
@@ -3187,6 +3326,8 @@ util/proxy_child-refcount.$(OBJEXT): util/$(am__dirstamp) \
 	util/$(DEPDIR)/$(am__dirstamp)
 util/proxy_child-debug.$(OBJEXT): util/$(am__dirstamp) \
 	util/$(DEPDIR)/$(am__dirstamp)
+util/proxy_child-sss_log.$(OBJEXT): util/$(am__dirstamp) \
+	util/$(DEPDIR)/$(am__dirstamp)
 providers/proxy/proxy_child-proxy_child.$(OBJEXT):  \
 	providers/proxy/$(am__dirstamp) \
 	providers/proxy/$(DEPDIR)/$(am__dirstamp)
@@ -3239,6 +3380,8 @@ util/refcount_tests-refcount.$(OBJEXT): util/$(am__dirstamp) \
 	util/$(DEPDIR)/$(am__dirstamp)
 util/refcount_tests-debug.$(OBJEXT): util/$(am__dirstamp) \
 	util/$(DEPDIR)/$(am__dirstamp)
+util/refcount_tests-sss_log.$(OBJEXT): util/$(am__dirstamp) \
+	util/$(DEPDIR)/$(am__dirstamp)
 refcount-tests$(EXEEXT): $(refcount_tests_OBJECTS) $(refcount_tests_DEPENDENCIES) 
 	@rm -f refcount-tests$(EXEEXT)
 	$(AM_V_CCLD)$(refcount_tests_LINK) $(refcount_tests_OBJECTS) $(refcount_tests_LDADD) $(LIBS)
@@ -3287,6 +3430,8 @@ util/resolv_tests-check_and_open.$(OBJEXT): util/$(am__dirstamp) \
 util/resolv_tests-refcount.$(OBJEXT): util/$(am__dirstamp) \
 	util/$(DEPDIR)/$(am__dirstamp)
 util/resolv_tests-debug.$(OBJEXT): util/$(am__dirstamp) \
+	util/$(DEPDIR)/$(am__dirstamp)
+util/resolv_tests-sss_log.$(OBJEXT): util/$(am__dirstamp) \
 	util/$(DEPDIR)/$(am__dirstamp)
 resolv/resolv_tests-async_resolv.$(OBJEXT): resolv/$(am__dirstamp) \
 	resolv/$(DEPDIR)/$(am__dirstamp)
@@ -3351,6 +3496,8 @@ util/simple_access_tests-refcount.$(OBJEXT): util/$(am__dirstamp) \
 	util/$(DEPDIR)/$(am__dirstamp)
 util/simple_access_tests-debug.$(OBJEXT): util/$(am__dirstamp) \
 	util/$(DEPDIR)/$(am__dirstamp)
+util/simple_access_tests-sss_log.$(OBJEXT): util/$(am__dirstamp) \
+	util/$(DEPDIR)/$(am__dirstamp)
 simple_access-tests$(EXEEXT): $(simple_access_tests_OBJECTS) $(simple_access_tests_DEPENDENCIES) 
 	@rm -f simple_access-tests$(EXEEXT)
 	$(AM_V_CCLD)$(simple_access_tests_LINK) $(simple_access_tests_OBJECTS) $(simple_access_tests_LDADD) $(LIBS)
@@ -3399,6 +3546,8 @@ util/refcount.$(OBJEXT): util/$(am__dirstamp) \
 	util/$(DEPDIR)/$(am__dirstamp)
 util/debug.$(OBJEXT): util/$(am__dirstamp) \
 	util/$(DEPDIR)/$(am__dirstamp)
+util/sss_log.$(OBJEXT): util/$(am__dirstamp) \
+	util/$(DEPDIR)/$(am__dirstamp)
 tools/sss_sync_ops.$(OBJEXT): tools/$(am__dirstamp) \
 	tools/$(DEPDIR)/$(am__dirstamp)
 tools/tools_util.$(OBJEXT): tools/$(am__dirstamp) \
@@ -3445,6 +3594,8 @@ sss_usermod$(EXEEXT): $(sss_usermod_OBJECTS) $(sss_usermod_DEPENDENCIES)
 	@rm -f sss_usermod$(EXEEXT)
 	$(AM_V_CCLD)$(LINK) $(sss_usermod_OBJECTS) $(sss_usermod_LDADD) $(LIBS)
 monitor/monitor.$(OBJEXT): monitor/$(am__dirstamp) \
+	monitor/$(DEPDIR)/$(am__dirstamp)
+monitor/monitor_netlink.$(OBJEXT): monitor/$(am__dirstamp) \
 	monitor/$(DEPDIR)/$(am__dirstamp)
 confdb/confdb_setup.$(OBJEXT): confdb/$(am__dirstamp) \
 	confdb/$(DEPDIR)/$(am__dirstamp)
@@ -3582,9 +3733,62 @@ util/sysdb_tests-refcount.$(OBJEXT): util/$(am__dirstamp) \
 	util/$(DEPDIR)/$(am__dirstamp)
 util/sysdb_tests-debug.$(OBJEXT): util/$(am__dirstamp) \
 	util/$(DEPDIR)/$(am__dirstamp)
+util/sysdb_tests-sss_log.$(OBJEXT): util/$(am__dirstamp) \
+	util/$(DEPDIR)/$(am__dirstamp)
 sysdb-tests$(EXEEXT): $(sysdb_tests_OBJECTS) $(sysdb_tests_DEPENDENCIES) 
 	@rm -f sysdb-tests$(EXEEXT)
 	$(AM_V_CCLD)$(sysdb_tests_LINK) $(sysdb_tests_OBJECTS) $(sysdb_tests_LDADD) $(LIBS)
+tests/util_tests-util-tests.$(OBJEXT): tests/$(am__dirstamp) \
+	tests/$(DEPDIR)/$(am__dirstamp)
+confdb/util_tests-confdb.$(OBJEXT): confdb/$(am__dirstamp) \
+	confdb/$(DEPDIR)/$(am__dirstamp)
+db/util_tests-sysdb.$(OBJEXT): db/$(am__dirstamp) \
+	db/$(DEPDIR)/$(am__dirstamp)
+db/util_tests-sysdb_ops.$(OBJEXT): db/$(am__dirstamp) \
+	db/$(DEPDIR)/$(am__dirstamp)
+db/util_tests-sysdb_search.$(OBJEXT): db/$(am__dirstamp) \
+	db/$(DEPDIR)/$(am__dirstamp)
+monitor/util_tests-monitor_sbus.$(OBJEXT): monitor/$(am__dirstamp) \
+	monitor/$(DEPDIR)/$(am__dirstamp)
+providers/util_tests-dp_auth_util.$(OBJEXT):  \
+	providers/$(am__dirstamp) providers/$(DEPDIR)/$(am__dirstamp)
+providers/util_tests-dp_pam_data_util.$(OBJEXT):  \
+	providers/$(am__dirstamp) providers/$(DEPDIR)/$(am__dirstamp)
+providers/util_tests-dp_sbus.$(OBJEXT): providers/$(am__dirstamp) \
+	providers/$(DEPDIR)/$(am__dirstamp)
+sbus/util_tests-sbus_client.$(OBJEXT): sbus/$(am__dirstamp) \
+	sbus/$(DEPDIR)/$(am__dirstamp)
+sbus/util_tests-sssd_dbus_common.$(OBJEXT): sbus/$(am__dirstamp) \
+	sbus/$(DEPDIR)/$(am__dirstamp)
+sbus/util_tests-sssd_dbus_connection.$(OBJEXT): sbus/$(am__dirstamp) \
+	sbus/$(DEPDIR)/$(am__dirstamp)
+sbus/util_tests-sssd_dbus_server.$(OBJEXT): sbus/$(am__dirstamp) \
+	sbus/$(DEPDIR)/$(am__dirstamp)
+util/util_tests-util.$(OBJEXT): util/$(am__dirstamp) \
+	util/$(DEPDIR)/$(am__dirstamp)
+util/util_tests-memory.$(OBJEXT): util/$(am__dirstamp) \
+	util/$(DEPDIR)/$(am__dirstamp)
+util/util_tests-server.$(OBJEXT): util/$(am__dirstamp) \
+	util/$(DEPDIR)/$(am__dirstamp)
+util/util_tests-signal.$(OBJEXT): util/$(am__dirstamp) \
+	util/$(DEPDIR)/$(am__dirstamp)
+util/util_tests-usertools.$(OBJEXT): util/$(am__dirstamp) \
+	util/$(DEPDIR)/$(am__dirstamp)
+util/util_tests-backup_file.$(OBJEXT): util/$(am__dirstamp) \
+	util/$(DEPDIR)/$(am__dirstamp)
+util/util_tests-strtonum.$(OBJEXT): util/$(am__dirstamp) \
+	util/$(DEPDIR)/$(am__dirstamp)
+util/util_tests-check_and_open.$(OBJEXT): util/$(am__dirstamp) \
+	util/$(DEPDIR)/$(am__dirstamp)
+util/util_tests-refcount.$(OBJEXT): util/$(am__dirstamp) \
+	util/$(DEPDIR)/$(am__dirstamp)
+util/util_tests-debug.$(OBJEXT): util/$(am__dirstamp) \
+	util/$(DEPDIR)/$(am__dirstamp)
+util/util_tests-sss_log.$(OBJEXT): util/$(am__dirstamp) \
+	util/$(DEPDIR)/$(am__dirstamp)
+util-tests$(EXEEXT): $(util_tests_OBJECTS) $(util_tests_DEPENDENCIES) 
+	@rm -f util-tests$(EXEEXT)
+	$(AM_V_CCLD)$(util_tests_LINK) $(util_tests_OBJECTS) $(util_tests_LDADD) $(LIBS)
 install-dist_initSCRIPTS: $(dist_init_SCRIPTS)
 	@$(NORMAL_INSTALL)
 	test -z "$(initdir)" || $(MKDIR_P) "$(DESTDIR)$(initdir)"
@@ -3668,6 +3872,7 @@ mostlyclean-compile:
 	-rm -f confdb/resolv_tests-confdb.$(OBJEXT)
 	-rm -f confdb/simple_access_tests-confdb.$(OBJEXT)
 	-rm -f confdb/sysdb_tests-confdb.$(OBJEXT)
+	-rm -f confdb/util_tests-confdb.$(OBJEXT)
 	-rm -f db/auth_tests-sysdb.$(OBJEXT)
 	-rm -f db/auth_tests-sysdb_ops.$(OBJEXT)
 	-rm -f db/auth_tests-sysdb_search.$(OBJEXT)
@@ -3701,6 +3906,9 @@ mostlyclean-compile:
 	-rm -f db/sysdb_tests-sysdb.$(OBJEXT)
 	-rm -f db/sysdb_tests-sysdb_ops.$(OBJEXT)
 	-rm -f db/sysdb_tests-sysdb_search.$(OBJEXT)
+	-rm -f db/util_tests-sysdb.$(OBJEXT)
+	-rm -f db/util_tests-sysdb_ops.$(OBJEXT)
+	-rm -f db/util_tests-sysdb_search.$(OBJEXT)
 	-rm -f krb5_plugin/sssd_krb5_locator_plugin_la-sssd_krb5_locator_plugin.$(OBJEXT)
 	-rm -f krb5_plugin/sssd_krb5_locator_plugin_la-sssd_krb5_locator_plugin.lo
 	-rm -f ldb_modules/memberof_la-memberof.$(OBJEXT)
@@ -3709,6 +3917,7 @@ mostlyclean-compile:
 	-rm -f monitor/fail_over_tests-monitor_sbus.$(OBJEXT)
 	-rm -f monitor/krb5_utils_tests-monitor_sbus.$(OBJEXT)
 	-rm -f monitor/monitor.$(OBJEXT)
+	-rm -f monitor/monitor_netlink.$(OBJEXT)
 	-rm -f monitor/monitor_sbus.$(OBJEXT)
 	-rm -f monitor/proxy_child-monitor_sbus.$(OBJEXT)
 	-rm -f monitor/pysss_la-monitor_sbus.$(OBJEXT)
@@ -3717,6 +3926,7 @@ mostlyclean-compile:
 	-rm -f monitor/resolv_tests-monitor_sbus.$(OBJEXT)
 	-rm -f monitor/simple_access_tests-monitor_sbus.$(OBJEXT)
 	-rm -f monitor/sysdb_tests-monitor_sbus.$(OBJEXT)
+	-rm -f monitor/util_tests-monitor_sbus.$(OBJEXT)
 	-rm -f providers/auth_tests-dp_auth_util.$(OBJEXT)
 	-rm -f providers/auth_tests-dp_pam_data_util.$(OBJEXT)
 	-rm -f providers/auth_tests-dp_sbus.$(OBJEXT)
@@ -3806,6 +4016,8 @@ mostlyclean-compile:
 	-rm -f providers/ldap/libsss_ipa_la-sdap_child_helpers.lo
 	-rm -f providers/ldap/libsss_ipa_la-sdap_fd_events.$(OBJEXT)
 	-rm -f providers/ldap/libsss_ipa_la-sdap_fd_events.lo
+	-rm -f providers/ldap/libsss_ipa_la-sdap_id_op.$(OBJEXT)
+	-rm -f providers/ldap/libsss_ipa_la-sdap_id_op.lo
 	-rm -f providers/ldap/libsss_ldap_la-ldap_auth.$(OBJEXT)
 	-rm -f providers/ldap/libsss_ldap_la-ldap_auth.lo
 	-rm -f providers/ldap/libsss_ldap_la-ldap_common.$(OBJEXT)
@@ -3832,6 +4044,8 @@ mostlyclean-compile:
 	-rm -f providers/ldap/libsss_ldap_la-sdap_child_helpers.lo
 	-rm -f providers/ldap/libsss_ldap_la-sdap_fd_events.$(OBJEXT)
 	-rm -f providers/ldap/libsss_ldap_la-sdap_fd_events.lo
+	-rm -f providers/ldap/libsss_ldap_la-sdap_id_op.$(OBJEXT)
+	-rm -f providers/ldap/libsss_ldap_la-sdap_id_op.lo
 	-rm -f providers/ldap_child-child_common.$(OBJEXT)
 	-rm -f providers/libsss_ipa_la-child_common.$(OBJEXT)
 	-rm -f providers/libsss_ipa_la-child_common.lo
@@ -3839,8 +4053,14 @@ mostlyclean-compile:
 	-rm -f providers/libsss_krb5_la-child_common.lo
 	-rm -f providers/libsss_ldap_la-child_common.$(OBJEXT)
 	-rm -f providers/libsss_ldap_la-child_common.lo
-	-rm -f providers/proxy/libsss_proxy_la-proxy.$(OBJEXT)
-	-rm -f providers/proxy/libsss_proxy_la-proxy.lo
+	-rm -f providers/proxy/libsss_proxy_la-proxy_auth.$(OBJEXT)
+	-rm -f providers/proxy/libsss_proxy_la-proxy_auth.lo
+	-rm -f providers/proxy/libsss_proxy_la-proxy_common.$(OBJEXT)
+	-rm -f providers/proxy/libsss_proxy_la-proxy_common.lo
+	-rm -f providers/proxy/libsss_proxy_la-proxy_id.$(OBJEXT)
+	-rm -f providers/proxy/libsss_proxy_la-proxy_id.lo
+	-rm -f providers/proxy/libsss_proxy_la-proxy_init.$(OBJEXT)
+	-rm -f providers/proxy/libsss_proxy_la-proxy_init.lo
 	-rm -f providers/proxy/proxy_child-proxy_child.$(OBJEXT)
 	-rm -f providers/proxy_child-dp_auth_util.$(OBJEXT)
 	-rm -f providers/proxy_child-dp_pam_data_util.$(OBJEXT)
@@ -3866,6 +4086,9 @@ mostlyclean-compile:
 	-rm -f providers/sysdb_tests-dp_auth_util.$(OBJEXT)
 	-rm -f providers/sysdb_tests-dp_pam_data_util.$(OBJEXT)
 	-rm -f providers/sysdb_tests-dp_sbus.$(OBJEXT)
+	-rm -f providers/util_tests-dp_auth_util.$(OBJEXT)
+	-rm -f providers/util_tests-dp_pam_data_util.$(OBJEXT)
+	-rm -f providers/util_tests-dp_sbus.$(OBJEXT)
 	-rm -f python/pysss_la-pysss.$(OBJEXT)
 	-rm -f python/pysss_la-pysss.lo
 	-rm -f resolv/ares/ares_data.$(OBJEXT)
@@ -3936,6 +4159,10 @@ mostlyclean-compile:
 	-rm -f sbus/sysdb_tests-sssd_dbus_common.$(OBJEXT)
 	-rm -f sbus/sysdb_tests-sssd_dbus_connection.$(OBJEXT)
 	-rm -f sbus/sysdb_tests-sssd_dbus_server.$(OBJEXT)
+	-rm -f sbus/util_tests-sbus_client.$(OBJEXT)
+	-rm -f sbus/util_tests-sssd_dbus_common.$(OBJEXT)
+	-rm -f sbus/util_tests-sssd_dbus_connection.$(OBJEXT)
+	-rm -f sbus/util_tests-sssd_dbus_server.$(OBJEXT)
 	-rm -f sss_client/common.$(OBJEXT)
 	-rm -f sss_client/common.lo
 	-rm -f sss_client/group.$(OBJEXT)
@@ -3963,6 +4190,7 @@ mostlyclean-compile:
 	-rm -f tests/stress-tests.$(OBJEXT)
 	-rm -f tests/strtonum_tests-strtonum-tests.$(OBJEXT)
 	-rm -f tests/sysdb_tests-sysdb-tests.$(OBJEXT)
+	-rm -f tests/util_tests-util-tests.$(OBJEXT)
 	-rm -f tools/files.$(OBJEXT)
 	-rm -f tools/files_tests-files.$(OBJEXT)
 	-rm -f tools/files_tests-selinux.$(OBJEXT)
@@ -3994,6 +4222,7 @@ mostlyclean-compile:
 	-rm -f util/auth_tests-refcount.$(OBJEXT)
 	-rm -f util/auth_tests-server.$(OBJEXT)
 	-rm -f util/auth_tests-signal.$(OBJEXT)
+	-rm -f util/auth_tests-sss_log.$(OBJEXT)
 	-rm -f util/auth_tests-strtonum.$(OBJEXT)
 	-rm -f util/auth_tests-usertools.$(OBJEXT)
 	-rm -f util/auth_tests-util.$(OBJEXT)
@@ -4001,6 +4230,7 @@ mostlyclean-compile:
 	-rm -f util/check_and_open.$(OBJEXT)
 	-rm -f util/check_and_open_tests-check_and_open.$(OBJEXT)
 	-rm -f util/check_and_open_tests-debug.$(OBJEXT)
+	-rm -f util/check_and_open_tests-sss_log.$(OBJEXT)
 	-rm -f util/debug.$(OBJEXT)
 	-rm -f util/fail_over_tests-backup_file.$(OBJEXT)
 	-rm -f util/fail_over_tests-check_and_open.$(OBJEXT)
@@ -4009,17 +4239,22 @@ mostlyclean-compile:
 	-rm -f util/fail_over_tests-refcount.$(OBJEXT)
 	-rm -f util/fail_over_tests-server.$(OBJEXT)
 	-rm -f util/fail_over_tests-signal.$(OBJEXT)
+	-rm -f util/fail_over_tests-sss_log.$(OBJEXT)
 	-rm -f util/fail_over_tests-strtonum.$(OBJEXT)
 	-rm -f util/fail_over_tests-usertools.$(OBJEXT)
 	-rm -f util/fail_over_tests-util.$(OBJEXT)
 	-rm -f util/files_tests-check_and_open.$(OBJEXT)
 	-rm -f util/files_tests-debug.$(OBJEXT)
+	-rm -f util/files_tests-sss_log.$(OBJEXT)
 	-rm -f util/find_uid.$(OBJEXT)
 	-rm -f util/find_uid_tests-debug.$(OBJEXT)
 	-rm -f util/find_uid_tests-find_uid.$(OBJEXT)
+	-rm -f util/find_uid_tests-sss_log.$(OBJEXT)
 	-rm -f util/ipa_timerules_tests-debug.$(OBJEXT)
+	-rm -f util/ipa_timerules_tests-sss_log.$(OBJEXT)
 	-rm -f util/krb5_child-debug.$(OBJEXT)
 	-rm -f util/krb5_child-sss_krb5.$(OBJEXT)
+	-rm -f util/krb5_child-sss_log.$(OBJEXT)
 	-rm -f util/krb5_child-user_info_msg.$(OBJEXT)
 	-rm -f util/krb5_utils_tests-backup_file.$(OBJEXT)
 	-rm -f util/krb5_utils_tests-check_and_open.$(OBJEXT)
@@ -4028,11 +4263,13 @@ mostlyclean-compile:
 	-rm -f util/krb5_utils_tests-refcount.$(OBJEXT)
 	-rm -f util/krb5_utils_tests-server.$(OBJEXT)
 	-rm -f util/krb5_utils_tests-signal.$(OBJEXT)
+	-rm -f util/krb5_utils_tests-sss_log.$(OBJEXT)
 	-rm -f util/krb5_utils_tests-strtonum.$(OBJEXT)
 	-rm -f util/krb5_utils_tests-usertools.$(OBJEXT)
 	-rm -f util/krb5_utils_tests-util.$(OBJEXT)
 	-rm -f util/ldap_child-debug.$(OBJEXT)
 	-rm -f util/ldap_child-sss_krb5.$(OBJEXT)
+	-rm -f util/ldap_child-sss_log.$(OBJEXT)
 	-rm -f util/libsss_crypt_la-crypto_sha512crypt.$(OBJEXT)
 	-rm -f util/libsss_crypt_la-crypto_sha512crypt.lo
 	-rm -f util/libsss_crypt_la-nss_sha512crypt.$(OBJEXT)
@@ -4065,6 +4302,7 @@ mostlyclean-compile:
 	-rm -f util/proxy_child-refcount.$(OBJEXT)
 	-rm -f util/proxy_child-server.$(OBJEXT)
 	-rm -f util/proxy_child-signal.$(OBJEXT)
+	-rm -f util/proxy_child-sss_log.$(OBJEXT)
 	-rm -f util/proxy_child-strtonum.$(OBJEXT)
 	-rm -f util/proxy_child-usertools.$(OBJEXT)
 	-rm -f util/proxy_child-util.$(OBJEXT)
@@ -4082,6 +4320,8 @@ mostlyclean-compile:
 	-rm -f util/pysss_la-server.lo
 	-rm -f util/pysss_la-signal.$(OBJEXT)
 	-rm -f util/pysss_la-signal.lo
+	-rm -f util/pysss_la-sss_log.$(OBJEXT)
+	-rm -f util/pysss_la-sss_log.lo
 	-rm -f util/pysss_la-strtonum.$(OBJEXT)
 	-rm -f util/pysss_la-strtonum.lo
 	-rm -f util/pysss_la-usertools.$(OBJEXT)
@@ -4096,6 +4336,7 @@ mostlyclean-compile:
 	-rm -f util/refcount_tests-refcount.$(OBJEXT)
 	-rm -f util/refcount_tests-server.$(OBJEXT)
 	-rm -f util/refcount_tests-signal.$(OBJEXT)
+	-rm -f util/refcount_tests-sss_log.$(OBJEXT)
 	-rm -f util/refcount_tests-strtonum.$(OBJEXT)
 	-rm -f util/refcount_tests-usertools.$(OBJEXT)
 	-rm -f util/refcount_tests-util.$(OBJEXT)
@@ -4106,6 +4347,7 @@ mostlyclean-compile:
 	-rm -f util/resolv_tests-refcount.$(OBJEXT)
 	-rm -f util/resolv_tests-server.$(OBJEXT)
 	-rm -f util/resolv_tests-signal.$(OBJEXT)
+	-rm -f util/resolv_tests-sss_log.$(OBJEXT)
 	-rm -f util/resolv_tests-strtonum.$(OBJEXT)
 	-rm -f util/resolv_tests-usertools.$(OBJEXT)
 	-rm -f util/resolv_tests-util.$(OBJEXT)
@@ -4118,9 +4360,11 @@ mostlyclean-compile:
 	-rm -f util/simple_access_tests-refcount.$(OBJEXT)
 	-rm -f util/simple_access_tests-server.$(OBJEXT)
 	-rm -f util/simple_access_tests-signal.$(OBJEXT)
+	-rm -f util/simple_access_tests-sss_log.$(OBJEXT)
 	-rm -f util/simple_access_tests-strtonum.$(OBJEXT)
 	-rm -f util/simple_access_tests-usertools.$(OBJEXT)
 	-rm -f util/simple_access_tests-util.$(OBJEXT)
+	-rm -f util/sss_log.$(OBJEXT)
 	-rm -f util/strtonum.$(OBJEXT)
 	-rm -f util/strtonum_tests-debug.$(OBJEXT)
 	-rm -f util/strtonum_tests-strtonum.$(OBJEXT)
@@ -4131,11 +4375,23 @@ mostlyclean-compile:
 	-rm -f util/sysdb_tests-refcount.$(OBJEXT)
 	-rm -f util/sysdb_tests-server.$(OBJEXT)
 	-rm -f util/sysdb_tests-signal.$(OBJEXT)
+	-rm -f util/sysdb_tests-sss_log.$(OBJEXT)
 	-rm -f util/sysdb_tests-strtonum.$(OBJEXT)
 	-rm -f util/sysdb_tests-usertools.$(OBJEXT)
 	-rm -f util/sysdb_tests-util.$(OBJEXT)
 	-rm -f util/usertools.$(OBJEXT)
 	-rm -f util/util.$(OBJEXT)
+	-rm -f util/util_tests-backup_file.$(OBJEXT)
+	-rm -f util/util_tests-check_and_open.$(OBJEXT)
+	-rm -f util/util_tests-debug.$(OBJEXT)
+	-rm -f util/util_tests-memory.$(OBJEXT)
+	-rm -f util/util_tests-refcount.$(OBJEXT)
+	-rm -f util/util_tests-server.$(OBJEXT)
+	-rm -f util/util_tests-signal.$(OBJEXT)
+	-rm -f util/util_tests-sss_log.$(OBJEXT)
+	-rm -f util/util_tests-strtonum.$(OBJEXT)
+	-rm -f util/util_tests-usertools.$(OBJEXT)
+	-rm -f util/util_tests-util.$(OBJEXT)
 
 distclean-compile:
 	-rm -f *.tab.c
@@ -4151,6 +4407,7 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@confdb/$(DEPDIR)/resolv_tests-confdb.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@confdb/$(DEPDIR)/simple_access_tests-confdb.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@confdb/$(DEPDIR)/sysdb_tests-confdb.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@confdb/$(DEPDIR)/util_tests-confdb.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@db/$(DEPDIR)/auth_tests-sysdb.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@db/$(DEPDIR)/auth_tests-sysdb_ops.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@db/$(DEPDIR)/auth_tests-sysdb_search.Po@am__quote@
@@ -4181,12 +4438,16 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@db/$(DEPDIR)/sysdb_tests-sysdb.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@db/$(DEPDIR)/sysdb_tests-sysdb_ops.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@db/$(DEPDIR)/sysdb_tests-sysdb_search.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@db/$(DEPDIR)/util_tests-sysdb.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@db/$(DEPDIR)/util_tests-sysdb_ops.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@db/$(DEPDIR)/util_tests-sysdb_search.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@krb5_plugin/$(DEPDIR)/sssd_krb5_locator_plugin_la-sssd_krb5_locator_plugin.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@ldb_modules/$(DEPDIR)/memberof_la-memberof.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@monitor/$(DEPDIR)/auth_tests-monitor_sbus.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@monitor/$(DEPDIR)/fail_over_tests-monitor_sbus.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@monitor/$(DEPDIR)/krb5_utils_tests-monitor_sbus.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@monitor/$(DEPDIR)/monitor.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@monitor/$(DEPDIR)/monitor_netlink.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@monitor/$(DEPDIR)/monitor_sbus.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@monitor/$(DEPDIR)/proxy_child-monitor_sbus.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@monitor/$(DEPDIR)/pysss_la-monitor_sbus.Plo@am__quote@
@@ -4194,6 +4455,7 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@monitor/$(DEPDIR)/resolv_tests-monitor_sbus.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@monitor/$(DEPDIR)/simple_access_tests-monitor_sbus.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@monitor/$(DEPDIR)/sysdb_tests-monitor_sbus.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@monitor/$(DEPDIR)/util_tests-monitor_sbus.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@providers/$(DEPDIR)/auth_tests-dp_auth_util.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@providers/$(DEPDIR)/auth_tests-dp_pam_data_util.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@providers/$(DEPDIR)/auth_tests-dp_sbus.Po@am__quote@
@@ -4240,6 +4502,9 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@providers/$(DEPDIR)/sysdb_tests-dp_auth_util.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@providers/$(DEPDIR)/sysdb_tests-dp_pam_data_util.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@providers/$(DEPDIR)/sysdb_tests-dp_sbus.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@providers/$(DEPDIR)/util_tests-dp_auth_util.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@providers/$(DEPDIR)/util_tests-dp_pam_data_util.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@providers/$(DEPDIR)/util_tests-dp_sbus.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@providers/ipa/$(DEPDIR)/ipa_ldap_opt_tests-ipa_utils.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@providers/ipa/$(DEPDIR)/ipa_timerules_tests-ipa_timerules.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@providers/ipa/$(DEPDIR)/libsss_ipa_la-ipa_access.Plo@am__quote@
@@ -4276,6 +4541,7 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@providers/ldap/$(DEPDIR)/libsss_ipa_la-sdap_async_connection.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@providers/ldap/$(DEPDIR)/libsss_ipa_la-sdap_child_helpers.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@providers/ldap/$(DEPDIR)/libsss_ipa_la-sdap_fd_events.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@providers/ldap/$(DEPDIR)/libsss_ipa_la-sdap_id_op.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@providers/ldap/$(DEPDIR)/libsss_ldap_la-ldap_auth.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@providers/ldap/$(DEPDIR)/libsss_ldap_la-ldap_common.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@providers/ldap/$(DEPDIR)/libsss_ldap_la-ldap_id.Plo@am__quote@
@@ -4289,7 +4555,11 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@providers/ldap/$(DEPDIR)/libsss_ldap_la-sdap_async_connection.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@providers/ldap/$(DEPDIR)/libsss_ldap_la-sdap_child_helpers.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@providers/ldap/$(DEPDIR)/libsss_ldap_la-sdap_fd_events.Plo@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@providers/proxy/$(DEPDIR)/libsss_proxy_la-proxy.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@providers/ldap/$(DEPDIR)/libsss_ldap_la-sdap_id_op.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@providers/proxy/$(DEPDIR)/libsss_proxy_la-proxy_auth.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@providers/proxy/$(DEPDIR)/libsss_proxy_la-proxy_common.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@providers/proxy/$(DEPDIR)/libsss_proxy_la-proxy_id.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@providers/proxy/$(DEPDIR)/libsss_proxy_la-proxy_init.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@providers/proxy/$(DEPDIR)/proxy_child-proxy_child.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@providers/simple/$(DEPDIR)/libsss_simple_la-simple_access.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@providers/simple/$(DEPDIR)/simple_access_tests-simple_access.Po@am__quote@
@@ -4358,6 +4628,10 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@sbus/$(DEPDIR)/sysdb_tests-sssd_dbus_common.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@sbus/$(DEPDIR)/sysdb_tests-sssd_dbus_connection.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@sbus/$(DEPDIR)/sysdb_tests-sssd_dbus_server.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@sbus/$(DEPDIR)/util_tests-sbus_client.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@sbus/$(DEPDIR)/util_tests-sssd_dbus_common.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@sbus/$(DEPDIR)/util_tests-sssd_dbus_connection.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@sbus/$(DEPDIR)/util_tests-sssd_dbus_server.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@sss_client/$(DEPDIR)/common.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@sss_client/$(DEPDIR)/group.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@sss_client/$(DEPDIR)/pam_sss.Plo@am__quote@
@@ -4379,6 +4653,7 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@tests/$(DEPDIR)/stress-tests.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@tests/$(DEPDIR)/strtonum_tests-strtonum-tests.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@tests/$(DEPDIR)/sysdb_tests-sysdb-tests.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@tests/$(DEPDIR)/util_tests-util-tests.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@tools/$(DEPDIR)/files.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@tools/$(DEPDIR)/files_tests-files.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@tools/$(DEPDIR)/files_tests-selinux.Po@am__quote@
@@ -4405,6 +4680,7 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@util/$(DEPDIR)/auth_tests-refcount.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@util/$(DEPDIR)/auth_tests-server.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@util/$(DEPDIR)/auth_tests-signal.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@util/$(DEPDIR)/auth_tests-sss_log.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@util/$(DEPDIR)/auth_tests-strtonum.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@util/$(DEPDIR)/auth_tests-usertools.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@util/$(DEPDIR)/auth_tests-util.Po@am__quote@
@@ -4412,6 +4688,7 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@util/$(DEPDIR)/check_and_open.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@util/$(DEPDIR)/check_and_open_tests-check_and_open.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@util/$(DEPDIR)/check_and_open_tests-debug.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@util/$(DEPDIR)/check_and_open_tests-sss_log.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@util/$(DEPDIR)/debug.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@util/$(DEPDIR)/fail_over_tests-backup_file.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@util/$(DEPDIR)/fail_over_tests-check_and_open.Po@am__quote@
@@ -4420,17 +4697,22 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@util/$(DEPDIR)/fail_over_tests-refcount.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@util/$(DEPDIR)/fail_over_tests-server.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@util/$(DEPDIR)/fail_over_tests-signal.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@util/$(DEPDIR)/fail_over_tests-sss_log.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@util/$(DEPDIR)/fail_over_tests-strtonum.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@util/$(DEPDIR)/fail_over_tests-usertools.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@util/$(DEPDIR)/fail_over_tests-util.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@util/$(DEPDIR)/files_tests-check_and_open.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@util/$(DEPDIR)/files_tests-debug.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@util/$(DEPDIR)/files_tests-sss_log.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@util/$(DEPDIR)/find_uid.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@util/$(DEPDIR)/find_uid_tests-debug.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@util/$(DEPDIR)/find_uid_tests-find_uid.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@util/$(DEPDIR)/find_uid_tests-sss_log.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@util/$(DEPDIR)/ipa_timerules_tests-debug.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@util/$(DEPDIR)/ipa_timerules_tests-sss_log.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@util/$(DEPDIR)/krb5_child-debug.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@util/$(DEPDIR)/krb5_child-sss_krb5.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@util/$(DEPDIR)/krb5_child-sss_log.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@util/$(DEPDIR)/krb5_child-user_info_msg.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@util/$(DEPDIR)/krb5_utils_tests-backup_file.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@util/$(DEPDIR)/krb5_utils_tests-check_and_open.Po@am__quote@
@@ -4439,11 +4721,13 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@util/$(DEPDIR)/krb5_utils_tests-refcount.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@util/$(DEPDIR)/krb5_utils_tests-server.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@util/$(DEPDIR)/krb5_utils_tests-signal.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@util/$(DEPDIR)/krb5_utils_tests-sss_log.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@util/$(DEPDIR)/krb5_utils_tests-strtonum.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@util/$(DEPDIR)/krb5_utils_tests-usertools.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@util/$(DEPDIR)/krb5_utils_tests-util.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@util/$(DEPDIR)/ldap_child-debug.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@util/$(DEPDIR)/ldap_child-sss_krb5.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@util/$(DEPDIR)/ldap_child-sss_log.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@util/$(DEPDIR)/libsss_crypt_la-crypto_sha512crypt.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@util/$(DEPDIR)/libsss_crypt_la-nss_sha512crypt.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@util/$(DEPDIR)/libsss_ipa_la-find_uid.Plo@am__quote@
@@ -4464,6 +4748,7 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@util/$(DEPDIR)/proxy_child-refcount.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@util/$(DEPDIR)/proxy_child-server.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@util/$(DEPDIR)/proxy_child-signal.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@util/$(DEPDIR)/proxy_child-sss_log.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@util/$(DEPDIR)/proxy_child-strtonum.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@util/$(DEPDIR)/proxy_child-usertools.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@util/$(DEPDIR)/proxy_child-util.Po@am__quote@
@@ -4474,6 +4759,7 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@util/$(DEPDIR)/pysss_la-refcount.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@util/$(DEPDIR)/pysss_la-server.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@util/$(DEPDIR)/pysss_la-signal.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@util/$(DEPDIR)/pysss_la-sss_log.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@util/$(DEPDIR)/pysss_la-strtonum.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@util/$(DEPDIR)/pysss_la-usertools.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@util/$(DEPDIR)/pysss_la-util.Plo@am__quote@
@@ -4485,6 +4771,7 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@util/$(DEPDIR)/refcount_tests-refcount.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@util/$(DEPDIR)/refcount_tests-server.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@util/$(DEPDIR)/refcount_tests-signal.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@util/$(DEPDIR)/refcount_tests-sss_log.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@util/$(DEPDIR)/refcount_tests-strtonum.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@util/$(DEPDIR)/refcount_tests-usertools.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@util/$(DEPDIR)/refcount_tests-util.Po@am__quote@
@@ -4495,6 +4782,7 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@util/$(DEPDIR)/resolv_tests-refcount.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@util/$(DEPDIR)/resolv_tests-server.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@util/$(DEPDIR)/resolv_tests-signal.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@util/$(DEPDIR)/resolv_tests-sss_log.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@util/$(DEPDIR)/resolv_tests-strtonum.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@util/$(DEPDIR)/resolv_tests-usertools.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@util/$(DEPDIR)/resolv_tests-util.Po@am__quote@
@@ -4507,9 +4795,11 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@util/$(DEPDIR)/simple_access_tests-refcount.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@util/$(DEPDIR)/simple_access_tests-server.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@util/$(DEPDIR)/simple_access_tests-signal.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@util/$(DEPDIR)/simple_access_tests-sss_log.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@util/$(DEPDIR)/simple_access_tests-strtonum.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@util/$(DEPDIR)/simple_access_tests-usertools.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@util/$(DEPDIR)/simple_access_tests-util.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@util/$(DEPDIR)/sss_log.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@util/$(DEPDIR)/strtonum.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@util/$(DEPDIR)/strtonum_tests-debug.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@util/$(DEPDIR)/strtonum_tests-strtonum.Po@am__quote@
@@ -4520,11 +4810,23 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@util/$(DEPDIR)/sysdb_tests-refcount.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@util/$(DEPDIR)/sysdb_tests-server.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@util/$(DEPDIR)/sysdb_tests-signal.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@util/$(DEPDIR)/sysdb_tests-sss_log.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@util/$(DEPDIR)/sysdb_tests-strtonum.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@util/$(DEPDIR)/sysdb_tests-usertools.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@util/$(DEPDIR)/sysdb_tests-util.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@util/$(DEPDIR)/usertools.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@util/$(DEPDIR)/util.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@util/$(DEPDIR)/util_tests-backup_file.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@util/$(DEPDIR)/util_tests-check_and_open.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@util/$(DEPDIR)/util_tests-debug.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@util/$(DEPDIR)/util_tests-memory.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@util/$(DEPDIR)/util_tests-refcount.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@util/$(DEPDIR)/util_tests-server.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@util/$(DEPDIR)/util_tests-signal.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@util/$(DEPDIR)/util_tests-sss_log.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@util/$(DEPDIR)/util_tests-strtonum.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@util/$(DEPDIR)/util_tests-usertools.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@util/$(DEPDIR)/util_tests-util.Po@am__quote@
 
 .c.o:
 @am__fastdepCC_TRUE@	$(AM_V_CC)depbase=`echo $@ | sed 's|[^/]*$$|$(DEPDIR)/&|;s|\.o$$||'`;\
@@ -4712,6 +5014,14 @@ providers/ldap/libsss_ipa_la-sdap_fd_events.lo: providers/ldap/sdap_fd_events.c
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	source='providers/ldap/sdap_fd_events.c' object='providers/ldap/libsss_ipa_la-sdap_fd_events.lo' libtool=yes @AMDEPBACKSLASH@
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
 @am__fastdepCC_FALSE@	$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libsss_ipa_la_CFLAGS) $(CFLAGS) -c -o providers/ldap/libsss_ipa_la-sdap_fd_events.lo `test -f 'providers/ldap/sdap_fd_events.c' || echo '$(srcdir)/'`providers/ldap/sdap_fd_events.c
+
+providers/ldap/libsss_ipa_la-sdap_id_op.lo: providers/ldap/sdap_id_op.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libsss_ipa_la_CFLAGS) $(CFLAGS) -MT providers/ldap/libsss_ipa_la-sdap_id_op.lo -MD -MP -MF providers/ldap/$(DEPDIR)/libsss_ipa_la-sdap_id_op.Tpo -c -o providers/ldap/libsss_ipa_la-sdap_id_op.lo `test -f 'providers/ldap/sdap_id_op.c' || echo '$(srcdir)/'`providers/ldap/sdap_id_op.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) providers/ldap/$(DEPDIR)/libsss_ipa_la-sdap_id_op.Tpo providers/ldap/$(DEPDIR)/libsss_ipa_la-sdap_id_op.Plo
+@am__fastdepCC_FALSE@	$(AM_V_CC) @AM_BACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	source='providers/ldap/sdap_id_op.c' object='providers/ldap/libsss_ipa_la-sdap_id_op.lo' libtool=yes @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libsss_ipa_la_CFLAGS) $(CFLAGS) -c -o providers/ldap/libsss_ipa_la-sdap_id_op.lo `test -f 'providers/ldap/sdap_id_op.c' || echo '$(srcdir)/'`providers/ldap/sdap_id_op.c
 
 providers/ldap/libsss_ipa_la-sdap.lo: providers/ldap/sdap.c
 @am__fastdepCC_TRUE@	$(AM_V_CC)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libsss_ipa_la_CFLAGS) $(CFLAGS) -MT providers/ldap/libsss_ipa_la-sdap.lo -MD -MP -MF providers/ldap/$(DEPDIR)/libsss_ipa_la-sdap.Tpo -c -o providers/ldap/libsss_ipa_la-sdap.lo `test -f 'providers/ldap/sdap.c' || echo '$(srcdir)/'`providers/ldap/sdap.c
@@ -4977,6 +5287,14 @@ providers/ldap/libsss_ldap_la-sdap_fd_events.lo: providers/ldap/sdap_fd_events.c
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
 @am__fastdepCC_FALSE@	$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libsss_ldap_la_CFLAGS) $(CFLAGS) -c -o providers/ldap/libsss_ldap_la-sdap_fd_events.lo `test -f 'providers/ldap/sdap_fd_events.c' || echo '$(srcdir)/'`providers/ldap/sdap_fd_events.c
 
+providers/ldap/libsss_ldap_la-sdap_id_op.lo: providers/ldap/sdap_id_op.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libsss_ldap_la_CFLAGS) $(CFLAGS) -MT providers/ldap/libsss_ldap_la-sdap_id_op.lo -MD -MP -MF providers/ldap/$(DEPDIR)/libsss_ldap_la-sdap_id_op.Tpo -c -o providers/ldap/libsss_ldap_la-sdap_id_op.lo `test -f 'providers/ldap/sdap_id_op.c' || echo '$(srcdir)/'`providers/ldap/sdap_id_op.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) providers/ldap/$(DEPDIR)/libsss_ldap_la-sdap_id_op.Tpo providers/ldap/$(DEPDIR)/libsss_ldap_la-sdap_id_op.Plo
+@am__fastdepCC_FALSE@	$(AM_V_CC) @AM_BACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	source='providers/ldap/sdap_id_op.c' object='providers/ldap/libsss_ldap_la-sdap_id_op.lo' libtool=yes @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libsss_ldap_la_CFLAGS) $(CFLAGS) -c -o providers/ldap/libsss_ldap_la-sdap_id_op.lo `test -f 'providers/ldap/sdap_id_op.c' || echo '$(srcdir)/'`providers/ldap/sdap_id_op.c
+
 providers/ldap/libsss_ldap_la-sdap.lo: providers/ldap/sdap.c
 @am__fastdepCC_TRUE@	$(AM_V_CC)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libsss_ldap_la_CFLAGS) $(CFLAGS) -MT providers/ldap/libsss_ldap_la-sdap.lo -MD -MP -MF providers/ldap/$(DEPDIR)/libsss_ldap_la-sdap.Tpo -c -o providers/ldap/libsss_ldap_la-sdap.lo `test -f 'providers/ldap/sdap.c' || echo '$(srcdir)/'`providers/ldap/sdap.c
 @am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) providers/ldap/$(DEPDIR)/libsss_ldap_la-sdap.Tpo providers/ldap/$(DEPDIR)/libsss_ldap_la-sdap.Plo
@@ -5009,13 +5327,37 @@ util/libsss_ldap_la-sss_krb5.lo: util/sss_krb5.c
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
 @am__fastdepCC_FALSE@	$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libsss_ldap_la_CFLAGS) $(CFLAGS) -c -o util/libsss_ldap_la-sss_krb5.lo `test -f 'util/sss_krb5.c' || echo '$(srcdir)/'`util/sss_krb5.c
 
-providers/proxy/libsss_proxy_la-proxy.lo: providers/proxy/proxy.c
-@am__fastdepCC_TRUE@	$(AM_V_CC)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libsss_proxy_la_CFLAGS) $(CFLAGS) -MT providers/proxy/libsss_proxy_la-proxy.lo -MD -MP -MF providers/proxy/$(DEPDIR)/libsss_proxy_la-proxy.Tpo -c -o providers/proxy/libsss_proxy_la-proxy.lo `test -f 'providers/proxy/proxy.c' || echo '$(srcdir)/'`providers/proxy/proxy.c
-@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) providers/proxy/$(DEPDIR)/libsss_proxy_la-proxy.Tpo providers/proxy/$(DEPDIR)/libsss_proxy_la-proxy.Plo
+providers/proxy/libsss_proxy_la-proxy_common.lo: providers/proxy/proxy_common.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libsss_proxy_la_CFLAGS) $(CFLAGS) -MT providers/proxy/libsss_proxy_la-proxy_common.lo -MD -MP -MF providers/proxy/$(DEPDIR)/libsss_proxy_la-proxy_common.Tpo -c -o providers/proxy/libsss_proxy_la-proxy_common.lo `test -f 'providers/proxy/proxy_common.c' || echo '$(srcdir)/'`providers/proxy/proxy_common.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) providers/proxy/$(DEPDIR)/libsss_proxy_la-proxy_common.Tpo providers/proxy/$(DEPDIR)/libsss_proxy_la-proxy_common.Plo
 @am__fastdepCC_FALSE@	$(AM_V_CC) @AM_BACKSLASH@
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	source='providers/proxy/proxy.c' object='providers/proxy/libsss_proxy_la-proxy.lo' libtool=yes @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	source='providers/proxy/proxy_common.c' object='providers/proxy/libsss_proxy_la-proxy_common.lo' libtool=yes @AMDEPBACKSLASH@
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCC_FALSE@	$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libsss_proxy_la_CFLAGS) $(CFLAGS) -c -o providers/proxy/libsss_proxy_la-proxy.lo `test -f 'providers/proxy/proxy.c' || echo '$(srcdir)/'`providers/proxy/proxy.c
+@am__fastdepCC_FALSE@	$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libsss_proxy_la_CFLAGS) $(CFLAGS) -c -o providers/proxy/libsss_proxy_la-proxy_common.lo `test -f 'providers/proxy/proxy_common.c' || echo '$(srcdir)/'`providers/proxy/proxy_common.c
+
+providers/proxy/libsss_proxy_la-proxy_init.lo: providers/proxy/proxy_init.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libsss_proxy_la_CFLAGS) $(CFLAGS) -MT providers/proxy/libsss_proxy_la-proxy_init.lo -MD -MP -MF providers/proxy/$(DEPDIR)/libsss_proxy_la-proxy_init.Tpo -c -o providers/proxy/libsss_proxy_la-proxy_init.lo `test -f 'providers/proxy/proxy_init.c' || echo '$(srcdir)/'`providers/proxy/proxy_init.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) providers/proxy/$(DEPDIR)/libsss_proxy_la-proxy_init.Tpo providers/proxy/$(DEPDIR)/libsss_proxy_la-proxy_init.Plo
+@am__fastdepCC_FALSE@	$(AM_V_CC) @AM_BACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	source='providers/proxy/proxy_init.c' object='providers/proxy/libsss_proxy_la-proxy_init.lo' libtool=yes @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libsss_proxy_la_CFLAGS) $(CFLAGS) -c -o providers/proxy/libsss_proxy_la-proxy_init.lo `test -f 'providers/proxy/proxy_init.c' || echo '$(srcdir)/'`providers/proxy/proxy_init.c
+
+providers/proxy/libsss_proxy_la-proxy_id.lo: providers/proxy/proxy_id.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libsss_proxy_la_CFLAGS) $(CFLAGS) -MT providers/proxy/libsss_proxy_la-proxy_id.lo -MD -MP -MF providers/proxy/$(DEPDIR)/libsss_proxy_la-proxy_id.Tpo -c -o providers/proxy/libsss_proxy_la-proxy_id.lo `test -f 'providers/proxy/proxy_id.c' || echo '$(srcdir)/'`providers/proxy/proxy_id.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) providers/proxy/$(DEPDIR)/libsss_proxy_la-proxy_id.Tpo providers/proxy/$(DEPDIR)/libsss_proxy_la-proxy_id.Plo
+@am__fastdepCC_FALSE@	$(AM_V_CC) @AM_BACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	source='providers/proxy/proxy_id.c' object='providers/proxy/libsss_proxy_la-proxy_id.lo' libtool=yes @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libsss_proxy_la_CFLAGS) $(CFLAGS) -c -o providers/proxy/libsss_proxy_la-proxy_id.lo `test -f 'providers/proxy/proxy_id.c' || echo '$(srcdir)/'`providers/proxy/proxy_id.c
+
+providers/proxy/libsss_proxy_la-proxy_auth.lo: providers/proxy/proxy_auth.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libsss_proxy_la_CFLAGS) $(CFLAGS) -MT providers/proxy/libsss_proxy_la-proxy_auth.lo -MD -MP -MF providers/proxy/$(DEPDIR)/libsss_proxy_la-proxy_auth.Tpo -c -o providers/proxy/libsss_proxy_la-proxy_auth.lo `test -f 'providers/proxy/proxy_auth.c' || echo '$(srcdir)/'`providers/proxy/proxy_auth.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) providers/proxy/$(DEPDIR)/libsss_proxy_la-proxy_auth.Tpo providers/proxy/$(DEPDIR)/libsss_proxy_la-proxy_auth.Plo
+@am__fastdepCC_FALSE@	$(AM_V_CC) @AM_BACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	source='providers/proxy/proxy_auth.c' object='providers/proxy/libsss_proxy_la-proxy_auth.lo' libtool=yes @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libsss_proxy_la_CFLAGS) $(CFLAGS) -c -o providers/proxy/libsss_proxy_la-proxy_auth.lo `test -f 'providers/proxy/proxy_auth.c' || echo '$(srcdir)/'`providers/proxy/proxy_auth.c
 
 providers/simple/libsss_simple_la-simple_access.lo: providers/simple/simple_access.c
 @am__fastdepCC_TRUE@	$(AM_V_CC)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libsss_simple_la_CFLAGS) $(CFLAGS) -MT providers/simple/libsss_simple_la-simple_access.lo -MD -MP -MF providers/simple/$(DEPDIR)/libsss_simple_la-simple_access.Tpo -c -o providers/simple/libsss_simple_la-simple_access.lo `test -f 'providers/simple/simple_access.c' || echo '$(srcdir)/'`providers/simple/simple_access.c
@@ -5208,6 +5550,14 @@ util/pysss_la-debug.lo: util/debug.c
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	source='util/debug.c' object='util/pysss_la-debug.lo' libtool=yes @AMDEPBACKSLASH@
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
 @am__fastdepCC_FALSE@	$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(pysss_la_CFLAGS) $(CFLAGS) -c -o util/pysss_la-debug.lo `test -f 'util/debug.c' || echo '$(srcdir)/'`util/debug.c
+
+util/pysss_la-sss_log.lo: util/sss_log.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(pysss_la_CFLAGS) $(CFLAGS) -MT util/pysss_la-sss_log.lo -MD -MP -MF util/$(DEPDIR)/pysss_la-sss_log.Tpo -c -o util/pysss_la-sss_log.lo `test -f 'util/sss_log.c' || echo '$(srcdir)/'`util/sss_log.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) util/$(DEPDIR)/pysss_la-sss_log.Tpo util/$(DEPDIR)/pysss_la-sss_log.Plo
+@am__fastdepCC_FALSE@	$(AM_V_CC) @AM_BACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	source='util/sss_log.c' object='util/pysss_la-sss_log.lo' libtool=yes @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(pysss_la_CFLAGS) $(CFLAGS) -c -o util/pysss_la-sss_log.lo `test -f 'util/sss_log.c' || echo '$(srcdir)/'`util/sss_log.c
 
 tools/pysss_la-sss_sync_ops.lo: tools/sss_sync_ops.c
 @am__fastdepCC_TRUE@	$(AM_V_CC)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(pysss_la_CFLAGS) $(CFLAGS) -MT tools/pysss_la-sss_sync_ops.lo -MD -MP -MF tools/$(DEPDIR)/pysss_la-sss_sync_ops.Tpo -c -o tools/pysss_la-sss_sync_ops.lo `test -f 'tools/sss_sync_ops.c' || echo '$(srcdir)/'`tools/sss_sync_ops.c
@@ -5633,6 +5983,22 @@ util/auth_tests-debug.obj: util/debug.c
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
 @am__fastdepCC_FALSE@	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(auth_tests_CFLAGS) $(CFLAGS) -c -o util/auth_tests-debug.obj `if test -f 'util/debug.c'; then $(CYGPATH_W) 'util/debug.c'; else $(CYGPATH_W) '$(srcdir)/util/debug.c'; fi`
 
+util/auth_tests-sss_log.o: util/sss_log.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(auth_tests_CFLAGS) $(CFLAGS) -MT util/auth_tests-sss_log.o -MD -MP -MF util/$(DEPDIR)/auth_tests-sss_log.Tpo -c -o util/auth_tests-sss_log.o `test -f 'util/sss_log.c' || echo '$(srcdir)/'`util/sss_log.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) util/$(DEPDIR)/auth_tests-sss_log.Tpo util/$(DEPDIR)/auth_tests-sss_log.Po
+@am__fastdepCC_FALSE@	$(AM_V_CC) @AM_BACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	source='util/sss_log.c' object='util/auth_tests-sss_log.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(auth_tests_CFLAGS) $(CFLAGS) -c -o util/auth_tests-sss_log.o `test -f 'util/sss_log.c' || echo '$(srcdir)/'`util/sss_log.c
+
+util/auth_tests-sss_log.obj: util/sss_log.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(auth_tests_CFLAGS) $(CFLAGS) -MT util/auth_tests-sss_log.obj -MD -MP -MF util/$(DEPDIR)/auth_tests-sss_log.Tpo -c -o util/auth_tests-sss_log.obj `if test -f 'util/sss_log.c'; then $(CYGPATH_W) 'util/sss_log.c'; else $(CYGPATH_W) '$(srcdir)/util/sss_log.c'; fi`
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) util/$(DEPDIR)/auth_tests-sss_log.Tpo util/$(DEPDIR)/auth_tests-sss_log.Po
+@am__fastdepCC_FALSE@	$(AM_V_CC) @AM_BACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	source='util/sss_log.c' object='util/auth_tests-sss_log.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(auth_tests_CFLAGS) $(CFLAGS) -c -o util/auth_tests-sss_log.obj `if test -f 'util/sss_log.c'; then $(CYGPATH_W) 'util/sss_log.c'; else $(CYGPATH_W) '$(srcdir)/util/sss_log.c'; fi`
+
 util/check_and_open_tests-debug.o: util/debug.c
 @am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(check_and_open_tests_CFLAGS) $(CFLAGS) -MT util/check_and_open_tests-debug.o -MD -MP -MF util/$(DEPDIR)/check_and_open_tests-debug.Tpo -c -o util/check_and_open_tests-debug.o `test -f 'util/debug.c' || echo '$(srcdir)/'`util/debug.c
 @am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) util/$(DEPDIR)/check_and_open_tests-debug.Tpo util/$(DEPDIR)/check_and_open_tests-debug.Po
@@ -5648,6 +6014,22 @@ util/check_and_open_tests-debug.obj: util/debug.c
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	source='util/debug.c' object='util/check_and_open_tests-debug.obj' libtool=no @AMDEPBACKSLASH@
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
 @am__fastdepCC_FALSE@	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(check_and_open_tests_CFLAGS) $(CFLAGS) -c -o util/check_and_open_tests-debug.obj `if test -f 'util/debug.c'; then $(CYGPATH_W) 'util/debug.c'; else $(CYGPATH_W) '$(srcdir)/util/debug.c'; fi`
+
+util/check_and_open_tests-sss_log.o: util/sss_log.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(check_and_open_tests_CFLAGS) $(CFLAGS) -MT util/check_and_open_tests-sss_log.o -MD -MP -MF util/$(DEPDIR)/check_and_open_tests-sss_log.Tpo -c -o util/check_and_open_tests-sss_log.o `test -f 'util/sss_log.c' || echo '$(srcdir)/'`util/sss_log.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) util/$(DEPDIR)/check_and_open_tests-sss_log.Tpo util/$(DEPDIR)/check_and_open_tests-sss_log.Po
+@am__fastdepCC_FALSE@	$(AM_V_CC) @AM_BACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	source='util/sss_log.c' object='util/check_and_open_tests-sss_log.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(check_and_open_tests_CFLAGS) $(CFLAGS) -c -o util/check_and_open_tests-sss_log.o `test -f 'util/sss_log.c' || echo '$(srcdir)/'`util/sss_log.c
+
+util/check_and_open_tests-sss_log.obj: util/sss_log.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(check_and_open_tests_CFLAGS) $(CFLAGS) -MT util/check_and_open_tests-sss_log.obj -MD -MP -MF util/$(DEPDIR)/check_and_open_tests-sss_log.Tpo -c -o util/check_and_open_tests-sss_log.obj `if test -f 'util/sss_log.c'; then $(CYGPATH_W) 'util/sss_log.c'; else $(CYGPATH_W) '$(srcdir)/util/sss_log.c'; fi`
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) util/$(DEPDIR)/check_and_open_tests-sss_log.Tpo util/$(DEPDIR)/check_and_open_tests-sss_log.Po
+@am__fastdepCC_FALSE@	$(AM_V_CC) @AM_BACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	source='util/sss_log.c' object='util/check_and_open_tests-sss_log.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(check_and_open_tests_CFLAGS) $(CFLAGS) -c -o util/check_and_open_tests-sss_log.obj `if test -f 'util/sss_log.c'; then $(CYGPATH_W) 'util/sss_log.c'; else $(CYGPATH_W) '$(srcdir)/util/sss_log.c'; fi`
 
 tests/check_and_open_tests-check_and_open-tests.o: tests/check_and_open-tests.c
 @am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(check_and_open_tests_CFLAGS) $(CFLAGS) -MT tests/check_and_open_tests-check_and_open-tests.o -MD -MP -MF tests/$(DEPDIR)/check_and_open_tests-check_and_open-tests.Tpo -c -o tests/check_and_open_tests-check_and_open-tests.o `test -f 'tests/check_and_open-tests.c' || echo '$(srcdir)/'`tests/check_and_open-tests.c
@@ -6113,6 +6495,22 @@ util/fail_over_tests-debug.obj: util/debug.c
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
 @am__fastdepCC_FALSE@	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(fail_over_tests_CFLAGS) $(CFLAGS) -c -o util/fail_over_tests-debug.obj `if test -f 'util/debug.c'; then $(CYGPATH_W) 'util/debug.c'; else $(CYGPATH_W) '$(srcdir)/util/debug.c'; fi`
 
+util/fail_over_tests-sss_log.o: util/sss_log.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(fail_over_tests_CFLAGS) $(CFLAGS) -MT util/fail_over_tests-sss_log.o -MD -MP -MF util/$(DEPDIR)/fail_over_tests-sss_log.Tpo -c -o util/fail_over_tests-sss_log.o `test -f 'util/sss_log.c' || echo '$(srcdir)/'`util/sss_log.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) util/$(DEPDIR)/fail_over_tests-sss_log.Tpo util/$(DEPDIR)/fail_over_tests-sss_log.Po
+@am__fastdepCC_FALSE@	$(AM_V_CC) @AM_BACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	source='util/sss_log.c' object='util/fail_over_tests-sss_log.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(fail_over_tests_CFLAGS) $(CFLAGS) -c -o util/fail_over_tests-sss_log.o `test -f 'util/sss_log.c' || echo '$(srcdir)/'`util/sss_log.c
+
+util/fail_over_tests-sss_log.obj: util/sss_log.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(fail_over_tests_CFLAGS) $(CFLAGS) -MT util/fail_over_tests-sss_log.obj -MD -MP -MF util/$(DEPDIR)/fail_over_tests-sss_log.Tpo -c -o util/fail_over_tests-sss_log.obj `if test -f 'util/sss_log.c'; then $(CYGPATH_W) 'util/sss_log.c'; else $(CYGPATH_W) '$(srcdir)/util/sss_log.c'; fi`
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) util/$(DEPDIR)/fail_over_tests-sss_log.Tpo util/$(DEPDIR)/fail_over_tests-sss_log.Po
+@am__fastdepCC_FALSE@	$(AM_V_CC) @AM_BACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	source='util/sss_log.c' object='util/fail_over_tests-sss_log.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(fail_over_tests_CFLAGS) $(CFLAGS) -c -o util/fail_over_tests-sss_log.obj `if test -f 'util/sss_log.c'; then $(CYGPATH_W) 'util/sss_log.c'; else $(CYGPATH_W) '$(srcdir)/util/sss_log.c'; fi`
+
 util/files_tests-debug.o: util/debug.c
 @am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(files_tests_CFLAGS) $(CFLAGS) -MT util/files_tests-debug.o -MD -MP -MF util/$(DEPDIR)/files_tests-debug.Tpo -c -o util/files_tests-debug.o `test -f 'util/debug.c' || echo '$(srcdir)/'`util/debug.c
 @am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) util/$(DEPDIR)/files_tests-debug.Tpo util/$(DEPDIR)/files_tests-debug.Po
@@ -6128,6 +6526,22 @@ util/files_tests-debug.obj: util/debug.c
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	source='util/debug.c' object='util/files_tests-debug.obj' libtool=no @AMDEPBACKSLASH@
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
 @am__fastdepCC_FALSE@	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(files_tests_CFLAGS) $(CFLAGS) -c -o util/files_tests-debug.obj `if test -f 'util/debug.c'; then $(CYGPATH_W) 'util/debug.c'; else $(CYGPATH_W) '$(srcdir)/util/debug.c'; fi`
+
+util/files_tests-sss_log.o: util/sss_log.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(files_tests_CFLAGS) $(CFLAGS) -MT util/files_tests-sss_log.o -MD -MP -MF util/$(DEPDIR)/files_tests-sss_log.Tpo -c -o util/files_tests-sss_log.o `test -f 'util/sss_log.c' || echo '$(srcdir)/'`util/sss_log.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) util/$(DEPDIR)/files_tests-sss_log.Tpo util/$(DEPDIR)/files_tests-sss_log.Po
+@am__fastdepCC_FALSE@	$(AM_V_CC) @AM_BACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	source='util/sss_log.c' object='util/files_tests-sss_log.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(files_tests_CFLAGS) $(CFLAGS) -c -o util/files_tests-sss_log.o `test -f 'util/sss_log.c' || echo '$(srcdir)/'`util/sss_log.c
+
+util/files_tests-sss_log.obj: util/sss_log.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(files_tests_CFLAGS) $(CFLAGS) -MT util/files_tests-sss_log.obj -MD -MP -MF util/$(DEPDIR)/files_tests-sss_log.Tpo -c -o util/files_tests-sss_log.obj `if test -f 'util/sss_log.c'; then $(CYGPATH_W) 'util/sss_log.c'; else $(CYGPATH_W) '$(srcdir)/util/sss_log.c'; fi`
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) util/$(DEPDIR)/files_tests-sss_log.Tpo util/$(DEPDIR)/files_tests-sss_log.Po
+@am__fastdepCC_FALSE@	$(AM_V_CC) @AM_BACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	source='util/sss_log.c' object='util/files_tests-sss_log.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(files_tests_CFLAGS) $(CFLAGS) -c -o util/files_tests-sss_log.obj `if test -f 'util/sss_log.c'; then $(CYGPATH_W) 'util/sss_log.c'; else $(CYGPATH_W) '$(srcdir)/util/sss_log.c'; fi`
 
 tests/files_tests-files-tests.o: tests/files-tests.c
 @am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(files_tests_CFLAGS) $(CFLAGS) -MT tests/files_tests-files-tests.o -MD -MP -MF tests/$(DEPDIR)/files_tests-files-tests.Tpo -c -o tests/files_tests-files-tests.o `test -f 'tests/files-tests.c' || echo '$(srcdir)/'`tests/files-tests.c
@@ -6241,6 +6655,22 @@ util/find_uid_tests-debug.obj: util/debug.c
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
 @am__fastdepCC_FALSE@	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(find_uid_tests_CFLAGS) $(CFLAGS) -c -o util/find_uid_tests-debug.obj `if test -f 'util/debug.c'; then $(CYGPATH_W) 'util/debug.c'; else $(CYGPATH_W) '$(srcdir)/util/debug.c'; fi`
 
+util/find_uid_tests-sss_log.o: util/sss_log.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(find_uid_tests_CFLAGS) $(CFLAGS) -MT util/find_uid_tests-sss_log.o -MD -MP -MF util/$(DEPDIR)/find_uid_tests-sss_log.Tpo -c -o util/find_uid_tests-sss_log.o `test -f 'util/sss_log.c' || echo '$(srcdir)/'`util/sss_log.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) util/$(DEPDIR)/find_uid_tests-sss_log.Tpo util/$(DEPDIR)/find_uid_tests-sss_log.Po
+@am__fastdepCC_FALSE@	$(AM_V_CC) @AM_BACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	source='util/sss_log.c' object='util/find_uid_tests-sss_log.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(find_uid_tests_CFLAGS) $(CFLAGS) -c -o util/find_uid_tests-sss_log.o `test -f 'util/sss_log.c' || echo '$(srcdir)/'`util/sss_log.c
+
+util/find_uid_tests-sss_log.obj: util/sss_log.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(find_uid_tests_CFLAGS) $(CFLAGS) -MT util/find_uid_tests-sss_log.obj -MD -MP -MF util/$(DEPDIR)/find_uid_tests-sss_log.Tpo -c -o util/find_uid_tests-sss_log.obj `if test -f 'util/sss_log.c'; then $(CYGPATH_W) 'util/sss_log.c'; else $(CYGPATH_W) '$(srcdir)/util/sss_log.c'; fi`
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) util/$(DEPDIR)/find_uid_tests-sss_log.Tpo util/$(DEPDIR)/find_uid_tests-sss_log.Po
+@am__fastdepCC_FALSE@	$(AM_V_CC) @AM_BACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	source='util/sss_log.c' object='util/find_uid_tests-sss_log.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(find_uid_tests_CFLAGS) $(CFLAGS) -c -o util/find_uid_tests-sss_log.obj `if test -f 'util/sss_log.c'; then $(CYGPATH_W) 'util/sss_log.c'; else $(CYGPATH_W) '$(srcdir)/util/sss_log.c'; fi`
+
 providers/ipa/ipa_ldap_opt_tests-ipa_utils.o: providers/ipa/ipa_utils.c
 @am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(ipa_ldap_opt_tests_CFLAGS) $(CFLAGS) -MT providers/ipa/ipa_ldap_opt_tests-ipa_utils.o -MD -MP -MF providers/ipa/$(DEPDIR)/ipa_ldap_opt_tests-ipa_utils.Tpo -c -o providers/ipa/ipa_ldap_opt_tests-ipa_utils.o `test -f 'providers/ipa/ipa_utils.c' || echo '$(srcdir)/'`providers/ipa/ipa_utils.c
 @am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) providers/ipa/$(DEPDIR)/ipa_ldap_opt_tests-ipa_utils.Tpo providers/ipa/$(DEPDIR)/ipa_ldap_opt_tests-ipa_utils.Po
@@ -6320,6 +6750,22 @@ util/ipa_timerules_tests-debug.obj: util/debug.c
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	source='util/debug.c' object='util/ipa_timerules_tests-debug.obj' libtool=no @AMDEPBACKSLASH@
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
 @am__fastdepCC_FALSE@	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(ipa_timerules_tests_CFLAGS) $(CFLAGS) -c -o util/ipa_timerules_tests-debug.obj `if test -f 'util/debug.c'; then $(CYGPATH_W) 'util/debug.c'; else $(CYGPATH_W) '$(srcdir)/util/debug.c'; fi`
+
+util/ipa_timerules_tests-sss_log.o: util/sss_log.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(ipa_timerules_tests_CFLAGS) $(CFLAGS) -MT util/ipa_timerules_tests-sss_log.o -MD -MP -MF util/$(DEPDIR)/ipa_timerules_tests-sss_log.Tpo -c -o util/ipa_timerules_tests-sss_log.o `test -f 'util/sss_log.c' || echo '$(srcdir)/'`util/sss_log.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) util/$(DEPDIR)/ipa_timerules_tests-sss_log.Tpo util/$(DEPDIR)/ipa_timerules_tests-sss_log.Po
+@am__fastdepCC_FALSE@	$(AM_V_CC) @AM_BACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	source='util/sss_log.c' object='util/ipa_timerules_tests-sss_log.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(ipa_timerules_tests_CFLAGS) $(CFLAGS) -c -o util/ipa_timerules_tests-sss_log.o `test -f 'util/sss_log.c' || echo '$(srcdir)/'`util/sss_log.c
+
+util/ipa_timerules_tests-sss_log.obj: util/sss_log.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(ipa_timerules_tests_CFLAGS) $(CFLAGS) -MT util/ipa_timerules_tests-sss_log.obj -MD -MP -MF util/$(DEPDIR)/ipa_timerules_tests-sss_log.Tpo -c -o util/ipa_timerules_tests-sss_log.obj `if test -f 'util/sss_log.c'; then $(CYGPATH_W) 'util/sss_log.c'; else $(CYGPATH_W) '$(srcdir)/util/sss_log.c'; fi`
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) util/$(DEPDIR)/ipa_timerules_tests-sss_log.Tpo util/$(DEPDIR)/ipa_timerules_tests-sss_log.Po
+@am__fastdepCC_FALSE@	$(AM_V_CC) @AM_BACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	source='util/sss_log.c' object='util/ipa_timerules_tests-sss_log.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(ipa_timerules_tests_CFLAGS) $(CFLAGS) -c -o util/ipa_timerules_tests-sss_log.obj `if test -f 'util/sss_log.c'; then $(CYGPATH_W) 'util/sss_log.c'; else $(CYGPATH_W) '$(srcdir)/util/sss_log.c'; fi`
 
 tests/krb5_utils_tests-krb5_utils-tests.o: tests/krb5_utils-tests.c
 @am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(krb5_utils_tests_CFLAGS) $(CFLAGS) -MT tests/krb5_utils_tests-krb5_utils-tests.o -MD -MP -MF tests/$(DEPDIR)/krb5_utils_tests-krb5_utils-tests.Tpo -c -o tests/krb5_utils_tests-krb5_utils-tests.o `test -f 'tests/krb5_utils-tests.c' || echo '$(srcdir)/'`tests/krb5_utils-tests.c
@@ -6833,6 +7279,22 @@ util/krb5_utils_tests-debug.obj: util/debug.c
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
 @am__fastdepCC_FALSE@	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(krb5_utils_tests_CFLAGS) $(CFLAGS) -c -o util/krb5_utils_tests-debug.obj `if test -f 'util/debug.c'; then $(CYGPATH_W) 'util/debug.c'; else $(CYGPATH_W) '$(srcdir)/util/debug.c'; fi`
 
+util/krb5_utils_tests-sss_log.o: util/sss_log.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(krb5_utils_tests_CFLAGS) $(CFLAGS) -MT util/krb5_utils_tests-sss_log.o -MD -MP -MF util/$(DEPDIR)/krb5_utils_tests-sss_log.Tpo -c -o util/krb5_utils_tests-sss_log.o `test -f 'util/sss_log.c' || echo '$(srcdir)/'`util/sss_log.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) util/$(DEPDIR)/krb5_utils_tests-sss_log.Tpo util/$(DEPDIR)/krb5_utils_tests-sss_log.Po
+@am__fastdepCC_FALSE@	$(AM_V_CC) @AM_BACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	source='util/sss_log.c' object='util/krb5_utils_tests-sss_log.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(krb5_utils_tests_CFLAGS) $(CFLAGS) -c -o util/krb5_utils_tests-sss_log.o `test -f 'util/sss_log.c' || echo '$(srcdir)/'`util/sss_log.c
+
+util/krb5_utils_tests-sss_log.obj: util/sss_log.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(krb5_utils_tests_CFLAGS) $(CFLAGS) -MT util/krb5_utils_tests-sss_log.obj -MD -MP -MF util/$(DEPDIR)/krb5_utils_tests-sss_log.Tpo -c -o util/krb5_utils_tests-sss_log.obj `if test -f 'util/sss_log.c'; then $(CYGPATH_W) 'util/sss_log.c'; else $(CYGPATH_W) '$(srcdir)/util/sss_log.c'; fi`
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) util/$(DEPDIR)/krb5_utils_tests-sss_log.Tpo util/$(DEPDIR)/krb5_utils_tests-sss_log.Po
+@am__fastdepCC_FALSE@	$(AM_V_CC) @AM_BACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	source='util/sss_log.c' object='util/krb5_utils_tests-sss_log.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(krb5_utils_tests_CFLAGS) $(CFLAGS) -c -o util/krb5_utils_tests-sss_log.obj `if test -f 'util/sss_log.c'; then $(CYGPATH_W) 'util/sss_log.c'; else $(CYGPATH_W) '$(srcdir)/util/sss_log.c'; fi`
+
 util/krb5_child-debug.o: util/debug.c
 @am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(krb5_child_CFLAGS) $(CFLAGS) -MT util/krb5_child-debug.o -MD -MP -MF util/$(DEPDIR)/krb5_child-debug.Tpo -c -o util/krb5_child-debug.o `test -f 'util/debug.c' || echo '$(srcdir)/'`util/debug.c
 @am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) util/$(DEPDIR)/krb5_child-debug.Tpo util/$(DEPDIR)/krb5_child-debug.Po
@@ -6848,6 +7310,22 @@ util/krb5_child-debug.obj: util/debug.c
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	source='util/debug.c' object='util/krb5_child-debug.obj' libtool=no @AMDEPBACKSLASH@
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
 @am__fastdepCC_FALSE@	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(krb5_child_CFLAGS) $(CFLAGS) -c -o util/krb5_child-debug.obj `if test -f 'util/debug.c'; then $(CYGPATH_W) 'util/debug.c'; else $(CYGPATH_W) '$(srcdir)/util/debug.c'; fi`
+
+util/krb5_child-sss_log.o: util/sss_log.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(krb5_child_CFLAGS) $(CFLAGS) -MT util/krb5_child-sss_log.o -MD -MP -MF util/$(DEPDIR)/krb5_child-sss_log.Tpo -c -o util/krb5_child-sss_log.o `test -f 'util/sss_log.c' || echo '$(srcdir)/'`util/sss_log.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) util/$(DEPDIR)/krb5_child-sss_log.Tpo util/$(DEPDIR)/krb5_child-sss_log.Po
+@am__fastdepCC_FALSE@	$(AM_V_CC) @AM_BACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	source='util/sss_log.c' object='util/krb5_child-sss_log.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(krb5_child_CFLAGS) $(CFLAGS) -c -o util/krb5_child-sss_log.o `test -f 'util/sss_log.c' || echo '$(srcdir)/'`util/sss_log.c
+
+util/krb5_child-sss_log.obj: util/sss_log.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(krb5_child_CFLAGS) $(CFLAGS) -MT util/krb5_child-sss_log.obj -MD -MP -MF util/$(DEPDIR)/krb5_child-sss_log.Tpo -c -o util/krb5_child-sss_log.obj `if test -f 'util/sss_log.c'; then $(CYGPATH_W) 'util/sss_log.c'; else $(CYGPATH_W) '$(srcdir)/util/sss_log.c'; fi`
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) util/$(DEPDIR)/krb5_child-sss_log.Tpo util/$(DEPDIR)/krb5_child-sss_log.Po
+@am__fastdepCC_FALSE@	$(AM_V_CC) @AM_BACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	source='util/sss_log.c' object='util/krb5_child-sss_log.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(krb5_child_CFLAGS) $(CFLAGS) -c -o util/krb5_child-sss_log.obj `if test -f 'util/sss_log.c'; then $(CYGPATH_W) 'util/sss_log.c'; else $(CYGPATH_W) '$(srcdir)/util/sss_log.c'; fi`
 
 providers/krb5/krb5_child-krb5_become_user.o: providers/krb5/krb5_become_user.c
 @am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(krb5_child_CFLAGS) $(CFLAGS) -MT providers/krb5/krb5_child-krb5_become_user.o -MD -MP -MF providers/krb5/$(DEPDIR)/krb5_child-krb5_become_user.Tpo -c -o providers/krb5/krb5_child-krb5_become_user.o `test -f 'providers/krb5/krb5_become_user.c' || echo '$(srcdir)/'`providers/krb5/krb5_become_user.c
@@ -6960,6 +7438,22 @@ util/ldap_child-debug.obj: util/debug.c
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	source='util/debug.c' object='util/ldap_child-debug.obj' libtool=no @AMDEPBACKSLASH@
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
 @am__fastdepCC_FALSE@	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(ldap_child_CFLAGS) $(CFLAGS) -c -o util/ldap_child-debug.obj `if test -f 'util/debug.c'; then $(CYGPATH_W) 'util/debug.c'; else $(CYGPATH_W) '$(srcdir)/util/debug.c'; fi`
+
+util/ldap_child-sss_log.o: util/sss_log.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(ldap_child_CFLAGS) $(CFLAGS) -MT util/ldap_child-sss_log.o -MD -MP -MF util/$(DEPDIR)/ldap_child-sss_log.Tpo -c -o util/ldap_child-sss_log.o `test -f 'util/sss_log.c' || echo '$(srcdir)/'`util/sss_log.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) util/$(DEPDIR)/ldap_child-sss_log.Tpo util/$(DEPDIR)/ldap_child-sss_log.Po
+@am__fastdepCC_FALSE@	$(AM_V_CC) @AM_BACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	source='util/sss_log.c' object='util/ldap_child-sss_log.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(ldap_child_CFLAGS) $(CFLAGS) -c -o util/ldap_child-sss_log.o `test -f 'util/sss_log.c' || echo '$(srcdir)/'`util/sss_log.c
+
+util/ldap_child-sss_log.obj: util/sss_log.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(ldap_child_CFLAGS) $(CFLAGS) -MT util/ldap_child-sss_log.obj -MD -MP -MF util/$(DEPDIR)/ldap_child-sss_log.Tpo -c -o util/ldap_child-sss_log.obj `if test -f 'util/sss_log.c'; then $(CYGPATH_W) 'util/sss_log.c'; else $(CYGPATH_W) '$(srcdir)/util/sss_log.c'; fi`
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) util/$(DEPDIR)/ldap_child-sss_log.Tpo util/$(DEPDIR)/ldap_child-sss_log.Po
+@am__fastdepCC_FALSE@	$(AM_V_CC) @AM_BACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	source='util/sss_log.c' object='util/ldap_child-sss_log.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(ldap_child_CFLAGS) $(CFLAGS) -c -o util/ldap_child-sss_log.obj `if test -f 'util/sss_log.c'; then $(CYGPATH_W) 'util/sss_log.c'; else $(CYGPATH_W) '$(srcdir)/util/sss_log.c'; fi`
 
 providers/ldap/ldap_child-ldap_child.o: providers/ldap/ldap_child.c
 @am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(ldap_child_CFLAGS) $(CFLAGS) -MT providers/ldap/ldap_child-ldap_child.o -MD -MP -MF providers/ldap/$(DEPDIR)/ldap_child-ldap_child.Tpo -c -o providers/ldap/ldap_child-ldap_child.o `test -f 'providers/ldap/ldap_child.c' || echo '$(srcdir)/'`providers/ldap/ldap_child.c
@@ -7361,6 +7855,22 @@ util/proxy_child-debug.obj: util/debug.c
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
 @am__fastdepCC_FALSE@	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(proxy_child_CFLAGS) $(CFLAGS) -c -o util/proxy_child-debug.obj `if test -f 'util/debug.c'; then $(CYGPATH_W) 'util/debug.c'; else $(CYGPATH_W) '$(srcdir)/util/debug.c'; fi`
 
+util/proxy_child-sss_log.o: util/sss_log.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(proxy_child_CFLAGS) $(CFLAGS) -MT util/proxy_child-sss_log.o -MD -MP -MF util/$(DEPDIR)/proxy_child-sss_log.Tpo -c -o util/proxy_child-sss_log.o `test -f 'util/sss_log.c' || echo '$(srcdir)/'`util/sss_log.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) util/$(DEPDIR)/proxy_child-sss_log.Tpo util/$(DEPDIR)/proxy_child-sss_log.Po
+@am__fastdepCC_FALSE@	$(AM_V_CC) @AM_BACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	source='util/sss_log.c' object='util/proxy_child-sss_log.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(proxy_child_CFLAGS) $(CFLAGS) -c -o util/proxy_child-sss_log.o `test -f 'util/sss_log.c' || echo '$(srcdir)/'`util/sss_log.c
+
+util/proxy_child-sss_log.obj: util/sss_log.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(proxy_child_CFLAGS) $(CFLAGS) -MT util/proxy_child-sss_log.obj -MD -MP -MF util/$(DEPDIR)/proxy_child-sss_log.Tpo -c -o util/proxy_child-sss_log.obj `if test -f 'util/sss_log.c'; then $(CYGPATH_W) 'util/sss_log.c'; else $(CYGPATH_W) '$(srcdir)/util/sss_log.c'; fi`
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) util/$(DEPDIR)/proxy_child-sss_log.Tpo util/$(DEPDIR)/proxy_child-sss_log.Po
+@am__fastdepCC_FALSE@	$(AM_V_CC) @AM_BACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	source='util/sss_log.c' object='util/proxy_child-sss_log.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(proxy_child_CFLAGS) $(CFLAGS) -c -o util/proxy_child-sss_log.obj `if test -f 'util/sss_log.c'; then $(CYGPATH_W) 'util/sss_log.c'; else $(CYGPATH_W) '$(srcdir)/util/sss_log.c'; fi`
+
 providers/proxy/proxy_child-proxy_child.o: providers/proxy/proxy_child.c
 @am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(proxy_child_CFLAGS) $(CFLAGS) -MT providers/proxy/proxy_child-proxy_child.o -MD -MP -MF providers/proxy/$(DEPDIR)/proxy_child-proxy_child.Tpo -c -o providers/proxy/proxy_child-proxy_child.o `test -f 'providers/proxy/proxy_child.c' || echo '$(srcdir)/'`providers/proxy/proxy_child.c
 @am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) providers/proxy/$(DEPDIR)/proxy_child-proxy_child.Tpo providers/proxy/$(DEPDIR)/proxy_child-proxy_child.Po
@@ -7745,6 +8255,22 @@ util/refcount_tests-debug.obj: util/debug.c
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
 @am__fastdepCC_FALSE@	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(refcount_tests_CFLAGS) $(CFLAGS) -c -o util/refcount_tests-debug.obj `if test -f 'util/debug.c'; then $(CYGPATH_W) 'util/debug.c'; else $(CYGPATH_W) '$(srcdir)/util/debug.c'; fi`
 
+util/refcount_tests-sss_log.o: util/sss_log.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(refcount_tests_CFLAGS) $(CFLAGS) -MT util/refcount_tests-sss_log.o -MD -MP -MF util/$(DEPDIR)/refcount_tests-sss_log.Tpo -c -o util/refcount_tests-sss_log.o `test -f 'util/sss_log.c' || echo '$(srcdir)/'`util/sss_log.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) util/$(DEPDIR)/refcount_tests-sss_log.Tpo util/$(DEPDIR)/refcount_tests-sss_log.Po
+@am__fastdepCC_FALSE@	$(AM_V_CC) @AM_BACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	source='util/sss_log.c' object='util/refcount_tests-sss_log.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(refcount_tests_CFLAGS) $(CFLAGS) -c -o util/refcount_tests-sss_log.o `test -f 'util/sss_log.c' || echo '$(srcdir)/'`util/sss_log.c
+
+util/refcount_tests-sss_log.obj: util/sss_log.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(refcount_tests_CFLAGS) $(CFLAGS) -MT util/refcount_tests-sss_log.obj -MD -MP -MF util/$(DEPDIR)/refcount_tests-sss_log.Tpo -c -o util/refcount_tests-sss_log.obj `if test -f 'util/sss_log.c'; then $(CYGPATH_W) 'util/sss_log.c'; else $(CYGPATH_W) '$(srcdir)/util/sss_log.c'; fi`
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) util/$(DEPDIR)/refcount_tests-sss_log.Tpo util/$(DEPDIR)/refcount_tests-sss_log.Po
+@am__fastdepCC_FALSE@	$(AM_V_CC) @AM_BACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	source='util/sss_log.c' object='util/refcount_tests-sss_log.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(refcount_tests_CFLAGS) $(CFLAGS) -c -o util/refcount_tests-sss_log.obj `if test -f 'util/sss_log.c'; then $(CYGPATH_W) 'util/sss_log.c'; else $(CYGPATH_W) '$(srcdir)/util/sss_log.c'; fi`
+
 tests/resolv_tests-resolv-tests.o: tests/resolv-tests.c
 @am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(resolv_tests_CFLAGS) $(CFLAGS) -MT tests/resolv_tests-resolv-tests.o -MD -MP -MF tests/$(DEPDIR)/resolv_tests-resolv-tests.Tpo -c -o tests/resolv_tests-resolv-tests.o `test -f 'tests/resolv-tests.c' || echo '$(srcdir)/'`tests/resolv-tests.c
 @am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) tests/$(DEPDIR)/resolv_tests-resolv-tests.Tpo tests/$(DEPDIR)/resolv_tests-resolv-tests.Po
@@ -8112,6 +8638,22 @@ util/resolv_tests-debug.obj: util/debug.c
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	source='util/debug.c' object='util/resolv_tests-debug.obj' libtool=no @AMDEPBACKSLASH@
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
 @am__fastdepCC_FALSE@	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(resolv_tests_CFLAGS) $(CFLAGS) -c -o util/resolv_tests-debug.obj `if test -f 'util/debug.c'; then $(CYGPATH_W) 'util/debug.c'; else $(CYGPATH_W) '$(srcdir)/util/debug.c'; fi`
+
+util/resolv_tests-sss_log.o: util/sss_log.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(resolv_tests_CFLAGS) $(CFLAGS) -MT util/resolv_tests-sss_log.o -MD -MP -MF util/$(DEPDIR)/resolv_tests-sss_log.Tpo -c -o util/resolv_tests-sss_log.o `test -f 'util/sss_log.c' || echo '$(srcdir)/'`util/sss_log.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) util/$(DEPDIR)/resolv_tests-sss_log.Tpo util/$(DEPDIR)/resolv_tests-sss_log.Po
+@am__fastdepCC_FALSE@	$(AM_V_CC) @AM_BACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	source='util/sss_log.c' object='util/resolv_tests-sss_log.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(resolv_tests_CFLAGS) $(CFLAGS) -c -o util/resolv_tests-sss_log.o `test -f 'util/sss_log.c' || echo '$(srcdir)/'`util/sss_log.c
+
+util/resolv_tests-sss_log.obj: util/sss_log.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(resolv_tests_CFLAGS) $(CFLAGS) -MT util/resolv_tests-sss_log.obj -MD -MP -MF util/$(DEPDIR)/resolv_tests-sss_log.Tpo -c -o util/resolv_tests-sss_log.obj `if test -f 'util/sss_log.c'; then $(CYGPATH_W) 'util/sss_log.c'; else $(CYGPATH_W) '$(srcdir)/util/sss_log.c'; fi`
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) util/$(DEPDIR)/resolv_tests-sss_log.Tpo util/$(DEPDIR)/resolv_tests-sss_log.Po
+@am__fastdepCC_FALSE@	$(AM_V_CC) @AM_BACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	source='util/sss_log.c' object='util/resolv_tests-sss_log.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(resolv_tests_CFLAGS) $(CFLAGS) -c -o util/resolv_tests-sss_log.obj `if test -f 'util/sss_log.c'; then $(CYGPATH_W) 'util/sss_log.c'; else $(CYGPATH_W) '$(srcdir)/util/sss_log.c'; fi`
 
 resolv/resolv_tests-async_resolv.o: resolv/async_resolv.c
 @am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(resolv_tests_CFLAGS) $(CFLAGS) -MT resolv/resolv_tests-async_resolv.o -MD -MP -MF resolv/$(DEPDIR)/resolv_tests-async_resolv.Tpo -c -o resolv/resolv_tests-async_resolv.o `test -f 'resolv/async_resolv.c' || echo '$(srcdir)/'`resolv/async_resolv.c
@@ -8561,6 +9103,22 @@ util/simple_access_tests-debug.obj: util/debug.c
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
 @am__fastdepCC_FALSE@	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(simple_access_tests_CFLAGS) $(CFLAGS) -c -o util/simple_access_tests-debug.obj `if test -f 'util/debug.c'; then $(CYGPATH_W) 'util/debug.c'; else $(CYGPATH_W) '$(srcdir)/util/debug.c'; fi`
 
+util/simple_access_tests-sss_log.o: util/sss_log.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(simple_access_tests_CFLAGS) $(CFLAGS) -MT util/simple_access_tests-sss_log.o -MD -MP -MF util/$(DEPDIR)/simple_access_tests-sss_log.Tpo -c -o util/simple_access_tests-sss_log.o `test -f 'util/sss_log.c' || echo '$(srcdir)/'`util/sss_log.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) util/$(DEPDIR)/simple_access_tests-sss_log.Tpo util/$(DEPDIR)/simple_access_tests-sss_log.Po
+@am__fastdepCC_FALSE@	$(AM_V_CC) @AM_BACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	source='util/sss_log.c' object='util/simple_access_tests-sss_log.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(simple_access_tests_CFLAGS) $(CFLAGS) -c -o util/simple_access_tests-sss_log.o `test -f 'util/sss_log.c' || echo '$(srcdir)/'`util/sss_log.c
+
+util/simple_access_tests-sss_log.obj: util/sss_log.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(simple_access_tests_CFLAGS) $(CFLAGS) -MT util/simple_access_tests-sss_log.obj -MD -MP -MF util/$(DEPDIR)/simple_access_tests-sss_log.Tpo -c -o util/simple_access_tests-sss_log.obj `if test -f 'util/sss_log.c'; then $(CYGPATH_W) 'util/sss_log.c'; else $(CYGPATH_W) '$(srcdir)/util/sss_log.c'; fi`
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) util/$(DEPDIR)/simple_access_tests-sss_log.Tpo util/$(DEPDIR)/simple_access_tests-sss_log.Po
+@am__fastdepCC_FALSE@	$(AM_V_CC) @AM_BACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	source='util/sss_log.c' object='util/simple_access_tests-sss_log.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(simple_access_tests_CFLAGS) $(CFLAGS) -c -o util/simple_access_tests-sss_log.obj `if test -f 'util/sss_log.c'; then $(CYGPATH_W) 'util/sss_log.c'; else $(CYGPATH_W) '$(srcdir)/util/sss_log.c'; fi`
+
 tests/strtonum_tests-strtonum-tests.o: tests/strtonum-tests.c
 @am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(strtonum_tests_CFLAGS) $(CFLAGS) -MT tests/strtonum_tests-strtonum-tests.o -MD -MP -MF tests/$(DEPDIR)/strtonum_tests-strtonum-tests.Tpo -c -o tests/strtonum_tests-strtonum-tests.o `test -f 'tests/strtonum-tests.c' || echo '$(srcdir)/'`tests/strtonum-tests.c
 @am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) tests/$(DEPDIR)/strtonum_tests-strtonum-tests.Tpo tests/$(DEPDIR)/strtonum_tests-strtonum-tests.Po
@@ -8976,6 +9534,406 @@ util/sysdb_tests-debug.obj: util/debug.c
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	source='util/debug.c' object='util/sysdb_tests-debug.obj' libtool=no @AMDEPBACKSLASH@
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
 @am__fastdepCC_FALSE@	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(sysdb_tests_CFLAGS) $(CFLAGS) -c -o util/sysdb_tests-debug.obj `if test -f 'util/debug.c'; then $(CYGPATH_W) 'util/debug.c'; else $(CYGPATH_W) '$(srcdir)/util/debug.c'; fi`
+
+util/sysdb_tests-sss_log.o: util/sss_log.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(sysdb_tests_CFLAGS) $(CFLAGS) -MT util/sysdb_tests-sss_log.o -MD -MP -MF util/$(DEPDIR)/sysdb_tests-sss_log.Tpo -c -o util/sysdb_tests-sss_log.o `test -f 'util/sss_log.c' || echo '$(srcdir)/'`util/sss_log.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) util/$(DEPDIR)/sysdb_tests-sss_log.Tpo util/$(DEPDIR)/sysdb_tests-sss_log.Po
+@am__fastdepCC_FALSE@	$(AM_V_CC) @AM_BACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	source='util/sss_log.c' object='util/sysdb_tests-sss_log.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(sysdb_tests_CFLAGS) $(CFLAGS) -c -o util/sysdb_tests-sss_log.o `test -f 'util/sss_log.c' || echo '$(srcdir)/'`util/sss_log.c
+
+util/sysdb_tests-sss_log.obj: util/sss_log.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(sysdb_tests_CFLAGS) $(CFLAGS) -MT util/sysdb_tests-sss_log.obj -MD -MP -MF util/$(DEPDIR)/sysdb_tests-sss_log.Tpo -c -o util/sysdb_tests-sss_log.obj `if test -f 'util/sss_log.c'; then $(CYGPATH_W) 'util/sss_log.c'; else $(CYGPATH_W) '$(srcdir)/util/sss_log.c'; fi`
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) util/$(DEPDIR)/sysdb_tests-sss_log.Tpo util/$(DEPDIR)/sysdb_tests-sss_log.Po
+@am__fastdepCC_FALSE@	$(AM_V_CC) @AM_BACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	source='util/sss_log.c' object='util/sysdb_tests-sss_log.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(sysdb_tests_CFLAGS) $(CFLAGS) -c -o util/sysdb_tests-sss_log.obj `if test -f 'util/sss_log.c'; then $(CYGPATH_W) 'util/sss_log.c'; else $(CYGPATH_W) '$(srcdir)/util/sss_log.c'; fi`
+
+tests/util_tests-util-tests.o: tests/util-tests.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(util_tests_CFLAGS) $(CFLAGS) -MT tests/util_tests-util-tests.o -MD -MP -MF tests/$(DEPDIR)/util_tests-util-tests.Tpo -c -o tests/util_tests-util-tests.o `test -f 'tests/util-tests.c' || echo '$(srcdir)/'`tests/util-tests.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) tests/$(DEPDIR)/util_tests-util-tests.Tpo tests/$(DEPDIR)/util_tests-util-tests.Po
+@am__fastdepCC_FALSE@	$(AM_V_CC) @AM_BACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	source='tests/util-tests.c' object='tests/util_tests-util-tests.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(util_tests_CFLAGS) $(CFLAGS) -c -o tests/util_tests-util-tests.o `test -f 'tests/util-tests.c' || echo '$(srcdir)/'`tests/util-tests.c
+
+tests/util_tests-util-tests.obj: tests/util-tests.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(util_tests_CFLAGS) $(CFLAGS) -MT tests/util_tests-util-tests.obj -MD -MP -MF tests/$(DEPDIR)/util_tests-util-tests.Tpo -c -o tests/util_tests-util-tests.obj `if test -f 'tests/util-tests.c'; then $(CYGPATH_W) 'tests/util-tests.c'; else $(CYGPATH_W) '$(srcdir)/tests/util-tests.c'; fi`
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) tests/$(DEPDIR)/util_tests-util-tests.Tpo tests/$(DEPDIR)/util_tests-util-tests.Po
+@am__fastdepCC_FALSE@	$(AM_V_CC) @AM_BACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	source='tests/util-tests.c' object='tests/util_tests-util-tests.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(util_tests_CFLAGS) $(CFLAGS) -c -o tests/util_tests-util-tests.obj `if test -f 'tests/util-tests.c'; then $(CYGPATH_W) 'tests/util-tests.c'; else $(CYGPATH_W) '$(srcdir)/tests/util-tests.c'; fi`
+
+confdb/util_tests-confdb.o: confdb/confdb.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(util_tests_CFLAGS) $(CFLAGS) -MT confdb/util_tests-confdb.o -MD -MP -MF confdb/$(DEPDIR)/util_tests-confdb.Tpo -c -o confdb/util_tests-confdb.o `test -f 'confdb/confdb.c' || echo '$(srcdir)/'`confdb/confdb.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) confdb/$(DEPDIR)/util_tests-confdb.Tpo confdb/$(DEPDIR)/util_tests-confdb.Po
+@am__fastdepCC_FALSE@	$(AM_V_CC) @AM_BACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	source='confdb/confdb.c' object='confdb/util_tests-confdb.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(util_tests_CFLAGS) $(CFLAGS) -c -o confdb/util_tests-confdb.o `test -f 'confdb/confdb.c' || echo '$(srcdir)/'`confdb/confdb.c
+
+confdb/util_tests-confdb.obj: confdb/confdb.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(util_tests_CFLAGS) $(CFLAGS) -MT confdb/util_tests-confdb.obj -MD -MP -MF confdb/$(DEPDIR)/util_tests-confdb.Tpo -c -o confdb/util_tests-confdb.obj `if test -f 'confdb/confdb.c'; then $(CYGPATH_W) 'confdb/confdb.c'; else $(CYGPATH_W) '$(srcdir)/confdb/confdb.c'; fi`
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) confdb/$(DEPDIR)/util_tests-confdb.Tpo confdb/$(DEPDIR)/util_tests-confdb.Po
+@am__fastdepCC_FALSE@	$(AM_V_CC) @AM_BACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	source='confdb/confdb.c' object='confdb/util_tests-confdb.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(util_tests_CFLAGS) $(CFLAGS) -c -o confdb/util_tests-confdb.obj `if test -f 'confdb/confdb.c'; then $(CYGPATH_W) 'confdb/confdb.c'; else $(CYGPATH_W) '$(srcdir)/confdb/confdb.c'; fi`
+
+db/util_tests-sysdb.o: db/sysdb.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(util_tests_CFLAGS) $(CFLAGS) -MT db/util_tests-sysdb.o -MD -MP -MF db/$(DEPDIR)/util_tests-sysdb.Tpo -c -o db/util_tests-sysdb.o `test -f 'db/sysdb.c' || echo '$(srcdir)/'`db/sysdb.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) db/$(DEPDIR)/util_tests-sysdb.Tpo db/$(DEPDIR)/util_tests-sysdb.Po
+@am__fastdepCC_FALSE@	$(AM_V_CC) @AM_BACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	source='db/sysdb.c' object='db/util_tests-sysdb.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(util_tests_CFLAGS) $(CFLAGS) -c -o db/util_tests-sysdb.o `test -f 'db/sysdb.c' || echo '$(srcdir)/'`db/sysdb.c
+
+db/util_tests-sysdb.obj: db/sysdb.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(util_tests_CFLAGS) $(CFLAGS) -MT db/util_tests-sysdb.obj -MD -MP -MF db/$(DEPDIR)/util_tests-sysdb.Tpo -c -o db/util_tests-sysdb.obj `if test -f 'db/sysdb.c'; then $(CYGPATH_W) 'db/sysdb.c'; else $(CYGPATH_W) '$(srcdir)/db/sysdb.c'; fi`
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) db/$(DEPDIR)/util_tests-sysdb.Tpo db/$(DEPDIR)/util_tests-sysdb.Po
+@am__fastdepCC_FALSE@	$(AM_V_CC) @AM_BACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	source='db/sysdb.c' object='db/util_tests-sysdb.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(util_tests_CFLAGS) $(CFLAGS) -c -o db/util_tests-sysdb.obj `if test -f 'db/sysdb.c'; then $(CYGPATH_W) 'db/sysdb.c'; else $(CYGPATH_W) '$(srcdir)/db/sysdb.c'; fi`
+
+db/util_tests-sysdb_ops.o: db/sysdb_ops.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(util_tests_CFLAGS) $(CFLAGS) -MT db/util_tests-sysdb_ops.o -MD -MP -MF db/$(DEPDIR)/util_tests-sysdb_ops.Tpo -c -o db/util_tests-sysdb_ops.o `test -f 'db/sysdb_ops.c' || echo '$(srcdir)/'`db/sysdb_ops.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) db/$(DEPDIR)/util_tests-sysdb_ops.Tpo db/$(DEPDIR)/util_tests-sysdb_ops.Po
+@am__fastdepCC_FALSE@	$(AM_V_CC) @AM_BACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	source='db/sysdb_ops.c' object='db/util_tests-sysdb_ops.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(util_tests_CFLAGS) $(CFLAGS) -c -o db/util_tests-sysdb_ops.o `test -f 'db/sysdb_ops.c' || echo '$(srcdir)/'`db/sysdb_ops.c
+
+db/util_tests-sysdb_ops.obj: db/sysdb_ops.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(util_tests_CFLAGS) $(CFLAGS) -MT db/util_tests-sysdb_ops.obj -MD -MP -MF db/$(DEPDIR)/util_tests-sysdb_ops.Tpo -c -o db/util_tests-sysdb_ops.obj `if test -f 'db/sysdb_ops.c'; then $(CYGPATH_W) 'db/sysdb_ops.c'; else $(CYGPATH_W) '$(srcdir)/db/sysdb_ops.c'; fi`
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) db/$(DEPDIR)/util_tests-sysdb_ops.Tpo db/$(DEPDIR)/util_tests-sysdb_ops.Po
+@am__fastdepCC_FALSE@	$(AM_V_CC) @AM_BACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	source='db/sysdb_ops.c' object='db/util_tests-sysdb_ops.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(util_tests_CFLAGS) $(CFLAGS) -c -o db/util_tests-sysdb_ops.obj `if test -f 'db/sysdb_ops.c'; then $(CYGPATH_W) 'db/sysdb_ops.c'; else $(CYGPATH_W) '$(srcdir)/db/sysdb_ops.c'; fi`
+
+db/util_tests-sysdb_search.o: db/sysdb_search.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(util_tests_CFLAGS) $(CFLAGS) -MT db/util_tests-sysdb_search.o -MD -MP -MF db/$(DEPDIR)/util_tests-sysdb_search.Tpo -c -o db/util_tests-sysdb_search.o `test -f 'db/sysdb_search.c' || echo '$(srcdir)/'`db/sysdb_search.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) db/$(DEPDIR)/util_tests-sysdb_search.Tpo db/$(DEPDIR)/util_tests-sysdb_search.Po
+@am__fastdepCC_FALSE@	$(AM_V_CC) @AM_BACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	source='db/sysdb_search.c' object='db/util_tests-sysdb_search.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(util_tests_CFLAGS) $(CFLAGS) -c -o db/util_tests-sysdb_search.o `test -f 'db/sysdb_search.c' || echo '$(srcdir)/'`db/sysdb_search.c
+
+db/util_tests-sysdb_search.obj: db/sysdb_search.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(util_tests_CFLAGS) $(CFLAGS) -MT db/util_tests-sysdb_search.obj -MD -MP -MF db/$(DEPDIR)/util_tests-sysdb_search.Tpo -c -o db/util_tests-sysdb_search.obj `if test -f 'db/sysdb_search.c'; then $(CYGPATH_W) 'db/sysdb_search.c'; else $(CYGPATH_W) '$(srcdir)/db/sysdb_search.c'; fi`
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) db/$(DEPDIR)/util_tests-sysdb_search.Tpo db/$(DEPDIR)/util_tests-sysdb_search.Po
+@am__fastdepCC_FALSE@	$(AM_V_CC) @AM_BACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	source='db/sysdb_search.c' object='db/util_tests-sysdb_search.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(util_tests_CFLAGS) $(CFLAGS) -c -o db/util_tests-sysdb_search.obj `if test -f 'db/sysdb_search.c'; then $(CYGPATH_W) 'db/sysdb_search.c'; else $(CYGPATH_W) '$(srcdir)/db/sysdb_search.c'; fi`
+
+monitor/util_tests-monitor_sbus.o: monitor/monitor_sbus.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(util_tests_CFLAGS) $(CFLAGS) -MT monitor/util_tests-monitor_sbus.o -MD -MP -MF monitor/$(DEPDIR)/util_tests-monitor_sbus.Tpo -c -o monitor/util_tests-monitor_sbus.o `test -f 'monitor/monitor_sbus.c' || echo '$(srcdir)/'`monitor/monitor_sbus.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) monitor/$(DEPDIR)/util_tests-monitor_sbus.Tpo monitor/$(DEPDIR)/util_tests-monitor_sbus.Po
+@am__fastdepCC_FALSE@	$(AM_V_CC) @AM_BACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	source='monitor/monitor_sbus.c' object='monitor/util_tests-monitor_sbus.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(util_tests_CFLAGS) $(CFLAGS) -c -o monitor/util_tests-monitor_sbus.o `test -f 'monitor/monitor_sbus.c' || echo '$(srcdir)/'`monitor/monitor_sbus.c
+
+monitor/util_tests-monitor_sbus.obj: monitor/monitor_sbus.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(util_tests_CFLAGS) $(CFLAGS) -MT monitor/util_tests-monitor_sbus.obj -MD -MP -MF monitor/$(DEPDIR)/util_tests-monitor_sbus.Tpo -c -o monitor/util_tests-monitor_sbus.obj `if test -f 'monitor/monitor_sbus.c'; then $(CYGPATH_W) 'monitor/monitor_sbus.c'; else $(CYGPATH_W) '$(srcdir)/monitor/monitor_sbus.c'; fi`
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) monitor/$(DEPDIR)/util_tests-monitor_sbus.Tpo monitor/$(DEPDIR)/util_tests-monitor_sbus.Po
+@am__fastdepCC_FALSE@	$(AM_V_CC) @AM_BACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	source='monitor/monitor_sbus.c' object='monitor/util_tests-monitor_sbus.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(util_tests_CFLAGS) $(CFLAGS) -c -o monitor/util_tests-monitor_sbus.obj `if test -f 'monitor/monitor_sbus.c'; then $(CYGPATH_W) 'monitor/monitor_sbus.c'; else $(CYGPATH_W) '$(srcdir)/monitor/monitor_sbus.c'; fi`
+
+providers/util_tests-dp_auth_util.o: providers/dp_auth_util.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(util_tests_CFLAGS) $(CFLAGS) -MT providers/util_tests-dp_auth_util.o -MD -MP -MF providers/$(DEPDIR)/util_tests-dp_auth_util.Tpo -c -o providers/util_tests-dp_auth_util.o `test -f 'providers/dp_auth_util.c' || echo '$(srcdir)/'`providers/dp_auth_util.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) providers/$(DEPDIR)/util_tests-dp_auth_util.Tpo providers/$(DEPDIR)/util_tests-dp_auth_util.Po
+@am__fastdepCC_FALSE@	$(AM_V_CC) @AM_BACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	source='providers/dp_auth_util.c' object='providers/util_tests-dp_auth_util.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(util_tests_CFLAGS) $(CFLAGS) -c -o providers/util_tests-dp_auth_util.o `test -f 'providers/dp_auth_util.c' || echo '$(srcdir)/'`providers/dp_auth_util.c
+
+providers/util_tests-dp_auth_util.obj: providers/dp_auth_util.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(util_tests_CFLAGS) $(CFLAGS) -MT providers/util_tests-dp_auth_util.obj -MD -MP -MF providers/$(DEPDIR)/util_tests-dp_auth_util.Tpo -c -o providers/util_tests-dp_auth_util.obj `if test -f 'providers/dp_auth_util.c'; then $(CYGPATH_W) 'providers/dp_auth_util.c'; else $(CYGPATH_W) '$(srcdir)/providers/dp_auth_util.c'; fi`
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) providers/$(DEPDIR)/util_tests-dp_auth_util.Tpo providers/$(DEPDIR)/util_tests-dp_auth_util.Po
+@am__fastdepCC_FALSE@	$(AM_V_CC) @AM_BACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	source='providers/dp_auth_util.c' object='providers/util_tests-dp_auth_util.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(util_tests_CFLAGS) $(CFLAGS) -c -o providers/util_tests-dp_auth_util.obj `if test -f 'providers/dp_auth_util.c'; then $(CYGPATH_W) 'providers/dp_auth_util.c'; else $(CYGPATH_W) '$(srcdir)/providers/dp_auth_util.c'; fi`
+
+providers/util_tests-dp_pam_data_util.o: providers/dp_pam_data_util.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(util_tests_CFLAGS) $(CFLAGS) -MT providers/util_tests-dp_pam_data_util.o -MD -MP -MF providers/$(DEPDIR)/util_tests-dp_pam_data_util.Tpo -c -o providers/util_tests-dp_pam_data_util.o `test -f 'providers/dp_pam_data_util.c' || echo '$(srcdir)/'`providers/dp_pam_data_util.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) providers/$(DEPDIR)/util_tests-dp_pam_data_util.Tpo providers/$(DEPDIR)/util_tests-dp_pam_data_util.Po
+@am__fastdepCC_FALSE@	$(AM_V_CC) @AM_BACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	source='providers/dp_pam_data_util.c' object='providers/util_tests-dp_pam_data_util.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(util_tests_CFLAGS) $(CFLAGS) -c -o providers/util_tests-dp_pam_data_util.o `test -f 'providers/dp_pam_data_util.c' || echo '$(srcdir)/'`providers/dp_pam_data_util.c
+
+providers/util_tests-dp_pam_data_util.obj: providers/dp_pam_data_util.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(util_tests_CFLAGS) $(CFLAGS) -MT providers/util_tests-dp_pam_data_util.obj -MD -MP -MF providers/$(DEPDIR)/util_tests-dp_pam_data_util.Tpo -c -o providers/util_tests-dp_pam_data_util.obj `if test -f 'providers/dp_pam_data_util.c'; then $(CYGPATH_W) 'providers/dp_pam_data_util.c'; else $(CYGPATH_W) '$(srcdir)/providers/dp_pam_data_util.c'; fi`
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) providers/$(DEPDIR)/util_tests-dp_pam_data_util.Tpo providers/$(DEPDIR)/util_tests-dp_pam_data_util.Po
+@am__fastdepCC_FALSE@	$(AM_V_CC) @AM_BACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	source='providers/dp_pam_data_util.c' object='providers/util_tests-dp_pam_data_util.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(util_tests_CFLAGS) $(CFLAGS) -c -o providers/util_tests-dp_pam_data_util.obj `if test -f 'providers/dp_pam_data_util.c'; then $(CYGPATH_W) 'providers/dp_pam_data_util.c'; else $(CYGPATH_W) '$(srcdir)/providers/dp_pam_data_util.c'; fi`
+
+providers/util_tests-dp_sbus.o: providers/dp_sbus.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(util_tests_CFLAGS) $(CFLAGS) -MT providers/util_tests-dp_sbus.o -MD -MP -MF providers/$(DEPDIR)/util_tests-dp_sbus.Tpo -c -o providers/util_tests-dp_sbus.o `test -f 'providers/dp_sbus.c' || echo '$(srcdir)/'`providers/dp_sbus.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) providers/$(DEPDIR)/util_tests-dp_sbus.Tpo providers/$(DEPDIR)/util_tests-dp_sbus.Po
+@am__fastdepCC_FALSE@	$(AM_V_CC) @AM_BACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	source='providers/dp_sbus.c' object='providers/util_tests-dp_sbus.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(util_tests_CFLAGS) $(CFLAGS) -c -o providers/util_tests-dp_sbus.o `test -f 'providers/dp_sbus.c' || echo '$(srcdir)/'`providers/dp_sbus.c
+
+providers/util_tests-dp_sbus.obj: providers/dp_sbus.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(util_tests_CFLAGS) $(CFLAGS) -MT providers/util_tests-dp_sbus.obj -MD -MP -MF providers/$(DEPDIR)/util_tests-dp_sbus.Tpo -c -o providers/util_tests-dp_sbus.obj `if test -f 'providers/dp_sbus.c'; then $(CYGPATH_W) 'providers/dp_sbus.c'; else $(CYGPATH_W) '$(srcdir)/providers/dp_sbus.c'; fi`
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) providers/$(DEPDIR)/util_tests-dp_sbus.Tpo providers/$(DEPDIR)/util_tests-dp_sbus.Po
+@am__fastdepCC_FALSE@	$(AM_V_CC) @AM_BACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	source='providers/dp_sbus.c' object='providers/util_tests-dp_sbus.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(util_tests_CFLAGS) $(CFLAGS) -c -o providers/util_tests-dp_sbus.obj `if test -f 'providers/dp_sbus.c'; then $(CYGPATH_W) 'providers/dp_sbus.c'; else $(CYGPATH_W) '$(srcdir)/providers/dp_sbus.c'; fi`
+
+sbus/util_tests-sbus_client.o: sbus/sbus_client.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(util_tests_CFLAGS) $(CFLAGS) -MT sbus/util_tests-sbus_client.o -MD -MP -MF sbus/$(DEPDIR)/util_tests-sbus_client.Tpo -c -o sbus/util_tests-sbus_client.o `test -f 'sbus/sbus_client.c' || echo '$(srcdir)/'`sbus/sbus_client.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) sbus/$(DEPDIR)/util_tests-sbus_client.Tpo sbus/$(DEPDIR)/util_tests-sbus_client.Po
+@am__fastdepCC_FALSE@	$(AM_V_CC) @AM_BACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	source='sbus/sbus_client.c' object='sbus/util_tests-sbus_client.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(util_tests_CFLAGS) $(CFLAGS) -c -o sbus/util_tests-sbus_client.o `test -f 'sbus/sbus_client.c' || echo '$(srcdir)/'`sbus/sbus_client.c
+
+sbus/util_tests-sbus_client.obj: sbus/sbus_client.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(util_tests_CFLAGS) $(CFLAGS) -MT sbus/util_tests-sbus_client.obj -MD -MP -MF sbus/$(DEPDIR)/util_tests-sbus_client.Tpo -c -o sbus/util_tests-sbus_client.obj `if test -f 'sbus/sbus_client.c'; then $(CYGPATH_W) 'sbus/sbus_client.c'; else $(CYGPATH_W) '$(srcdir)/sbus/sbus_client.c'; fi`
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) sbus/$(DEPDIR)/util_tests-sbus_client.Tpo sbus/$(DEPDIR)/util_tests-sbus_client.Po
+@am__fastdepCC_FALSE@	$(AM_V_CC) @AM_BACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	source='sbus/sbus_client.c' object='sbus/util_tests-sbus_client.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(util_tests_CFLAGS) $(CFLAGS) -c -o sbus/util_tests-sbus_client.obj `if test -f 'sbus/sbus_client.c'; then $(CYGPATH_W) 'sbus/sbus_client.c'; else $(CYGPATH_W) '$(srcdir)/sbus/sbus_client.c'; fi`
+
+sbus/util_tests-sssd_dbus_common.o: sbus/sssd_dbus_common.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(util_tests_CFLAGS) $(CFLAGS) -MT sbus/util_tests-sssd_dbus_common.o -MD -MP -MF sbus/$(DEPDIR)/util_tests-sssd_dbus_common.Tpo -c -o sbus/util_tests-sssd_dbus_common.o `test -f 'sbus/sssd_dbus_common.c' || echo '$(srcdir)/'`sbus/sssd_dbus_common.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) sbus/$(DEPDIR)/util_tests-sssd_dbus_common.Tpo sbus/$(DEPDIR)/util_tests-sssd_dbus_common.Po
+@am__fastdepCC_FALSE@	$(AM_V_CC) @AM_BACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	source='sbus/sssd_dbus_common.c' object='sbus/util_tests-sssd_dbus_common.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(util_tests_CFLAGS) $(CFLAGS) -c -o sbus/util_tests-sssd_dbus_common.o `test -f 'sbus/sssd_dbus_common.c' || echo '$(srcdir)/'`sbus/sssd_dbus_common.c
+
+sbus/util_tests-sssd_dbus_common.obj: sbus/sssd_dbus_common.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(util_tests_CFLAGS) $(CFLAGS) -MT sbus/util_tests-sssd_dbus_common.obj -MD -MP -MF sbus/$(DEPDIR)/util_tests-sssd_dbus_common.Tpo -c -o sbus/util_tests-sssd_dbus_common.obj `if test -f 'sbus/sssd_dbus_common.c'; then $(CYGPATH_W) 'sbus/sssd_dbus_common.c'; else $(CYGPATH_W) '$(srcdir)/sbus/sssd_dbus_common.c'; fi`
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) sbus/$(DEPDIR)/util_tests-sssd_dbus_common.Tpo sbus/$(DEPDIR)/util_tests-sssd_dbus_common.Po
+@am__fastdepCC_FALSE@	$(AM_V_CC) @AM_BACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	source='sbus/sssd_dbus_common.c' object='sbus/util_tests-sssd_dbus_common.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(util_tests_CFLAGS) $(CFLAGS) -c -o sbus/util_tests-sssd_dbus_common.obj `if test -f 'sbus/sssd_dbus_common.c'; then $(CYGPATH_W) 'sbus/sssd_dbus_common.c'; else $(CYGPATH_W) '$(srcdir)/sbus/sssd_dbus_common.c'; fi`
+
+sbus/util_tests-sssd_dbus_connection.o: sbus/sssd_dbus_connection.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(util_tests_CFLAGS) $(CFLAGS) -MT sbus/util_tests-sssd_dbus_connection.o -MD -MP -MF sbus/$(DEPDIR)/util_tests-sssd_dbus_connection.Tpo -c -o sbus/util_tests-sssd_dbus_connection.o `test -f 'sbus/sssd_dbus_connection.c' || echo '$(srcdir)/'`sbus/sssd_dbus_connection.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) sbus/$(DEPDIR)/util_tests-sssd_dbus_connection.Tpo sbus/$(DEPDIR)/util_tests-sssd_dbus_connection.Po
+@am__fastdepCC_FALSE@	$(AM_V_CC) @AM_BACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	source='sbus/sssd_dbus_connection.c' object='sbus/util_tests-sssd_dbus_connection.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(util_tests_CFLAGS) $(CFLAGS) -c -o sbus/util_tests-sssd_dbus_connection.o `test -f 'sbus/sssd_dbus_connection.c' || echo '$(srcdir)/'`sbus/sssd_dbus_connection.c
+
+sbus/util_tests-sssd_dbus_connection.obj: sbus/sssd_dbus_connection.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(util_tests_CFLAGS) $(CFLAGS) -MT sbus/util_tests-sssd_dbus_connection.obj -MD -MP -MF sbus/$(DEPDIR)/util_tests-sssd_dbus_connection.Tpo -c -o sbus/util_tests-sssd_dbus_connection.obj `if test -f 'sbus/sssd_dbus_connection.c'; then $(CYGPATH_W) 'sbus/sssd_dbus_connection.c'; else $(CYGPATH_W) '$(srcdir)/sbus/sssd_dbus_connection.c'; fi`
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) sbus/$(DEPDIR)/util_tests-sssd_dbus_connection.Tpo sbus/$(DEPDIR)/util_tests-sssd_dbus_connection.Po
+@am__fastdepCC_FALSE@	$(AM_V_CC) @AM_BACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	source='sbus/sssd_dbus_connection.c' object='sbus/util_tests-sssd_dbus_connection.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(util_tests_CFLAGS) $(CFLAGS) -c -o sbus/util_tests-sssd_dbus_connection.obj `if test -f 'sbus/sssd_dbus_connection.c'; then $(CYGPATH_W) 'sbus/sssd_dbus_connection.c'; else $(CYGPATH_W) '$(srcdir)/sbus/sssd_dbus_connection.c'; fi`
+
+sbus/util_tests-sssd_dbus_server.o: sbus/sssd_dbus_server.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(util_tests_CFLAGS) $(CFLAGS) -MT sbus/util_tests-sssd_dbus_server.o -MD -MP -MF sbus/$(DEPDIR)/util_tests-sssd_dbus_server.Tpo -c -o sbus/util_tests-sssd_dbus_server.o `test -f 'sbus/sssd_dbus_server.c' || echo '$(srcdir)/'`sbus/sssd_dbus_server.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) sbus/$(DEPDIR)/util_tests-sssd_dbus_server.Tpo sbus/$(DEPDIR)/util_tests-sssd_dbus_server.Po
+@am__fastdepCC_FALSE@	$(AM_V_CC) @AM_BACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	source='sbus/sssd_dbus_server.c' object='sbus/util_tests-sssd_dbus_server.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(util_tests_CFLAGS) $(CFLAGS) -c -o sbus/util_tests-sssd_dbus_server.o `test -f 'sbus/sssd_dbus_server.c' || echo '$(srcdir)/'`sbus/sssd_dbus_server.c
+
+sbus/util_tests-sssd_dbus_server.obj: sbus/sssd_dbus_server.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(util_tests_CFLAGS) $(CFLAGS) -MT sbus/util_tests-sssd_dbus_server.obj -MD -MP -MF sbus/$(DEPDIR)/util_tests-sssd_dbus_server.Tpo -c -o sbus/util_tests-sssd_dbus_server.obj `if test -f 'sbus/sssd_dbus_server.c'; then $(CYGPATH_W) 'sbus/sssd_dbus_server.c'; else $(CYGPATH_W) '$(srcdir)/sbus/sssd_dbus_server.c'; fi`
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) sbus/$(DEPDIR)/util_tests-sssd_dbus_server.Tpo sbus/$(DEPDIR)/util_tests-sssd_dbus_server.Po
+@am__fastdepCC_FALSE@	$(AM_V_CC) @AM_BACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	source='sbus/sssd_dbus_server.c' object='sbus/util_tests-sssd_dbus_server.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(util_tests_CFLAGS) $(CFLAGS) -c -o sbus/util_tests-sssd_dbus_server.obj `if test -f 'sbus/sssd_dbus_server.c'; then $(CYGPATH_W) 'sbus/sssd_dbus_server.c'; else $(CYGPATH_W) '$(srcdir)/sbus/sssd_dbus_server.c'; fi`
+
+util/util_tests-util.o: util/util.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(util_tests_CFLAGS) $(CFLAGS) -MT util/util_tests-util.o -MD -MP -MF util/$(DEPDIR)/util_tests-util.Tpo -c -o util/util_tests-util.o `test -f 'util/util.c' || echo '$(srcdir)/'`util/util.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) util/$(DEPDIR)/util_tests-util.Tpo util/$(DEPDIR)/util_tests-util.Po
+@am__fastdepCC_FALSE@	$(AM_V_CC) @AM_BACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	source='util/util.c' object='util/util_tests-util.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(util_tests_CFLAGS) $(CFLAGS) -c -o util/util_tests-util.o `test -f 'util/util.c' || echo '$(srcdir)/'`util/util.c
+
+util/util_tests-util.obj: util/util.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(util_tests_CFLAGS) $(CFLAGS) -MT util/util_tests-util.obj -MD -MP -MF util/$(DEPDIR)/util_tests-util.Tpo -c -o util/util_tests-util.obj `if test -f 'util/util.c'; then $(CYGPATH_W) 'util/util.c'; else $(CYGPATH_W) '$(srcdir)/util/util.c'; fi`
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) util/$(DEPDIR)/util_tests-util.Tpo util/$(DEPDIR)/util_tests-util.Po
+@am__fastdepCC_FALSE@	$(AM_V_CC) @AM_BACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	source='util/util.c' object='util/util_tests-util.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(util_tests_CFLAGS) $(CFLAGS) -c -o util/util_tests-util.obj `if test -f 'util/util.c'; then $(CYGPATH_W) 'util/util.c'; else $(CYGPATH_W) '$(srcdir)/util/util.c'; fi`
+
+util/util_tests-memory.o: util/memory.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(util_tests_CFLAGS) $(CFLAGS) -MT util/util_tests-memory.o -MD -MP -MF util/$(DEPDIR)/util_tests-memory.Tpo -c -o util/util_tests-memory.o `test -f 'util/memory.c' || echo '$(srcdir)/'`util/memory.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) util/$(DEPDIR)/util_tests-memory.Tpo util/$(DEPDIR)/util_tests-memory.Po
+@am__fastdepCC_FALSE@	$(AM_V_CC) @AM_BACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	source='util/memory.c' object='util/util_tests-memory.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(util_tests_CFLAGS) $(CFLAGS) -c -o util/util_tests-memory.o `test -f 'util/memory.c' || echo '$(srcdir)/'`util/memory.c
+
+util/util_tests-memory.obj: util/memory.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(util_tests_CFLAGS) $(CFLAGS) -MT util/util_tests-memory.obj -MD -MP -MF util/$(DEPDIR)/util_tests-memory.Tpo -c -o util/util_tests-memory.obj `if test -f 'util/memory.c'; then $(CYGPATH_W) 'util/memory.c'; else $(CYGPATH_W) '$(srcdir)/util/memory.c'; fi`
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) util/$(DEPDIR)/util_tests-memory.Tpo util/$(DEPDIR)/util_tests-memory.Po
+@am__fastdepCC_FALSE@	$(AM_V_CC) @AM_BACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	source='util/memory.c' object='util/util_tests-memory.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(util_tests_CFLAGS) $(CFLAGS) -c -o util/util_tests-memory.obj `if test -f 'util/memory.c'; then $(CYGPATH_W) 'util/memory.c'; else $(CYGPATH_W) '$(srcdir)/util/memory.c'; fi`
+
+util/util_tests-server.o: util/server.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(util_tests_CFLAGS) $(CFLAGS) -MT util/util_tests-server.o -MD -MP -MF util/$(DEPDIR)/util_tests-server.Tpo -c -o util/util_tests-server.o `test -f 'util/server.c' || echo '$(srcdir)/'`util/server.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) util/$(DEPDIR)/util_tests-server.Tpo util/$(DEPDIR)/util_tests-server.Po
+@am__fastdepCC_FALSE@	$(AM_V_CC) @AM_BACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	source='util/server.c' object='util/util_tests-server.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(util_tests_CFLAGS) $(CFLAGS) -c -o util/util_tests-server.o `test -f 'util/server.c' || echo '$(srcdir)/'`util/server.c
+
+util/util_tests-server.obj: util/server.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(util_tests_CFLAGS) $(CFLAGS) -MT util/util_tests-server.obj -MD -MP -MF util/$(DEPDIR)/util_tests-server.Tpo -c -o util/util_tests-server.obj `if test -f 'util/server.c'; then $(CYGPATH_W) 'util/server.c'; else $(CYGPATH_W) '$(srcdir)/util/server.c'; fi`
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) util/$(DEPDIR)/util_tests-server.Tpo util/$(DEPDIR)/util_tests-server.Po
+@am__fastdepCC_FALSE@	$(AM_V_CC) @AM_BACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	source='util/server.c' object='util/util_tests-server.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(util_tests_CFLAGS) $(CFLAGS) -c -o util/util_tests-server.obj `if test -f 'util/server.c'; then $(CYGPATH_W) 'util/server.c'; else $(CYGPATH_W) '$(srcdir)/util/server.c'; fi`
+
+util/util_tests-signal.o: util/signal.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(util_tests_CFLAGS) $(CFLAGS) -MT util/util_tests-signal.o -MD -MP -MF util/$(DEPDIR)/util_tests-signal.Tpo -c -o util/util_tests-signal.o `test -f 'util/signal.c' || echo '$(srcdir)/'`util/signal.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) util/$(DEPDIR)/util_tests-signal.Tpo util/$(DEPDIR)/util_tests-signal.Po
+@am__fastdepCC_FALSE@	$(AM_V_CC) @AM_BACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	source='util/signal.c' object='util/util_tests-signal.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(util_tests_CFLAGS) $(CFLAGS) -c -o util/util_tests-signal.o `test -f 'util/signal.c' || echo '$(srcdir)/'`util/signal.c
+
+util/util_tests-signal.obj: util/signal.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(util_tests_CFLAGS) $(CFLAGS) -MT util/util_tests-signal.obj -MD -MP -MF util/$(DEPDIR)/util_tests-signal.Tpo -c -o util/util_tests-signal.obj `if test -f 'util/signal.c'; then $(CYGPATH_W) 'util/signal.c'; else $(CYGPATH_W) '$(srcdir)/util/signal.c'; fi`
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) util/$(DEPDIR)/util_tests-signal.Tpo util/$(DEPDIR)/util_tests-signal.Po
+@am__fastdepCC_FALSE@	$(AM_V_CC) @AM_BACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	source='util/signal.c' object='util/util_tests-signal.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(util_tests_CFLAGS) $(CFLAGS) -c -o util/util_tests-signal.obj `if test -f 'util/signal.c'; then $(CYGPATH_W) 'util/signal.c'; else $(CYGPATH_W) '$(srcdir)/util/signal.c'; fi`
+
+util/util_tests-usertools.o: util/usertools.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(util_tests_CFLAGS) $(CFLAGS) -MT util/util_tests-usertools.o -MD -MP -MF util/$(DEPDIR)/util_tests-usertools.Tpo -c -o util/util_tests-usertools.o `test -f 'util/usertools.c' || echo '$(srcdir)/'`util/usertools.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) util/$(DEPDIR)/util_tests-usertools.Tpo util/$(DEPDIR)/util_tests-usertools.Po
+@am__fastdepCC_FALSE@	$(AM_V_CC) @AM_BACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	source='util/usertools.c' object='util/util_tests-usertools.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(util_tests_CFLAGS) $(CFLAGS) -c -o util/util_tests-usertools.o `test -f 'util/usertools.c' || echo '$(srcdir)/'`util/usertools.c
+
+util/util_tests-usertools.obj: util/usertools.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(util_tests_CFLAGS) $(CFLAGS) -MT util/util_tests-usertools.obj -MD -MP -MF util/$(DEPDIR)/util_tests-usertools.Tpo -c -o util/util_tests-usertools.obj `if test -f 'util/usertools.c'; then $(CYGPATH_W) 'util/usertools.c'; else $(CYGPATH_W) '$(srcdir)/util/usertools.c'; fi`
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) util/$(DEPDIR)/util_tests-usertools.Tpo util/$(DEPDIR)/util_tests-usertools.Po
+@am__fastdepCC_FALSE@	$(AM_V_CC) @AM_BACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	source='util/usertools.c' object='util/util_tests-usertools.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(util_tests_CFLAGS) $(CFLAGS) -c -o util/util_tests-usertools.obj `if test -f 'util/usertools.c'; then $(CYGPATH_W) 'util/usertools.c'; else $(CYGPATH_W) '$(srcdir)/util/usertools.c'; fi`
+
+util/util_tests-backup_file.o: util/backup_file.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(util_tests_CFLAGS) $(CFLAGS) -MT util/util_tests-backup_file.o -MD -MP -MF util/$(DEPDIR)/util_tests-backup_file.Tpo -c -o util/util_tests-backup_file.o `test -f 'util/backup_file.c' || echo '$(srcdir)/'`util/backup_file.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) util/$(DEPDIR)/util_tests-backup_file.Tpo util/$(DEPDIR)/util_tests-backup_file.Po
+@am__fastdepCC_FALSE@	$(AM_V_CC) @AM_BACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	source='util/backup_file.c' object='util/util_tests-backup_file.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(util_tests_CFLAGS) $(CFLAGS) -c -o util/util_tests-backup_file.o `test -f 'util/backup_file.c' || echo '$(srcdir)/'`util/backup_file.c
+
+util/util_tests-backup_file.obj: util/backup_file.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(util_tests_CFLAGS) $(CFLAGS) -MT util/util_tests-backup_file.obj -MD -MP -MF util/$(DEPDIR)/util_tests-backup_file.Tpo -c -o util/util_tests-backup_file.obj `if test -f 'util/backup_file.c'; then $(CYGPATH_W) 'util/backup_file.c'; else $(CYGPATH_W) '$(srcdir)/util/backup_file.c'; fi`
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) util/$(DEPDIR)/util_tests-backup_file.Tpo util/$(DEPDIR)/util_tests-backup_file.Po
+@am__fastdepCC_FALSE@	$(AM_V_CC) @AM_BACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	source='util/backup_file.c' object='util/util_tests-backup_file.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(util_tests_CFLAGS) $(CFLAGS) -c -o util/util_tests-backup_file.obj `if test -f 'util/backup_file.c'; then $(CYGPATH_W) 'util/backup_file.c'; else $(CYGPATH_W) '$(srcdir)/util/backup_file.c'; fi`
+
+util/util_tests-strtonum.o: util/strtonum.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(util_tests_CFLAGS) $(CFLAGS) -MT util/util_tests-strtonum.o -MD -MP -MF util/$(DEPDIR)/util_tests-strtonum.Tpo -c -o util/util_tests-strtonum.o `test -f 'util/strtonum.c' || echo '$(srcdir)/'`util/strtonum.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) util/$(DEPDIR)/util_tests-strtonum.Tpo util/$(DEPDIR)/util_tests-strtonum.Po
+@am__fastdepCC_FALSE@	$(AM_V_CC) @AM_BACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	source='util/strtonum.c' object='util/util_tests-strtonum.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(util_tests_CFLAGS) $(CFLAGS) -c -o util/util_tests-strtonum.o `test -f 'util/strtonum.c' || echo '$(srcdir)/'`util/strtonum.c
+
+util/util_tests-strtonum.obj: util/strtonum.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(util_tests_CFLAGS) $(CFLAGS) -MT util/util_tests-strtonum.obj -MD -MP -MF util/$(DEPDIR)/util_tests-strtonum.Tpo -c -o util/util_tests-strtonum.obj `if test -f 'util/strtonum.c'; then $(CYGPATH_W) 'util/strtonum.c'; else $(CYGPATH_W) '$(srcdir)/util/strtonum.c'; fi`
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) util/$(DEPDIR)/util_tests-strtonum.Tpo util/$(DEPDIR)/util_tests-strtonum.Po
+@am__fastdepCC_FALSE@	$(AM_V_CC) @AM_BACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	source='util/strtonum.c' object='util/util_tests-strtonum.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(util_tests_CFLAGS) $(CFLAGS) -c -o util/util_tests-strtonum.obj `if test -f 'util/strtonum.c'; then $(CYGPATH_W) 'util/strtonum.c'; else $(CYGPATH_W) '$(srcdir)/util/strtonum.c'; fi`
+
+util/util_tests-check_and_open.o: util/check_and_open.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(util_tests_CFLAGS) $(CFLAGS) -MT util/util_tests-check_and_open.o -MD -MP -MF util/$(DEPDIR)/util_tests-check_and_open.Tpo -c -o util/util_tests-check_and_open.o `test -f 'util/check_and_open.c' || echo '$(srcdir)/'`util/check_and_open.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) util/$(DEPDIR)/util_tests-check_and_open.Tpo util/$(DEPDIR)/util_tests-check_and_open.Po
+@am__fastdepCC_FALSE@	$(AM_V_CC) @AM_BACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	source='util/check_and_open.c' object='util/util_tests-check_and_open.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(util_tests_CFLAGS) $(CFLAGS) -c -o util/util_tests-check_and_open.o `test -f 'util/check_and_open.c' || echo '$(srcdir)/'`util/check_and_open.c
+
+util/util_tests-check_and_open.obj: util/check_and_open.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(util_tests_CFLAGS) $(CFLAGS) -MT util/util_tests-check_and_open.obj -MD -MP -MF util/$(DEPDIR)/util_tests-check_and_open.Tpo -c -o util/util_tests-check_and_open.obj `if test -f 'util/check_and_open.c'; then $(CYGPATH_W) 'util/check_and_open.c'; else $(CYGPATH_W) '$(srcdir)/util/check_and_open.c'; fi`
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) util/$(DEPDIR)/util_tests-check_and_open.Tpo util/$(DEPDIR)/util_tests-check_and_open.Po
+@am__fastdepCC_FALSE@	$(AM_V_CC) @AM_BACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	source='util/check_and_open.c' object='util/util_tests-check_and_open.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(util_tests_CFLAGS) $(CFLAGS) -c -o util/util_tests-check_and_open.obj `if test -f 'util/check_and_open.c'; then $(CYGPATH_W) 'util/check_and_open.c'; else $(CYGPATH_W) '$(srcdir)/util/check_and_open.c'; fi`
+
+util/util_tests-refcount.o: util/refcount.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(util_tests_CFLAGS) $(CFLAGS) -MT util/util_tests-refcount.o -MD -MP -MF util/$(DEPDIR)/util_tests-refcount.Tpo -c -o util/util_tests-refcount.o `test -f 'util/refcount.c' || echo '$(srcdir)/'`util/refcount.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) util/$(DEPDIR)/util_tests-refcount.Tpo util/$(DEPDIR)/util_tests-refcount.Po
+@am__fastdepCC_FALSE@	$(AM_V_CC) @AM_BACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	source='util/refcount.c' object='util/util_tests-refcount.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(util_tests_CFLAGS) $(CFLAGS) -c -o util/util_tests-refcount.o `test -f 'util/refcount.c' || echo '$(srcdir)/'`util/refcount.c
+
+util/util_tests-refcount.obj: util/refcount.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(util_tests_CFLAGS) $(CFLAGS) -MT util/util_tests-refcount.obj -MD -MP -MF util/$(DEPDIR)/util_tests-refcount.Tpo -c -o util/util_tests-refcount.obj `if test -f 'util/refcount.c'; then $(CYGPATH_W) 'util/refcount.c'; else $(CYGPATH_W) '$(srcdir)/util/refcount.c'; fi`
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) util/$(DEPDIR)/util_tests-refcount.Tpo util/$(DEPDIR)/util_tests-refcount.Po
+@am__fastdepCC_FALSE@	$(AM_V_CC) @AM_BACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	source='util/refcount.c' object='util/util_tests-refcount.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(util_tests_CFLAGS) $(CFLAGS) -c -o util/util_tests-refcount.obj `if test -f 'util/refcount.c'; then $(CYGPATH_W) 'util/refcount.c'; else $(CYGPATH_W) '$(srcdir)/util/refcount.c'; fi`
+
+util/util_tests-debug.o: util/debug.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(util_tests_CFLAGS) $(CFLAGS) -MT util/util_tests-debug.o -MD -MP -MF util/$(DEPDIR)/util_tests-debug.Tpo -c -o util/util_tests-debug.o `test -f 'util/debug.c' || echo '$(srcdir)/'`util/debug.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) util/$(DEPDIR)/util_tests-debug.Tpo util/$(DEPDIR)/util_tests-debug.Po
+@am__fastdepCC_FALSE@	$(AM_V_CC) @AM_BACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	source='util/debug.c' object='util/util_tests-debug.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(util_tests_CFLAGS) $(CFLAGS) -c -o util/util_tests-debug.o `test -f 'util/debug.c' || echo '$(srcdir)/'`util/debug.c
+
+util/util_tests-debug.obj: util/debug.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(util_tests_CFLAGS) $(CFLAGS) -MT util/util_tests-debug.obj -MD -MP -MF util/$(DEPDIR)/util_tests-debug.Tpo -c -o util/util_tests-debug.obj `if test -f 'util/debug.c'; then $(CYGPATH_W) 'util/debug.c'; else $(CYGPATH_W) '$(srcdir)/util/debug.c'; fi`
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) util/$(DEPDIR)/util_tests-debug.Tpo util/$(DEPDIR)/util_tests-debug.Po
+@am__fastdepCC_FALSE@	$(AM_V_CC) @AM_BACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	source='util/debug.c' object='util/util_tests-debug.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(util_tests_CFLAGS) $(CFLAGS) -c -o util/util_tests-debug.obj `if test -f 'util/debug.c'; then $(CYGPATH_W) 'util/debug.c'; else $(CYGPATH_W) '$(srcdir)/util/debug.c'; fi`
+
+util/util_tests-sss_log.o: util/sss_log.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(util_tests_CFLAGS) $(CFLAGS) -MT util/util_tests-sss_log.o -MD -MP -MF util/$(DEPDIR)/util_tests-sss_log.Tpo -c -o util/util_tests-sss_log.o `test -f 'util/sss_log.c' || echo '$(srcdir)/'`util/sss_log.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) util/$(DEPDIR)/util_tests-sss_log.Tpo util/$(DEPDIR)/util_tests-sss_log.Po
+@am__fastdepCC_FALSE@	$(AM_V_CC) @AM_BACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	source='util/sss_log.c' object='util/util_tests-sss_log.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(util_tests_CFLAGS) $(CFLAGS) -c -o util/util_tests-sss_log.o `test -f 'util/sss_log.c' || echo '$(srcdir)/'`util/sss_log.c
+
+util/util_tests-sss_log.obj: util/sss_log.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(util_tests_CFLAGS) $(CFLAGS) -MT util/util_tests-sss_log.obj -MD -MP -MF util/$(DEPDIR)/util_tests-sss_log.Tpo -c -o util/util_tests-sss_log.obj `if test -f 'util/sss_log.c'; then $(CYGPATH_W) 'util/sss_log.c'; else $(CYGPATH_W) '$(srcdir)/util/sss_log.c'; fi`
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) util/$(DEPDIR)/util_tests-sss_log.Tpo util/$(DEPDIR)/util_tests-sss_log.Po
+@am__fastdepCC_FALSE@	$(AM_V_CC) @AM_BACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	source='util/sss_log.c' object='util/util_tests-sss_log.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(util_tests_CFLAGS) $(CFLAGS) -c -o util/util_tests-sss_log.obj `if test -f 'util/sss_log.c'; then $(CYGPATH_W) 'util/sss_log.c'; else $(CYGPATH_W) '$(srcdir)/util/sss_log.c'; fi`
 
 mostlyclean-libtool:
 	-rm -f *.lo
