@@ -82,6 +82,7 @@ option_strings = {
     'lookup_family_order' : _('Restrict or prefer a specific address family when performing DNS lookups'),
     'account_cache_expiration' : _('How long to keep cached entries after last successful login (days)'),
     'dns_resolver_timeout' : _('How long to wait for replies from DNS when resolving servers (seconds)'),
+    'dns_discovery_domain' : _('The domain part of service discovery DNS query'),
 
     # [provider/ipa]
     'ipa_domain' : _('IPA domain'),
@@ -114,6 +115,7 @@ option_strings = {
     'ldap_default_authtok' : _('The authentication token of the default bind DN'),
     'ldap_network_timeout' : _('Length of time to attempt connection'),
     'ldap_opt_timeout' : _('Length of time to attempt synchronous LDAP operations'),
+    'ldap_offline_timeout' : _('Length of time between attempts to reconnect while offline'),
     'ldap_tls_cacert' : _('File that contains CA certificates'),
     'ldap_tls_cacertdir' : _('Path to CA certificate directory'),
     'ldap_tls_reqcert' : _('Require TLS certificate verification'),

@@ -106,6 +106,17 @@ A
 Default:
 \(lq%1$s@%2$s\(rq\&.
 .RE
+.PP
+try_inotify (boolean)
+.RS 4
+SSSD monitors the state of resolv\&.conf to identify when it needs to update its internal DNS resolver\&. By default, we will attempt to use inotify for this, and will fall back to polling resolv\&.conf every five seconds if inotify cannot be used\&.
+.sp
+There are some limited situations where it is preferred that we should skip even trying to use inotify\&. In these rare cases, this option should be set to \'false\'
+.sp
+Default: true on platforms where inotify is supported\&. False on other platforms\&.
+.sp
+Note: this option will have no effect on platforms where inotify is unavailable\&. On these platforms, polling will always be used\&.
+.RE
 .SH "SERVICES SECTIONS"
 .PP
 Settings that can be used to configure different services are described in this section\&. They should reside in the [\fI$NAME\fR] section, for example, for NSS service, the section would be
@@ -394,6 +405,13 @@ dns_resolver_timeout (integer)
 Defines the amount of time (in seconds) to wait for a reply from the DNS resolver before assuming that it is unreachable\&. If this timeout is reached, the domain will continue to operate in offline mode\&.
 .sp
 Default: 5
+.RE
+.PP
+dns_discovery_domain (string)
+.RS 4
+If service discovery is used in the back end, specifies the domain part of the service discovery DNS query\&.
+.sp
+Default: Use the domain part of machine\'s hostname
 .RE
 .PP
 Options valid for proxy domains\&.

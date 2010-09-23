@@ -115,9 +115,10 @@ am__aclocal_m4_deps = $(top_srcdir)/m4/gettext.m4 \
 	$(top_srcdir)/external/selinux.m4 \
 	$(top_srcdir)/external/crypto.m4 \
 	$(top_srcdir)/external/nscd.m4 \
-	$(top_srcdir)/external/libkeyutils.m4 \
 	$(top_srcdir)/external/nsupdate.m4 \
-	$(top_srcdir)/util/signal.m4 $(top_srcdir)/configure.ac
+	$(top_srcdir)/external/libkeyutils.m4 \
+	$(top_srcdir)/external/libnl.m4 $(top_srcdir)/util/signal.m4 \
+	$(top_srcdir)/configure.ac
 am__configure_deps = $(am__aclocal_m4_deps) $(CONFIGURE_DEPENDENCIES) \
 	$(ACLOCAL_M4)
 am__CONFIG_DISTCLEAN_FILES = config.status config.cache config.log \
@@ -204,6 +205,7 @@ am_libsss_ipa_la_OBJECTS = providers/libsss_ipa_la-child_common.lo \
 	providers/ldap/libsss_ipa_la-sdap_async_connection.lo \
 	providers/ldap/libsss_ipa_la-sdap_child_helpers.lo \
 	providers/ldap/libsss_ipa_la-sdap_fd_events.lo \
+	providers/ldap/libsss_ipa_la-sdap_id_op.lo \
 	providers/ldap/libsss_ipa_la-sdap.lo \
 	util/libsss_ipa_la-user_info_msg.lo \
 	util/libsss_ipa_la-sss_ldap.lo util/libsss_ipa_la-sss_krb5.lo \
@@ -234,7 +236,7 @@ libsss_krb5_la_LINK = $(LIBTOOL) $(AM_V_lt) --tag=CC \
 	$(libsss_krb5_la_CFLAGS) $(CFLAGS) $(libsss_krb5_la_LDFLAGS) \
 	$(LDFLAGS) -o $@
 libsss_ldap_la_DEPENDENCIES = $(am__DEPENDENCIES_1) \
-	$(am__DEPENDENCIES_1)
+	$(am__DEPENDENCIES_3) $(am__DEPENDENCIES_1)
 am_libsss_ldap_la_OBJECTS = util/libsss_ldap_la-find_uid.lo \
 	providers/libsss_ldap_la-child_common.lo \
 	providers/ldap/libsss_ldap_la-ldap_id.lo \
@@ -249,6 +251,7 @@ am_libsss_ldap_la_OBJECTS = util/libsss_ldap_la-find_uid.lo \
 	providers/ldap/libsss_ldap_la-sdap_async_connection.lo \
 	providers/ldap/libsss_ldap_la-sdap_child_helpers.lo \
 	providers/ldap/libsss_ldap_la-sdap_fd_events.lo \
+	providers/ldap/libsss_ldap_la-sdap_id_op.lo \
 	providers/ldap/libsss_ldap_la-sdap.lo \
 	util/libsss_ldap_la-user_info_msg.lo \
 	util/libsss_ldap_la-sss_ldap.lo \
@@ -259,7 +262,11 @@ libsss_ldap_la_LINK = $(LIBTOOL) $(AM_V_lt) --tag=CC \
 	$(libsss_ldap_la_CFLAGS) $(CFLAGS) $(libsss_ldap_la_LDFLAGS) \
 	$(LDFLAGS) -o $@
 libsss_proxy_la_DEPENDENCIES = $(am__DEPENDENCIES_1)
-am_libsss_proxy_la_OBJECTS = providers/proxy/libsss_proxy_la-proxy.lo
+am_libsss_proxy_la_OBJECTS =  \
+	providers/proxy/libsss_proxy_la-proxy_common.lo \
+	providers/proxy/libsss_proxy_la-proxy_init.lo \
+	providers/proxy/libsss_proxy_la-proxy_id.lo \
+	providers/proxy/libsss_proxy_la-proxy_auth.lo
 libsss_proxy_la_OBJECTS = $(am_libsss_proxy_la_OBJECTS)
 libsss_proxy_la_LINK = $(LIBTOOL) $(AM_V_lt) --tag=CC \
 	$(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=link $(CCLD) \
@@ -855,9 +862,10 @@ am_sss_usermod_OBJECTS = tools/sss_usermod.$(OBJEXT) $(am__objects_37) \
 sss_usermod_OBJECTS = $(am_sss_usermod_OBJECTS)
 sss_usermod_DEPENDENCIES = $(am__DEPENDENCIES_13)
 am_sssd_OBJECTS = monitor/monitor.$(OBJEXT) \
+	monitor/monitor_netlink.$(OBJEXT) \
 	confdb/confdb_setup.$(OBJEXT) $(am__objects_37)
 sssd_OBJECTS = $(am_sssd_OBJECTS)
-sssd_DEPENDENCIES = $(am__DEPENDENCIES_7)
+sssd_DEPENDENCIES = $(am__DEPENDENCIES_7) $(am__DEPENDENCIES_1)
 am__sssd_be_SOURCES_DIST = providers/data_provider_be.c \
 	providers/data_provider_fo.c providers/data_provider_opts.c \
 	providers/data_provider_callbacks.c providers/fail_over.c \
@@ -1174,6 +1182,7 @@ EXEEXT = @EXEEXT@
 FGREP = @FGREP@
 GMSGFMT = @GMSGFMT@
 GREP = @GREP@
+HAVE_LIBNL = @HAVE_LIBNL@
 HAVE_MANPAGES = @HAVE_MANPAGES@
 HAVE_PYTHON_BINDINGS = @HAVE_PYTHON_BINDINGS@
 HAVE_SELINUX = @HAVE_SELINUX@
@@ -1195,6 +1204,8 @@ LDB_OBJ = @LDB_OBJ@
 LDFLAGS = @LDFLAGS@
 LIBICONV = @LIBICONV@
 LIBINTL = @LIBINTL@
+LIBNL_CFLAGS = @LIBNL_CFLAGS@
+LIBNL_LIBS = @LIBNL_LIBS@
 LIBOBJS = @LIBOBJS@
 LIBS = @LIBS@
 LIBTOOL = @LIBTOOL@
@@ -1315,6 +1326,8 @@ krb5pluginpath = @krb5pluginpath@
 ldblibdir = @ldblibdir@
 libdir = @libdir@
 libexecdir = @libexecdir@
+libnl_CFLAGS = @libnl_CFLAGS@
+libnl_LIBS = @libnl_LIBS@
 localedir = @localedir@
 localstatedir = @localstatedir@
 logpath = @logpath@
@@ -1477,6 +1490,7 @@ AM_CPPFLAGS = -Wall \
     $(COLLECTION_CFLAGS) \
     $(INI_CFG_CFLAGS) \
     $(DHASH_CFLAGS) \
+    $(LIBNL_CFLAGS) \
     -DLIBDIR=\"$(libdir)\" \
     -DVARDIR=\"$(localstatedir)\" \
     -DSHLIBEXT=\"$(SHLIBEXT)\" \
@@ -1605,6 +1619,7 @@ dist_noinst_HEADERS = \
     providers/ldap/sdap_access.h \
     providers/ldap/sdap_async.h \
     providers/ldap/sdap_async_private.h \
+    providers/ldap/sdap_id_op.h \
     providers/ipa/ipa_common.h \
     providers/ipa/ipa_access.h \
     providers/ipa/ipa_timerules.h \
@@ -1625,11 +1640,13 @@ dist_noinst_HEADERS = \
 ####################
 sssd_SOURCES = \
     monitor/monitor.c \
+    monitor/monitor_netlink.c \
     confdb/confdb_setup.c \
     $(SSSD_UTIL_OBJ)
 
 sssd_LDADD = \
-    $(SSSD_LIBS)
+    $(SSSD_LIBS) \
+    $(LIBNL_LIBS)
 
 sssd_nss_SOURCES = \
     responder/nss/nsssrv.c \
@@ -2002,6 +2019,7 @@ libsss_ldap_la_SOURCES = \
     providers/ldap/sdap_async_connection.c \
     providers/ldap/sdap_child_helpers.c \
     providers/ldap/sdap_fd_events.c \
+    providers/ldap/sdap_id_op.c \
     providers/ldap/sdap.c \
     util/user_info_msg.c \
     util/sss_ldap.c \
@@ -2014,6 +2032,7 @@ libsss_ldap_la_CFLAGS = \
 
 libsss_ldap_la_LIBADD = \
     $(OPENLDAP_LIBS) \
+    $(DHASH_LIBS) \
     $(KRB5_LIBS)
 
 libsss_ldap_la_LDFLAGS = \
@@ -2021,7 +2040,10 @@ libsss_ldap_la_LDFLAGS = \
     -module
 
 libsss_proxy_la_SOURCES = \
-    providers/proxy/proxy.c
+    providers/proxy/proxy_common.c \
+    providers/proxy/proxy_init.c \
+    providers/proxy/proxy_id.c \
+    providers/proxy/proxy_auth.c
 
 libsss_proxy_la_CFLAGS = \
     $(AM_CFLAGS)
@@ -2089,6 +2111,7 @@ libsss_ipa_la_SOURCES = \
     providers/ldap/sdap_async_connection.c \
     providers/ldap/sdap_child_helpers.c \
     providers/ldap/sdap_fd_events.c \
+    providers/ldap/sdap_id_op.c \
     providers/ldap/sdap.c \
     util/user_info_msg.c \
     util/sss_ldap.c \
@@ -2584,6 +2607,9 @@ providers/ldap/libsss_ipa_la-sdap_child_helpers.lo:  \
 providers/ldap/libsss_ipa_la-sdap_fd_events.lo:  \
 	providers/ldap/$(am__dirstamp) \
 	providers/ldap/$(DEPDIR)/$(am__dirstamp)
+providers/ldap/libsss_ipa_la-sdap_id_op.lo:  \
+	providers/ldap/$(am__dirstamp) \
+	providers/ldap/$(DEPDIR)/$(am__dirstamp)
 providers/ldap/libsss_ipa_la-sdap.lo: providers/ldap/$(am__dirstamp) \
 	providers/ldap/$(DEPDIR)/$(am__dirstamp)
 util/libsss_ipa_la-user_info_msg.lo: util/$(am__dirstamp) \
@@ -2683,6 +2709,9 @@ providers/ldap/libsss_ldap_la-sdap_child_helpers.lo:  \
 providers/ldap/libsss_ldap_la-sdap_fd_events.lo:  \
 	providers/ldap/$(am__dirstamp) \
 	providers/ldap/$(DEPDIR)/$(am__dirstamp)
+providers/ldap/libsss_ldap_la-sdap_id_op.lo:  \
+	providers/ldap/$(am__dirstamp) \
+	providers/ldap/$(DEPDIR)/$(am__dirstamp)
 providers/ldap/libsss_ldap_la-sdap.lo: providers/ldap/$(am__dirstamp) \
 	providers/ldap/$(DEPDIR)/$(am__dirstamp)
 util/libsss_ldap_la-user_info_msg.lo: util/$(am__dirstamp) \
@@ -2699,7 +2728,16 @@ providers/proxy/$(am__dirstamp):
 providers/proxy/$(DEPDIR)/$(am__dirstamp):
 	@$(MKDIR_P) providers/proxy/$(DEPDIR)
 	@: > providers/proxy/$(DEPDIR)/$(am__dirstamp)
-providers/proxy/libsss_proxy_la-proxy.lo:  \
+providers/proxy/libsss_proxy_la-proxy_common.lo:  \
+	providers/proxy/$(am__dirstamp) \
+	providers/proxy/$(DEPDIR)/$(am__dirstamp)
+providers/proxy/libsss_proxy_la-proxy_init.lo:  \
+	providers/proxy/$(am__dirstamp) \
+	providers/proxy/$(DEPDIR)/$(am__dirstamp)
+providers/proxy/libsss_proxy_la-proxy_id.lo:  \
+	providers/proxy/$(am__dirstamp) \
+	providers/proxy/$(DEPDIR)/$(am__dirstamp)
+providers/proxy/libsss_proxy_la-proxy_auth.lo:  \
 	providers/proxy/$(am__dirstamp) \
 	providers/proxy/$(DEPDIR)/$(am__dirstamp)
 libsss_proxy.la: $(libsss_proxy_la_OBJECTS) $(libsss_proxy_la_DEPENDENCIES) 
@@ -3557,6 +3595,8 @@ sss_usermod$(EXEEXT): $(sss_usermod_OBJECTS) $(sss_usermod_DEPENDENCIES)
 	$(AM_V_CCLD)$(LINK) $(sss_usermod_OBJECTS) $(sss_usermod_LDADD) $(LIBS)
 monitor/monitor.$(OBJEXT): monitor/$(am__dirstamp) \
 	monitor/$(DEPDIR)/$(am__dirstamp)
+monitor/monitor_netlink.$(OBJEXT): monitor/$(am__dirstamp) \
+	monitor/$(DEPDIR)/$(am__dirstamp)
 confdb/confdb_setup.$(OBJEXT): confdb/$(am__dirstamp) \
 	confdb/$(DEPDIR)/$(am__dirstamp)
 sssd$(EXEEXT): $(sssd_OBJECTS) $(sssd_DEPENDENCIES) 
@@ -3877,6 +3917,7 @@ mostlyclean-compile:
 	-rm -f monitor/fail_over_tests-monitor_sbus.$(OBJEXT)
 	-rm -f monitor/krb5_utils_tests-monitor_sbus.$(OBJEXT)
 	-rm -f monitor/monitor.$(OBJEXT)
+	-rm -f monitor/monitor_netlink.$(OBJEXT)
 	-rm -f monitor/monitor_sbus.$(OBJEXT)
 	-rm -f monitor/proxy_child-monitor_sbus.$(OBJEXT)
 	-rm -f monitor/pysss_la-monitor_sbus.$(OBJEXT)
@@ -3975,6 +4016,8 @@ mostlyclean-compile:
 	-rm -f providers/ldap/libsss_ipa_la-sdap_child_helpers.lo
 	-rm -f providers/ldap/libsss_ipa_la-sdap_fd_events.$(OBJEXT)
 	-rm -f providers/ldap/libsss_ipa_la-sdap_fd_events.lo
+	-rm -f providers/ldap/libsss_ipa_la-sdap_id_op.$(OBJEXT)
+	-rm -f providers/ldap/libsss_ipa_la-sdap_id_op.lo
 	-rm -f providers/ldap/libsss_ldap_la-ldap_auth.$(OBJEXT)
 	-rm -f providers/ldap/libsss_ldap_la-ldap_auth.lo
 	-rm -f providers/ldap/libsss_ldap_la-ldap_common.$(OBJEXT)
@@ -4001,6 +4044,8 @@ mostlyclean-compile:
 	-rm -f providers/ldap/libsss_ldap_la-sdap_child_helpers.lo
 	-rm -f providers/ldap/libsss_ldap_la-sdap_fd_events.$(OBJEXT)
 	-rm -f providers/ldap/libsss_ldap_la-sdap_fd_events.lo
+	-rm -f providers/ldap/libsss_ldap_la-sdap_id_op.$(OBJEXT)
+	-rm -f providers/ldap/libsss_ldap_la-sdap_id_op.lo
 	-rm -f providers/ldap_child-child_common.$(OBJEXT)
 	-rm -f providers/libsss_ipa_la-child_common.$(OBJEXT)
 	-rm -f providers/libsss_ipa_la-child_common.lo
@@ -4008,8 +4053,14 @@ mostlyclean-compile:
 	-rm -f providers/libsss_krb5_la-child_common.lo
 	-rm -f providers/libsss_ldap_la-child_common.$(OBJEXT)
 	-rm -f providers/libsss_ldap_la-child_common.lo
-	-rm -f providers/proxy/libsss_proxy_la-proxy.$(OBJEXT)
-	-rm -f providers/proxy/libsss_proxy_la-proxy.lo
+	-rm -f providers/proxy/libsss_proxy_la-proxy_auth.$(OBJEXT)
+	-rm -f providers/proxy/libsss_proxy_la-proxy_auth.lo
+	-rm -f providers/proxy/libsss_proxy_la-proxy_common.$(OBJEXT)
+	-rm -f providers/proxy/libsss_proxy_la-proxy_common.lo
+	-rm -f providers/proxy/libsss_proxy_la-proxy_id.$(OBJEXT)
+	-rm -f providers/proxy/libsss_proxy_la-proxy_id.lo
+	-rm -f providers/proxy/libsss_proxy_la-proxy_init.$(OBJEXT)
+	-rm -f providers/proxy/libsss_proxy_la-proxy_init.lo
 	-rm -f providers/proxy/proxy_child-proxy_child.$(OBJEXT)
 	-rm -f providers/proxy_child-dp_auth_util.$(OBJEXT)
 	-rm -f providers/proxy_child-dp_pam_data_util.$(OBJEXT)
@@ -4396,6 +4447,7 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@monitor/$(DEPDIR)/fail_over_tests-monitor_sbus.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@monitor/$(DEPDIR)/krb5_utils_tests-monitor_sbus.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@monitor/$(DEPDIR)/monitor.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@monitor/$(DEPDIR)/monitor_netlink.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@monitor/$(DEPDIR)/monitor_sbus.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@monitor/$(DEPDIR)/proxy_child-monitor_sbus.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@monitor/$(DEPDIR)/pysss_la-monitor_sbus.Plo@am__quote@
@@ -4489,6 +4541,7 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@providers/ldap/$(DEPDIR)/libsss_ipa_la-sdap_async_connection.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@providers/ldap/$(DEPDIR)/libsss_ipa_la-sdap_child_helpers.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@providers/ldap/$(DEPDIR)/libsss_ipa_la-sdap_fd_events.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@providers/ldap/$(DEPDIR)/libsss_ipa_la-sdap_id_op.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@providers/ldap/$(DEPDIR)/libsss_ldap_la-ldap_auth.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@providers/ldap/$(DEPDIR)/libsss_ldap_la-ldap_common.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@providers/ldap/$(DEPDIR)/libsss_ldap_la-ldap_id.Plo@am__quote@
@@ -4502,7 +4555,11 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@providers/ldap/$(DEPDIR)/libsss_ldap_la-sdap_async_connection.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@providers/ldap/$(DEPDIR)/libsss_ldap_la-sdap_child_helpers.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@providers/ldap/$(DEPDIR)/libsss_ldap_la-sdap_fd_events.Plo@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@providers/proxy/$(DEPDIR)/libsss_proxy_la-proxy.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@providers/ldap/$(DEPDIR)/libsss_ldap_la-sdap_id_op.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@providers/proxy/$(DEPDIR)/libsss_proxy_la-proxy_auth.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@providers/proxy/$(DEPDIR)/libsss_proxy_la-proxy_common.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@providers/proxy/$(DEPDIR)/libsss_proxy_la-proxy_id.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@providers/proxy/$(DEPDIR)/libsss_proxy_la-proxy_init.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@providers/proxy/$(DEPDIR)/proxy_child-proxy_child.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@providers/simple/$(DEPDIR)/libsss_simple_la-simple_access.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@providers/simple/$(DEPDIR)/simple_access_tests-simple_access.Po@am__quote@
@@ -4958,6 +5015,14 @@ providers/ldap/libsss_ipa_la-sdap_fd_events.lo: providers/ldap/sdap_fd_events.c
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
 @am__fastdepCC_FALSE@	$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libsss_ipa_la_CFLAGS) $(CFLAGS) -c -o providers/ldap/libsss_ipa_la-sdap_fd_events.lo `test -f 'providers/ldap/sdap_fd_events.c' || echo '$(srcdir)/'`providers/ldap/sdap_fd_events.c
 
+providers/ldap/libsss_ipa_la-sdap_id_op.lo: providers/ldap/sdap_id_op.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libsss_ipa_la_CFLAGS) $(CFLAGS) -MT providers/ldap/libsss_ipa_la-sdap_id_op.lo -MD -MP -MF providers/ldap/$(DEPDIR)/libsss_ipa_la-sdap_id_op.Tpo -c -o providers/ldap/libsss_ipa_la-sdap_id_op.lo `test -f 'providers/ldap/sdap_id_op.c' || echo '$(srcdir)/'`providers/ldap/sdap_id_op.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) providers/ldap/$(DEPDIR)/libsss_ipa_la-sdap_id_op.Tpo providers/ldap/$(DEPDIR)/libsss_ipa_la-sdap_id_op.Plo
+@am__fastdepCC_FALSE@	$(AM_V_CC) @AM_BACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	source='providers/ldap/sdap_id_op.c' object='providers/ldap/libsss_ipa_la-sdap_id_op.lo' libtool=yes @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libsss_ipa_la_CFLAGS) $(CFLAGS) -c -o providers/ldap/libsss_ipa_la-sdap_id_op.lo `test -f 'providers/ldap/sdap_id_op.c' || echo '$(srcdir)/'`providers/ldap/sdap_id_op.c
+
 providers/ldap/libsss_ipa_la-sdap.lo: providers/ldap/sdap.c
 @am__fastdepCC_TRUE@	$(AM_V_CC)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libsss_ipa_la_CFLAGS) $(CFLAGS) -MT providers/ldap/libsss_ipa_la-sdap.lo -MD -MP -MF providers/ldap/$(DEPDIR)/libsss_ipa_la-sdap.Tpo -c -o providers/ldap/libsss_ipa_la-sdap.lo `test -f 'providers/ldap/sdap.c' || echo '$(srcdir)/'`providers/ldap/sdap.c
 @am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) providers/ldap/$(DEPDIR)/libsss_ipa_la-sdap.Tpo providers/ldap/$(DEPDIR)/libsss_ipa_la-sdap.Plo
@@ -5222,6 +5287,14 @@ providers/ldap/libsss_ldap_la-sdap_fd_events.lo: providers/ldap/sdap_fd_events.c
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
 @am__fastdepCC_FALSE@	$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libsss_ldap_la_CFLAGS) $(CFLAGS) -c -o providers/ldap/libsss_ldap_la-sdap_fd_events.lo `test -f 'providers/ldap/sdap_fd_events.c' || echo '$(srcdir)/'`providers/ldap/sdap_fd_events.c
 
+providers/ldap/libsss_ldap_la-sdap_id_op.lo: providers/ldap/sdap_id_op.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libsss_ldap_la_CFLAGS) $(CFLAGS) -MT providers/ldap/libsss_ldap_la-sdap_id_op.lo -MD -MP -MF providers/ldap/$(DEPDIR)/libsss_ldap_la-sdap_id_op.Tpo -c -o providers/ldap/libsss_ldap_la-sdap_id_op.lo `test -f 'providers/ldap/sdap_id_op.c' || echo '$(srcdir)/'`providers/ldap/sdap_id_op.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) providers/ldap/$(DEPDIR)/libsss_ldap_la-sdap_id_op.Tpo providers/ldap/$(DEPDIR)/libsss_ldap_la-sdap_id_op.Plo
+@am__fastdepCC_FALSE@	$(AM_V_CC) @AM_BACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	source='providers/ldap/sdap_id_op.c' object='providers/ldap/libsss_ldap_la-sdap_id_op.lo' libtool=yes @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libsss_ldap_la_CFLAGS) $(CFLAGS) -c -o providers/ldap/libsss_ldap_la-sdap_id_op.lo `test -f 'providers/ldap/sdap_id_op.c' || echo '$(srcdir)/'`providers/ldap/sdap_id_op.c
+
 providers/ldap/libsss_ldap_la-sdap.lo: providers/ldap/sdap.c
 @am__fastdepCC_TRUE@	$(AM_V_CC)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libsss_ldap_la_CFLAGS) $(CFLAGS) -MT providers/ldap/libsss_ldap_la-sdap.lo -MD -MP -MF providers/ldap/$(DEPDIR)/libsss_ldap_la-sdap.Tpo -c -o providers/ldap/libsss_ldap_la-sdap.lo `test -f 'providers/ldap/sdap.c' || echo '$(srcdir)/'`providers/ldap/sdap.c
 @am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) providers/ldap/$(DEPDIR)/libsss_ldap_la-sdap.Tpo providers/ldap/$(DEPDIR)/libsss_ldap_la-sdap.Plo
@@ -5254,13 +5327,37 @@ util/libsss_ldap_la-sss_krb5.lo: util/sss_krb5.c
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
 @am__fastdepCC_FALSE@	$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libsss_ldap_la_CFLAGS) $(CFLAGS) -c -o util/libsss_ldap_la-sss_krb5.lo `test -f 'util/sss_krb5.c' || echo '$(srcdir)/'`util/sss_krb5.c
 
-providers/proxy/libsss_proxy_la-proxy.lo: providers/proxy/proxy.c
-@am__fastdepCC_TRUE@	$(AM_V_CC)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libsss_proxy_la_CFLAGS) $(CFLAGS) -MT providers/proxy/libsss_proxy_la-proxy.lo -MD -MP -MF providers/proxy/$(DEPDIR)/libsss_proxy_la-proxy.Tpo -c -o providers/proxy/libsss_proxy_la-proxy.lo `test -f 'providers/proxy/proxy.c' || echo '$(srcdir)/'`providers/proxy/proxy.c
-@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) providers/proxy/$(DEPDIR)/libsss_proxy_la-proxy.Tpo providers/proxy/$(DEPDIR)/libsss_proxy_la-proxy.Plo
+providers/proxy/libsss_proxy_la-proxy_common.lo: providers/proxy/proxy_common.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libsss_proxy_la_CFLAGS) $(CFLAGS) -MT providers/proxy/libsss_proxy_la-proxy_common.lo -MD -MP -MF providers/proxy/$(DEPDIR)/libsss_proxy_la-proxy_common.Tpo -c -o providers/proxy/libsss_proxy_la-proxy_common.lo `test -f 'providers/proxy/proxy_common.c' || echo '$(srcdir)/'`providers/proxy/proxy_common.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) providers/proxy/$(DEPDIR)/libsss_proxy_la-proxy_common.Tpo providers/proxy/$(DEPDIR)/libsss_proxy_la-proxy_common.Plo
 @am__fastdepCC_FALSE@	$(AM_V_CC) @AM_BACKSLASH@
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	source='providers/proxy/proxy.c' object='providers/proxy/libsss_proxy_la-proxy.lo' libtool=yes @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	source='providers/proxy/proxy_common.c' object='providers/proxy/libsss_proxy_la-proxy_common.lo' libtool=yes @AMDEPBACKSLASH@
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCC_FALSE@	$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libsss_proxy_la_CFLAGS) $(CFLAGS) -c -o providers/proxy/libsss_proxy_la-proxy.lo `test -f 'providers/proxy/proxy.c' || echo '$(srcdir)/'`providers/proxy/proxy.c
+@am__fastdepCC_FALSE@	$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libsss_proxy_la_CFLAGS) $(CFLAGS) -c -o providers/proxy/libsss_proxy_la-proxy_common.lo `test -f 'providers/proxy/proxy_common.c' || echo '$(srcdir)/'`providers/proxy/proxy_common.c
+
+providers/proxy/libsss_proxy_la-proxy_init.lo: providers/proxy/proxy_init.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libsss_proxy_la_CFLAGS) $(CFLAGS) -MT providers/proxy/libsss_proxy_la-proxy_init.lo -MD -MP -MF providers/proxy/$(DEPDIR)/libsss_proxy_la-proxy_init.Tpo -c -o providers/proxy/libsss_proxy_la-proxy_init.lo `test -f 'providers/proxy/proxy_init.c' || echo '$(srcdir)/'`providers/proxy/proxy_init.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) providers/proxy/$(DEPDIR)/libsss_proxy_la-proxy_init.Tpo providers/proxy/$(DEPDIR)/libsss_proxy_la-proxy_init.Plo
+@am__fastdepCC_FALSE@	$(AM_V_CC) @AM_BACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	source='providers/proxy/proxy_init.c' object='providers/proxy/libsss_proxy_la-proxy_init.lo' libtool=yes @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libsss_proxy_la_CFLAGS) $(CFLAGS) -c -o providers/proxy/libsss_proxy_la-proxy_init.lo `test -f 'providers/proxy/proxy_init.c' || echo '$(srcdir)/'`providers/proxy/proxy_init.c
+
+providers/proxy/libsss_proxy_la-proxy_id.lo: providers/proxy/proxy_id.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libsss_proxy_la_CFLAGS) $(CFLAGS) -MT providers/proxy/libsss_proxy_la-proxy_id.lo -MD -MP -MF providers/proxy/$(DEPDIR)/libsss_proxy_la-proxy_id.Tpo -c -o providers/proxy/libsss_proxy_la-proxy_id.lo `test -f 'providers/proxy/proxy_id.c' || echo '$(srcdir)/'`providers/proxy/proxy_id.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) providers/proxy/$(DEPDIR)/libsss_proxy_la-proxy_id.Tpo providers/proxy/$(DEPDIR)/libsss_proxy_la-proxy_id.Plo
+@am__fastdepCC_FALSE@	$(AM_V_CC) @AM_BACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	source='providers/proxy/proxy_id.c' object='providers/proxy/libsss_proxy_la-proxy_id.lo' libtool=yes @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libsss_proxy_la_CFLAGS) $(CFLAGS) -c -o providers/proxy/libsss_proxy_la-proxy_id.lo `test -f 'providers/proxy/proxy_id.c' || echo '$(srcdir)/'`providers/proxy/proxy_id.c
+
+providers/proxy/libsss_proxy_la-proxy_auth.lo: providers/proxy/proxy_auth.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libsss_proxy_la_CFLAGS) $(CFLAGS) -MT providers/proxy/libsss_proxy_la-proxy_auth.lo -MD -MP -MF providers/proxy/$(DEPDIR)/libsss_proxy_la-proxy_auth.Tpo -c -o providers/proxy/libsss_proxy_la-proxy_auth.lo `test -f 'providers/proxy/proxy_auth.c' || echo '$(srcdir)/'`providers/proxy/proxy_auth.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) providers/proxy/$(DEPDIR)/libsss_proxy_la-proxy_auth.Tpo providers/proxy/$(DEPDIR)/libsss_proxy_la-proxy_auth.Plo
+@am__fastdepCC_FALSE@	$(AM_V_CC) @AM_BACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	source='providers/proxy/proxy_auth.c' object='providers/proxy/libsss_proxy_la-proxy_auth.lo' libtool=yes @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libsss_proxy_la_CFLAGS) $(CFLAGS) -c -o providers/proxy/libsss_proxy_la-proxy_auth.lo `test -f 'providers/proxy/proxy_auth.c' || echo '$(srcdir)/'`providers/proxy/proxy_auth.c
 
 providers/simple/libsss_simple_la-simple_access.lo: providers/simple/simple_access.c
 @am__fastdepCC_TRUE@	$(AM_V_CC)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libsss_simple_la_CFLAGS) $(CFLAGS) -MT providers/simple/libsss_simple_la-simple_access.lo -MD -MP -MF providers/simple/$(DEPDIR)/libsss_simple_la-simple_access.Tpo -c -o providers/simple/libsss_simple_la-simple_access.lo `test -f 'providers/simple/simple_access.c' || echo '$(srcdir)/'`providers/simple/simple_access.c

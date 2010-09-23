@@ -177,7 +177,11 @@ If no servers are specified, the back end automatically uses service discovery t
 \(lq_srv_\(rq, in the list of servers\&. The order of preference is maintained\&. This feature is useful if, for example, the user prefers to use service discovery whenever possible, and fall back to a specific server when no servers can be discovered using DNS\&.
 .SS "The domain name"
 .PP
-The name of the SSSD domain is used as the domain part of the service discovery DNS query\&.
+Please refer to the
+\(lqdns_discovery_domain\(rq
+parameter in the
+\fBsssd.conf\fR(5)
+manual page for more defails\&.
 .SS "See Also"
 .PP
 For more information on the service discovery mechanism, refer to RFC 2782\&.

@@ -218,17 +218,6 @@ The LDAP attribute that contains the UUID/GUID of an LDAP group object\&.
 Default: nsUniqueId
 .RE
 .PP
-ldap_search_timeout (integer)
-.RS 4
-Specifies the timeout (in seconds) that ldap searches are allowed to run before they are cancelled and cached results are returned (and offline mode is entered)
-.sp
-Default: 5 (When enumerate = False)
-.sp
-Default: 30 (When enumerate = True \- this option will be forced to a minumum of 30s in this case)
-.sp
-Note: this option is subject to change in future versions of the SSSD\&. It will likely be replaced at some point by a series of timeouts for specific lookup types\&.
-.RE
-.PP
 ldap_network_timeout (integer)
 .RS 4
 Specifies the timeout (in seconds) after which the
@@ -431,7 +420,11 @@ If no servers are specified, the back end automatically uses service discovery t
 \(lq_srv_\(rq, in the list of servers\&. The order of preference is maintained\&. This feature is useful if, for example, the user prefers to use service discovery whenever possible, and fall back to a specific server when no servers can be discovered using DNS\&.
 .SS "The domain name"
 .PP
-The name of the SSSD domain is used as the domain part of the service discovery DNS query\&.
+Please refer to the
+\(lqdns_discovery_domain\(rq
+parameter in the
+\fBsssd.conf\fR(5)
+manual page for more defails\&.
 .SS "See Also"
 .PP
 For more information on the service discovery mechanism, refer to RFC 2782\&.

@@ -130,16 +130,6 @@ int sssm_ipa_id_init(struct be_ctx *bectx,
         goto done;
     }
 
-    /* FIXME: This is a workaround for 1.2.0. In the future, we need to have
-     * separate timeouts for enumeration operations
-     * If enumeration is enabled and the search timeout is less
-     * than 30s, force it to a minimum of 30s.
-     */
-    if(bectx->domain->enumerate &&
-            dp_opt_get_int(ctx->opts->basic, SDAP_SEARCH_TIMEOUT) < 30) {
-        dp_opt_set_int(ctx->opts->basic, SDAP_SEARCH_TIMEOUT, 30);
-    }
-
     if(dp_opt_get_bool(ipa_options->basic, IPA_DYNDNS_UPDATE)) {
         /* Perform automatic DNS updates when the
          * IP address changes.
@@ -185,10 +175,10 @@ int sssm_ipa_id_init(struct be_ctx *bectx,
         goto done;
     }
 
-    ret = be_add_offline_cb(ctx, bectx, sdap_gsh_disconnect_callback, ctx,
-                            NULL);
+    ret = sdap_id_conn_cache_create(ctx, ctx->be,
+                                    ctx->opts, ctx->service,
+                                    &ctx->conn_cache);
     if (ret != EOK) {
-        DEBUG(1, ("be_add_offline_cb failed.\n"));
         goto done;
     }
 

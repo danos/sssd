@@ -78,20 +78,9 @@ static int kick_user(struct tools_ctx *tctx)
 
     tctx->octx->lock = 1;
 
-    start_transaction(tctx);
-    if (tctx->error != EOK) {
-        return tctx->error;
-    }
-
-    ret = usermod(tctx, tctx->ev, tctx->sysdb, tctx->handle, tctx->octx);
+    ret = usermod(tctx, tctx->sysdb, tctx->octx);
     if (ret != EOK) {
-        talloc_zfree(tctx->handle);
         return ret;
-    }
-
-    end_transaction(tctx);
-    if (tctx->error != EOK) {
-        return tctx->error;
     }
 
     errno = 0;
@@ -232,11 +221,10 @@ int main(int argc, const char **argv)
     }
 
     ret = sysdb_getpwnam_sync(tctx,
-                              tctx->ev,
                               tctx->sysdb,
                               tctx->octx->name,
                               tctx->local,
-                              &tctx->octx);
+                              tctx->octx);
     if (ret != EOK) {
         /* Error message will be printed in the switch */
         goto done;
@@ -255,28 +243,15 @@ int main(int argc, const char **argv)
         if (ret != EOK) {
             tctx->error = ret;
 
-            /* cancel transaction */
-            talloc_zfree(tctx->handle);
             goto done;
         }
     }
 
-    start_transaction(tctx);
-    if (tctx->error != EOK) {
-        goto done;
-    }
-
     /* userdel */
-    ret = userdel(tctx, tctx->ev, tctx->sysdb, tctx->handle, tctx->octx);
+    ret = userdel(tctx, tctx->sysdb, tctx->octx);
     if (ret != EOK) {
-        tctx->error = ret;
-
-        /* cancel transaction */
-        talloc_zfree(tctx->handle);
         goto done;
     }
-
-    end_transaction(tctx);
 
     /* Set SELinux login context - must be done after transaction is done
      * b/c libselinux calls getpwnam */
@@ -331,7 +306,6 @@ int main(int argc, const char **argv)
         }
     }
 
-    ret = tctx->error;
 done:
     if (ret) {
         DEBUG(1, ("sysdb operation failed (%d)[%s]\n", ret, strerror(ret)));

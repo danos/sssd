@@ -1,5 +1,6 @@
-sssd (1.2.3-1) UNRELEASED; urgency=low
+sssd (1.3.1-1) UNRELEASED; urgency=low
 
+  [ Petter Reinholdtsen ]
   * New Upstream Version 1.2.3:
     - Resolves CVE-2010-2940.
   * New Upstream Version 1.2.2:
@@ -20,7 +21,11 @@ sssd (1.2.3-1) UNRELEASED; urgency=low
   * Correct package description for python-sss (Closes: #596215).
   * Update Standards-Version from 3.8.4 to 3.9.1.  No changes needed.
 
- -- Petter Reinholdtsen <pere@debian.org>  Tue, 14 Sep 2010 12:06:37 +0200
+  [ Morten Werner Forsbring ]
+  * New Upstream Version 1.3.1:
+    - 
+
+ -- Morten Werner Forsbring <werner@debian.org>  Thu, 23 Sep 2010 07:36:18 +0200
 
 sssd (1.2.1-4) unstable; urgency=low
 

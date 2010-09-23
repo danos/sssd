@@ -5,7 +5,7 @@ includedir=${prefix}/include
 
 Name: ini_config
 Description: Library to process config files in INI format into a libcollection data structure
-Version: 0.5.1
+Version: 0.6.0
 Libs: -L${libdir} -lini_config -lcollection
 Cflags: -I${includedir}
 URL: http://fedorahosted.org/sssd/
