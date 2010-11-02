@@ -1,5 +1,12 @@
-sssd (1.2.3-1) UNRELEASED; urgency=low
+sssd (1.2.4-1) UNRELEASED; urgency=low
 
+  * New upstream version 1.2.4:
+    - Resolves long-standing issues related to group processing with
+      RFC2307bis LDAP servers.
+    - Fixed bugs in RFC2307bis group memberships related to initgroups
+      (Closes: XXX).
+    - Fix tight-loop bug on systems with older OpenLDAP client
+      libraries (such as Red Hat Enterprise Linux 5)
   * New Upstream Version 1.2.3:
     - Resolves CVE-2010-2940.
   * New Upstream Version 1.2.2:
