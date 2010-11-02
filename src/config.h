@@ -2,7 +2,7 @@
 /* config.h.in.  Generated from configure.ac by autoheader.  */
 
 /* Absolute path to the build directory */
-#define ABS_BUILD_DIR "/home/bos/sgallagh/workspace/sssd.upstream/sssd-1.2.3/src"
+#define ABS_BUILD_DIR "/home/bos/sgallagh/workspace/sssd.upstream/sssd-1.2.4/src"
 
 /* Path to the SSSD data provider plugins */
 #define DATA_PROVIDER_PLUGINS_PATH ""LIBDIR"/sssd"
@@ -200,7 +200,7 @@
 #define PACKAGE_NAME "sss_daemon"
 
 /* Define to the full name and version of this package. */
-#define PACKAGE_STRING "sss_daemon 1.2.3"
+#define PACKAGE_STRING "sss_daemon 1.2.4"
 
 /* Define to the one symbol short name of this package. */
 #define PACKAGE_TARNAME "sss_daemon"
@@ -209,7 +209,7 @@
 #define PACKAGE_URL ""
 
 /* Define to the version of this package. */
-#define PACKAGE_VERSION "1.2.3"
+#define PACKAGE_VERSION "1.2.4"
 
 /* Where to store pid files for the SSSD */
 #define PID_PATH ""VARDIR"/run"
@@ -254,7 +254,7 @@
 #define USE_KEYRING 1
 
 /* Version number of package */
-#define VERSION "1.2.3"
+#define VERSION "1.2.4"
 
 /* Define to `short' if <sys/types.h> does not define. */
 /* #undef int16_t */

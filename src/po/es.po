@@ -8,8 +8,8 @@ msgid ""
 msgstr ""
 "Project-Id-Version: sss_daemon 0.4.0\n"
 "Report-Msgid-Bugs-To: sssd-devel@lists.fedorahosted.org\n"
-"POT-Creation-Date: 2010-08-24 13:17-0400\n"
-"PO-Revision-Date: 2010-03-15 11:40-0300\n"
+"POT-Creation-Date: 2010-10-08 19:22-0400\n"
+"PO-Revision-Date: 2010-08-24 12:56-0300\n"
 "Last-Translator: Héctor Daniel Cabrera <logan@fedoraproject.org>\n"
 "Language-Team: Fedora Spanish <trans-es@lists.fedoraproject.org>\n"
 "Language: \n"
@@ -177,6 +177,8 @@ msgstr "Por cuánto tiempo permitir ingresos cacheados luego del último (días)
 #: config/SSSDConfig.py:84
 msgid "How long to wait for replies from DNS when resolving servers (seconds)"
 msgstr ""
+"Cantidad de tiempo (en segundos) a esperar respuestas desde DNS cuando se "
+"estén resolviendo servidores"
 
 #: config/SSSDConfig.py:87
 msgid "IPA domain"
@@ -193,10 +195,12 @@ msgstr "Nombre de equipo del cliente IPA"
 #: config/SSSDConfig.py:90
 msgid "Whether to automatically update the client's DNS entry in FreeIPA"
 msgstr ""
+"Si actualizar automáticamente, o no, la entrada DNS del cliente en FreeIPA "
 
 #: config/SSSDConfig.py:91
 msgid "The interface whose IP should be used for dynamic DNS updates"
 msgstr ""
+"La interfaz cuya IP debería ser utilizada para actualizaciones DNS dinámicas"
 
 #: config/SSSDConfig.py:94 config/SSSDConfig.py:122
 msgid "Kerberos server address"
@@ -229,6 +233,8 @@ msgstr "Habilitar la validación de credenciales"
 #: config/SSSDConfig.py:103
 msgid "Store password if offline for later online authentication"
 msgstr ""
+"Si se encuentra desconectado, almacena contraseñas para realizar luego "
+"autenticaciones en línea "
 
 #: config/SSSDConfig.py:106
 msgid "Server where the change password service is running if not on the KDC"
@@ -269,13 +275,12 @@ msgid "Length of time to attempt synchronous LDAP operations"
 msgstr "Tiempo durante el que se intentará operaciones LDAP sincrónicas"
 
 #: config/SSSDConfig.py:117
-#, fuzzy
 msgid "File that contains CA certificates"
-msgstr "archivo que contiene los certificados CA"
+msgstr "Archivo que contiene los certificados CA"
 
 #: config/SSSDConfig.py:118
 msgid "Path to CA certificate directory"
-msgstr ""
+msgstr "Ruta al directorio de certificaciones CA"
 
 #: config/SSSDConfig.py:119
 msgid "Require TLS certificate verification"
@@ -302,9 +307,8 @@ msgid "Follow LDAP referrals"
 msgstr "Seguir referencias LDAP"
 
 #: config/SSSDConfig.py:127
-#, fuzzy
 msgid "Lifetime of TGT for LDAP connection"
-msgstr "Usar auth Kerberos para la conexión LDAP"
+msgstr "Período de vida de TGT para la conexión LDAP"
 
 #: config/SSSDConfig.py:130
 msgid "Length of time to wait for a search request"
@@ -315,9 +319,8 @@ msgid "Length of time between enumeration updates"
 msgstr "Tiempo en segundos entre las actualizaciones de enumeración"
 
 #: config/SSSDConfig.py:132
-#, fuzzy
 msgid "Require TLS for ID lookups"
-msgstr "Requiere TLS para búsquedas de ID, falso"
+msgstr "Se necesita TLS para búsquedas de ID"
 
 #: config/SSSDConfig.py:133
 msgid "Base DN for user lookups"
@@ -385,7 +388,7 @@ msgstr "Política para evaluar el vencimiento de la contraseña"
 
 #: config/SSSDConfig.py:153
 msgid "LDAP filter to determine access privileges"
-msgstr ""
+msgstr "Filtro LDAP para determinar privilegios de acceso"
 
 #: config/SSSDConfig.py:156
 msgid "Comma separated list of allowed users"
@@ -447,15 +450,15 @@ msgstr ""
 
 #: monitor/monitor.c:2169
 msgid "Cannot load configuration database\n"
-msgstr ""
+msgstr "No es posible cargar base de datos de configuración\n"
 
 #: providers/krb5/krb5_child.c:983 providers/ldap/ldap_child.c:377
-#: util/util.h:61
+#: util/util.h:62
 msgid "Debug level"
 msgstr "Nive de depuración"
 
 #: providers/krb5/krb5_child.c:985 providers/ldap/ldap_child.c:379
-#: util/util.h:65
+#: util/util.h:66
 msgid "Add debug timestamps"
 msgstr "Agregar marcas de tiempo de depuración"
 
@@ -469,28 +472,29 @@ msgstr "Dominio del proveedor de información (obligatorio)"
 
 #: sss_client/common.c:742
 msgid "Privileged socket has wrong ownership or permissions."
-msgstr ""
+msgstr "El zócalo privilegiado posee pertenencia o permisos incorrectos."
 
 #: sss_client/common.c:745
 msgid "Public socket has wrong ownership or permissions."
-msgstr ""
+msgstr "El zócalo público posee pertenencia o permisos incorrectos."
 
 #: sss_client/common.c:748
-#, fuzzy
 msgid "Unexpected format of the server credential message."
-msgstr "Ubicación del caché de credenciales del usuario"
+msgstr "Formato no esperado de mensaje de credencial del servidor."
 
 #: sss_client/common.c:751
 msgid "SSSD is not run by root."
-msgstr ""
+msgstr "SSSD no está siendo ejecutado por el usuario root."
 
 #: sss_client/common.c:756
 msgid "An error occurred, but no description can be found."
-msgstr ""
+msgstr "Ha ocurrido un error, pero no se ha encontrado una descripción."
 
 #: sss_client/common.c:762
 msgid "Unexpected error while looking for an error description"
 msgstr ""
+"Ha ocurrido un error no esperado mientras se buscaba una descripción del "
+"error."
 
 #: sss_client/pam_sss.c:372
 msgid "Passwords do not match"
@@ -498,11 +502,11 @@ msgstr "Las contraseñas no coinciden"
 
 #: sss_client/pam_sss.c:556
 msgid "Password reset by root is not supported."
-msgstr ""
+msgstr "No existe soporte para el reinicio de contraseña por el usuario root."
 
 #: sss_client/pam_sss.c:597
 msgid "Authenticated with cached credentials"
-msgstr ""
+msgstr "Autenticado con credenciales cacheadas"
 
 #: sss_client/pam_sss.c:598
 msgid ", your cached password will expire at: "
@@ -511,17 +515,16 @@ msgstr ", su contraseña cacheada vencerá el:"
 #: sss_client/pam_sss.c:628
 #, c-format
 msgid "Your password has expired. You have %d grace login(s) remaining."
-msgstr ""
+msgstr "Su contraseña ha expirado. Le quedan %d registros excepcionales."
 
 #: sss_client/pam_sss.c:674
-#, fuzzy, c-format
+#, c-format
 msgid "Your password will expire in %d %s."
-msgstr ", su contraseña cacheada vencerá el:"
+msgstr "Su contraseña vencerá en %d %s."
 
 #: sss_client/pam_sss.c:723
-#, fuzzy
 msgid "Authentication is denied until: "
-msgstr "Autenticación fuera de línea, la autenticación se deniega hasta:"
+msgstr "La autenticación ha sido negada hasta:"
 
 #: sss_client/pam_sss.c:750
 msgid "System is offline, password change not possible"
@@ -596,7 +599,7 @@ msgstr "Debe especificar un directorio esqueleto alternativo"
 
 #: tools/sss_useradd.c:57 tools/sss_usermod.c:57
 msgid "The SELinux user for user's login"
-msgstr ""
+msgstr "El usuario SELinux para el registro del usuario"
 
 #: tools/sss_useradd.c:71 tools/sss_groupadd.c:56 tools/sss_groupdel.c:52
 #: tools/sss_groupmod.c:63 tools/sss_groupshow.c:1027 tools/sss_userdel.c:159
@@ -650,7 +653,7 @@ msgstr "El UID seleccionado está fuera del rango permitido\n"
 
 #: tools/sss_useradd.c:202 tools/sss_usermod.c:242
 msgid "Cannot set SELinux login context\n"
-msgstr ""
+msgstr "No es posible definir contexto de registro SELinux\n"
 
 #: tools/sss_useradd.c:219
 msgid "Cannot get info about the user\n"
@@ -854,7 +857,7 @@ msgstr "Forzar la eliminación de los archivos que no pertenecen al usuario"
 
 #: tools/sss_userdel.c:150
 msgid "Kill users' processes before removing him"
-msgstr ""
+msgstr "FInaliza los procesos del usuario antes de eliminarlo"
 
 #: tools/sss_userdel.c:197
 msgid "Specify user to delete\n"
@@ -867,25 +870,28 @@ msgstr "El usuario %s está fuera del rango de ID para el dominio\n"
 
 #: tools/sss_userdel.c:285
 msgid "Cannot reset SELinux login context\n"
-msgstr ""
+msgstr "No es posible reiniciar contexto de registro SELinux\n"
 
 #: tools/sss_userdel.c:297
 #, c-format
 msgid "WARNING: The user (uid %lu) was still logged in when deleted.\n"
 msgstr ""
+"ADVERTENCIA: El usuario (uid %lu) aún se encontraba registrado cuando fue "
+"eliminado.\n"
 
 #: tools/sss_userdel.c:302
 msgid "Cannot determine if the user was logged in on this platform"
 msgstr ""
+"No es posible determinar si el usuario estaba registrado en esta plataforma"
 
 #: tools/sss_userdel.c:307
 msgid "Error while checking if the user was logged in\n"
-msgstr ""
+msgstr "Error al verificar si el usuario estaba registrado\n"
 
 #: tools/sss_userdel.c:314
 #, c-format
 msgid "The post-delete command failed: %s\n"
-msgstr ""
+msgstr "El comando post-delete ha fallado: %s\n"
 
 #: tools/sss_userdel.c:326
 msgid "Not removing home dir - not owned by user\n"
@@ -963,7 +969,7 @@ msgstr "Falta memoria\n"
 msgid "%s must be run as root\n"
 msgstr "%s se debe ejecutar como root\n"
 
-#: util/util.h:63
+#: util/util.h:64
 msgid "Send the debug output to files instead of stderr"
 msgstr "Envia el resultado de la depuración hacia archivos en lugar de stderr"
 
