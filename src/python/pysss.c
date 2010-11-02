@@ -29,6 +29,17 @@
 #include "tools/tools_util.h"
 #include "tools/sss_sync_ops.h"
 
+#define TRANSACTION_WAIT(trs, retval) do { \
+    while (!trs->transaction_done) { \
+        tevent_loop_once(trs->self->ev); \
+    } \
+    retval = trs->error; \
+    if (retval) { \
+        PyErr_SetSssError(retval); \
+        goto fail; \
+    } \
+} while(0)
+
 /*
  * function taken from samba sources tree as of Aug 20 2009,
  * file source4/lib/ldb/pyldb.c
@@ -78,6 +89,7 @@ struct py_sss_transaction {
     PySssLocalObject *self;
     struct ops_ctx *ops;
 
+    struct sysdb_handle *handle;
     bool transaction_done;
     int error;
 };
@@ -113,6 +125,7 @@ struct tools_ctx *init_ctx(TALLOC_CTX *mem_ctx,
         return NULL;
     }
 
+    tctx->ev = self->ev;
     tctx->confdb = self->confdb;
     tctx->sysdb = self->sysdb;
     tctx->local = self->local;
@@ -224,22 +237,25 @@ static PyObject *py_sss_useradd(PySssLocalObject *self,
     }
 
     /* Add the user within a transaction */
-    tctx->error = sysdb_transaction_start(tctx->sysdb);
+    start_transaction(tctx);
     if (tctx->error != EOK) {
         PyErr_SetSssError(tctx->error);
         goto fail;
     }
 
     /* useradd */
-    tctx->error = useradd(tctx, tctx->sysdb, tctx->octx);
-    if (tctx->error) {
+    ret = useradd(tctx, self->ev,
+                  self->sysdb, tctx->handle, tctx->octx);
+    if (ret != EOK) {
+        tctx->error = ret;
+
         /* cancel transaction */
-        sysdb_transaction_cancel(tctx->sysdb);
+        talloc_zfree(tctx->handle);
         PyErr_SetSssError(tctx->error);
         goto fail;
     }
 
-    tctx->error = sysdb_transaction_commit(tctx->sysdb);
+    end_transaction(tctx);
     if (tctx->error) {
         PyErr_SetSssError(tctx->error);
         goto fail;
@@ -251,10 +267,11 @@ static PyObject *py_sss_useradd(PySssLocalObject *self,
          * sysdb did assign it automatically, do a lookup */
         if (tctx->octx->uid == 0 || tctx->octx->gid == 0) {
             ret = sysdb_getpwnam_sync(tctx,
+                                      tctx->ev,
                                       tctx->sysdb,
                                       tctx->octx->name,
                                       tctx->local,
-                                      tctx->octx);
+                                      &tctx->octx);
             if (ret != EOK) {
                 PyErr_SetSssError(ret);
                 goto fail;
@@ -357,20 +374,38 @@ static PyObject *py_sss_userdel(PySssLocalObject *self,
 
     if (tctx->octx->remove_homedir) {
         ret = sysdb_getpwnam_sync(tctx,
+                                  tctx->ev,
                                   tctx->sysdb,
                                   tctx->octx->name,
                                   tctx->local,
-                                  tctx->octx);
+                                  &tctx->octx);
         if (ret != EOK) {
             PyErr_SetSssError(ret);
             goto fail;
         }
     }
 
-    /* Delete the user */
-    ret = userdel(tctx, self->sysdb, tctx->octx);
+    /* Delete the user within a transaction */
+    start_transaction(tctx);
+    if (tctx->error != EOK) {
+        PyErr_SetSssError(tctx->error);
+        goto fail;
+    }
+
+    ret = userdel(tctx, self->ev,
+                  self->sysdb, tctx->handle, tctx->octx);
     if (ret != EOK) {
-        PyErr_SetSssError(ret);
+        tctx->error = ret;
+
+        /* cancel transaction */
+        talloc_zfree(tctx->handle);
+        PyErr_SetSssError(tctx->error);
+        goto fail;
+    }
+
+    end_transaction(tctx);
+    if (tctx->error) {
+        PyErr_SetSssError(tctx->error);
         goto fail;
     }
 
@@ -417,6 +452,7 @@ static PyObject *py_sss_usermod(PySssLocalObject *self,
                                 PyObject *kwds)
 {
     struct tools_ctx *tctx = NULL;
+    int ret;
     PyObject *py_addgroups = Py_None;
     PyObject *py_rmgroups = Py_None;
     unsigned long uid = 0;
@@ -487,22 +523,25 @@ static PyObject *py_sss_usermod(PySssLocalObject *self,
     tctx->octx->lock  = lock;
 
     /* Modify the user within a transaction */
-    tctx->error = sysdb_transaction_start(tctx->sysdb);
+    start_transaction(tctx);
     if (tctx->error != EOK) {
         PyErr_SetSssError(tctx->error);
         goto fail;
     }
 
     /* usermod */
-    tctx->error = usermod(tctx, tctx->sysdb, tctx->octx);
-    if (tctx->error) {
+    ret = usermod(tctx, self->ev,
+                  self->sysdb, tctx->handle, tctx->octx);
+    if (ret != EOK) {
+        tctx->error = ret;
+
         /* cancel transaction */
-        sysdb_transaction_cancel(tctx->sysdb);
+        talloc_zfree(tctx->handle);
         PyErr_SetSssError(tctx->error);
         goto fail;
     }
 
-    tctx->error = sysdb_transaction_commit(tctx->sysdb);
+    end_transaction(tctx);
     if (tctx->error) {
         PyErr_SetSssError(tctx->error);
         goto fail;
@@ -533,6 +572,7 @@ static PyObject *py_sss_groupadd(PySssLocalObject *self,
     struct tools_ctx *tctx = NULL;
     char *groupname;
     unsigned long gid = 0;
+    int ret;
     const char * const kwlist[] = { "groupname", "gid", NULL };
 
     /* parse arguments */
@@ -554,22 +594,25 @@ static PyObject *py_sss_groupadd(PySssLocalObject *self,
     tctx->octx->gid = gid;
 
     /* Add the group within a transaction */
-    tctx->error = sysdb_transaction_start(tctx->sysdb);
+    start_transaction(tctx);
     if (tctx->error != EOK) {
         PyErr_SetSssError(tctx->error);
         goto fail;
     }
 
     /* groupadd */
-    tctx->error = groupadd(tctx, tctx->sysdb, tctx->octx);
-    if (tctx->error) {
+    ret = groupadd(tctx, self->ev,
+                   self->sysdb, tctx->handle, tctx->octx);
+    if (ret != EOK) {
+        tctx->error = ret;
+
         /* cancel transaction */
-        sysdb_transaction_cancel(tctx->sysdb);
+        talloc_zfree(tctx->handle);
         PyErr_SetSssError(tctx->error);
         goto fail;
     }
 
-    tctx->error = sysdb_transaction_commit(tctx->sysdb);
+    end_transaction(tctx);
     if (tctx->error) {
         PyErr_SetSssError(tctx->error);
         goto fail;
@@ -610,10 +653,28 @@ static PyObject *py_sss_groupdel(PySssLocalObject *self,
 
     tctx->octx->name = groupname;
 
-    /* Remove the group */
-    ret = groupdel(tctx, self->sysdb, tctx->octx);
+    /* Remove the group within a transaction */
+    start_transaction(tctx);
+    if (tctx->error != EOK) {
+        PyErr_SetSssError(tctx->error);
+        goto fail;
+    }
+
+    /* groupdel */
+    ret = groupdel(tctx, self->ev,
+                   self->sysdb, tctx->handle, tctx->octx);
     if (ret != EOK) {
-        PyErr_SetSssError(ret);
+        tctx->error = ret;
+
+        /* cancel transaction */
+        talloc_zfree(tctx->handle);
+        PyErr_SetSssError(tctx->error);
+        goto fail;
+    }
+
+    end_transaction(tctx);
+    if (tctx->error) {
+        PyErr_SetSssError(tctx->error);
         goto fail;
     }
 
@@ -642,6 +703,7 @@ static PyObject *py_sss_groupmod(PySssLocalObject *self,
                                 PyObject *kwds)
 {
     struct tools_ctx *tctx = NULL;
+    int ret;
     PyObject *py_addgroups = Py_None;
     PyObject *py_rmgroups = Py_None;
     unsigned long gid = 0;
@@ -690,22 +752,25 @@ static PyObject *py_sss_groupmod(PySssLocalObject *self,
     tctx->octx->gid = gid;
 
     /* Modify the group within a transaction */
-    tctx->error = sysdb_transaction_start(tctx->sysdb);
+    start_transaction(tctx);
     if (tctx->error != EOK) {
         PyErr_SetSssError(tctx->error);
         goto fail;
     }
 
     /* groupmod */
-    tctx->error = groupmod(tctx, tctx->sysdb, tctx->octx);
-    if (tctx->error) {
+    ret = groupmod(tctx, self->ev,
+                   self->sysdb, tctx->handle, tctx->octx);
+    if (ret != EOK) {
+        tctx->error = ret;
+
         /* cancel transaction */
-        sysdb_transaction_cancel(tctx->sysdb);
+        talloc_zfree(tctx->handle);
         PyErr_SetSssError(tctx->error);
         goto fail;
     }
 
-    tctx->error = sysdb_transaction_commit(tctx->sysdb);
+    end_transaction(tctx);
     if (tctx->error) {
         PyErr_SetSssError(tctx->error);
         goto fail;
@@ -757,6 +822,13 @@ static PyObject *PySssLocalObject_new(PyTypeObject *type,
     }
     self->mem_ctx = mem_ctx;
 
+    self->ev = tevent_context_init(mem_ctx);
+    if (self->ev == NULL) {
+        talloc_free(mem_ctx);
+        PyErr_SetSssErrorWithMessage(EIO, "Cannot create event context");
+        return NULL;
+    }
+
     confdb_path = talloc_asprintf(self->mem_ctx, "%s/%s", DB_PATH, CONFDB_FILE);
     if (confdb_path == NULL) {
         talloc_free(mem_ctx);
@@ -781,7 +853,7 @@ static PyObject *PySssLocalObject_new(PyTypeObject *type,
     }
 
     /* open 'local' sysdb at default path */
-    ret = sysdb_domain_init(self->mem_ctx, self->local, DB_PATH, &self->sysdb);
+    ret = sysdb_domain_init(self->mem_ctx, self->ev, self->local, DB_PATH, &self->sysdb);
     if (ret != EOK) {
         talloc_free(mem_ctx);
         PyErr_SetSssErrorWithMessage(ret,

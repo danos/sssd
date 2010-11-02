@@ -97,7 +97,7 @@ struct server_common {
 };
 
 struct srv_data {
-    char *dns_domain;
+    char *domain;
     char *proto;
     char *srv;
 
@@ -212,7 +212,7 @@ get_srv_query(TALLOC_CTX *mem_ctx, struct fo_server *server)
 
     query = talloc_asprintf(mem_ctx, "_%s._%s.%s", server->srv_data->srv,
                                                    server->srv_data->proto,
-                                                   server->srv_data->dns_domain);
+                                                   server->srv_data->domain);
     return query;
 }
 
@@ -222,7 +222,7 @@ collapse_srv_lookup(struct fo_server *server)
     struct fo_server *tmp, *meta;
 
     meta = server->srv_data->meta;
-    DEBUG(4, ("Need to refresh SRV lookup for domain %s\n", meta->srv_data->dns_domain))
+    DEBUG(4, ("Need to refresh SRV lookup for domain %s\n", meta->srv_data->domain))
 
     if (server != meta) {
         while (server->prev && server->prev->srv_data == meta->srv_data) {
@@ -498,20 +498,19 @@ create_server_common(TALLOC_CTX *mem_ctx, struct fo_ctx *ctx, const char *name)
 
 int
 fo_add_srv_server(struct fo_service *service, const char *srv,
-                  const char *dns_domain, const char *proto, void *user_data)
+                  const char *domain, const char *proto, void *user_data)
 {
     struct fo_server *server;
 
     DEBUG(3, ("Adding new SRV server in domain '%s', to service '%s'\n",
-              dns_domain ? dns_domain : "unknown", service->name));
+              domain, service->name));
 
     DLIST_FOR_EACH(server, service->server_list) {
         if (server->user_data != user_data)
             continue;
 
         if (fo_is_srv_lookup(server)) {
-            if (((dns_domain == NULL && server->srv_data->dns_domain == NULL) ||
-                  strcasecmp(server->srv_data->dns_domain, dns_domain) == 0) &&
+            if (strcasecmp(server->srv_data->domain, domain) == 0 &&
                 strcasecmp(server->srv_data->proto, proto) == 0) {
                 return EEXIST;
             }
@@ -531,17 +530,13 @@ fo_add_srv_server(struct fo_service *service, const char *srv,
     if (server->srv_data == NULL)
         return ENOMEM;
 
+    server->srv_data->domain = talloc_strdup(server->srv_data, domain);
     server->srv_data->proto = talloc_strdup(server->srv_data, proto);
     server->srv_data->srv = talloc_strdup(server->srv_data, srv);
-    if (server->srv_data->proto == NULL ||
+    if (server->srv_data->domain == NULL ||
+        server->srv_data->proto == NULL ||
         server->srv_data->srv == NULL)
         return ENOMEM;
-
-    if (dns_domain) {
-        server->srv_data->dns_domain = talloc_strdup(server->srv_data, dns_domain);
-        if (server->srv_data->dns_domain == NULL)
-            return ENOMEM;
-    }
 
     server->srv_data->meta = server;
     server->srv_data->srv_lookup_status = DEFAULT_SRV_STATUS;
@@ -582,19 +577,6 @@ create_fo_server(struct fo_service *service, const char *name,
     }
 
     return server;
-}
-
-int
-fo_get_server_count(struct fo_service *service)
-{
-    struct fo_server *server;
-    int count = 0;
-
-    DLIST_FOR_EACH(server, service->server_list) {
-        count++;
-    }
-
-    return count;
 }
 
 int
@@ -913,17 +895,6 @@ fo_resolve_service_recv(struct tevent_req *req, struct fo_server **server)
  *******************************************************************/
 
 static void resolve_srv_done(struct tevent_req *subreq);
-static void resolve_srv_cont(struct tevent_req *req);
-
-struct tevent_req *resolve_get_domain_send(TALLOC_CTX *mem_ctx,
-                                           struct tevent_context *ev,
-                                           struct fo_ctx *foctx,
-                                           struct resolv_ctx *resolv);
-
-static void resolve_getsrv_domain_done(struct tevent_req *req);
-int resolve_get_domain_recv(struct tevent_req *req,
-                            TALLOC_CTX *mem_ctx,
-                            char **dns_domain);
 
 struct resolve_srv_state {
     struct fo_server *meta;
@@ -942,6 +913,7 @@ resolve_srv_send(TALLOC_CTX *mem_ctx, struct tevent_context *ev,
                  struct fo_server *server)
 {
     int ret;
+    char *query;
     struct tevent_req *req;
     struct tevent_req *subreq;
     struct resolve_srv_state *state;
@@ -965,18 +937,19 @@ resolve_srv_send(TALLOC_CTX *mem_ctx, struct tevent_context *ev,
         state->meta = collapse_srv_lookup(server);
         /* FALLTHROUGH */
     case SRV_NEUTRAL: /* Request SRV lookup */
-        if (server->srv_data->dns_domain == NULL) {
-            /* we need to look up our DNS domain first */
-            subreq = resolve_get_domain_send(state, ev, ctx, resolv);
-            if (subreq == NULL) {
-                ret = ENOMEM;
-                goto done;
-            }
-            tevent_req_set_callback(subreq, resolve_getsrv_domain_done, req);
-            break;
+        query = get_srv_query(state, state->meta);
+        if (!query) {
+            ret = ENOMEM;
+            goto done;
         }
-        /* we know the DNS domain, just do the lookup */
-        resolve_srv_cont(req);
+        DEBUG(4, ("Searching for servers via SRV query '%s'\n", query));
+
+        subreq = resolv_getsrv_send(state, ev, resolv, query);
+        if (subreq == NULL) {
+            ret = ENOMEM;
+            goto done;
+        }
+        tevent_req_set_callback(subreq, resolve_srv_done, req);
         break;
     case SRV_NOT_RESOLVED: /* query could not be resolved but don't retry yet */
         ret = EIO;
@@ -989,7 +962,7 @@ resolve_srv_send(TALLOC_CTX *mem_ctx, struct tevent_context *ev,
     default:
         DEBUG(1, ("Unexpected status %d for a SRV server\n", status));
         ret = EIO;
-        goto done;
+        break;
     }
 
     ret = EOK;
@@ -999,49 +972,6 @@ done:
         tevent_req_post(req, ev);
     }
     return req;
-}
-
-static void
-resolve_getsrv_domain_done(struct tevent_req *subreq)
-{
-    struct tevent_req *req = tevent_req_callback_data(subreq,
-                                                      struct tevent_req);
-    struct resolve_srv_state *state = tevent_req_data(req,
-                                                struct resolve_srv_state);
-    int ret;
-
-    ret = resolve_get_domain_recv(subreq, state->meta->srv_data,
-                                  &state->meta->srv_data->dns_domain);
-    talloc_zfree(subreq);
-    if (ret) {
-        tevent_req_error(req, ret);
-        return;
-    }
-
-    resolve_srv_cont(req);
-}
-
-static void
-resolve_srv_cont(struct tevent_req *req)
-{
-    struct resolve_srv_state *state = tevent_req_data(req,
-                                                struct resolve_srv_state);
-    char *query;
-    struct tevent_req *subreq;
-
-    query = get_srv_query(state, state->meta);
-    if (!query) {
-        tevent_req_error(req, ENOMEM);
-        return;
-    }
-    DEBUG(4, ("Searching for servers via SRV query '%s'\n", query));
-
-    subreq = resolv_getsrv_send(state, state->ev, state->resolv, query);
-    if (subreq == NULL) {
-        tevent_req_error(req, ENOMEM);
-        return;
-    }
-    tevent_req_set_callback(subreq, resolve_srv_done, req);
 }
 
 static void
@@ -1142,103 +1072,6 @@ resolve_srv_recv(struct tevent_req *req, struct fo_server **server)
     return EOK;
 }
 
-/*******************************************************************
- *     Get Fully Qualified Domain Name of the host machine         *
- *******************************************************************/
-struct resolve_get_domain_state {
-    char *fqdn;
-    char hostname[HOST_NAME_MAX];
-};
-
-static void resolve_get_domain_done(struct tevent_req *subreq);
-
-struct tevent_req *
-resolve_get_domain_send(TALLOC_CTX *mem_ctx,
-                      struct tevent_context *ev,
-                      struct fo_ctx *foctx,
-                      struct resolv_ctx *resolv)
-{
-    int ret;
-    struct resolve_get_domain_state *state;
-    struct tevent_req *req, *subreq;
-
-    req = tevent_req_create(mem_ctx, &state, struct resolve_get_domain_state);
-    if (!req) {
-        return NULL;
-    }
-
-    ret = gethostname(state->hostname, HOST_NAME_MAX);
-    if (ret) {
-        DEBUG(2, ("gethostname() failed: [%d]: %s\n",ret, strerror(ret)));
-        return NULL;
-    }
-    state->hostname[HOST_NAME_MAX-1] = '\0';
-    DEBUG(7, ("Host name is: %s\n", state->hostname));
-
-    subreq = resolv_gethostbyname_send(mem_ctx, ev, resolv,
-                                       state->hostname,
-                                       foctx->opts->family_order);
-    if (!subreq) {
-        talloc_zfree(req);
-        return NULL;
-    }
-    tevent_req_set_callback(subreq, resolve_get_domain_done, req);
-
-    return req;
-}
-
-static void resolve_get_domain_done(struct tevent_req *subreq)
-{
-    struct tevent_req *req = tevent_req_callback_data(subreq,
-                                                      struct tevent_req);
-    struct resolve_get_domain_state *state = tevent_req_data(req,
-                                                      struct resolve_get_domain_state);
-    struct hostent *hostent;
-    int ret;
-
-    ret = resolv_gethostbyname_recv(subreq, req, NULL, NULL, &hostent);
-    talloc_zfree(subreq);
-    if (ret) {
-        DEBUG(2, ("Could not get fully qualified name for host name %s "
-                  "resolver returned: [%d]: %s\n",
-                  state->hostname, ret, strerror(ret)));
-        /* We'll proceed with hostname in this case */
-    } else {
-        DEBUG(7, ("The full FQDN is: %s\n", hostent->h_name));
-        state->fqdn = hostent->h_name;
-    }
-    tevent_req_done(req);
-}
-
-int resolve_get_domain_recv(struct tevent_req *req, TALLOC_CTX *mem_ctx,
-                            char **dns_domain)
-{
-    struct resolve_get_domain_state *state = tevent_req_data(req,
-                                                    struct resolve_get_domain_state);
-    char *fqdn;
-    char *domptr;
-
-    TEVENT_REQ_RETURN_ON_ERROR(req);
-
-    fqdn = state->fqdn ? state->fqdn : state->hostname;
-    domptr = strchr(fqdn, '.');
-
-    if (!domptr || (*(domptr+1) == '\0')) {
-        /* If the FQDN did not contain a dot or the dot was the last character
-        * (broken DNS server perhaps */
-        *dns_domain = talloc_strdup(mem_ctx, fqdn);
-    } else {
-        domptr++;
-        *dns_domain = talloc_strdup(mem_ctx, domptr);
-    }
-
-    if (*dns_domain == NULL) {
-        return ENOMEM;
-    }
-
-    return EOK;
-}
-
 static void
 set_server_common_status(struct server_common *common,
                          enum server_status status)
@@ -1272,27 +1105,6 @@ fo_set_port_status(struct fo_server *server, enum port_status status)
     if (status == PORT_WORKING) {
         fo_set_server_status(server, SERVER_WORKING);
         server->service->active_server = server;
-    }
-}
-
-void fo_try_next_server(struct fo_service *service)
-{
-    struct fo_server *server;
-
-    if (!service) {
-        DEBUG(1, ("Bug: No service supplied\n"));
-        return;
-    }
-
-    server = service->active_server;
-    if (!server) {
-        return;
-    }
-
-    service->active_server = 0;
-
-    if (server->port_status == PORT_WORKING) {
-        server->port_status = PORT_NEUTRAL;
     }
 }
 

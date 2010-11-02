@@ -108,20 +108,22 @@ int main(int argc, const char **argv)
         goto fini;
     }
 
-    tctx->error = sysdb_transaction_start(tctx->sysdb);
+    start_transaction(tctx);
     if (tctx->error != EOK) {
         goto done;
     }
 
     /* groupadd */
-    tctx->error = groupadd(tctx, tctx->sysdb, tctx->octx);
-    if (tctx->error) {
+    ret = groupadd(tctx, tctx->ev, tctx->sysdb, tctx->handle, tctx->octx);
+    if (ret != EOK) {
+        tctx->error = ret;
+
         /* cancel transaction */
-        sysdb_transaction_cancel(tctx->sysdb);
+        talloc_zfree(tctx->handle);
         goto done;
     }
 
-    tctx->error = sysdb_transaction_commit(tctx->sysdb);
+    end_transaction(tctx);
 
 done:
     if (tctx->error) {

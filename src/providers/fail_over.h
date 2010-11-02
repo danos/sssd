@@ -100,11 +100,6 @@ int fo_get_service(struct fo_ctx *ctx,
                    struct fo_service **_service);
 
 /*
- * Get number of servers registered for the 'service'.
- */
-int fo_get_server_count(struct fo_service *service);
-
-/*
  * Adds a server 'name' to the 'service'. Port 'port' will be used for
  * connection. If 'name' is NULL, no server resolution will be done.
  */
@@ -155,12 +150,6 @@ void fo_set_server_status(struct fo_server *server,
 void fo_set_port_status(struct fo_server *server,
                         enum port_status status);
 
-/*
- * Instruct fail-over to try next server on the next connect attempt.
- * Should be used after connection to service was unexpectedly dropped
- * but there is no authoritative information on whether active server is down.
- */
-void fo_try_next_server(struct fo_service *service);
 
 void *fo_get_server_user_data(struct fo_server *server);
 

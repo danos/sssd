@@ -32,6 +32,7 @@ struct pam_auth_req;
 typedef void (pam_dp_callback_t)(struct pam_auth_req *preq);
 
 struct pam_ctx {
+    int cred_expiration;
     struct resp_ctx *rctx;
     struct sss_nc_ctx *ncache;
     int neg_timeout;
@@ -45,7 +46,6 @@ struct pam_auth_req {
 
     pam_dp_callback_t *callback;
 
-    struct ldb_result *res;
     bool check_provider;
     void *data;
 };

@@ -25,7 +25,6 @@
 #include <errno.h>
 #include <unistd.h>
 #include <fcntl.h>
-#include <sys/stat.h>
 #define TRACE_HOME
 #include "trace.h"
 #include "ini_config.h"
@@ -88,8 +87,7 @@ int single_file(void)
     int error;
     struct collection_item *ini_config = NULL;
     struct collection_item *error_set = NULL;
-    struct collection_item *metadata = NULL;
-    uint32_t flags;
+    struct collection_item *lines = NULL;
 
     error = config_from_file("test", "./not_exist_ini.conf",
                              &ini_config, INI_STOP_ON_NONE, &error_set);
@@ -125,56 +123,18 @@ int single_file(void)
     ini_config = NULL;
     error_set = NULL;
 
-    COLOUT(printf("TEST WITH METADATA NO PARSE\n"));
-    flags = INI_META_SEC_ACCESS_FLAG |
-            INI_META_SEC_ERROR_FLAG  |
-            INI_META_ACTION_NOPARSE;
+    COLOUT(printf("TEST WITH LINES\n"));
 
-    error = config_from_file_with_metadata("test", "./ini.conf",
-                                           &ini_config, INI_STOP_ON_NONE,
-                                           NULL,
-                                           flags,
-                                           &metadata);
+    error = config_from_file_with_lines("test", "./ini.conf",
+                                        &ini_config, INI_STOP_ON_NONE,
+                                        &error_set, &lines);
     if (error) {
         printf("Attempt to read configuration returned error: %d\n",error);
-        if (metadata) {
-            printf("\n\nMeta data\n");
-            col_debug_collection(metadata, COL_TRAVERSE_DEFAULT);
-        }
-        free_ini_config_metadata(metadata);
         return error;
     }
 
-    if (ini_config) {
-        printf("Expected no config but got some.\n");
-        col_debug_collection(ini_config, COL_TRAVERSE_DEFAULT);
-        free_ini_config(ini_config);
-        printf("\n\nMeta data\n");
-        col_debug_collection(metadata, COL_TRAVERSE_DEFAULT);
-        free_ini_config_metadata(metadata);
-        return EINVAL;
-    }
-
-    COLOUT(printf("\n\nMeta data\n"));
-    COLOUT(col_debug_collection(metadata, COL_TRAVERSE_DEFAULT));
-    free_ini_config_metadata(metadata);
-
-    COLOUT(printf("\n\n----------------------\n"));
-
-    error = config_from_file_with_metadata("test", "./ini.conf",
-                                           &ini_config, INI_STOP_ON_NONE,
-                                           &error_set,
-                                           0,
-                                           NULL);
-    if (error) {
-        printf("Attempt to read configuration returned error: %d\n",error);
-        print_file_parsing_errors(stdout, error_set);
-        free_ini_config_errors(error_set);
-        return error;
-    }
-
-    COLOUT(printf("\n\n----------------------\n"));
     COLOUT(col_debug_collection(ini_config, COL_TRAVERSE_DEFAULT));
+    COLOUT(col_debug_collection(lines, COL_TRAVERSE_DEFAULT));
 
     COLOUT(printf("\n\n----------------------\n"));
     /* Output parsing errors (if any) */
@@ -184,6 +144,7 @@ int single_file(void)
 
     free_ini_config(ini_config);
     free_ini_config_errors(error_set);
+    free_ini_config_lines(lines);
 
     return 0;
 }
@@ -193,8 +154,7 @@ int single_fd(void)
     int error;
     struct collection_item *ini_config = NULL;
     struct collection_item *error_set = NULL;
-    struct collection_item *metadata = NULL;
-    uint32_t flags;
+    struct collection_item *lines = NULL;
 
     int fd = open("./ini.conf", O_RDONLY);
     if (fd < 0) {
@@ -227,7 +187,7 @@ int single_fd(void)
     ini_config = NULL;
     error_set = NULL;
 
-    COLOUT(printf("TEST WITH FILE FD & META DATA\n"));
+    COLOUT(printf("TEST WITH LINES\n"));
 
     fd = open("./ini.conf", O_RDONLY);
     if (fd < 0) {
@@ -235,63 +195,18 @@ int single_fd(void)
         printf("Attempt to read configuration returned error: %d\n", error);
         return error;
     }
-
-    flags = INI_META_SEC_ACCESS_FLAG |
-            INI_META_SEC_ERROR_FLAG  |
-            INI_META_ACTION_NOPARSE;
-
-    error = config_from_fd_with_metadata("test", fd,
-                                         "./ini.conf",
-                                         &ini_config,
-                                         INI_STOP_ON_NONE,
-                                         &error_set,
-                                         flags,
-                                         &metadata);
+    error = config_from_fd_with_lines("test", fd,
+                                      "./ini.conf",
+                                      &ini_config,
+                                      INI_STOP_ON_NONE,
+                                      &error_set, &lines);
     if (error) {
         printf("Attempt to read configuration returned error: %d\n",error);
-        printf("\n\nErrors\n");
-        print_file_parsing_errors(stdout, error_set);
-        free_ini_config_errors(error_set);
-        if (metadata) {
-            printf("\n\nMeta data\n");
-            col_debug_collection(metadata, COL_TRAVERSE_DEFAULT);
-        }
-        free_ini_config_metadata(metadata);
-        return error;
-    }
-
-    if (ini_config) {
-        printf("Expected no config but got some.\n");
-        col_debug_collection(ini_config, COL_TRAVERSE_DEFAULT);
-        free_ini_config(ini_config);
-        return EINVAL;
-    }
-
-
-    COLOUT(printf("\n\nMeta data\n"));
-    COLOUT(col_debug_collection(metadata, COL_TRAVERSE_DEFAULT));
-    free_ini_config_metadata(metadata);
-
-
-    error = config_from_fd_with_metadata("test", fd,
-                                         "./ini.conf",
-                                         &ini_config,
-                                         INI_STOP_ON_NONE,
-                                         &error_set,
-                                         0,
-                                         NULL);
-
-    close(fd);
-
-    if (error) {
-        printf("Attempt to read configuration returned error: %d\n",error);
-        printf("\n\nErrors\n");
-        print_file_parsing_errors(stdout, error_set);
-        free_ini_config_errors(error_set);
         return error;
     }
 
     COLOUT(col_debug_collection(ini_config, COL_TRAVERSE_DEFAULT));
+    COLOUT(col_debug_collection(lines, COL_TRAVERSE_DEFAULT));
 
     COLOUT(printf("\n\n----------------------\n"));
     /* Output parsing errors (if any) */
@@ -301,6 +216,7 @@ int single_fd(void)
 
     free_ini_config(ini_config);
     free_ini_config_errors(error_set);
+    free_ini_config_lines(lines);
 
     return 0;
 }
@@ -480,11 +396,6 @@ int get_test(void)
     long *array;
     double *darray;
     char **prop_array;
-    int32_t val_int32;
-    uint32_t val_uint32;
-    int64_t val_int64;
-    uint64_t val_uint64;
-
 
     COLOUT(printf("\n\n===== GET TEST START ======\n"));
     COLOUT(printf("Reading collection\n"));
@@ -1065,146 +976,6 @@ int get_test(void)
     COLOUT(for (i=0;i<size;i++) printf("Attribute: [%s]\n", prop_array[i]));
     free_attribute_list(prop_array);
 
-
-    /***************************************/
-    /* Test special types                  */
-    /***************************************/
-    COLOUT(printf("Test int32_t\n"));
-
-    item = NULL;
-    error = get_config_item("domains/EXAMPLE.COM",
-                            "int32_t",
-                            ini_config,
-                            &item);
-    if (error) {
-        printf("Expected success but got error! %d\n", error);
-        free_ini_config(ini_config);
-        return error;
-    }
-
-    /* Item should be found */
-    if (item == NULL) {
-        printf("Expected success but got NULL.\n");
-        free_ini_config(ini_config);
-        return -1;
-    }
-
-    COLOUT(col_debug_item(item));
-
-    error = 0;
-    val_int32 = get_int32_config_value(item, 1, 0, &error);
-    if (error) {
-        printf("Expect success got error %d.\n", error);
-        free_ini_config(ini_config);
-        return error;
-    }
-
-    COLOUT(printf("Value: %d\n", val_int32));
-
-    /***************************************/
-
-    COLOUT(printf("Test uint32_t\n"));
-
-    item = NULL;
-    error = get_config_item("domains/EXAMPLE.COM",
-                            "uint32_t",
-                            ini_config,
-                            &item);
-    if (error) {
-        printf("Expected success but got error! %d\n", error);
-        free_ini_config(ini_config);
-        return error;
-    }
-
-    /* Item should be found */
-    if (item == NULL) {
-        printf("Expected success but got NULL.\n");
-        free_ini_config(ini_config);
-        return -1;
-    }
-
-    COLOUT(col_debug_item(item));
-
-    error = 0;
-    val_uint32 = get_uint32_config_value(item, 1, 0, &error);
-    if (error) {
-        printf("Expect success got error %d.\n", error);
-        free_ini_config(ini_config);
-        return error;
-   }
-
-    COLOUT(printf("Value: %u\n", val_uint32));
-
-    /***************************************/
-
-    COLOUT(printf("Test int64_t\n"));
-
-    item = NULL;
-    error = get_config_item("domains/EXAMPLE.COM",
-                            "int64_t",
-                            ini_config,
-                            &item);
-    if (error) {
-        printf("Expected success but got error! %d\n", error);
-        free_ini_config(ini_config);
-        return error;
-    }
-
-    /* Item should be found */
-    if (item == NULL) {
-        printf("Expected success but got NULL.\n");
-        free_ini_config(ini_config);
-        return -1;
-    }
-
-    COLOUT(col_debug_item(item));
-
-    error = 0;
-    val_int64 = get_int64_config_value(item, 1, 0, &error);
-    if (error) {
-        printf("Expect success got error %d.\n", error);
-        free_ini_config(ini_config);
-        return error;
-    }
-
-    COLOUT(printf("Value: %lld\n", (long long)val_int64));
-
-    /***************************************/
-
-    COLOUT(printf("Test uint32_t\n"));
-
-    item = NULL;
-    error = get_config_item("domains/EXAMPLE.COM",
-                            "uint64_t",
-                            ini_config,
-                            &item);
-    if (error) {
-        printf("Expected success but got error! %d\n", error);
-        free_ini_config(ini_config);
-        return error;
-    }
-
-    /* Item should be found */
-    if (item == NULL) {
-        printf("Expected success but got NULL.\n");
-        free_ini_config(ini_config);
-        return -1;
-    }
-
-    COLOUT(col_debug_item(item));
-
-    error = 0;
-    val_uint64 = get_uint64_config_value(item, 1, 0, &error);
-    if (error) {
-        printf("Expect success got error %d.\n", error);
-        free_ini_config(ini_config);
-        return error;
-    }
-
-    COLOUT(printf("Value: %llu\n", (unsigned long long)val_uint64));
-
-    /***************************************/
-
     COLOUT(printf("Get empty array item\n"));
 
     item = NULL;
@@ -1252,253 +1023,6 @@ int get_test(void)
     return EOK;
 }
 
-/* This is an emulation of the case when daemon starts
- * and one needs to parse the configuration file
- * for the first time and load configuration
- */
-int startup_test(void)
-{
-    int error;
-    struct collection_item *ini_config = NULL;
-    struct collection_item *error_set = NULL;
-    struct collection_item *metadata = NULL;
-    uint32_t flags;
-
-
-    /* At startup we can simplify our life by
-     * parsing configuration and then checking
-     * the permissions. It is less optimal from
-     * the performnce point of view but simple to implement.
-     * Since it is the start of the daemon we can
-     * hope that parsing the config file would
-     * usually not a be a wasted effort.
-     * If permission check fails that means we should
-     * exit. Ok so we just parse the INI file for nothing.
-     * Not a big deal, I would say...
-     */
-
-    COLOUT(printf("STARTUP TEST\n"));
-
-    /* Set file permissions to 0664 */
-    chmod("./ini.conf", 0664);
-
-    flags = INI_META_SEC_ACCESS_FLAG |
-            INI_META_SEC_ERROR_FLAG;
-
-    error = config_from_file_with_metadata("test", "./ini.conf",
-                                           &ini_config, INI_STOP_ON_NONE,
-                                           &error_set,
-                                           flags,
-                                           &metadata);
-    /*
-     * This is just for debugging.
-     * do not copy into your implementation
-     */
-    if (metadata) {
-        COLOUT(printf("\n\nMeta data\n"));
-        COLOUT(col_debug_collection(metadata, COL_TRAVERSE_DEFAULT));
-    }
-
-
-    if (error) {
-        printf("Attempt to read configuration returned error: %d\n",error);
-
-        /* If you want to do any specific error checking, do it here.
-         * If you want to get the file error code from the
-         * metadata get it here.
-         */
-        free_ini_config_metadata(metadata);
-
-        /* Error reporting start ==> */
-        if (error_set) {
-            printf("\n\nErrors\n");
-            col_debug_collection(error_set, COL_TRAVERSE_DEFAULT);
-        }
-        /* <==== end */
-        free_ini_config_errors(error_set);
-        return error;
-    }
-
-    free_ini_config_errors(error_set);
-
-    /* So we are here if we successfully got configuration. */
-    /* You can check ownership and permissions here in one call */
-    /* We will check just permissions here. */
-    error = config_access_check(metadata,
-                                INI_ACCESS_CHECK_MODE, /* add uid & gui flags
-                                                        * in real case
-                                                        */
-                                0, /* <- will be real uid in real case */
-                                0, /* <- will be real gid in real case */
-                                0440, /* Checking for r--r----- */
-                                0);
-    /* This check is expected to fail since
-     * the actual permissions on the test file are: rw-rw-r--
-     */
-
-    if (!error) {
-        printf("Expected error got success!\n");
-        free_ini_config_metadata(metadata);
-        free_ini_config(ini_config);
-        return EACCES;
-    }
-
-    error = config_access_check(metadata,
-                                INI_ACCESS_CHECK_MODE, /* add uid & gui flags
-                                                        * in real case
-                                                        */
-                                0, /* <- will be real uid in real case */
-                                0, /* <- will be real gid in real case */
-                                0664, /* Checkling for rw-rw-r-- */
-                                0);
-
-    if (error) {
-        printf("Access check failed %d!\n", error);
-        free_ini_config_metadata(metadata);
-        free_ini_config(ini_config);
-        return EACCES;
-    }
-
-
-    /* Use configuration */
-
-    COLOUT(printf("\n\nMeta data\n"));
-    COLOUT(col_debug_collection(metadata, COL_TRAVERSE_DEFAULT));
-    free_ini_config_metadata(metadata);
-
-    COLOUT(printf("\n\n----------------------\n"));
-
-    COLOUT(printf("\n\nConfiguration\n"));
-    COLOUT(col_debug_collection(ini_config, COL_TRAVERSE_DEFAULT));
-    free_ini_config(ini_config);
-
-    return 0;
-}
-
-int reload_test(void)
-{
-
-    int error;
-    struct collection_item *ini_config = NULL;
-    struct collection_item *metadata = NULL;
-    struct collection_item *saved_metadata = NULL;
-    uint32_t flags;
-    int changed = 0;
-    int fd;
-
-    COLOUT(printf("RELOAD TEST\n"));
-
-    /* Assume we saved metadata at the beginning
-     * when we opened the file and read configuration
-     * for the first time.
-     * Here we have to emulate it.
-     */
-
-    flags = INI_META_SEC_ACCESS_FLAG |
-            INI_META_ACTION_NOPARSE;
-
-    error = config_from_file_with_metadata("test", "./ini.conf",
-                                           &ini_config,
-                                           0,
-                                           NULL,
-                                           flags,
-                                           &saved_metadata);
-    if (error) {
-        printf("Attempt to read configuration returned error: %d\n",error);
-        free_ini_config_metadata(saved_metadata);
-        return error;
-    }
-
-    /*****************************************/
-
-    /* We are reloading so we probably doing it becuase
-     * we got a signal ot some kind of time out expired
-     * and it might be time for us to check if we need
-     * to reload. So assume it is time to check...
-     */
-
-    /* It is safer to open file first */
-    fd = open("./ini.conf", O_RDONLY);
-    if (fd < 0) {
-        error = errno;
-        printf("Attempt to read configuration returned error: %d\n", error);
-        free_ini_config_metadata(saved_metadata);
-        return error;
-    }
-
-    /* You migth be checking pretty frequently, once in 5 min for example
-     * but the config usually does not change for months
-     * so you do not want to do any extra processing every time you check.
-     */
-
-    /* Do permission check here right away on the file, or... */
-
-
-    flags = INI_META_SEC_ACCESS_FLAG |
-            INI_META_ACTION_NOPARSE;
-
-    error = config_from_fd_with_metadata("test", fd,
-                                         "./ini.conf",
-                                         &ini_config,
-                                         0,
-                                         NULL,
-                                         flags,
-                                         &metadata);
-    if (error) {
-        printf("Attempt to read configuration returned error: %d\n",error);
-        if (metadata) {
-            printf("\n\nMeta data\n");
-            col_debug_collection(metadata, COL_TRAVERSE_DEFAULT);
-        }
-        free_ini_config_metadata(metadata);
-        free_ini_config_metadata(saved_metadata);
-        close(fd);
-        return error;
-    }
-
-    /* ...or you can do permission check here using the metadata
-     * as it is done in the startup test.
-     * For now we skip this part and move on.
-     */
-
-    error = config_changed(metadata, saved_metadata, &changed);
-
-    if (error) {
-        printf("Internal error: %d\n",error);
-        printf("\n\nSaved Meta data\n");
-        col_debug_collection(saved_metadata, COL_TRAVERSE_DEFAULT);
-        printf("\n\nMeta data\n");
-        col_debug_collection(metadata, COL_TRAVERSE_DEFAULT);
-        free_ini_config_metadata(saved_metadata);
-        free_ini_config_metadata(metadata);
-        close(fd);
-        return error;
-
-    }
-
-    if (changed) {
-
-        /* Read the config from the descriptor and use it.
-         * Discard old saved meta data and save
-         * the latest one for future use...
-         */
-
-        /* Here it would be an error if it is different */
-        printf("Meta data is supposed to be same but different.\n");
-        printf("\n\nSaved Meta data\n");
-        col_debug_collection(saved_metadata, COL_TRAVERSE_DEFAULT);
-        printf("\n\nMeta data\n");
-        col_debug_collection(metadata, COL_TRAVERSE_DEFAULT);
-    }
-
-    free_ini_config_metadata(saved_metadata);
-    free_ini_config_metadata(metadata);
-    close(fd);
-
-    return 0;
-}
-
-
 int main(int argc, char *argv[])
 {
     int error = EOK;
@@ -1506,7 +1030,7 @@ int main(int argc, char *argv[])
 
     if ((argc > 1) && (strcmp(argv[1], "-v") == 0)) verbose = 1;
 
-    COLOUT(printf("Start\n"));
+    printf("Start\n");
 
     srcdir = getenv("srcdir");
     if(srcdir) {
@@ -1523,13 +1047,11 @@ int main(int argc, char *argv[])
         (error = real_test(NULL)) ||
          /* This should result in merged configuration */
         (error = real_test("./ini.conf")) ||
-        (error = startup_test()) ||
-        (error = reload_test()) ||
         (error = get_test())) {
         printf("Test failed! Error %d.\n", error);
         return -1;
     }
 
-    COLOUT(printf("Success!\n"));
+    printf("Success!\n");
     return 0;
 }

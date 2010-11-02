@@ -41,6 +41,7 @@
 #include "popt.h"
 #include "util/util.h"
 #include "confdb/confdb.h"
+#include "db/sysdb.h"
 #include "dbus/dbus.h"
 #include "sbus/sssd_dbus.h"
 #include "providers/proxy/proxy.h"
@@ -65,6 +66,7 @@ struct sbus_interface pc_interface = {
 struct pc_ctx {
     struct tevent_context *ev;
     struct confdb_ctx *cdb;
+    struct sysdb_ctx *sysdb;
     struct sss_domain_info *domain;
     const char *identity;
     const char *conf_path;
@@ -72,6 +74,16 @@ struct pc_ctx {
     struct sbus_connection *conn;
     const char *pam_target;
     uint32_t id;
+};
+
+struct authtok_conv {
+    uint32_t authtok_size;
+    uint8_t *authtok;
+
+    uint32_t newauthtok_size;
+    uint8_t *newauthtok;
+
+    bool sent_old;
 };
 
 static int proxy_internal_conv(int num_msg, const struct pam_message **msgm,
@@ -446,6 +458,12 @@ int proxy_child_process_init(TALLOC_CTX *mem_ctx, const char *domain,
     ret = confdb_get_domain(cdb, domain, &ctx->domain);
     if (ret != EOK) {
         DEBUG(0, ("fatal error retrieving domain configuration\n"));
+        return ret;
+    }
+
+    ret = sysdb_domain_init(ctx, ev, ctx->domain, DB_PATH, &ctx->sysdb);
+    if (ret != EOK) {
+        DEBUG(0, ("fatal error opening cache database\n"));
         return ret;
     }
 

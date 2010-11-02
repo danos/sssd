@@ -147,6 +147,7 @@
 struct confdb_ctx;
 struct sysdb_ctx_list;
 struct sysdb_ctx;
+struct sysdb_handle;
 
 struct sysdb_attrs {
     int num;
@@ -217,18 +218,49 @@ char *sysdb_group_strdn(TALLOC_CTX *memctx,
 
 
 struct ldb_context *sysdb_ctx_get_ldb(struct sysdb_ctx *ctx);
+struct ldb_context *sysdb_handle_get_ldb(struct sysdb_handle *handle);
+struct sysdb_ctx *sysdb_handle_get_ctx(struct sysdb_handle *handle);
 
 int compare_ldb_dn_comp_num(const void *m1, const void *m2);
 
-/* functions to start and finish transactions */
-int sysdb_transaction_start(struct sysdb_ctx *ctx);
-int sysdb_transaction_commit(struct sysdb_ctx *ctx);
-int sysdb_transaction_cancel(struct sysdb_ctx *ctx);
+/* function to start and finish a transaction
+ * sysdb_transaction_send() will queue a request for a transaction
+ * when it is done it will call the tevent_req callback, which must
+ * retrieve the transaction handle using sysdb_transaction_recv()
+ *
+ * A transaction must be completed either by sending a commit:
+ * sysdb_transaction_commit_send()/sysdb_transaction_commit_recv()
+ * or by freeing the transaction handle (this will implicitly cause
+ * a transaction cancelation).
+ *
+ * Transactions are serialized, no other transaction or operation can be
+ * performed while a transaction is active. Multiple transaction request
+ * are queued internally and served in order.
+ */
+
+struct tevent_req *sysdb_transaction_send(TALLOC_CTX *mem_ctx,
+                                          struct tevent_context *ev,
+                                          struct sysdb_ctx *ctx);
+int sysdb_transaction_recv(struct tevent_req *req, TALLOC_CTX *memctx,
+                           struct sysdb_handle **handle);
+
+struct tevent_req *sysdb_transaction_commit_send(TALLOC_CTX *mem_ctx,
+                                                 struct tevent_context *ev,
+                                                 struct sysdb_handle *handle);
+int sysdb_transaction_commit_recv(struct tevent_req *req);
+
+
+/* default transaction commit receive function.
+ * This function does not use the request state so it is safe to use
+ * from any caller */
+void sysdb_transaction_complete(struct tevent_req *subreq);
+
 
 /* Sysdb initialization.
  * call this function *only* once to initialize the database and get
  * the sysdb ctx */
 int sysdb_init(TALLOC_CTX *mem_ctx,
+               struct tevent_context *ev,
                struct confdb_ctx *cdb,
                const char *alt_db_path,
                bool allow_upgrade,
@@ -236,6 +268,7 @@ int sysdb_init(TALLOC_CTX *mem_ctx,
 /* used to initialize only one domain database.
  * Do NOT use if sysdb_init has already been called */
 int sysdb_domain_init(TALLOC_CTX *mem_ctx,
+                      struct tevent_context *ev,
                       struct sss_domain_info *domain,
                       const char *db_path,
                       struct sysdb_ctx **_ctx);
@@ -244,6 +277,9 @@ int sysdb_get_ctx_from_list(struct sysdb_ctx_list *ctx_list,
                             struct sss_domain_info *domain,
                             struct sysdb_ctx **_ctx);
 
+/* FIXME: REMOVE */
+typedef void (*sysdb_callback_t)(void *, int, struct ldb_result *);
+
 /* functions to retrieve information from sysdb
  * These functions automatically starts an operation
  * therefore they cannot be called within a transaction */
@@ -251,48 +287,49 @@ int sysdb_getpwnam(TALLOC_CTX *mem_ctx,
                    struct sysdb_ctx *ctx,
                    struct sss_domain_info *domain,
                    const char *name,
-                   struct ldb_result **res);
+                   sysdb_callback_t fn, void *ptr);
 
 int sysdb_getpwuid(TALLOC_CTX *mem_ctx,
                    struct sysdb_ctx *ctx,
                    struct sss_domain_info *domain,
                    uid_t uid,
-                   struct ldb_result **res);
+                   sysdb_callback_t fn, void *ptr);
 
 int sysdb_enumpwent(TALLOC_CTX *mem_ctx,
                     struct sysdb_ctx *ctx,
                     struct sss_domain_info *domain,
-                    struct ldb_result **res);
+                    const char *expression,
+                    sysdb_callback_t fn, void *ptr);
 
 int sysdb_getgrnam(TALLOC_CTX *mem_ctx,
                    struct sysdb_ctx *ctx,
                    struct sss_domain_info *domain,
                    const char *name,
-                   struct ldb_result **res);
+                   sysdb_callback_t fn, void *ptr);
 
 int sysdb_getgrgid(TALLOC_CTX *mem_ctx,
                    struct sysdb_ctx *ctx,
                    struct sss_domain_info *domain,
                    gid_t gid,
-                   struct ldb_result **res);
+                   sysdb_callback_t fn, void *ptr);
 
 int sysdb_enumgrent(TALLOC_CTX *mem_ctx,
                     struct sysdb_ctx *ctx,
                     struct sss_domain_info *domain,
-                    struct ldb_result **res);
+                    sysdb_callback_t fn, void *ptr);
 
 int sysdb_initgroups(TALLOC_CTX *mem_ctx,
                      struct sysdb_ctx *ctx,
                      struct sss_domain_info *domain,
                      const char *name,
-                     struct ldb_result **res);
+                     sysdb_callback_t fn, void *ptr);
 
 int sysdb_get_user_attr(TALLOC_CTX *mem_ctx,
                         struct sysdb_ctx *ctx,
                         struct sss_domain_info *domain,
                         const char *name,
                         const char **attributes,
-                        struct ldb_result **res);
+                        sysdb_callback_t fn, void *ptr);
 
 
 /* functions that modify the databse
@@ -300,258 +337,332 @@ int sysdb_get_user_attr(TALLOC_CTX *mem_ctx,
  * See sysdb_transaction_send()/_recv() */
 
 /* Delete Entry */
-int sysdb_delete_entry(struct sysdb_ctx *ctx,
-                       struct ldb_dn *dn,
-                       bool ignore_not_found);
+struct tevent_req *sysdb_delete_entry_send(TALLOC_CTX *mem_ctx,
+                                           struct tevent_context *ev,
+                                           struct sysdb_handle *handle,
+                                           struct ldb_dn *dn,
+                                           bool ignore_not_found);
+int sysdb_delete_entry_recv(struct tevent_req *req);
 
 
-int sysdb_delete_recursive(TALLOC_CTX *mem_ctx,
-                           struct sysdb_ctx *ctx,
-                           struct ldb_dn *dn,
-                           bool ignore_not_found);
+struct tevent_req *sysdb_delete_recursive_send(TALLOC_CTX *mem_ctx,
+                                               struct tevent_context *ev,
+                                               struct sysdb_handle *handle,
+                                               struct ldb_dn *dn,
+                                               bool ignore_not_found);
+int sysdb_delete_recursive_recv(struct tevent_req *req);
 
 /* Search Entry */
-int sysdb_search_entry(TALLOC_CTX *mem_ctx,
-                       struct sysdb_ctx *ctx,
-                       struct ldb_dn *base_dn,
-                       int scope,
-                       const char *filter,
-                       const char **attrs,
-                       size_t *msgs_count,
-                       struct ldb_message ***msgs);
+struct tevent_req *sysdb_search_entry_send(TALLOC_CTX *mem_ctx,
+                                           struct tevent_context *ev,
+                                           struct sysdb_handle *handle,
+                                           struct ldb_dn *base_dn,
+                                           int scope,
+                                           const char *filter,
+                                           const char **attrs);
+int sysdb_search_entry_recv(struct tevent_req *req,
+                            TALLOC_CTX *mem_ctx,
+                            size_t *msgs_size,
+                            struct ldb_message ***msgs);
 
 /* Search User (by uid or name) */
-int sysdb_search_user_by_name(TALLOC_CTX *mem_ctx,
-                              struct sysdb_ctx *ctx,
-                              struct sss_domain_info *domain,
-                              const char *name,
-                              const char **attrs,
-                              struct ldb_message **msg);
-
-int sysdb_search_user_by_uid(TALLOC_CTX *mem_ctx,
-                             struct sysdb_ctx *ctx,
-                             struct sss_domain_info *domain,
-                             uid_t uid,
-                             const char **attrs,
-                             struct ldb_message **msg);
+struct tevent_req *sysdb_search_user_by_name_send(TALLOC_CTX *mem_ctx,
+                                                  struct tevent_context *ev,
+                                                  struct sysdb_ctx *sysdb,
+                                                  struct sysdb_handle *handle,
+                                                  struct sss_domain_info *domain,
+                                                  const char *name,
+                                                  const char **attrs);
+struct tevent_req *sysdb_search_user_by_uid_send(TALLOC_CTX *mem_ctx,
+                                                 struct tevent_context *ev,
+                                                 struct sysdb_ctx *sysdb,
+                                                 struct sysdb_handle *handle,
+                                                 struct sss_domain_info *domain,
+                                                 uid_t uid,
+                                                 const char **attrs);
+int sysdb_search_user_recv(struct tevent_req *req,
+                           TALLOC_CTX *mem_ctx,
+                           struct ldb_message **msg);
 
 /* Search Group (gy gid or name) */
-int sysdb_search_group_by_name(TALLOC_CTX *mem_ctx,
-                               struct sysdb_ctx *ctx,
-                               struct sss_domain_info *domain,
-                               const char *name,
-                               const char **attrs,
-                               struct ldb_message **msg);
-
-int sysdb_search_group_by_gid(TALLOC_CTX *mem_ctx,
-                              struct sysdb_ctx *ctx,
-                              struct sss_domain_info *domain,
-                              gid_t gid,
-                              const char **attrs,
-                              struct ldb_message **msg);
+struct tevent_req *sysdb_search_group_by_name_send(TALLOC_CTX *mem_ctx,
+                                                   struct tevent_context *ev,
+                                                   struct sysdb_ctx *sysdb,
+                                                   struct sysdb_handle *handle,
+                                                   struct sss_domain_info *domain,
+                                                   const char *name,
+                                                   const char **attrs);
+struct tevent_req *sysdb_search_group_by_gid_send(TALLOC_CTX *mem_ctx,
+                                                  struct tevent_context *ev,
+                                                  struct sysdb_ctx *sysdb,
+                                                  struct sysdb_handle *handle,
+                                                  struct sss_domain_info *domain,
+                                                  gid_t gid,
+                                                  const char **attrs);
+int sysdb_search_group_recv(struct tevent_req *req,
+                            TALLOC_CTX *mem_ctx,
+                            struct ldb_message **msg);
 
 /* Replace entry attrs */
-int sysdb_set_entry_attr(TALLOC_CTX *mem_ctx,
-                         struct sysdb_ctx *ctx,
-                         struct ldb_dn *entry_dn,
-                         struct sysdb_attrs *attrs,
-                         int mod_op);
+struct tevent_req *sysdb_set_entry_attr_send(TALLOC_CTX *mem_ctx,
+                                             struct tevent_context *ev,
+                                             struct sysdb_handle *handle,
+                                             struct ldb_dn *entry_dn,
+                                             struct sysdb_attrs *attrs,
+                                             int mod_op);
+int sysdb_set_entry_attr_recv(struct tevent_req *req);
 
 /* Replace user attrs */
-int sysdb_set_user_attr(TALLOC_CTX *mem_ctx,
-                        struct sysdb_ctx *ctx,
-                        struct sss_domain_info *domain,
-                        const char *name,
-                        struct sysdb_attrs *attrs,
-                        int mod_op);
+struct tevent_req *sysdb_set_user_attr_send(TALLOC_CTX *mem_ctx,
+                                            struct tevent_context *ev,
+                                            struct sysdb_handle *handle,
+                                            struct sss_domain_info *domain,
+                                            const char *name,
+                                            struct sysdb_attrs *attrs,
+                                            int mod_op);
+int sysdb_set_user_attr_recv(struct tevent_req *req);
 
 /* Replace group attrs */
-int sysdb_set_group_attr(TALLOC_CTX *mem_ctx,
-                         struct sysdb_ctx *ctx,
-                         struct sss_domain_info *domain,
-                         const char *name,
-                         struct sysdb_attrs *attrs,
-                         int mod_op);
+struct tevent_req *sysdb_set_group_attr_send(TALLOC_CTX *mem_ctx,
+                                             struct tevent_context *ev,
+                                             struct sysdb_handle *handle,
+                                             struct sss_domain_info *domain,
+                                             const char *name,
+                                             struct sysdb_attrs *attrs,
+                                             int mod_op);
+int sysdb_set_group_attr_recv(struct tevent_req *req);
 
 /* Allocate a new id */
-int sysdb_get_new_id(TALLOC_CTX *mem_ctx,
-                     struct sysdb_ctx *ctx,
-                     struct sss_domain_info *domain,
-                     uint32_t *id);
+struct tevent_req *sysdb_get_new_id_send(TALLOC_CTX *mem_ctx,
+                                         struct tevent_context *ev,
+                                         struct sysdb_handle *handle,
+                                         struct sss_domain_info *domain);
+int sysdb_get_new_id_recv(struct tevent_req *req, uint32_t *id);
 
 /* Add user (only basic attrs and w/o checks) */
-int sysdb_add_basic_user(TALLOC_CTX *mem_ctx,
-                         struct sysdb_ctx *ctx,
-                         struct sss_domain_info *domain,
-                         const char *name,
-                         uid_t uid, gid_t gid,
-                         const char *gecos,
-                         const char *homedir,
-                         const char *shell);
+struct tevent_req *sysdb_add_basic_user_send(TALLOC_CTX *mem_ctx,
+                                             struct tevent_context *ev,
+                                             struct sysdb_handle *handle,
+                                             struct sss_domain_info *domain,
+                                             const char *name,
+                                             uid_t uid, gid_t gid,
+                                             const char *gecos,
+                                             const char *homedir,
+                                             const char *shell);
+int sysdb_add_basic_user_recv(struct tevent_req *req);
 
 /* Add user (all checks) */
-int sysdb_add_user(TALLOC_CTX *mem_ctx,
-                   struct sysdb_ctx *ctx,
-                   struct sss_domain_info *domain,
-                   const char *name,
-                   uid_t uid, gid_t gid,
-                   const char *gecos,
-                   const char *homedir,
-                   const char *shell,
-                   struct sysdb_attrs *attrs,
-                   int cache_timeout);
+struct tevent_req *sysdb_add_user_send(TALLOC_CTX *mem_ctx,
+                                       struct tevent_context *ev,
+                                       struct sysdb_handle *handle,
+                                       struct sss_domain_info *domain,
+                                       const char *name,
+                                       uid_t uid, gid_t gid,
+                                       const char *gecos,
+                                       const char *homedir,
+                                       const char *shell,
+                                       struct sysdb_attrs *attrs,
+                                       int cache_timeout);
+int sysdb_add_user_recv(struct tevent_req *req);
 
 /* Add group (only basic attrs and w/o checks) */
-int sysdb_add_basic_group(TALLOC_CTX *mem_ctx,
-                          struct sysdb_ctx *ctx,
-                          struct sss_domain_info *domain,
-                          const char *name, gid_t gid);
+struct tevent_req *sysdb_add_basic_group_send(TALLOC_CTX *mem_ctx,
+                                              struct tevent_context *ev,
+                                              struct sysdb_handle *handle,
+                                              struct sss_domain_info *domain,
+                                              const char *name, gid_t gid);
+int sysdb_add_basic_group_recv(struct tevent_req *req);
 
 /* Add group (all checks) */
-int sysdb_add_group(TALLOC_CTX *mem_ctx,
-                    struct sysdb_ctx *ctx,
-                    struct sss_domain_info *domain,
-                    const char *name, gid_t gid,
-                    struct sysdb_attrs *attrs,
-                    int cache_timeout);
+struct tevent_req *sysdb_add_group_send(TALLOC_CTX *mem_ctx,
+                                        struct tevent_context *ev,
+                                        struct sysdb_handle *handle,
+                                        struct sss_domain_info *domain,
+                                        const char *name, gid_t gid,
+                                        struct sysdb_attrs *attrs,
+                                        int cache_timeout);
+int sysdb_add_group_recv(struct tevent_req *req);
 
 /* mod_op must be either LDB_FLAG_MOD_ADD or LDB_FLAG_MOD_DELETE */
-int sysdb_mod_group_member(TALLOC_CTX *mem_ctx,
-                           struct sysdb_ctx *ctx,
-                           struct ldb_dn *member_dn,
-                           struct ldb_dn *group_dn,
-                           int mod_op);
+struct tevent_req *sysdb_mod_group_member_send(TALLOC_CTX *mem_ctx,
+                                               struct tevent_context *ev,
+                                               struct sysdb_handle *handle,
+                                               struct ldb_dn *member_dn,
+                                               struct ldb_dn *group_dn,
+                                               int mod_op);
+int sysdb_mod_group_member_recv(struct tevent_req *req);
 
-int sysdb_store_user(TALLOC_CTX *mem_ctx,
-                     struct sysdb_ctx *ctx,
-                     struct sss_domain_info *domain,
-                     const char *name,
-                     const char *pwd,
-                     uid_t uid, gid_t gid,
-                     const char *gecos,
-                     const char *homedir,
-                     const char *shell,
-                     struct sysdb_attrs *attrs,
-                     uint64_t cache_timeout);
+int sysdb_set_group_gid(struct sysdb_handle *handle,
+                        struct sss_domain_info *domain,
+                        const char *name, gid_t gid,
+                        sysdb_callback_t fn, void *pvt);
 
-int sysdb_store_group(TALLOC_CTX *mem_ctx,
-                      struct sysdb_ctx *ctx,
-                      struct sss_domain_info *domain,
-                      const char *name,
-                      gid_t gid,
-                      struct sysdb_attrs *attrs,
-                      uint64_t cache_timeout);
+struct tevent_req *sysdb_store_user_send(TALLOC_CTX *mem_ctx,
+                                         struct tevent_context *ev,
+                                         struct sysdb_handle *handle,
+                                         struct sss_domain_info *domain,
+                                         const char *name,
+                                         const char *pwd,
+                                         uid_t uid, gid_t gid,
+                                         const char *gecos,
+                                         const char *homedir,
+                                         const char *shell,
+                                         struct sysdb_attrs *attrs,
+                                         uint64_t cache_timeout);
+int sysdb_store_user_recv(struct tevent_req *req);
 
-int sysdb_add_group_member(TALLOC_CTX *mem_ctx,
-                           struct sysdb_ctx *ctx,
-                           struct sss_domain_info *domain,
-                           const char *group,
-                           const char *user);
+struct tevent_req *sysdb_store_group_send(TALLOC_CTX *mem_ctx,
+                                          struct tevent_context *ev,
+                                          struct sysdb_handle *handle,
+                                          struct sss_domain_info *domain,
+                                          const char *name,
+                                          gid_t gid,
+                                          struct sysdb_attrs *attrs,
+                                          uint64_t cache_timeout);
+int sysdb_store_group_recv(struct tevent_req *req);
 
-int sysdb_remove_group_member(TALLOC_CTX *mem_ctx,
-                              struct sysdb_ctx *ctx,
-                              struct sss_domain_info *domain,
-                              const char *group,
-                              const char *user);
-errno_t sysdb_update_members(struct sysdb_ctx *sysdb,
-                             struct sss_domain_info *domain,
-                             const char *user,
-                             const char **add_groups,
-                             const char **del_groups);
+struct tevent_req *sysdb_add_group_member_send(TALLOC_CTX *mem_ctx,
+                                               struct tevent_context *ev,
+                                               struct sysdb_handle *handle,
+                                               struct sss_domain_info *domain,
+                                               const char *group,
+                                               const char *member);
+int sysdb_add_group_member_recv(struct tevent_req *req);
+
+struct tevent_req *sysdb_remove_group_member_send(TALLOC_CTX *mem_ctx,
+                                                  struct tevent_context *ev,
+                                                  struct sysdb_handle *handle,
+                                                  struct sss_domain_info *domain,
+                                                  const char *group,
+                                                  const char *member);
+int sysdb_remove_group_member_recv(struct tevent_req *req);
+
+
+struct tevent_req * sysdb_update_members_send(TALLOC_CTX *mem_ctx,
+                                              struct tevent_context *ev,
+                                              struct sysdb_handle *handle,
+                                              struct sss_domain_info *domain,
+                                              char *user,
+                                              char **add_groups,
+                                              char **del_groups);
+errno_t sysdb_update_members_recv(struct tevent_req *req);
 
 /* Password caching function.
  * If you are in a transaction ignore sysdb and pass in the handle.
  * If you are not in a transaction pass NULL in handle and provide sysdb,
  * in this case a transaction will be automatically started and the
  * function will be completely wrapped in it's own sysdb transaction */
-int sysdb_cache_password(TALLOC_CTX *mem_ctx,
-                         struct sysdb_ctx *sysdb,
-                         struct sss_domain_info *domain,
-                         const char *username,
-                         const char *password);
+struct tevent_req *sysdb_cache_password_send(TALLOC_CTX *mem_ctx,
+                                             struct tevent_context *ev,
+                                             struct sysdb_ctx *sysdb,
+                                             struct sysdb_handle *handle,
+                                             struct sss_domain_info *domain,
+                                             const char *username,
+                                             const char *password);
+int sysdb_cache_password_recv(struct tevent_req *req);
 
-errno_t check_failed_login_attempts(TALLOC_CTX *mem_ctx,
-                                    struct confdb_ctx *cdb,
+
+errno_t check_failed_login_attempts(TALLOC_CTX *mem_ctx, struct confdb_ctx *cdb,
                                     struct ldb_message *ldb_msg,
                                     uint32_t *failed_login_attempts,
                                     time_t *delayed_until);
-int sysdb_cache_auth(TALLOC_CTX *mem_ctx,
-                     struct sysdb_ctx *sysdb,
-                     struct sss_domain_info *domain,
-                     const char *name,
-                     const uint8_t *authtok,
-                     size_t authtok_size,
-                     struct confdb_ctx *cdb,
-                     bool just_check,
-                     time_t *_expire_date,
-                     time_t *_delayed_until);
+struct tevent_req *sysdb_cache_auth_send(TALLOC_CTX *mem_ctx,
+                                         struct tevent_context *ev,
+                                         struct sysdb_ctx *sysdb,
+                                         struct sss_domain_info *domain,
+                                         const char *name,
+                                         const uint8_t *authtok,
+                                         size_t authtok_size,
+                                         struct confdb_ctx *cdb,
+                                         bool just_check);
+int sysdb_cache_auth_recv(struct tevent_req *req, time_t *expire_date,
+                          time_t *delayed_until);
 
-int sysdb_store_custom(TALLOC_CTX *mem_ctx,
-                       struct sysdb_ctx *ctx,
-                       struct sss_domain_info *domain,
-                       const char *object_name,
-                       const char *subtree_name,
-                       struct sysdb_attrs *attrs);
+struct tevent_req *sysdb_store_custom_send(TALLOC_CTX *mem_ctx,
+                                         struct tevent_context *ev,
+                                         struct sysdb_handle *handle,
+                                         struct sss_domain_info *domain,
+                                         const char *object_name,
+                                         const char *subtree_name,
+                                         struct sysdb_attrs *attrs);
+int sysdb_store_custom_recv(struct tevent_req *req);
 
-int sysdb_search_custom(TALLOC_CTX *mem_ctx,
-                        struct sysdb_ctx *sysdb,
-                        struct sss_domain_info *domain,
-                        const char *filter,
-                        const char *subtree_name,
-                        const char **attrs,
-                        size_t *msgs_count,
-                        struct ldb_message ***msgs);
+struct tevent_req *sysdb_search_custom_send(TALLOC_CTX *mem_ctx,
+                                            struct tevent_context *ev,
+                                            struct sysdb_ctx *sysdb,
+                                            struct sysdb_handle *handle,
+                                            struct sss_domain_info *domain,
+                                            const char *filter,
+                                            const char *subtree_name,
+                                            const char **attrs);
+struct tevent_req *sysdb_search_custom_by_name_send(TALLOC_CTX *mem_ctx,
+                                                    struct tevent_context *ev,
+                                                    struct sysdb_ctx *sysdb,
+                                                    struct sysdb_handle *handle,
+                                                    struct sss_domain_info *domain,
+                                                    const char *object_name,
+                                                    const char *subtree_name,
+                                                    const char **attrs);
+int sysdb_search_custom_recv(struct tevent_req *req,
+                              TALLOC_CTX *mem_ctx,
+                              size_t *msgs_count,
+                              struct ldb_message ***msg);
 
-int sysdb_search_custom_by_name(TALLOC_CTX *mem_ctx,
-                                struct sysdb_ctx *sysdb,
-                                struct sss_domain_info *domain,
-                                const char *object_name,
-                                const char *subtree_name,
-                                const char **attrs,
-                                size_t *_count,
-                                struct ldb_message ***_msgs);
+struct tevent_req *sysdb_delete_custom_send(TALLOC_CTX *mem_ctx,
+                                             struct tevent_context *ev,
+                                             struct sysdb_handle *handle,
+                                             struct sss_domain_info *domain,
+                                             const char *object_name,
+                                             const char *subtree_name);
+int sysdb_delete_custom_recv(struct tevent_req *req);
 
-int sysdb_delete_custom(TALLOC_CTX *mem_ctx,
-                        struct sysdb_ctx *ctx,
-                        struct sss_domain_info *domain,
-                        const char *object_name,
-                        const char *subtree_name);
+struct tevent_req *sysdb_asq_search_send(TALLOC_CTX *mem_ctx,
+                                         struct tevent_context *ev,
+                                         struct sysdb_ctx *sysdb,
+                                         struct sysdb_handle *handle,
+                                         struct sss_domain_info *domain,
+                                         struct ldb_dn *base_dn,
+                                         const char *expression,
+                                         const char *asq_attribute,
+                                         const char **attrs);
+int sysdb_asq_search_recv(struct tevent_req *req, TALLOC_CTX *mem_ctx,
+                          size_t *msgs_count, struct ldb_message ***msgs);
 
-int sysdb_asq_search(TALLOC_CTX *mem_ctx,
-                     struct sysdb_ctx *sysdb,
-                     struct sss_domain_info *domain,
-                     struct ldb_dn *base_dn,
-                     const char *expression,
-                     const char *asq_attribute,
-                     const char **attrs,
-                     size_t *msgs_count,
-                     struct ldb_message ***msgs);
+struct tevent_req *sysdb_search_users_send(TALLOC_CTX *mem_ctx,
+                                           struct tevent_context *ev,
+                                           struct sysdb_ctx *sysdb,
+                                           struct sysdb_handle *handle,
+                                           struct sss_domain_info *domain,
+                                           const char *sub_filter,
+                                           const char **attrs);
+int sysdb_search_users_recv(struct tevent_req *req, TALLOC_CTX *mem_ctx,
+                            size_t *msgs_count, struct ldb_message ***msgs);
 
-int sysdb_search_users(TALLOC_CTX *mem_ctx,
-                       struct sysdb_ctx *sysdb,
-                       struct sss_domain_info *domain,
-                       const char *sub_filter,
-                       const char **attrs,
-                       size_t *msgs_count,
-                       struct ldb_message ***msgs);
+struct tevent_req *sysdb_delete_user_send(TALLOC_CTX *mem_ctx,
+                                          struct tevent_context *ev,
+                                          struct sysdb_ctx *sysdb,
+                                          struct sysdb_handle *handle,
+                                          struct sss_domain_info *domain,
+                                          const char *name, uid_t uid);
+int sysdb_delete_user_recv(struct tevent_req *req);
 
-int sysdb_delete_user(TALLOC_CTX *mem_ctx,
-                      struct sysdb_ctx *sysdb,
-                      struct sss_domain_info *domain,
-                      const char *name, uid_t uid);
+struct tevent_req *sysdb_search_groups_send(TALLOC_CTX *mem_ctx,
+                                            struct tevent_context *ev,
+                                            struct sysdb_ctx *sysdb,
+                                            struct sysdb_handle *handle,
+                                            struct sss_domain_info *domain,
+                                            const char *sub_filter,
+                                            const char **attrs);
+int sysdb_search_groups_recv(struct tevent_req *req, TALLOC_CTX *mem_ctx,
+                             size_t *msgs_count, struct ldb_message ***msgs);
 
-int sysdb_search_groups(TALLOC_CTX *mem_ctx,
-                        struct sysdb_ctx *sysdb,
-                        struct sss_domain_info *domain,
-                        const char *sub_filter,
-                        const char **attrs,
-                        size_t *msgs_count,
-                        struct ldb_message ***msgs);
-
-int sysdb_delete_group(TALLOC_CTX *mem_ctx,
-                       struct sysdb_ctx *sysdb,
-                       struct sss_domain_info *domain,
-                       const char *name, gid_t gid);
+struct tevent_req *sysdb_delete_group_send(TALLOC_CTX *mem_ctx,
+                                           struct tevent_context *ev,
+                                           struct sysdb_ctx *sysdb,
+                                           struct sysdb_handle *handle,
+                                           struct sss_domain_info *domain,
+                                           const char *name, gid_t gid);
+int sysdb_delete_group_recv(struct tevent_req *req);
 
 errno_t sysdb_attrs_to_list(TALLOC_CTX *memctx,
                             struct sysdb_attrs **attrs,

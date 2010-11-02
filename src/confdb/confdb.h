@@ -60,7 +60,6 @@
 #define CONFDB_MONITOR_ACTIVE_DOMAINS "domains"
 #define CONFDB_MONITOR_NAME_REGEX   "re_expression"
 #define CONFDB_MONITOR_FULL_NAME_FORMAT "full_name_format"
-#define CONFDB_MONITOR_TRY_INOTIFY "try_inotify"
 
 /* NSS */
 #define CONFDB_NSS_CONF_ENTRY "config/nss"
@@ -102,7 +101,6 @@
 #define CONFDB_DOMAIN_FQ "use_fully_qualified_names"
 #define CONFDB_DOMAIN_ENTRY_CACHE_TIMEOUT "entry_cache_timeout"
 #define CONFDB_DOMAIN_RESOLV_TIMEOUT "dns_resolver_timeout"
-#define CONFDB_DOMAIN_DNS_DISCOVERY_NAME "dns_discovery_domain"
 #define CONFDB_DOMAIN_FAMILY_ORDER "lookup_family_order"
 #define CONFDB_DOMAIN_ACCOUNT_CACHE_EXPIRATION "account_cache_expiration"
 

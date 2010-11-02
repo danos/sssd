@@ -42,7 +42,7 @@ struct dp_option ipa_def_ldap_opts[] = {
     { "ldap_default_bind_dn", DP_OPT_STRING, NULL_STRING, NULL_STRING },
     { "ldap_default_authtok_type", DP_OPT_STRING, NULL_STRING, NULL_STRING},
     { "ldap_default_authtok", DP_OPT_BLOB, NULL_BLOB, NULL_BLOB },
-    { "ldap_search_timeout", DP_OPT_NUMBER, { .number = 60 }, NULL_NUMBER },
+    { "ldap_search_timeout", DP_OPT_NUMBER, { .number = 5 }, NULL_NUMBER },
     { "ldap_network_timeout", DP_OPT_NUMBER, { .number = 6 }, NULL_NUMBER },
     { "ldap_opt_timeout", DP_OPT_NUMBER, { .number = 6 }, NULL_NUMBER },
     { "ldap_tls_reqcert", DP_OPT_STRING, { "hard" }, NULL_STRING },
@@ -53,7 +53,6 @@ struct dp_option ipa_def_ldap_opts[] = {
     { "ldap_group_search_scope", DP_OPT_STRING, { "sub" }, NULL_STRING },
     { "ldap_group_search_filter", DP_OPT_STRING, NULL_STRING, NULL_STRING },
     { "ldap_schema", DP_OPT_STRING, { "ipa_v1" }, NULL_STRING },
-    { "ldap_offline_timeout", DP_OPT_NUMBER, { .number = 60 }, NULL_NUMBER },
     { "ldap_force_upper_case_realm", DP_OPT_BOOL, BOOL_TRUE, BOOL_TRUE },
     { "ldap_enumeration_refresh_timeout", DP_OPT_NUMBER, { .number = 300 }, NULL_NUMBER },
     { "ldap_purge_cache_timeout", DP_OPT_NUMBER, { .number = 3600 }, NULL_NUMBER },
@@ -71,8 +70,8 @@ struct dp_option ipa_def_ldap_opts[] = {
     { "ldap_referrals", DP_OPT_BOOL, BOOL_TRUE, BOOL_TRUE },
     { "account_cache_expiration", DP_OPT_NUMBER, { .number = 0 }, NULL_NUMBER },
     { "ldap_dns_service_name", DP_OPT_STRING, { SSS_LDAP_SRV_NAME }, NULL_STRING },
-    { "ldap_krb5_ticket_lifetime", DP_OPT_NUMBER, { .number = (24 * 60 * 60) }, NULL_NUMBER },
-    { "ldap_access_filter", DP_OPT_STRING, NULL_STRING, NULL_STRING }
+    { "ldap_access_filter", DP_OPT_STRING, NULL_STRING, NULL_STRING },
+    { "ldap_krb5_ticket_lifetime", DP_OPT_NUMBER, { .number = (24 * 60 * 60) }, NULL_NUMBER }
 };
 
 struct sdap_attr_map ipa_attr_map[] = {
@@ -121,6 +120,7 @@ struct dp_option ipa_def_krb5_opts[] = {
     { "krb5_realm", DP_OPT_STRING, NULL_STRING, NULL_STRING },
     { "krb5_ccachedir", DP_OPT_STRING, { "/tmp" }, NULL_STRING },
     { "krb5_ccname_template", DP_OPT_STRING, { "FILE:%d/krb5cc_%U_XXXXXX" }, NULL_STRING},
+    { "krb5_changepw_principal", DP_OPT_STRING, { "kadmin/changepw" }, NULL_STRING },
     { "krb5_auth_timeout", DP_OPT_NUMBER, { .number = 15 }, NULL_NUMBER },
     { "krb5_keytab", DP_OPT_STRING, { "/etc/krb5.keytab" }, NULL_STRING },
     { "krb5_validate", DP_OPT_BOOL, BOOL_TRUE, BOOL_TRUE },
@@ -570,7 +570,7 @@ int ipa_service_init(TALLOC_CTX *memctx, struct be_ctx *ctx,
 
         if (be_fo_is_srv_identifier(list[i])) {
             ret = be_fo_add_srv_server(ctx, "IPA", "ldap",
-                                       FO_PROTO_TCP, NULL);
+                                       FO_PROTO_TCP, ctx->domain->name, NULL);
             if (ret) {
                 DEBUG(0, ("Failed to add server\n"));
                 goto done;

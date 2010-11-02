@@ -85,6 +85,16 @@ struct ldb_context *sysdb_ctx_get_ldb(struct sysdb_ctx *ctx)
     return ctx->ldb;
 }
 
+struct ldb_context *sysdb_handle_get_ldb(struct sysdb_handle *handle)
+{
+    return handle->ctx->ldb;
+}
+
+struct sysdb_ctx *sysdb_handle_get_ctx(struct sysdb_handle *handle)
+{
+    return handle->ctx;
+}
+
 struct sysdb_attrs *sysdb_new_attrs(TALLOC_CTX *memctx)
 {
     return talloc_zero(memctx, struct sysdb_attrs);
@@ -473,44 +483,334 @@ int sysdb_error_to_errno(int ldberr)
     }
 }
 
+/* =Internal-Operations-Queue============================================= */
+
+static void sysdb_run_operation(struct tevent_context *ev,
+                                struct tevent_timer *te,
+                                struct timeval tv, void *pvt)
+{
+    struct sysdb_handle *handle = talloc_get_type(pvt, struct sysdb_handle);
+
+    tevent_req_done(handle->subreq);
+}
+
+static void sysdb_schedule_operation(struct sysdb_handle *handle)
+{
+    struct timeval tv = { 0, 0 };
+    struct tevent_timer *te;
+
+    te = tevent_add_timer(handle->ctx->ev, handle, tv,
+                          sysdb_run_operation, handle);
+    if (!te) {
+        DEBUG(1, ("Failed to add critical timer to run next handle!\n"));
+    }
+}
+
+static int sysdb_handle_destructor(void *mem)
+{
+    struct sysdb_handle *handle = talloc_get_type(mem, struct sysdb_handle);
+    bool start_next = false;
+    int ret;
+
+    /* if this was the current op start next */
+    if (handle->ctx->queue == handle) {
+        start_next = true;
+    }
+
+    DLIST_REMOVE(handle->ctx->queue, handle);
+
+    if (start_next && handle->ctx->queue) {
+        /* run next */
+        sysdb_schedule_operation(handle->ctx->queue);
+    }
+
+    if (handle->transaction_active) {
+        ret = ldb_transaction_cancel(handle->ctx->ldb);
+        if (ret != LDB_SUCCESS) {
+            DEBUG(1, ("Failed to cancel ldb transaction! (%d)\n", ret));
+        }
+        /* FIXME: abort() ? */
+        handle->transaction_active = false;
+    }
+
+    return 0;
+}
+
+struct sysdb_get_handle_state {
+    struct tevent_context *ev;
+    struct sysdb_ctx *ctx;
+
+    struct sysdb_handle *handle;
+};
+
+struct tevent_req *sysdb_get_handle_send(TALLOC_CTX *mem_ctx,
+                                         struct tevent_context *ev,
+                                         struct sysdb_ctx *ctx)
+{
+    struct tevent_req *req;
+    struct sysdb_get_handle_state *state;
+    struct sysdb_handle *handle;
+
+    req = tevent_req_create(mem_ctx, &state, struct sysdb_get_handle_state);
+    if (!req) return NULL;
+
+    state->ev = ev;
+    state->ctx = ctx;
+
+    handle = talloc_zero(state, struct sysdb_handle);
+    if (!handle) {
+        talloc_zfree(req);
+        return NULL;
+    }
+
+    handle->ctx = ctx;
+    handle->subreq = req;
+
+    talloc_set_destructor((TALLOC_CTX *)handle, sysdb_handle_destructor);
+
+    DLIST_ADD_END(ctx->queue, handle, struct sysdb_handle *);
+
+    if (ctx->queue == handle) {
+        /* this is the first in the queue, schedule an immediate run */
+        sysdb_schedule_operation(handle);
+    }
+
+    state->handle = handle;
+
+    return req;
+}
+
+static int sysdb_get_handle_recv(struct tevent_req *req, TALLOC_CTX *memctx,
+                                 struct sysdb_handle **handle)
+{
+    struct sysdb_get_handle_state *state = tevent_req_data(req,
+                                             struct sysdb_get_handle_state);
+
+    TEVENT_REQ_RETURN_ON_ERROR(req);
+
+    *handle = talloc_steal(memctx, state->handle);
+    if (!*handle) return ENOMEM;
+
+    return EOK;
+}
+
 /* =Transactions========================================================== */
 
-int sysdb_transaction_start(struct sysdb_ctx *ctx)
+struct sysdb_transaction_state {
+    struct tevent_context *ev;
+    struct sysdb_ctx *ctx;
+
+    struct sysdb_handle *handle;
+};
+
+static void sysdb_transaction_done(struct tevent_req *subreq);
+
+struct tevent_req *sysdb_transaction_send(TALLOC_CTX *mem_ctx,
+                                          struct tevent_context *ev,
+                                          struct sysdb_ctx *ctx)
 {
+    struct tevent_req *req, *subreq;
+    struct sysdb_transaction_state *state;
+
+    req = tevent_req_create(mem_ctx, &state, struct sysdb_transaction_state);
+    if (!req) return NULL;
+
+    state->ev = ev;
+    state->ctx = ctx;
+
+    subreq = sysdb_get_handle_send(state, ev, ctx);
+    if (!subreq) {
+        talloc_zfree(req);
+        return NULL;
+    }
+
+    tevent_req_set_callback(subreq, sysdb_transaction_done, req);
+
+    return req;
+}
+
+static void sysdb_transaction_done(struct tevent_req *subreq)
+{
+    struct tevent_req *req = tevent_req_callback_data(subreq,
+                                                      struct tevent_req);
+    struct sysdb_transaction_state *state = tevent_req_data(req,
+                                         struct sysdb_transaction_state);
     int ret;
 
-    ret = ldb_transaction_start(ctx->ldb);
+    ret = sysdb_get_handle_recv(subreq, state, &state->handle);
+    talloc_zfree(subreq);
+    if (ret) {
+        tevent_req_error(req, ret);
+        return;
+    }
+
+    ret = ldb_transaction_start(state->ctx->ldb);
     if (ret != LDB_SUCCESS) {
         DEBUG(1, ("Failed to start ldb transaction! (%d)\n", ret));
+        tevent_req_error(req, sysdb_error_to_errno(ret));
+        return;
     }
-    return sysdb_error_to_errno(ret);
+    state->handle->transaction_active = true;
+
+    tevent_req_done(req);
 }
 
-int sysdb_transaction_commit(struct sysdb_ctx *ctx)
+int sysdb_transaction_recv(struct tevent_req *req, TALLOC_CTX *memctx,
+                           struct sysdb_handle **handle)
 {
+    struct sysdb_transaction_state *state = tevent_req_data(req,
+                                         struct sysdb_transaction_state);
+
+    TEVENT_REQ_RETURN_ON_ERROR(req);
+
+    *handle = talloc_steal(memctx, state->handle);
+    if (!*handle) return ENOMEM;
+
+    return EOK;
+}
+
+struct tevent_req *sysdb_transaction_commit_send(TALLOC_CTX *mem_ctx,
+                                                 struct tevent_context *ev,
+                                                 struct sysdb_handle *handle)
+{
+    struct tevent_req *req;
+    struct sysdb_transaction_state *state;
     int ret;
 
-    ret = ldb_transaction_commit(ctx->ldb);
+    req = tevent_req_create(mem_ctx, &state, struct sysdb_transaction_state);
+    if (!req) return NULL;
+
+    state->ev = ev;
+    state->ctx = handle->ctx;
+    state->handle = handle;
+
+    ret = ldb_transaction_commit(handle->ctx->ldb);
     if (ret != LDB_SUCCESS) {
         DEBUG(1, ("Failed to commit ldb transaction! (%d)\n", ret));
+        tevent_req_error(req, sysdb_error_to_errno(ret));
     }
-    return sysdb_error_to_errno(ret);
+    handle->transaction_active = false;
+
+    /* the following may seem weird but it is actually fine.
+     * _done() will not actually call the callback as it will not be set
+     * until we return. But it will mark the request as done.
+     * _post() will trigger the callback as it schedules after we returned
+     * and actually set the callback */
+    tevent_req_done(req);
+    tevent_req_post(req, ev);
+    return req;
 }
 
-int sysdb_transaction_cancel(struct sysdb_ctx *ctx)
+int sysdb_transaction_commit_recv(struct tevent_req *req)
 {
+    struct sysdb_transaction_state *state = tevent_req_data(req,
+                                         struct sysdb_transaction_state);
+
+    /* finally free handle
+     * this will also trigger the next transaction in the queue if any */
+    talloc_zfree(state->handle);
+
+    TEVENT_REQ_RETURN_ON_ERROR(req);
+
+    return EOK;
+}
+
+/* default transaction commit receive function.
+ * This function does not use the request state so it is safe to use
+ * from any caller */
+void sysdb_transaction_complete(struct tevent_req *subreq)
+{
+    struct tevent_req *req = tevent_req_callback_data(subreq,
+                                                      struct tevent_req);
     int ret;
 
-    ret = ldb_transaction_cancel(ctx->ldb);
-    if (ret != LDB_SUCCESS) {
-        DEBUG(1, ("Failed to cancel ldb transaction! (%d)\n", ret));
+    ret = sysdb_transaction_commit_recv(subreq);
+    talloc_zfree(subreq);
+    if (ret) {
+        tevent_req_error(req, ret);
+        return;
     }
-    return sysdb_error_to_errno(ret);
+
+    tevent_req_done(req);
+}
+
+
+/* =Operations============================================================ */
+
+struct sysdb_operation_state {
+    struct tevent_context *ev;
+    struct sysdb_ctx *ctx;
+
+    struct sysdb_handle *handle;
+};
+
+static void sysdb_operation_process(struct tevent_req *subreq);
+
+struct tevent_req *sysdb_operation_send(TALLOC_CTX *mem_ctx,
+                                        struct tevent_context *ev,
+                                        struct sysdb_ctx *ctx)
+{
+    struct tevent_req *req, *subreq;
+    struct sysdb_operation_state *state;
+
+    req = tevent_req_create(mem_ctx, &state, struct sysdb_operation_state);
+    if (!req) return NULL;
+
+    state->ev = ev;
+    state->ctx = ctx;
+
+    subreq = sysdb_get_handle_send(state, ev, ctx);
+    if (!subreq) {
+        talloc_zfree(req);
+        return NULL;
+    }
+
+    tevent_req_set_callback(subreq, sysdb_operation_process, req);
+
+    return req;
+}
+
+static void sysdb_operation_process(struct tevent_req *subreq)
+{
+    struct tevent_req *req = tevent_req_callback_data(subreq,
+                                                      struct tevent_req);
+    struct sysdb_operation_state *state = tevent_req_data(req,
+                                         struct sysdb_operation_state);
+    int ret;
+
+    ret = sysdb_get_handle_recv(subreq, state, &state->handle);
+    talloc_zfree(subreq);
+    if (ret) {
+        tevent_req_error(req, ret);
+        return;
+    }
+
+    tevent_req_done(req);
+}
+
+int sysdb_operation_recv(struct tevent_req *req, TALLOC_CTX *memctx,
+                         struct sysdb_handle **handle)
+{
+    struct sysdb_operation_state *state = tevent_req_data(req,
+                                             struct sysdb_operation_state);
+
+    TEVENT_REQ_RETURN_ON_ERROR(req);
+
+    *handle = talloc_steal(memctx, state->handle);
+    if (!*handle) return ENOMEM;
+
+    return EOK;
+}
+
+void sysdb_operation_done(struct sysdb_handle *handle)
+{
+    talloc_free(handle);
 }
 
 /* =Initialization======================================================== */
 
 static int sysdb_domain_init_internal(TALLOC_CTX *mem_ctx,
+                                      struct tevent_context *ev,
                                       struct sss_domain_info *domain,
                                       const char *db_path,
                                       bool allow_upgrade,
@@ -696,6 +996,7 @@ done:
 }
 
 static int sysdb_check_upgrade_02(TALLOC_CTX *mem_ctx,
+                                  struct tevent_context *ev,
                                   struct sss_domain_info *domains,
                                   const char *db_path)
 {
@@ -725,7 +1026,7 @@ static int sysdb_check_upgrade_02(TALLOC_CTX *mem_ctx,
         goto exit;
     }
 
-    ldb = ldb_init(tmp_ctx, NULL);
+    ldb = ldb_init(tmp_ctx, ev);
     if (!ldb) {
         ret = EIO;
         goto exit;
@@ -830,7 +1131,7 @@ static int sysdb_check_upgrade_02(TALLOC_CTX *mem_ctx,
     }
 
     /* reopen */
-    ldb = ldb_init(tmp_ctx, NULL);
+    ldb = ldb_init(tmp_ctx, ev);
     if (!ldb) {
         ret = EIO;
         goto exit;
@@ -870,7 +1171,7 @@ static int sysdb_check_upgrade_02(TALLOC_CTX *mem_ctx,
         }
 
         /* create new dom db */
-        ret = sysdb_domain_init_internal(tmp_ctx, dom,
+        ret = sysdb_domain_init_internal(tmp_ctx, ev, dom,
                                          db_path, false, &ctx);
         if (ret != EOK) {
             goto done;
@@ -1257,6 +1558,7 @@ done:
 }
 
 static int sysdb_domain_init_internal(TALLOC_CTX *mem_ctx,
+                                      struct tevent_context *ev,
                                       struct sss_domain_info *domain,
                                       const char *db_path,
                                       bool allow_upgrade,
@@ -1277,6 +1579,7 @@ static int sysdb_domain_init_internal(TALLOC_CTX *mem_ctx,
     if (!ctx) {
         return ENOMEM;
     }
+    ctx->ev = ev;
     ctx->domain = domain;
 
     /* The local provider s the only true MPG,
@@ -1293,7 +1596,7 @@ static int sysdb_domain_init_internal(TALLOC_CTX *mem_ctx,
     }
     DEBUG(5, ("DB File for %s: %s\n", domain->name, ctx->ldb_file));
 
-    ctx->ldb = ldb_init(ctx, NULL);
+    ctx->ldb = ldb_init(ctx, ev);
     if (!ctx->ldb) {
         return EIO;
     }
@@ -1493,6 +1796,7 @@ done:
 }
 
 int sysdb_init(TALLOC_CTX *mem_ctx,
+               struct tevent_context *ev,
                struct confdb_ctx *cdb,
                const char *alt_db_path,
                bool allow_upgrade,
@@ -1502,6 +1806,8 @@ int sysdb_init(TALLOC_CTX *mem_ctx,
     struct sss_domain_info *domains, *dom;
     struct sysdb_ctx *ctx;
     int ret;
+
+    if (!ev) return EINVAL;
 
     ctx_list = talloc_zero(mem_ctx, struct sysdb_ctx_list);
     if (!ctx_list) {
@@ -1527,7 +1833,7 @@ int sysdb_init(TALLOC_CTX *mem_ctx,
 
     if (allow_upgrade) {
         /* check if we have an old sssd.ldb to upgrade */
-        ret = sysdb_check_upgrade_02(ctx_list, domains,
+        ret = sysdb_check_upgrade_02(ctx_list, ev, domains,
                                      ctx_list->db_path);
         if (ret != EOK) {
             talloc_zfree(ctx_list);
@@ -1545,7 +1851,7 @@ int sysdb_init(TALLOC_CTX *mem_ctx,
             return ENOMEM;
         }
 
-        ret = sysdb_domain_init_internal(ctx_list, dom,
+        ret = sysdb_domain_init_internal(ctx_list, ev, dom,
                                          ctx_list->db_path,
                                          allow_upgrade, &ctx);
         if (ret != EOK) {
@@ -1568,11 +1874,12 @@ int sysdb_init(TALLOC_CTX *mem_ctx,
 }
 
 int sysdb_domain_init(TALLOC_CTX *mem_ctx,
+                      struct tevent_context *ev,
                       struct sss_domain_info *domain,
                       const char *db_path,
                       struct sysdb_ctx **_ctx)
 {
-    return sysdb_domain_init_internal(mem_ctx, domain,
+    return sysdb_domain_init_internal(mem_ctx, ev, domain,
                                       db_path, false, _ctx);
 }
 

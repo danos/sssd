@@ -90,7 +90,6 @@ struct sdap_access_req_ctx {
     struct tevent_context *ev;
     struct sdap_access_ctx *access_ctx;
     struct sdap_id_ctx *sdap_ctx;
-    struct sdap_id_op *sdap_op;
     struct sysdb_handle *handle;
     struct be_ctx *be_ctx;
     const char **attrs;
@@ -98,11 +97,8 @@ struct sdap_access_req_ctx {
     bool cached_access;
     char *basedn;
 };
-
-static int sdap_access_decide_offline(struct tevent_req *req);
-static int sdap_access_retry(struct tevent_req *req);
-static void sdap_access_connect_done(struct tevent_req *subreq);
-static void sdap_access_get_access_done(struct tevent_req *req);
+static void sdap_access_get_dn_done(void *pvt, int ldb_status,
+                                    struct ldb_result *res);
 static struct tevent_req *sdap_access_send(TALLOC_CTX *mem_ctx,
                                            struct tevent_context *ev,
                                            struct be_ctx *be_ctx,
@@ -112,8 +108,6 @@ static struct tevent_req *sdap_access_send(TALLOC_CTX *mem_ctx,
     errno_t ret;
     struct sdap_access_req_ctx *state;
     struct tevent_req *req;
-    struct ldb_result *res;
-    const char *basedn;
 
     req = tevent_req_create(mem_ctx, &state, struct sdap_access_req_ctx);
     if (req == NULL) {
@@ -153,37 +147,78 @@ static struct tevent_req *sdap_access_send(TALLOC_CTX *mem_ctx,
     ret = sysdb_get_user_attr(state, be_ctx->sysdb,
                               be_ctx->domain, username,
                               state->attrs,
-                              &res);
-    if (ret != EOK) {
-        if (ret == ENOENT) {
-            /* If we can't find the user, return permission denied */
-            state->pam_status = PAM_PERM_DENIED;
-            goto finished;
-        }
-        goto failed;
-    }
-    else {
-        if (res->count == 0) {
-            /* If we can't find the user, return permission denied */
-            state->pam_status = PAM_PERM_DENIED;
-            goto finished;
-        }
+                              sdap_access_get_dn_done, req);
+    return req;
 
-        if (res->count != 1) {
-            DEBUG(1, ("Invalid response from sysdb_get_user_attr\n"));
-            goto failed;
-        }
+failed:
+    talloc_free(req);
+    return NULL;
+}
+
+static void sdap_access_connect_done(struct tevent_req *subreq);
+static void sdap_access_get_access_done(struct tevent_req *req);
+static void sdap_access_get_dn_done(void *pvt, int ldb_status,
+                                    struct ldb_result *res)
+{
+    errno_t ret;
+    struct sdap_access_req_ctx *state;
+    const char *basedn;
+    struct tevent_req *req;
+    struct tevent_req *subreq;
+
+    req = talloc_get_type(pvt, struct tevent_req);
+
+    state = tevent_req_data(req, struct sdap_access_req_ctx);
+    talloc_zfree(state->attrs);
+
+    /* Verify our results */
+    if (ldb_status == LDB_ERR_NO_SUCH_OBJECT) {
+        DEBUG(4, ("User not found in LDB.\n"));
+        ret = EOK;
+        state->pam_status = PAM_USER_UNKNOWN;
+        goto done;
+    }
+    else if (ldb_status != LDB_SUCCESS) {
+        DEBUG(1, ("LDB search failed.\n"));
+        ret = sysdb_error_to_errno(ldb_status);
+        state->pam_status = PAM_SYSTEM_ERR;
+        goto done;
     }
 
-    /* Exactly one result returned */
+    /* Make sure we got exactly one result */
+    if (res->count < 1) {
+        DEBUG(4, ("User not found in LDB.\n"));
+        ret = EOK;
+        state->pam_status = PAM_USER_UNKNOWN;
+        goto done;
+    }
+
+    if (res->count > 1) {
+        DEBUG(1, ("More than one user found.\n"));
+        ret = EIO;
+        state->pam_status = PAM_SYSTEM_ERR;
+        goto done;
+    }
+
     state->cached_access = ldb_msg_find_attr_as_bool(res->msgs[0],
                                                      SYSDB_LDAP_ACCESS,
                                                      false);
+
     /* Ok, we have one result, check if we are online or offline */
     if (be_is_offline(state->be_ctx)) {
         /* Ok, we're offline. Return from the cache */
-        ret = sdap_access_decide_offline(req);
-        goto finished;
+        if (state->cached_access) {
+            DEBUG(6, ("Access granted by cached credentials\n"));
+            ret = EOK;
+            state->pam_status = PAM_SUCCESS;
+            goto done;
+        }
+
+        /* Access denied */
+        DEBUG(6, ("Access denied by cached credentials\n"));
+        ret = EOK;
+        state->pam_status = PAM_PERM_DENIED;
+        goto done;
     }
 
     /* Perform online operation */
@@ -193,13 +228,17 @@ static struct tevent_req *sdap_access_send(TALLOC_CTX *mem_ctx,
     if(basedn == NULL) {
         DEBUG(1,("Could not find originalDN for user [%s]\n",
                  state->username));
-        goto failed;
+        ret = EIO;
+        state->pam_status = PAM_SYSTEM_ERR;
+        goto done;
     }
 
     state->basedn = talloc_strdup(state, basedn);
     if (state->basedn == NULL) {
         DEBUG(1, ("Could not allocate memory for originalDN\n"));
-        goto failed;
+        ret = ENOMEM;
+        state->pam_status = PAM_SYSTEM_ERR;
+        goto done;
     }
     talloc_zfree(res);
 
@@ -213,89 +252,85 @@ static struct tevent_req *sdap_access_send(TALLOC_CTX *mem_ctx,
         state->access_ctx->filter);
     if (state->filter == NULL) {
         DEBUG(0, ("Could not construct access filter\n"));
-        goto failed;
+        ret = ENOMEM;
+        state->pam_status = PAM_SYSTEM_ERR;
+        goto done;
     }
 
     DEBUG(6, ("Checking filter against LDAP\n"));
 
-    state->sdap_op = sdap_id_op_create(state, state->sdap_ctx->conn_cache);
-    if (!state->sdap_op) {
-        DEBUG(2, ("sdap_id_op_create failed\n"));
-        goto failed;
+    /* Check whether we have an active LDAP connection */
+    if (state->sdap_ctx->gsh == NULL || ! state->sdap_ctx->gsh->connected) {
+        subreq = sdap_cli_connect_send(state, state->ev,
+                                       state->sdap_ctx->opts,
+                                       state->sdap_ctx->be,
+                                       state->sdap_ctx->service,
+                                       NULL);
+        if (!subreq) {
+            DEBUG(1, ("sdap_cli_connect_send failed.\n"));
+            ret = EIO;
+            state->pam_status = PAM_SYSTEM_ERR;
+            goto done;
+        }
+
+        tevent_req_set_callback(subreq, sdap_access_connect_done, req);
+        return;
     }
 
-    ret = sdap_access_retry(req);
-    if (ret != EOK) {
-        goto failed;
+    /* Make the LDAP request */
+    subreq = sdap_get_generic_send(state,
+                                   state->ev,
+                                   state->sdap_ctx->opts,
+                                   state->sdap_ctx->gsh,
+                                   state->basedn, LDAP_SCOPE_BASE,
+                                   state->filter, NULL,
+                                   NULL, 0);
+    if (subreq == NULL) {
+        DEBUG(1, ("Could not start LDAP communication\n"));
+        ret = EIO;
+        state->pam_status = PAM_SYSTEM_ERR;
+        goto done;
     }
 
-    return req;
+    tevent_req_set_callback(subreq, sdap_access_get_access_done, req);
+    return;
 
-failed:
-    talloc_free(req);
-    return NULL;
-
-finished:
-    tevent_req_done(req);
-    tevent_req_post(req, ev);
-    return req;
-}
-
-static int sdap_access_decide_offline(struct tevent_req *req)
-{
-    struct sdap_access_req_ctx *state =
-            tevent_req_data(req, struct sdap_access_req_ctx);
-
-    if (state->cached_access) {
-        DEBUG(6, ("Access granted by cached credentials\n"));
-        state->pam_status = PAM_SUCCESS;
-    } else {
-        DEBUG(6, ("Access denied by cached credentials\n"));
-        state->pam_status = PAM_PERM_DENIED;
+done:
+    if (ret == EOK) {
+        tevent_req_done(req);
     }
-
-    return EOK;
-}
-
-static int sdap_access_retry(struct tevent_req *req)
-{
-    struct sdap_access_req_ctx *state =
-            tevent_req_data(req, struct sdap_access_req_ctx);
-    struct tevent_req *subreq;
-    int ret;
-
-    subreq = sdap_id_op_connect_send(state->sdap_op, state, &ret);
-    if (!subreq) {
-        DEBUG(2, ("sdap_id_op_connect_send failed: %d (%s)\n", ret, strerror(ret)));
-        return ret;
+    else {
+        tevent_req_error(req, ret);
     }
-
-    tevent_req_set_callback(subreq, sdap_access_connect_done, req);
-    return EOK;
 }
 
 static void sdap_access_connect_done(struct tevent_req *subreq)
 {
+    errno_t ret;
     struct tevent_req *req = tevent_req_callback_data(subreq,
                                                       struct tevent_req);
     struct sdap_access_req_ctx *state =
             tevent_req_data(req, struct sdap_access_req_ctx);
-    int ret, dp_error;
 
-    ret = sdap_id_op_connect_recv(subreq, &dp_error);
+    ret = sdap_cli_connect_recv(subreq, state->sdap_ctx,
+                                &state->sdap_ctx->gsh, NULL);
     talloc_zfree(subreq);
-
     if (ret != EOK) {
-        if (dp_error == DP_ERR_OFFLINE) {
-            ret = sdap_access_decide_offline(req);
-            if (ret == EOK) {
-                tevent_req_done(req);
-                return;
-            }
+        /* Could not connect to LDAP. Mark as offline and return
+         * from cache.
+         */
+        be_mark_offline(state->be_ctx);
+        if (state->cached_access) {
+            DEBUG(6, ("Access granted by cached credentials\n"));
+            state->pam_status = PAM_SUCCESS;
+            tevent_req_done(req);
+            return;
         }
 
-        tevent_req_error(req, ret);
-        return;
+        /* Access denied */
+        DEBUG(6, ("Access denied by cached credentials\n"));
+        state->pam_status = PAM_PERM_DENIED;
+        tevent_req_done(req);
     }
 
     /* Connection to LDAP succeeded
@@ -304,7 +339,7 @@ static void sdap_access_connect_done(struct tevent_req *subreq)
     subreq = sdap_get_generic_send(state,
                                    state->ev,
                                    state->sdap_ctx->opts,
-                                   sdap_id_op_handle(state->sdap_op),
+                                   state->sdap_ctx->gsh,
                                    state->basedn,
                                    LDAP_SCOPE_BASE,
                                    state->filter, NULL,
@@ -319,12 +354,12 @@ static void sdap_access_connect_done(struct tevent_req *subreq)
     tevent_req_set_callback(subreq, sdap_access_get_access_done, req);
 }
 
+static void sdap_access_save_cache(struct tevent_req *req);
 static void sdap_access_get_access_done(struct tevent_req *subreq)
 {
-    int ret, dp_error;
+    errno_t ret;
     size_t num_results;
     bool found = false;
-    struct sysdb_attrs *attrs;
     struct sysdb_attrs **results;
     struct tevent_req *req =
             tevent_req_callback_data(subreq, struct tevent_req);
@@ -333,24 +368,10 @@ static void sdap_access_get_access_done(struct tevent_req *subreq)
     ret = sdap_get_generic_recv(subreq, state,
                                 &num_results, &results);
     talloc_zfree(subreq);
-
-    ret = sdap_id_op_done(state->sdap_op, ret, &dp_error);
     if (ret != EOK) {
-        if (dp_error == DP_ERR_OK) {
-            /* retry */
-            ret = sdap_access_retry(req);
-            if (ret == EOK) {
-                return;
-            }
-            state->pam_status = PAM_SYSTEM_ERR;
-        } else if (dp_error == DP_ERR_OFFLINE) {
-            ret = sdap_access_decide_offline(req);
-        } else {
-            DEBUG(1, ("sdap_get_generic_send() returned error [%d][%s]\n",
-                      ret, strerror(ret)));
-            state->pam_status = PAM_SYSTEM_ERR;
-        }
-
+        DEBUG(1, ("sdap_get_generic_send() returned error [%d][%s]",
+                  ret, strerror(ret)));
+        state->pam_status = PAM_SYSTEM_ERR;
         goto done;
     }
 
@@ -366,7 +387,6 @@ static void sdap_access_get_access_done(struct tevent_req *subreq)
     }
     else if (results == NULL) {
         DEBUG(1, ("num_results > 0, but results is NULL\n"));
-        ret = EIO;
         state->pam_status = PAM_SYSTEM_ERR;
         goto done;
     }
@@ -375,7 +395,6 @@ static void sdap_access_get_access_done(struct tevent_req *subreq)
          * here, since we're doing a base-scoped search
          */
         DEBUG(1, ("Received multiple replies\n"));
-        ret = EIO;
         state->pam_status = PAM_SYSTEM_ERR;
         goto done;
     }
@@ -398,6 +417,50 @@ static void sdap_access_get_access_done(struct tevent_req *subreq)
         state->pam_status = PAM_PERM_DENIED;
     }
 
+    /* Start a transaction to cache the access result */
+    subreq = sysdb_transaction_send(state, state->ev,
+                                    state->be_ctx->sysdb);
+    if (subreq == NULL) {
+        /* Failing to save the cache is non-fatal.
+         * Just return the result.
+         */
+        ret = EOK;
+        DEBUG(1, ("Failed to create transaction for user access attr\n"));
+        goto done;
+    }
+    tevent_req_set_callback(subreq, sdap_access_save_cache, req);
+    return;
+
+done:
+    if (ret == EOK) {
+        tevent_req_done(req);
+    }
+    else {
+        tevent_req_error(req, ret);
+    }
+}
+
+static void sdap_access_cache_commit(struct tevent_req *subreq);
+static void sdap_access_save_cache(struct tevent_req *subreq)
+{
+    errno_t ret;
+    struct sysdb_attrs *attrs;
+    struct tevent_req *req =
+            tevent_req_callback_data(subreq, struct tevent_req);
+    struct sdap_access_req_ctx *state =
+            tevent_req_data(req, struct sdap_access_req_ctx);
+
+    ret = sysdb_transaction_recv(subreq, state, &state->handle);
+    talloc_zfree(subreq);
+    if (ret != EOK) {
+        /* Failing to save the cache is non-fatal.
+         * Just return the result.
+         */
+        ret = EOK;
+        DEBUG(1, ("Failed to create transaction for user access attr\n"));
+        goto done;
+    }
+
     attrs = sysdb_new_attrs(state);
     if (attrs == NULL) {
         ret = ENOMEM;
@@ -410,27 +473,25 @@ static void sdap_access_get_access_done(struct tevent_req *subreq)
                                                     true :
                                                     false);
     if (ret != EOK) {
-        /* Failing to save to the cache is non-fatal.
-         * Just return the result.
-         */
-        ret = EOK;
         DEBUG(1, ("Could not set up attrs\n"));
         goto done;
     }
 
-    ret = sysdb_set_user_attr(attrs,
-                              state->be_ctx->sysdb,
-                              state->be_ctx->domain,
-                              state->username,
-                              attrs, SYSDB_MOD_REP);
-    if (ret != EOK) {
+    subreq = sysdb_set_user_attr_send(attrs,
+                                      state->ev,
+                                      state->handle,
+                                      state->be_ctx->domain,
+                                      state->username,
+                                      attrs, SYSDB_MOD_REP);
+    if (subreq == NULL) {
         /* Failing to save to the cache is non-fatal.
          * Just return the result.
          */
-        ret = EOK;
         DEBUG(1, ("Failed to set user access attribute\n"));
         goto done;
     }
+    tevent_req_set_callback(subreq, sdap_access_cache_commit, req);
+    return;
 
 done:
     if (ret == EOK) {
@@ -439,6 +500,58 @@ done:
     else {
         tevent_req_error(req, ret);
     }
+}
+
+static void sdap_access_cache_done(struct tevent_req *subreq);
+static void sdap_access_cache_commit(struct tevent_req *subreq)
+{
+    errno_t ret;
+    struct tevent_req *req =
+            tevent_req_callback_data(subreq, struct tevent_req);
+    struct sdap_access_req_ctx *state =
+            tevent_req_data(req, struct sdap_access_req_ctx);
+
+    ret = sysdb_set_entry_attr_recv(subreq);
+    talloc_zfree(subreq);
+
+    if(ret != EOK) {
+        goto failed;
+    }
+
+    subreq = sysdb_transaction_commit_send(state, state->ev, state->handle);
+    if (subreq == NULL) {
+        goto failed;
+    }
+    tevent_req_set_callback(subreq,sdap_access_cache_done,req);
+    return;
+
+failed:
+    /* Failing to save to the cache is non-fatal.
+     * Just return the result.
+     */
+    DEBUG(1, ("Failed to set user access attribute\n"));
+    tevent_req_done(req);
+    return;
+}
+
+static void sdap_access_cache_done(struct tevent_req *subreq)
+{
+    errno_t ret;
+    struct tevent_req *req =
+            tevent_req_callback_data(subreq, struct tevent_req);
+
+    ret = sysdb_transaction_commit_recv(subreq);
+    talloc_zfree(subreq);
+
+    if(ret != EOK) {
+        /* Failing to save to the cache is non-fatal */
+        DEBUG(1,("Unable to save access results to the cache\n"));
+    }
+    else {
+        DEBUG(6, ("Saved access result to the user cache\n"));
+    }
+
+    tevent_req_done(req);
 }
 
 static errno_t sdap_access_recv(struct tevent_req *req, int *pam_status)

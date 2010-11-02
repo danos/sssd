@@ -77,12 +77,6 @@
 /* Define to 1 if you have the <ldb_module.h> header file. */
 #undef HAVE_LDB_MODULE_H
 
-/* Build with libnetlink support */
-#undef HAVE_LIBNL
-
-/* Does libnl have pre-1.1 API? */
-#undef HAVE_LIBNL_OLDER_THAN_1_1
-
 /* Define if libpcre version is less than 7 */
 #undef HAVE_LIBPCRE_LESSER_THAN_7
 
@@ -91,18 +85,6 @@
 
 /* Define to 1 if you have the <memory.h> header file. */
 #undef HAVE_MEMORY_H
-
-/* Define to 1 if you have the <netlink.h> header file. */
-#undef HAVE_NETLINK_H
-
-/* Does libnl have nl_set_passcred? */
-#undef HAVE_NL_SET_PASSCRED
-
-/* Does libnl have nl_socket_add_membership? */
-#undef HAVE_NL_SOCKET_ADD_MEMBERSHIP
-
-/* Does libnl have nl_socket_modify_cb? */
-#undef HAVE_NL_SOCKET_MODIFY_CB
 
 /* flush nscd cache after local domain operations */
 #undef HAVE_NSCD

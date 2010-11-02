@@ -72,7 +72,6 @@ WITH_PYTHON_BINDINGS
 WITH_SELINUX
 WITH_NSCD
 WITH_SEMANAGE
-WITH_LIBNL
 
 m4_include([external/platform.m4])
 m4_include([external/pkg.m4])
@@ -95,9 +94,8 @@ m4_include([external/python.m4])
 m4_include([external/selinux.m4])
 m4_include([external/crypto.m4])
 m4_include([external/nscd.m4])
-m4_include([external/nsupdate.m4])
 m4_include([external/libkeyutils.m4])
-m4_include([external/libnl.m4])
+m4_include([external/nsupdate.m4])
 m4_include([util/signal.m4])
 
 PKG_CHECK_MODULES([DBUS],[dbus-1])
@@ -108,12 +106,12 @@ if ! $PKG_CONFIG --atleast-version 1.0.0 dbus-1; then
 fi
 
 if test x$has_dbus != xno; then
-    SAFE_LIBS="$LIBS"
-    LIBS="$DBUS_LIBS"
+    SAFE_LDFLAGS="$LDFLAGS"
+    LDFLAGS="$DBUS_LIBS"
     AC_CHECK_FUNC([dbus_watch_get_unix_fd],
                   AC_DEFINE([HAVE_DBUS_WATCH_GET_UNIX_FD], [1],
                             [Define if dbus_watch_get_unix_fd exists]))
-    LIBS="$SAFE_LIBS"
+    LDFLAGS="$SAFE_LDFLAGS"
 fi
 
 if test x$HAVE_MANPAGES != x; then
@@ -136,10 +134,6 @@ fi
 
 if test x$HAVE_SEMANAGE != x -a x$HAVE_SELINUX != x; then
     AM_CHECK_SEMANAGE
-fi
-
-if test x$HAVE_LIBNL != x; then
-    AM_CHECK_LIBNL
 fi
 
 AC_CHECK_HEADERS([sys/inotify.h])

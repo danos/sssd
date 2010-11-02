@@ -178,23 +178,22 @@ int main(int argc, const char **argv)
         goto fini;
     }
 
-    tctx->error = sysdb_transaction_start(tctx->sysdb);
+    start_transaction(tctx);
     if (tctx->error != EOK) {
         goto done;
     }
 
     /* useradd */
-    tctx->error = useradd(tctx, tctx->sysdb, tctx->octx);
-    if (tctx->error) {
+    ret = useradd(tctx, tctx->ev, tctx->sysdb, tctx->handle, tctx->octx);
+    if (ret != EOK) {
+        tctx->error = ret;
+
         /* cancel transaction */
-        sysdb_transaction_cancel(tctx->sysdb);
+        talloc_zfree(tctx->handle);
         goto done;
     }
 
-    tctx->error = sysdb_transaction_commit(tctx->sysdb);
-    if (tctx->error) {
-        goto done;
-    }
+    end_transaction(tctx);
 
     /* Set SELinux login context - must be done after transaction is done
      * b/c libselinux calls getpwnam */
@@ -211,10 +210,11 @@ int main(int argc, const char **argv)
          * sysdb did assign it automatically, do a lookup */
         if (tctx->octx->uid == 0) {
             ret = sysdb_getpwnam_sync(tctx,
+                                      tctx->ev,
                                       tctx->sysdb,
                                       tctx->octx->name,
                                       tctx->local,
-                                      tctx->octx);
+                                      &tctx->octx);
             if (ret != EOK) {
                 ERROR("Cannot get info about the user\n");
                 ret = EXIT_FAILURE;

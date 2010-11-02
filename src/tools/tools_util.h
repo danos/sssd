@@ -38,6 +38,7 @@
 } while(0)
 
 struct tools_ctx {
+    struct tevent_context *ev;
     struct confdb_ctx *confdb;
     struct sysdb_ctx *sysdb;
 
@@ -46,6 +47,7 @@ struct tools_ctx {
 
     struct ops_ctx *octx;
 
+    struct sysdb_handle *handle;
     bool transaction_done;
     int error;
 };

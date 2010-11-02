@@ -123,9 +123,9 @@ int main(int argc, const char **argv)
         goto fini;
     }
     /* check the username to be able to give sensible error message */
-    ret = sysdb_getgrnam_sync(tctx, tctx->sysdb,
+    ret = sysdb_getgrnam_sync(tctx, tctx->ev, tctx->sysdb,
                               tctx->octx->name, tctx->local,
-                              tctx->octx);
+                              &tctx->octx);
     if (ret != EOK) {
         ERROR("Cannot find group in local domain, "
               "modifying groups is allowed only in local domain\n");
@@ -196,20 +196,22 @@ int main(int argc, const char **argv)
         goto fini;
     }
 
-    tctx->error = sysdb_transaction_start(tctx->sysdb);
+    start_transaction(tctx);
     if (tctx->error != EOK) {
         goto done;
     }
 
     /* groupmod */
-    tctx->error = groupmod(tctx, tctx->sysdb, tctx->octx);
-    if (tctx->error) {
+    ret = groupmod(tctx, tctx->ev, tctx->sysdb, tctx->handle, tctx->octx);
+    if (ret != EOK) {
+        tctx->error = ret;
+
         /* cancel transaction */
-        sysdb_transaction_cancel(tctx->sysdb);
+        talloc_zfree(tctx->handle);
         goto done;
     }
 
-    tctx->error = sysdb_transaction_commit(tctx->sysdb);
+    end_transaction(tctx);
 
 done:
     if (tctx->error) {

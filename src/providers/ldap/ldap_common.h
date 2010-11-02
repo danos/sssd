@@ -24,7 +24,6 @@
 
 #include "providers/dp_backend.h"
 #include "providers/ldap/sdap.h"
-#include "providers/ldap/sdap_id_op.h"
 #include "providers/fail_over.h"
 
 #define PWD_POL_OPT_NONE "none"
@@ -42,8 +41,11 @@ struct sdap_id_ctx {
     struct fo_service *fo_service;
     struct sdap_service *service;
 
-    /* LDAP connection cache */
-    struct sdap_id_conn_cache *conn_cache;
+    /* what rootDSE returns */
+    struct sysdb_attrs *rootDSE;
+
+    /* global sdap handler */
+    struct sdap_handle *gsh;
 
     /* enumeration loop timer */
     struct timeval last_enum;
@@ -92,7 +94,9 @@ int ldap_get_options(TALLOC_CTX *memctx,
 int ldap_id_enumerate_set_timer(struct sdap_id_ctx *ctx, struct timeval tv);
 int ldap_id_cleanup_set_timer(struct sdap_id_ctx *ctx, struct timeval tv);
 
+bool sdap_connected(struct sdap_id_ctx *ctx);
 void sdap_mark_offline(struct sdap_id_ctx *ctx);
+bool sdap_check_gssapi_reconnect(struct sdap_id_ctx *ctx);
 
 struct tevent_req *users_get_send(TALLOC_CTX *memctx,
                                   struct tevent_context *ev,
@@ -100,7 +104,7 @@ struct tevent_req *users_get_send(TALLOC_CTX *memctx,
                                   const char *name,
                                   int filter_type,
                                   int attrs_type);
-int users_get_recv(struct tevent_req *req, int *dp_error_out);
+int users_get_recv(struct tevent_req *req);
 
 struct tevent_req *groups_get_send(TALLOC_CTX *memctx,
                                    struct tevent_context *ev,
@@ -108,9 +112,10 @@ struct tevent_req *groups_get_send(TALLOC_CTX *memctx,
                                    const char *name,
                                    int filter_type,
                                    int attrs_type);
-int groups_get_recv(struct tevent_req *req, int *dp_error_out);
+int groups_get_recv(struct tevent_req *req);
 
 /* setup child logging */
 int setup_child(struct sdap_id_ctx *ctx);
 
+void sdap_gsh_disconnect_callback(void *pvt);
 #endif /* _LDAP_COMMON_H_ */

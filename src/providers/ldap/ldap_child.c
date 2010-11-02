@@ -94,13 +94,13 @@ static errno_t unpack_buffer(uint8_t *buf, size_t size,
     return EOK;
 }
 
-static int pack_buffer(struct response *r, int result, const char *msg, time_t expire_time)
+static int pack_buffer(struct response *r, int result, const char *msg)
 {
     int len;
     size_t p = 0;
 
     len = strlen(msg);
-    r->size = 2 * sizeof(uint32_t) + len + sizeof(time_t);
+    r->size = 2 * sizeof(uint32_t) + len;
 
     r->buf = talloc_array(r, uint8_t, r->size);
     if(!r->buf) {
@@ -116,9 +116,6 @@ static int pack_buffer(struct response *r, int result, const char *msg, time_t e
     /* message itself */
     safealign_memcpy(&r->buf[p], msg, len, &p);
 
-    /* ticket expiration time */
-    safealign_memcpy(&r->buf[p], &expire_time, sizeof(expire_time), &p);
-
     return EOK;
 }
 
@@ -127,13 +124,11 @@ static int ldap_child_get_tgt_sync(TALLOC_CTX *memctx,
                                   const char *princ_str,
                                   const char *keytab_name,
                                   const krb5_deltat lifetime,
-                                  const char **ccname_out,
-                                  time_t *expire_time_out)
+                                  const char **ccname_out)
 {
     char *ccname;
     char *realm_name = NULL;
     char *full_princ = NULL;
-    char *default_realm = NULL;
     krb5_context context = NULL;
     krb5_keytab keytab = NULL;
     krb5_ccache ccache = NULL;
@@ -141,8 +136,10 @@ static int ldap_child_get_tgt_sync(TALLOC_CTX *memctx,
     krb5_creds my_creds;
     krb5_get_init_creds_opt options;
     krb5_error_code krberr;
-    krb5_timestamp kdc_time_offset;
-    int kdc_time_offset_usec;
+    krb5_kt_cursor cursor;
+    krb5_keytab_entry entry;
+    char *principal;
+    bool found;
     int ret;
 
     krberr = krb5_init_context(&context);
@@ -152,21 +149,13 @@ static int ldap_child_get_tgt_sync(TALLOC_CTX *memctx,
     }
 
     if (!realm_str) {
-        krberr = krb5_get_default_realm(context, &default_realm);
+        krberr = krb5_get_default_realm(context, &realm_name);
         if (krberr) {
             DEBUG(2, ("Failed to get default realm name: %s\n",
                       sss_krb5_get_error_message(context, krberr)));
             ret = EFAULT;
             goto done;
         }
-
-        realm_name = talloc_strdup(memctx, default_realm);
-        krb5_free_default_realm(context, default_realm);
-        if (!realm_name) {
-            ret = ENOMEM;
-            goto done;
-        }
-
     } else {
         realm_name = talloc_strdup(memctx, realm_str);
         if (!realm_name) {
@@ -223,9 +212,50 @@ static int ldap_child_get_tgt_sync(TALLOC_CTX *memctx,
     }
 
     /* Verify the keytab */
-    ret = sss_krb5_verify_keytab_ex(full_princ, keytab_name, context, keytab);
-    if (ret) {
-        DEBUG(2, ("Unable to verify principal is present in the keytab\n"));
+    krberr = krb5_kt_start_seq_get(context, keytab, &cursor);
+    if (krberr) {
+        DEBUG(0, ("Cannot read keytab [%s].\n", keytab_name));
+
+        sss_log(SSS_LOG_ERR, "Error reading keytab file [%s]: [%d][%s]. "
+                             "Unable to create GSSAPI-encrypted LDAP connection.",
+                             keytab_name, krberr,
+                             sss_krb5_get_error_message(context, krberr));
+
+        ret = EFAULT;
+        goto done;
+    }
+
+    found = false;
+    while((ret = krb5_kt_next_entry(context, keytab, &entry, &cursor)) == 0){
+        krb5_unparse_name(context, entry.principal, &principal);
+        if (strcmp(full_princ, principal) == 0) {
+            found = true;
+        }
+        free(principal);
+        krb5_free_keytab_entry_contents(context, &entry);
+
+        if (found) {
+            break;
+        }
+    }
+    krberr = krb5_kt_end_seq_get(context, keytab, &cursor);
+    if (krberr) {
+        DEBUG(0, ("Could not close keytab.\n"));
+        sss_log(SSS_LOG_ERR, "Could not close keytab file [%s].",
+                             keytab_name);
+        ret = EFAULT;
+        goto done;
+    }
+
+    if (!found) {
+        DEBUG(0, ("Principal [%s] not found in keytab [%s]\n",
+                  full_princ, keytab_name));
+        sss_log(SSS_LOG_ERR, "Error processing keytab file [%s]: "
+                             "Principal [%s] was not found. "
+                             "Unable to create GSSAPI-encrypted LDAP connection.",
+                             keytab_name, full_princ);
+
+        ret = EFAULT;
         goto done;
     }
 
@@ -280,20 +310,8 @@ static int ldap_child_get_tgt_sync(TALLOC_CTX *memctx,
         goto done;
     }
 
-    krberr = krb5_get_time_offsets(context, &kdc_time_offset, &kdc_time_offset_usec);
-    if (krberr) {
-        DEBUG(2, ("Failed to get KDC time offset: %s\n",
-                  sss_krb5_get_error_message(context, krberr)));
-        kdc_time_offset = 0;
-    } else {
-        if (kdc_time_offset_usec > 0) {
-            kdc_time_offset++;
-        }
-    }
-
     ret = EOK;
     *ccname_out = ccname;
-    *expire_time_out = my_creds.times.endtime - kdc_time_offset;
 
 done:
     if (keytab) krb5_kt_close(context, keytab);
@@ -303,7 +321,6 @@ done:
 
 static int prepare_response(TALLOC_CTX *mem_ctx,
                             const char *ccname,
-                            time_t expire_time,
                             krb5_error_code kerr,
                             struct response **rsp)
 {
@@ -318,7 +335,7 @@ static int prepare_response(TALLOC_CTX *mem_ctx,
     r->size = 0;
 
     if (kerr == 0) {
-        ret = pack_buffer(r, EOK, ccname, expire_time);
+        ret = pack_buffer(r, EOK, ccname);
     } else {
         krb5_msg = sss_krb5_get_error_message(krb5_error_ctx, kerr);
         if (krb5_msg == NULL) {
@@ -326,7 +343,7 @@ static int prepare_response(TALLOC_CTX *mem_ctx,
             return ENOMEM;
         }
 
-        ret = pack_buffer(r, EFAULT, krb5_msg, 0);
+        ret = pack_buffer(r, EFAULT, krb5_msg);
         sss_krb5_free_error_message(krb5_error_ctx, krb5_msg);
     }
 
@@ -350,7 +367,6 @@ int main(int argc, const char *argv[])
     uint8_t *buf = NULL;
     ssize_t len = 0;
     const char *ccname = NULL;
-    time_t expire_time = 0;
     struct input_buffer *ibuf = NULL;
     struct response *resp = NULL;
     size_t written;
@@ -437,14 +453,13 @@ int main(int argc, const char *argv[])
 
     kerr = ldap_child_get_tgt_sync(main_ctx,
                                    ibuf->realm_str, ibuf->princ_str,
-                                   ibuf->keytab_name, ibuf->lifetime,
-                                   &ccname, &expire_time);
+                                   ibuf->keytab_name, ibuf->lifetime, &ccname);
     if (kerr != EOK) {
         DEBUG(1, ("ldap_child_get_tgt_sync failed.\n"));
         /* Do not return, must report failure */
     }
 
-    ret = prepare_response(main_ctx, ccname, expire_time, kerr, &resp);
+    ret = prepare_response(main_ctx, ccname, kerr, &resp);
     if (ret != EOK) {
         DEBUG(1, ("prepare_response failed. [%d][%s].\n", ret, strerror(ret)));
         return ENOMEM;
