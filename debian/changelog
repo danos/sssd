@@ -4,7 +4,7 @@ sssd (1.2.4-1) UNRELEASED; urgency=low
     - Resolves long-standing issues related to group processing with
       RFC2307bis LDAP servers.
     - Fixed bugs in RFC2307bis group memberships related to initgroups
-      (Closes: XXX).
+      (Closes: #595564).
     - Fix tight-loop bug on systems with older OpenLDAP client
       libraries (such as Red Hat Enterprise Linux 5)
   * New Upstream Version 1.2.3:
@@ -16,8 +16,7 @@ sssd (1.2.4-1) UNRELEASED; urgency=low
     - The LDAP provider will now log issues with TLS and GSSAPI to the
       syslog.
     - Significant performance improvement when performing initgroups
-      on users who are members of large groups in LDAP (Closes:
-      #595564).
+      on users who are members of large groups in LDAP.
     - The sss_client will now reconnect properly to the SSSD if the
       daemon is restarted.
       * This resolves an issue causing GDM to crash when logging out
