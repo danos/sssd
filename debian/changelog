@@ -28,6 +28,13 @@ sssd (1.2.4-1) UNRELEASED; urgency=low
 
  -- Petter Reinholdtsen <pere@debian.org>  Tue, 14 Sep 2010 12:06:37 +0200
 
+sssd (1.2.1-4.1) unstable; urgency=medium
+
+   * Non-maintainer upload by the Security Team
+   * Fix CVE-2010-4341 (Closes: #610032)
+
+ -- Moritz Muehlenhoff <jmm@debian.org>  Tue, 25 Jan 2011 22:09:21 +0100
+
 sssd (1.2.1-4) unstable; urgency=low
 
   * Add patch from Stephen Gallagher to ensure LDAP authentication
