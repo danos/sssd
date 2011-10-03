@@ -22,13 +22,13 @@ sssd (1.5.13-1) UNRELEASED; urgency=low
       daemon is restarted.
       * This resolves an issue causing GDM to crash when logging out
         of a user after the SSSD had been restarted.
-  * Disable patch to ensure LDAP authentication never accept a zero
-    length password, which is now included upstream.
   * Correct package description for python-sss (Closes: #596215).
   * Update Standards-Version from 3.8.4 to 3.9.1.  No changes needed.
 
   [ Timo Aaltonen ]
   * New upstream release (1.5.13).
+  * Drop patch to ensure LDAP authentication never accept a zero
+    length password, which is now included upstream.
 
  -- Petter Reinholdtsen <pere@debian.org>  Tue, 14 Sep 2010 12:06:37 +0200
 
