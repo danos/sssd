@@ -48,6 +48,7 @@ sssd (1.5.13-1) UNRELEASED; urgency=low
       (LP: 860488)
   * control: sssd now Recommends libpam-sss and libnss-sss, since sssd is
     mostly useless without them. (LP: 767337)
+  * sssd.prerm: Remove empty script.
 
  -- Petter Reinholdtsen <pere@debian.org>  Tue, 14 Sep 2010 12:06:37 +0200
 
