@@ -1,0 +1,389 @@
+#! /bin/sh /usr/share/dpatch/dpatch-run
+## fix-python-api-path.patch.dpatch by  <Timo Aaltonen <tjaalton@ubuntu.com>>
+##
+## All lines beginning with `## DP:' are a description of the patch.
+## DP: No description.
+
+@DPATCH@
+diff -urNad '--exclude=CVS' '--exclude=.svn' '--exclude=.git' '--exclude=.arch' '--exclude=.hg' '--exclude=_darcs' '--exclude=.bzr' sssd-1.5.8~/src/config/SSSDConfig.py sssd-1.5.8/src/config/SSSDConfig.py
+--- sssd-1.5.8~/src/config/SSSDConfig.py	2011-05-27 23:16:11.000000000 +0300
++++ sssd-1.5.8/src/config/SSSDConfig.py	2011-09-27 09:10:33.588891678 +0300
+@@ -245,9 +245,9 @@
+         SSSDChangeConf.__init__(self)
+         #TODO: get these from a global setting
+         if not schemafile:
+-            schemafile = '/etc/sssd/sssd.api.conf'
++            schemafile = '/usr/share/sssd/sssd.api.conf'
+         if not schemaplugindir:
+-            schemaplugindir = '/etc/sssd/sssd.api.d'
++            schemaplugindir = '/usr/share/sssd/sssd.api.d'
+ 
+         try:
+             #Read the primary config file
+@@ -1146,10 +1146,10 @@
+ 
+         schemafile:
+           The path to the api schema config file. Usually
+-          /etc/sssd/sssd.api.conf
++          /usr/share/sssd/sssd.api.conf
+         schemaplugindir:
+           The path the directory containing the provider schema config files.
+-          Usually /etc/sssd/sssd.api.d
++          Usually /usr/share/sssd/sssd.api.d
+ 
+         === Returns ===
+         The newly-created SSSDConfig object.
+diff -urNad '--exclude=CVS' '--exclude=.svn' '--exclude=.git' '--exclude=.arch' '--exclude=.hg' '--exclude=_darcs' '--exclude=.bzr' sssd-1.5.8~/src/config/SSSDConfigTest.py sssd-1.5.8/src/config/SSSDConfigTest.py
+--- sssd-1.5.8~/src/config/SSSDConfigTest.py	2011-05-27 23:16:11.000000000 +0300
++++ sssd-1.5.8/src/config/SSSDConfigTest.py	2011-09-27 09:13:57.598894585 +0300
+@@ -18,8 +18,8 @@
+         pass
+ 
+     def testServices(self):
+-        sssdconfig = SSSDConfig.SSSDConfig(srcdir + "/etc/sssd.api.conf",
+-                                srcdir + "/etc/sssd.api.d")
++        sssdconfig = SSSDConfig.SSSDConfig(srcdir + "/usr/share/sssd/sssd.api.conf",
++                                srcdir + "/usr/share/sssd/sssd.api.d")
+         sssdconfig.import_config(srcdir + "/testconfigs/sssd-valid.conf")
+ 
+         # Validate services
+@@ -43,8 +43,8 @@
+         self.assertTrue('reconnection_retries' in service_opts)
+ 
+         del sssdconfig
+-        sssdconfig = SSSDConfig.SSSDConfig(srcdir + "/etc/sssd.api.conf",
+-                                     srcdir + "/etc/sssd.api.d")
++        sssdconfig = SSSDConfig.SSSDConfig(srcdir + "/usr/share/sssd/sssd.api.conf",
++                                     srcdir + "/usr/share/sssd/sssd.api.d")
+         sssdconfig.new_config()
+         sssdconfig.delete_service('sssd')
+         new_sssd_service = sssdconfig.new_service('sssd');
+@@ -78,8 +78,8 @@
+         del sssdconfig
+ 
+     def testDomains(self):
+-        sssdconfig = SSSDConfig.SSSDConfig(srcdir + "/etc/sssd.api.conf",
+-                                srcdir + "/etc/sssd.api.d")
++        sssdconfig = SSSDConfig.SSSDConfig(srcdir + "/usr/share/sssd/sssd.api.conf",
++                                srcdir + "/usr/share/sssd/sssd.api.d")
+         sssdconfig.import_config(srcdir + "/testconfigs/sssd-valid.conf")
+ 
+         #Validate domain list
+@@ -99,8 +99,8 @@
+         del sssdconfig
+ 
+     def testListProviders(self):
+-        sssdconfig = SSSDConfig.SSSDConfig(srcdir + "/etc/sssd.api.conf",
+-                                srcdir + "/etc/sssd.api.d")
++        sssdconfig = SSSDConfig.SSSDConfig(srcdir + "/usr/share/sssd/sssd.api.conf",
++                                srcdir + "/usr/share/sssd/sssd.api.d")
+ 
+         sssdconfig.new_config()
+         junk_domain = sssdconfig.new_domain('junk')
+@@ -108,8 +108,8 @@
+         self.assertTrue('ldap' in providers.keys())
+ 
+     def testCreateNewLocalConfig(self):
+-        sssdconfig = SSSDConfig.SSSDConfig(srcdir + "/etc/sssd.api.conf",
+-                                srcdir + "/etc/sssd.api.d")
++        sssdconfig = SSSDConfig.SSSDConfig(srcdir + "/usr/share/sssd/sssd.api.conf",
++                                srcdir + "/usr/share/sssd/sssd.api.d")
+ 
+         sssdconfig.new_config()
+ 
+@@ -143,8 +143,8 @@
+ 
+ 
+     def testCreateNewLDAPConfig(self):
+-        sssdconfig = SSSDConfig.SSSDConfig(srcdir + "/etc/sssd.api.conf",
+-                                srcdir + "/etc/sssd.api.d")
++        sssdconfig = SSSDConfig.SSSDConfig(srcdir + "/usr/share/sssd/sssd.api.conf",
++                                srcdir + "/usr/share/sssd/sssd.api.d")
+ 
+         sssdconfig.new_config()
+ 
+@@ -176,8 +176,8 @@
+         os.unlink(of)
+ 
+     def testModifyExistingConfig(self):
+-        sssdconfig = SSSDConfig.SSSDConfig(srcdir + "/etc/sssd.api.conf",
+-                                srcdir + "/etc/sssd.api.d")
++        sssdconfig = SSSDConfig.SSSDConfig(srcdir + "/usr/share/sssd/sssd.api.conf",
++                                srcdir + "/usr/share/sssd/sssd.api.d")
+         sssdconfig.import_config(srcdir + "/testconfigs/sssd-valid.conf")
+ 
+         ldap_domain = sssdconfig.get_domain('LDAP')
+@@ -210,8 +210,8 @@
+         os.unlink(of)
+ 
+     def testSpaces(self):
+-        sssdconfig = SSSDConfig.SSSDConfig(srcdir + "/etc/sssd.api.conf",
+-                                           srcdir + "/etc/sssd.api.d")
++        sssdconfig = SSSDConfig.SSSDConfig(srcdir + "/usr/share/sssd/sssd.api.conf",
++                                           srcdir + "/usr/share/sssd/sssd.api.d")
+         sssdconfig.import_config(srcdir + "/testconfigs/sssd-valid.conf")
+         ldap_domain = sssdconfig.get_domain('LDAP')
+         self.assertEqual(ldap_domain.get_option('auth_provider'), 'ldap')
+@@ -225,16 +225,16 @@
+         pass
+ 
+     def testBadBool(self):
+-        sssdconfig = SSSDConfig.SSSDConfig(srcdir + "/etc/sssd.api.conf",
+-                                           srcdir + "/etc/sssd.api.d")
++        sssdconfig = SSSDConfig.SSSDConfig(srcdir + "/usr/share/sssd/sssd.api.conf",
++                                           srcdir + "/usr/share/sssd/sssd.api.d")
+         sssdconfig.import_config(srcdir + "/testconfigs/sssd-invalid-badbool.conf")
+         self.assertRaises(TypeError,
+                           sssdconfig.get_domain,'IPA')
+ 
+ class SSSDConfigTestSSSDService(unittest.TestCase):
+     def setUp(self):
+-        self.schema = SSSDConfig.SSSDConfigSchema(srcdir + "/etc/sssd.api.conf",
+-                                                  srcdir + "/etc/sssd.api.d")
++        self.schema = SSSDConfig.SSSDConfigSchema(srcdir + "/usr/share/sssd/sssd.api.conf",
++                                                  srcdir + "/usr/share/sssd/sssd.api.d")
+ 
+     def tearDown(self):
+         pass
+@@ -423,8 +423,8 @@
+ 
+ class SSSDConfigTestSSSDDomain(unittest.TestCase):
+     def setUp(self):
+-        self.schema = SSSDConfig.SSSDConfigSchema(srcdir + "/etc/sssd.api.conf",
+-                                                  srcdir + "/etc/sssd.api.d")
++        self.schema = SSSDConfig.SSSDConfigSchema(srcdir + "/usr/share/sssd/sssd.api.conf",
++                                                  srcdir + "/usr/share/sssd/sssd.api.d")
+ 
+     def tearDown(self):
+         pass
+@@ -1041,21 +1041,21 @@
+ 
+     def testInit(self):
+         # Positive test
+-        sssdconfig = SSSDConfig.SSSDConfig(srcdir + "/etc/sssd.api.conf",
+-                                           srcdir + "/etc/sssd.api.d")
++        sssdconfig = SSSDConfig.SSSDConfig(srcdir + "/usr/share/sssd/sssd.api.conf",
++                                           srcdir + "/usr/share/sssd/sssd.api.d")
+ 
+         # Negative Test - No Such File
+         self.assertRaises(IOError,
+-                          SSSDConfig.SSSDConfig, "nosuchfile.api.conf", srcdir + "/etc/sssd.api.d")
++                          SSSDConfig.SSSDConfig, "nosuchfile.api.conf", srcdir + "/usr/share/sssd/sssd.api.d")
+ 
+         # Negative Test - Schema is not parsable
+         self.assertRaises(SSSDConfig.ParsingError,
+-                          SSSDConfig.SSSDConfig, srcdir + "/testconfigs/noparse.api.conf", srcdir + "/etc/sssd.api.d")
++                          SSSDConfig.SSSDConfig, srcdir + "/testconfigs/noparse.api.conf", srcdir + "/usr/share/sssd/sssd.api.d")
+ 
+     def testImportConfig(self):
+         # Positive Test
+-        sssdconfig = SSSDConfig.SSSDConfig(srcdir + "/etc/sssd.api.conf",
+-                                           srcdir + "/etc/sssd.api.d")
++        sssdconfig = SSSDConfig.SSSDConfig(srcdir + "/usr/share/sssd/sssd.api.conf",
++                                           srcdir + "/usr/share/sssd/sssd.api.d")
+         sssdconfig.import_config(srcdir + "/testconfigs/sssd-valid.conf")
+ 
+         # Verify that all sections were imported
+@@ -1100,36 +1100,36 @@
+         #TODO: Check the types and values of the settings
+ 
+         # Negative Test - Missing config file
+-        sssdconfig = SSSDConfig.SSSDConfig(srcdir + "/etc/sssd.api.conf",
+-                                           srcdir + "/etc/sssd.api.d")
++        sssdconfig = SSSDConfig.SSSDConfig(srcdir + "/usr/share/sssd/sssd.api.conf",
++                                           srcdir + "/usr/share/sssd/sssd.api.d")
+         self.assertRaises(IOError, sssdconfig.import_config, "nosuchfile.conf")
+ 
+         # Negative Test - Invalid config file
+-        sssdconfig = SSSDConfig.SSSDConfig(srcdir + "/etc/sssd.api.conf",
+-                                           srcdir + "/etc/sssd.api.d")
++        sssdconfig = SSSDConfig.SSSDConfig(srcdir + "/usr/share/sssd/sssd.api.conf",
++                                           srcdir + "/usr/share/sssd/sssd.api.d")
+         self.assertRaises(SSSDConfig.ParsingError, sssdconfig.import_config, srcdir + "/testconfigs/sssd-invalid.conf")
+ 
+         # Negative Test - Invalid config file version
+-        sssdconfig = SSSDConfig.SSSDConfig(srcdir + "/etc/sssd.api.conf",
+-                                           srcdir + "/etc/sssd.api.d")
++        sssdconfig = SSSDConfig.SSSDConfig(srcdir + "/usr/share/sssd/sssd.api.conf",
++                                           srcdir + "/usr/share/sssd/sssd.api.d")
+         self.assertRaises(SSSDConfig.ParsingError, sssdconfig.import_config, srcdir + "/testconfigs/sssd-badversion.conf")
+ 
+         # Negative Test - No config file version
+-        sssdconfig = SSSDConfig.SSSDConfig(srcdir + "/etc/sssd.api.conf",
+-                                           srcdir + "/etc/sssd.api.d")
++        sssdconfig = SSSDConfig.SSSDConfig(srcdir + "/usr/share/sssd/sssd.api.conf",
++                                           srcdir + "/usr/share/sssd/sssd.api.d")
+         self.assertRaises(SSSDConfig.ParsingError, sssdconfig.import_config, srcdir + "/testconfigs/sssd-noversion.conf")
+ 
+         # Negative Test - Already initialized
+-        sssdconfig = SSSDConfig.SSSDConfig(srcdir + "/etc/sssd.api.conf",
+-                                           srcdir + "/etc/sssd.api.d")
++        sssdconfig = SSSDConfig.SSSDConfig(srcdir + "/usr/share/sssd/sssd.api.conf",
++                                           srcdir + "/usr/share/sssd/sssd.api.d")
+         sssdconfig.import_config(srcdir + "/testconfigs/sssd-valid.conf")
+         self.assertRaises(SSSDConfig.AlreadyInitializedError,
+                           sssdconfig.import_config, srcdir + "/testconfigs/sssd-valid.conf")
+ 
+     def testNewConfig(self):
+         # Positive Test
+-        sssdconfig = SSSDConfig.SSSDConfig(srcdir + "/etc/sssd.api.conf",
+-                                           srcdir + "/etc/sssd.api.d")
++        sssdconfig = SSSDConfig.SSSDConfig(srcdir + "/usr/share/sssd/sssd.api.conf",
++                                           srcdir + "/usr/share/sssd/sssd.api.d")
+         sssdconfig.new_config()
+ 
+         # Check that the defaults were set
+@@ -1166,8 +1166,8 @@
+         pass
+ 
+     def testListServices(self):
+-        sssdconfig = SSSDConfig.SSSDConfig(srcdir + "/etc/sssd.api.conf",
+-                                           srcdir + "/etc/sssd.api.d")
++        sssdconfig = SSSDConfig.SSSDConfig(srcdir + "/usr/share/sssd/sssd.api.conf",
++                                           srcdir + "/usr/share/sssd/sssd.api.d")
+ 
+         # Negative Test - sssdconfig not initialized
+         self.assertRaises(SSSDConfig.NotInitializedError, sssdconfig.list_services)
+@@ -1189,8 +1189,8 @@
+                             service)
+ 
+     def testGetService(self):
+-        sssdconfig = SSSDConfig.SSSDConfig(srcdir + "/etc/sssd.api.conf",
+-                                           srcdir + "/etc/sssd.api.d")
++        sssdconfig = SSSDConfig.SSSDConfig(srcdir + "/usr/share/sssd/sssd.api.conf",
++                                           srcdir + "/usr/share/sssd/sssd.api.d")
+ 
+         # Negative Test - Not initialized
+         self.assertRaises(SSSDConfig.NotInitializedError, sssdconfig.get_service, 'sssd')
+@@ -1213,8 +1213,8 @@
+         self.assertFalse(service.options.has_key('nosuchoption'))
+ 
+     def testNewService(self):
+-        sssdconfig = SSSDConfig.SSSDConfig(srcdir + "/etc/sssd.api.conf",
+-                                           srcdir + "/etc/sssd.api.d")
++        sssdconfig = SSSDConfig.SSSDConfig(srcdir + "/usr/share/sssd/sssd.api.conf",
++                                           srcdir + "/usr/share/sssd/sssd.api.d")
+ 
+         # Negative Test - Not initialized
+         self.assertRaises(SSSDConfig.NotInitializedError, sssdconfig.new_service, 'sssd')
+@@ -1231,8 +1231,8 @@
+         # are set to the defaults from the schema
+ 
+     def testDeleteService(self):
+-        sssdconfig = SSSDConfig.SSSDConfig(srcdir + "/etc/sssd.api.conf",
+-                                           srcdir + "/etc/sssd.api.d")
++        sssdconfig = SSSDConfig.SSSDConfig(srcdir + "/usr/share/sssd/sssd.api.conf",
++                                           srcdir + "/usr/share/sssd/sssd.api.d")
+ 
+         # Negative Test - Not initialized
+         self.assertRaises(SSSDConfig.NotInitializedError, sssdconfig.delete_service, 'sssd')
+@@ -1243,8 +1243,8 @@
+         service = sssdconfig.delete_service('sssd')
+ 
+     def testSaveService(self):
+-        sssdconfig = SSSDConfig.SSSDConfig(srcdir + "/etc/sssd.api.conf",
+-                                           srcdir + "/etc/sssd.api.d")
++        sssdconfig = SSSDConfig.SSSDConfig(srcdir + "/usr/share/sssd/sssd.api.conf",
++                                           srcdir + "/usr/share/sssd/sssd.api.d")
+ 
+         new_service = SSSDConfig.SSSDService('sssd', sssdconfig.schema)
+ 
+@@ -1261,8 +1261,8 @@
+         self.assertRaises(TypeError, sssdconfig.save_service, self)
+ 
+     def testListActiveDomains(self):
+-        sssdconfig = SSSDConfig.SSSDConfig(srcdir + "/etc/sssd.api.conf",
+-                                           srcdir + "/etc/sssd.api.d")
++        sssdconfig = SSSDConfig.SSSDConfig(srcdir + "/usr/share/sssd/sssd.api.conf",
++                                           srcdir + "/usr/share/sssd/sssd.api.d")
+ 
+         # Negative Test - Not Initialized
+         self.assertRaises(SSSDConfig.NotInitializedError, sssdconfig.list_active_domains)
+@@ -1285,8 +1285,8 @@
+                             domain)
+ 
+     def testListInactiveDomains(self):
+-        sssdconfig = SSSDConfig.SSSDConfig(srcdir + "/etc/sssd.api.conf",
+-                                           srcdir + "/etc/sssd.api.d")
++        sssdconfig = SSSDConfig.SSSDConfig(srcdir + "/usr/share/sssd/sssd.api.conf",
++                                           srcdir + "/usr/share/sssd/sssd.api.d")
+ 
+         # Negative Test - Not Initialized
+         self.assertRaises(SSSDConfig.NotInitializedError, sssdconfig.list_inactive_domains)
+@@ -1312,8 +1312,8 @@
+                             domain)
+ 
+     def testListDomains(self):
+-        sssdconfig = SSSDConfig.SSSDConfig(srcdir + "/etc/sssd.api.conf",
+-                                           srcdir + "/etc/sssd.api.d")
++        sssdconfig = SSSDConfig.SSSDConfig(srcdir + "/usr/share/sssd/sssd.api.conf",
++                                           srcdir + "/usr/share/sssd/sssd.api.d")
+ 
+         # Negative Test - Not Initialized
+         self.assertRaises(SSSDConfig.NotInitializedError, sssdconfig.list_domains)
+@@ -1341,8 +1341,8 @@
+                             domain)
+ 
+     def testGetDomain(self):
+-        sssdconfig = SSSDConfig.SSSDConfig(srcdir + "/etc/sssd.api.conf",
+-                                           srcdir + "/etc/sssd.api.d")
++        sssdconfig = SSSDConfig.SSSDConfig(srcdir + "/usr/share/sssd/sssd.api.conf",
++                                           srcdir + "/usr/share/sssd/sssd.api.d")
+ 
+         # Negative Test - Not initialized
+         self.assertRaises(SSSDConfig.NotInitializedError, sssdconfig.get_domain, 'sssd')
+@@ -1376,8 +1376,8 @@
+         self.assertFalse(domain.options.has_key('nosuchoption'))
+ 
+     def testNewDomain(self):
+-        sssdconfig = SSSDConfig.SSSDConfig(srcdir + "/etc/sssd.api.conf",
+-                                           srcdir + "/etc/sssd.api.d")
++        sssdconfig = SSSDConfig.SSSDConfig(srcdir + "/usr/share/sssd/sssd.api.conf",
++                                           srcdir + "/usr/share/sssd/sssd.api.d")
+ 
+         # Negative Test - Not initialized
+         self.assertRaises(SSSDConfig.NotInitializedError, sssdconfig.new_domain, 'example.com')
+@@ -1394,8 +1394,8 @@
+         # are set to the defaults from the schema
+ 
+     def testDeleteDomain(self):
+-        sssdconfig = SSSDConfig.SSSDConfig(srcdir + "/etc/sssd.api.conf",
+-                                           srcdir + "/etc/sssd.api.d")
++        sssdconfig = SSSDConfig.SSSDConfig(srcdir + "/usr/share/sssd/sssd.api.conf",
++                                           srcdir + "/usr/share/sssd/sssd.api.d")
+ 
+         # Negative Test - Not initialized
+         self.assertRaises(SSSDConfig.NotInitializedError, sssdconfig.delete_domain, 'IPA')
+@@ -1412,8 +1412,8 @@
+         self.assertFalse(sssdconfig.has_section('domain/IPA'))
+ 
+     def testSaveDomain(self):
+-        sssdconfig = SSSDConfig.SSSDConfig(srcdir + "/etc/sssd.api.conf",
+-                                           srcdir + "/etc/sssd.api.d")
++        sssdconfig = SSSDConfig.SSSDConfig(srcdir + "/usr/share/sssd/sssd.api.conf",
++                                           srcdir + "/usr/share/sssd/sssd.api.d")
+         # Negative Test - Not initialized
+         self.assertRaises(SSSDConfig.NotInitializedError, sssdconfig.save_domain, 'IPA')
+ 
+@@ -1547,8 +1547,8 @@
+         self.assertFalse(domain2.get_option('ldap_id_use_start_tls'))
+ 
+     def testActivateDomain(self):
+-        sssdconfig = SSSDConfig.SSSDConfig(srcdir + "/etc/sssd.api.conf",
+-                                           srcdir + "/etc/sssd.api.d")
++        sssdconfig = SSSDConfig.SSSDConfig(srcdir + "/usr/share/sssd/sssd.api.conf",
++                                           srcdir + "/usr/share/sssd/sssd.api.d")
+ 
+         domain_name = 'PROXY'
+ 
+@@ -1584,8 +1584,8 @@
+                           sssdconfig.activate_domain, self)
+ 
+     def testDeactivateDomain(self):
+-        sssdconfig = SSSDConfig.SSSDConfig(srcdir + "/etc/sssd.api.conf",
+-                                           srcdir + "/etc/sssd.api.d")
++        sssdconfig = SSSDConfig.SSSDConfig(srcdir + "/usr/share/sssd/sssd.api.conf",
++                                           srcdir + "/usr/share/sssd/sssd.api.d")
+ 
+         domain_name = 'IPA'
+ 

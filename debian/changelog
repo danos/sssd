@@ -37,6 +37,8 @@ sssd (1.5.13-1) UNRELEASED; urgency=low
     currently has '-D -f'.
   * sssd.init: Drop separate OPTIONS, '-D' comes from /etc/default/sssd
     now..
+  * fix-python-api-path.dpatch: Use the new location for the API files.
+    (LP: 859611)
 
  -- Petter Reinholdtsen <pere@debian.org>  Tue, 14 Sep 2010 12:06:37 +0200
 
