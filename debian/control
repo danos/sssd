@@ -1,0 +1,75 @@
+Source: sssd
+Section: utils
+Priority: extra
+Maintainer: Petter Reinholdtsen <pere@debian.org>
+Uploaders: Morten Werner Forsbring <werner@debian.org>
+Build-Depends: cdbs, debhelper (>= 7), dnsutils, dpatch,
+    libpopt-dev, libdbus-1-dev, libldap2-dev, 
+    libpam-dev, libnss3-dev, libnspr4-dev, libpcre3-dev, 
+    libselinux1-dev, libsasl2-dev,
+    libtevent-dev, libldb-dev, libtalloc-dev, libtdb-dev, 
+    xml-core, docbook-xsl, docbook-xml, libxml2-utils, xsltproc,
+    cvs, krb5-config, libkrb5-dev, libc-ares-dev,
+    python-dev (>= 2.3.5-11), python-central (>= 0.6),
+    libsemanage1-dev
+Standards-Version: 3.9.1
+XS-Python-Version: current
+Vcs-Git: git://git.debian.org/git/collab-maint/pkg-sssd
+Vcs-Browser: http://git.debian.org/?p=collab-maint/pkg-sssd.git
+Homepage: https://fedorahosted.org/sssd/
+
+Package: sssd
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}, python, python-sss
+Recommends: ldap-utils, bind9-host
+Suggests: libnss-sss, libpam-sss
+Description: System Security Services Daemon 
+ Provides a set of daemons to manage access to remote directories and
+ authentication mechanisms. It provides an NSS and PAM interface toward
+ the system and a pluggable backend system to connect to multiple different
+ account sources. It is also the basis to provide client auditing and policy
+ services for projects like FreeIPA.
+ .
+ This package provides the daemon.
+
+Package: libnss-sss
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}, perl
+Recommends: sssd
+Description: Nss library for the System Security Services Daemon 
+ Provides a set of daemons to manage access to remote directories and
+ authentication mechanisms. It provides an NSS and PAM interface toward
+ the system and a pluggable backend system to connect to multiple different
+ account sources. It is also the basis to provide client auditing and policy
+ services for projects like FreeIPA.
+ .
+ This package provide the nss library to connect to the sssd daemon.
+
+Package: libpam-sss
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}, libpam-runtime (>= 1.0.1-6)
+Recommends: sssd
+Description: Pam module for the System Security Services Daemon 
+ Provides a set of daemons to manage access to remote directories and
+ authentication mechanisms. It provides an NSS and PAM interface toward
+ the system and a pluggable backend system to connect to multiple different
+ account sources. It is also the basis to provide client auditing and policy
+ services for projects like FreeIPA.
+ .
+ This package provide the pam module to connect to the sssd daemon.
+
+Package: python-sss
+Section: python
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}, ${python:Depends}
+Provides: ${python:Provides}
+Recommends: sssd
+XB-Python-Version: ${python:Versions}
+Description: Python module for the System Security Services Daemon
+ Provides a set of daemons to manage access to remote directories and
+ authentication mechanisms. It provides an NSS and PAM interface toward
+ the system and a pluggable backend system to connect to multiple different
+ account sources. It is also the basis to provide client auditing and policy
+ services for projects like FreeIPA.
+ .
+ This package provide a module to acces the configuration of the sssd daemon.

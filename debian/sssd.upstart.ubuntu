@@ -1,0 +1,16 @@
+# sssd - System Security Services Daemon
+#
+# Provides a set of daemons to manage access to remote directories and
+# authentication mechanisms. It provides an NSS and PAM interface toward
+# the system and a pluggable backend system to connect to multiple different
+# account sources.
+
+description	"System Security Services Daemon"
+
+start on filesystem
+stop on runlevel [06]
+
+expect fork
+respawn
+
+exec sssd -D

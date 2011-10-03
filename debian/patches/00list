@@ -1,0 +1,2 @@
+provide-default-working-sssd-config-file.dpatch
+#ldap-reject-zerolen-pwd.dpatch
