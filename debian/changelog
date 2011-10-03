@@ -28,6 +28,13 @@ sssd (1.2.4-1) UNRELEASED; urgency=low
 
  -- Petter Reinholdtsen <pere@debian.org>  Tue, 14 Sep 2010 12:06:37 +0200
 
+sssd (1.2.1-4.3) unstable; urgency=medium
+
+  * Non-maintainer upload.
+  * Adjust install path to consider GNU triplet (Closes: #640626).
+
+ -- Luca Falavigna <dktrkranz@debian.org>  Tue, 20 Sep 2011 20:02:34 +0200
+
 sssd (1.2.1-4.2) unstable; urgency=low
 
   * Non-maintainer upload.
