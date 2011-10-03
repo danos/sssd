@@ -28,6 +28,14 @@ sssd (1.2.4-1) UNRELEASED; urgency=low
 
  -- Petter Reinholdtsen <pere@debian.org>  Tue, 14 Sep 2010 12:06:37 +0200
 
+sssd (1.2.1-4.2) unstable; urgency=low
+
+  * Non-maintainer upload.
+  * debian/sssd.install
+    - updated location for ldb modules; Closes: #618159
+
+ -- Sandro Tosi <morph@debian.org>  Fri, 03 Jun 2011 23:53:59 +0200
+
 sssd (1.2.1-4.1) unstable; urgency=medium
 
    * Non-maintainer upload by the Security Team
