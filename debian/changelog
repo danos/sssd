@@ -41,6 +41,7 @@ sssd (1.5.13-1) UNRELEASED; urgency=low
     with upstream. (LP: 859611)
   * fix-python-api-path.dpatch: Use the new location for the API files.
     (LP: 859611)
+  * fix-configure.dpatch: Fix configure failure with the new version.
 
  -- Petter Reinholdtsen <pere@debian.org>  Tue, 14 Sep 2010 12:06:37 +0200
 

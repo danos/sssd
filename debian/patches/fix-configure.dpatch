@@ -1,0 +1,20 @@
+#! /bin/sh /usr/share/dpatch/dpatch-run
+## fix-configure.dpatch by  <Timo Aaltonen <tjaalton@ubuntu.com>>
+##
+## All lines beginning with `## DP:' are a description of the patch.
+## DP: No description.
+
+@DPATCH@
+diff -urNad '--exclude=CVS' '--exclude=.svn' '--exclude=.git' '--exclude=.arch' '--exclude=.hg' '--exclude=_darcs' '--exclude=.bzr' sssd-1.5.13~/configure.ac sssd-1.5.13/configure.ac
+--- sssd-1.5.13~/configure.ac	2011-08-29 17:45:13.000000000 +0300
++++ sssd-1.5.13/configure.ac	2011-09-27 10:24:37.108954990 +0300
+@@ -145,8 +145,8 @@
+                      [http://docbook.sourceforge.net/release/xsl/current/manpages/docbook.xsl],
+                      [Docbook XSL templates])
+     AC_CHECK_PROG([PO4A],[po4a],[po4a],[no])
+-    AM_CONDITIONAL([HAVE_PO4A], [test "x$PO4A" != "xno"])
+ fi
++AM_CONDITIONAL([HAVE_PO4A], [test "x$PO4A" != "xno"])
+ 
+ if test x$HAVE_PYTHON_BINDINGS != x; then
+     AM_PATH_PYTHON([2.4])
