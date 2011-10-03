@@ -9,6 +9,7 @@ Auth-Initial:
 	[success=end default=ignore]			pam_sss.so forward_pass
 Account-Type: Additional
 Account:
+	sufficient					pam_localuser.so
 	[default=bad success=ok user_unknown=ignore]	pam_sss.so
 Password-Type: Primary
 Password:
