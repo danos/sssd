@@ -6,7 +6,7 @@ Auth-Type: Primary
 Auth:
 	[success=end default=ignore]			pam_sss.so use_first_pass
 Auth-Initial:
-	[success=end default=ignore]			pam_sss.so
+	[success=end default=ignore]			pam_sss.so forward_pass
 Account-Type: Additional
 Account:
 	[default=bad success=ok user_unknown=ignore]	pam_sss.so
