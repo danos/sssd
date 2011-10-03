@@ -7,10 +7,18 @@
 
 description	"System Security Services Daemon"
 
-start on filesystem
+start on (filesystem and net-device-up)
 stop on runlevel [06]
 
 expect fork
 respawn
 
-exec sssd -D
+env DEFAULTFILE=/etc/default/sssd
+
+script
+	if [ -f "$DEFAULTFILE" ]; then
+	. "$DEFAULTFILE"
+	fi
+
+	exec sssd $DAEMON_OPTS
+end script

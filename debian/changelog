@@ -30,6 +30,10 @@ sssd (1.5.13-1) UNRELEASED; urgency=low
     - Add libunistring-dev to build-deps.
   * Drop patch to ensure LDAP authentication never accept a zero
     length password, which is now included upstream.
+  * sssd.upstart.ubuntu:
+    - Don't start before net-device-up. (LP: 812943)
+    - Source /etc/default/sssd. (LP: 812943)
+
 
  -- Petter Reinholdtsen <pere@debian.org>  Tue, 14 Sep 2010 12:06:37 +0200
 
