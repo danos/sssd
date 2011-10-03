@@ -35,6 +35,8 @@ sssd (1.5.13-1) UNRELEASED; urgency=low
     - Source /etc/default/sssd. (LP: 812943)
   * sssd.default: Added a file to include the sssd daemon defaults,
     currently has '-D -f'.
+  * sssd.init: Drop separate OPTIONS, '-D' comes from /etc/default/sssd
+    now..
 
  -- Petter Reinholdtsen <pere@debian.org>  Tue, 14 Sep 2010 12:06:37 +0200
 

@@ -19,7 +19,6 @@
 DESCRIPTION="System Security Services Daemon"
 PATH=/bin:/usr/bin:/sbin:/usr/sbin
 NAME=sssd
-OPTIONS="-D"
 DAEMON_OPTS=""
 DAEMON=/usr/sbin/$NAME
 PIDFILE=/var/run/$NAME.pid
@@ -40,7 +39,7 @@ initdmain() {
     case "$1" in
         start)
             [ "$VERBOSE" != no ] && log_daemon_msg "Starting $DESCRIPTION" "$NAME"
-            start_daemon -p $PIDFILE $DAEMON $OPTIONS $DAEMON_OPTS
+            start_daemon -p $PIDFILE $DAEMON $DAEMON_OPTS
             RC=$?
             case "$RC" in
                 0)
