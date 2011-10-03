@@ -27,6 +27,7 @@ sssd (1.5.13-1) UNRELEASED; urgency=low
 
   [ Timo Aaltonen ]
   * New upstream release (1.5.13).
+    - Add libunistring-dev to build-deps.
   * Drop patch to ensure LDAP authentication never accept a zero
     length password, which is now included upstream.
 
