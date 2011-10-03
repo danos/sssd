@@ -6,7 +6,7 @@ include /usr/share/cdbs/1/rules/dpatch.mk
 
 DEB_CONFIGURE_EXTRA_FLAGS = --enable-krb5-locator-plugin
 
-APIDOCDIR = /usr/share/doc/sssd
+APIDOCDIR = /usr/share/sssd
 
 install/libnss-sss::
 	mkdir -p $(CURDIR)/debian/tmp/lib/

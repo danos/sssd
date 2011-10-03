@@ -37,6 +37,8 @@ sssd (1.5.13-1) UNRELEASED; urgency=low
     currently has '-D -f'.
   * sssd.init: Drop separate OPTIONS, '-D' comes from /etc/default/sssd
     now..
+  * rules: Install the Python API files to /usr/share/sssd, as discussed
+    with upstream. (LP: 859611)
   * fix-python-api-path.dpatch: Use the new location for the API files.
     (LP: 859611)
 
