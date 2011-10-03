@@ -92,4 +92,4 @@ Description: Python module for the System Security Services Daemon
  account sources. It is also the basis to provide client auditing and policy
  services for projects like FreeIPA.
  .
- This package provide a module to acces the configuration of the sssd daemon.
+ This package provide a module to access the configuration of the sssd daemon.
