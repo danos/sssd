@@ -1,6 +1,10 @@
 DISTCHECK_CONFIGURE_FLAGS = --with-ldb-lib-dir="$$dc_install_base"/lib/ldb
 
-SUBDIRS = po src/man
+SUBDIRS = po
+
+if HAVE_MANPAGES
+SUBDIRS += src/man
+endif
 
 # Some old versions of automake don't define builddir
 builddir ?= .
@@ -33,6 +37,7 @@ initdir = @initdir@
 logpath = @logpath@
 pubconfpath = @pubconfpath@
 pkgconfigdir = $(libdir)/pkgconfig
+krb5rcachedir = @krb5rcachedir@
 
 AM_CFLAGS =
 if WANT_AUX_INFO
@@ -1017,7 +1022,9 @@ endif
 # TRANSLATIONS #
 ################
 update-po:
+if HAVE_MANPAGES
 	$(MAKE) -C src/man update-po
+endif
 	$(MAKE) -C po update-po
 
 #######################
@@ -1072,6 +1079,7 @@ installsssddirs::
 if HAVE_DOXYGEN
 docs:
 	$(DOXYGEN) src/doxy.config
+	$(DOXYGEN) src/providers/ipa/ipa_hbac.doxy
 else
 docs:
 	@echo "Doxygen not installed, cannot generate documentation"
@@ -1097,6 +1105,9 @@ install-data-hook:
 	rm $(DESTDIR)/$(nsslibdir)/libnss_sss.so.2 \
        $(DESTDIR)/$(nsslibdir)/libnss_sss.so
 	mv $(DESTDIR)/$(nsslibdir)/libnss_sss.so.2.0.0 $(DESTDIR)/$(nsslibdir)/libnss_sss.so.2
+	if [ ! $(krb5rcachedir) = "__LIBKRB5_DEFAULTS__" ]; then \
+        mkdir -p $(DESTDIR)/$(krb5rcachedir) ; \
+	fi
 
 uninstall-hook:
 	if [ -f $(abs_builddir)/src/config/.files ]; then \

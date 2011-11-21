@@ -80,6 +80,7 @@ BuildRequires: nscd
 BuildRequires: gettext-devel
 BuildRequires: pkgconfig
 BuildRequires: libunistring-devel
+BuildRequires: findutils
 
 %description
 Provides a set of daemons to manage access to remote directories and
@@ -157,12 +158,24 @@ autoreconf -ivf
     --with-pipe-path=%{pipepath} \
     --with-pubconf-path=%{pubconfpath} \
     --with-init-dir=%{_initrddir} \
+    --with-krb5-rcache-dir=%{_localstatedir}/cache/krb5rcache \
     --enable-nsslibdir=/%{_lib} \
     --enable-pammoddir=/%{_lib}/security \
     --disable-static \
     --disable-rpath
 
-make %{?_smp_mflags}
+make %{?_smp_mflags} all
+
+
+# Only build docs on recent distros
+%if 0%{?fedora}
+make %{?_smp_mflags} docs
+%endif
+
+%if 0%{?rhel} >= 6
+make %{?_smp_mflags} docs
+%endif
+
 
 %check
 export CK_TIMEOUT_MULTIPLIER=10
@@ -192,19 +205,10 @@ mkdir -p $RPM_BUILD_ROOT/%{_sysconfdir}/rwtab.d
 install -m644 src/examples/rwtab $RPM_BUILD_ROOT%{_sysconfdir}/rwtab.d/sssd
 
 # Remove .la files created by libtool
-rm -f \
-    $RPM_BUILD_ROOT/%{_lib}/libnss_sss.la \
-    $RPM_BUILD_ROOT/%{_lib}/security/pam_sss.la \
-    $RPM_BUILD_ROOT/%{ldb_modulesdir}/memberof.la \
-    $RPM_BUILD_ROOT/%{_libdir}/sssd/libsss_ldap.la \
-    $RPM_BUILD_ROOT/%{_libdir}/sssd/libsss_proxy.la \
-    $RPM_BUILD_ROOT/%{_libdir}/sssd/libsss_krb5.la \
-    $RPM_BUILD_ROOT/%{_libdir}/sssd/libsss_ipa.la \
-    $RPM_BUILD_ROOT/%{_libdir}/sssd/libsss_simple.la \
-    $RPM_BUILD_ROOT/%{_libdir}/krb5/plugins/libkrb5/sssd_krb5_locator_plugin.la \
-    $RPM_BUILD_ROOT/%{_libdir}/libipa_hbac.la \
-    $RPM_BUILD_ROOT/%{python_sitearch}/pysss.la \
-    $RPM_BUILD_ROOT/%{python_sitearch}/pyhbac.la
+find $RPM_BUILD_ROOT -name "*.la" -exec rm -f {} \;
+
+# Suppress developer-only documentation
+rm -Rf ${RPM_BUILD_ROOT}/%{_docdir}/%{name}/doc
 
 # Older versions of rpmbuild can only handle one -f option
 # So we need to append to the sssd.lang file
@@ -239,6 +243,7 @@ rm -rf $RPM_BUILD_ROOT
 %{_libdir}/%{name}/
 %{ldb_modulesdir}/memberof.so
 %dir %{sssdstatedir}
+%dir %{_localstatedir}/cache/krb5rcache
 %attr(700,root,root) %dir %{dbpath}
 %attr(755,root,root) %dir %{pipepath}
 %attr(755,root,root) %dir %{pubconfpath}
@@ -296,6 +301,12 @@ rm -rf $RPM_BUILD_ROOT
 
 %files -n libipa_hbac-devel
 %defattr(-,root,root,-)
+%if 0%{?fedora}
+%doc hbac_doc/html
+%endif
+%if 0%{?rhel} >= 6
+%doc hbac_doc/html
+%endif
 %{_includedir}/ipa_hbac.h
 %{_libdir}/libipa_hbac.so
 %{_libdir}/pkgconfig/ipa_hbac.pc

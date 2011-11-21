@@ -57,6 +57,11 @@
  * monitor will get crazy hammering children with messages */
 #define MONITOR_DEF_PING_TIME 10
 
+/* Special value to leave the Kerberos Replay Cache set to use
+ * the libkrb5 defaults
+ */
+#define KRB5_RCACHE_DIR_DISABLE "__LIBKRB5_DEFAULTS__"
+
 struct svc_spy;
 
 struct mt_svc {
@@ -79,7 +84,6 @@ struct mt_svc {
 
     int restarts;
     time_t last_restart;
-    time_t last_ping;
     int failed_pongs;
 
     int debug_level;
@@ -457,7 +461,7 @@ static int monitor_dbus_init(struct mt_ctx *ctx)
 
     ret = sbus_new_server(ctx, ctx->ev,
                           monitor_address, &monitor_server_interface,
-                          &ctx->sbus_srv, monitor_service_init, ctx);
+                          false, &ctx->sbus_srv, monitor_service_init, ctx);
 
     talloc_free(monitor_address);
 
@@ -544,22 +548,14 @@ static void tasks_check_handler(struct tevent_context *ev,
             break;
         }
 
-        if (svc->last_ping != 0) {
-            if ((now - svc->last_ping) > (svc->ping_time)) {
-                svc->failed_pongs++;
-            } else {
-                svc->failed_pongs = 0;
-            }
-            if (svc->failed_pongs > 3) {
-                /* too long since we last heard of this process */
-                DEBUG(1, ("Killing service [%s], not responding to pings!\n",
-                          svc->name));
-                monitor_kill_service(svc);
-                process_alive = false;
-            }
+        if (svc->failed_pongs >= 3) {
+            /* too long since we last heard of this process */
+            DEBUG(1,
+                  ("Killing service [%s], not responding to pings!\n",
+                   svc->name));
+            monitor_kill_service(svc);
+            process_alive = false;
         }
-
-        svc->last_ping = now;
     }
 
     if (!process_alive) {
@@ -1871,8 +1867,34 @@ int monitor_process_init(struct mt_ctx *ctx,
     struct sysdb_ctx_list *db_list;
     struct tevent_signal *tes;
     struct sss_domain_info *dom;
+    char *rcachedir;
     int num_providers;
     int ret;
+    int error;
+
+    /* Set up the environment variable for the Kerberos Replay Cache */
+    ret = confdb_get_string(ctx->cdb, ctx,
+                            CONFDB_MONITOR_CONF_ENTRY,
+                            CONFDB_MONITOR_KRB5_RCACHEDIR,
+                            KRB5_RCACHE_DIR,
+                            &rcachedir);
+    if (ret != EOK) {
+        return ret;
+    }
+
+    if (strcmp(rcachedir, KRB5_RCACHE_DIR_DISABLE) != 0)
+    {
+        errno = 0;
+        ret = setenv("KRB5RCACHEDIR", rcachedir, 1);
+        if (ret < 0) {
+            error = errno;
+            DEBUG(1,
+                  ("Unable to set KRB5RCACHEDIR: %s."
+                   "Will attempt to use libkrb5 defaults\n",
+                   strerror(error)));
+        }
+        talloc_zfree(rcachedir);
+    }
 
     /* Set up an event handler for a SIGHUP */
     tes = tevent_add_signal(ctx->ev, ctx, SIGHUP, 0,
@@ -2087,7 +2109,7 @@ static int service_send_ping(struct mt_svc *svc)
     }
 
     ret = sbus_conn_send(svc->conn, msg,
-                         svc->mt_ctx->service_id_timeout,
+                         svc->ping_time * 1000, /* milliseconds */
                          ping_check, svc, NULL);
     dbus_message_unref(msg);
     return ret;
@@ -2098,6 +2120,7 @@ static void ping_check(DBusPendingCall *pending, void *data)
     struct mt_svc *svc;
     DBusMessage *reply;
     const char *dbus_error_name;
+    size_t len;
     int type;
 
     svc = talloc_get_type(data, struct mt_svc);
@@ -2130,13 +2153,26 @@ static void ping_check(DBusPendingCall *pending, void *data)
     case DBUS_MESSAGE_TYPE_ERROR:
 
         dbus_error_name = dbus_message_get_error_name(reply);
+        if (!dbus_error_name) {
+            dbus_error_name = "<UNKNOWN>";
+        }
 
-        /* timeouts are handled in the main service check function */
-        if (strcmp(dbus_error_name, DBUS_ERROR_TIMEOUT) == 0)
+        len = strlen(DBUS_ERROR_NO_REPLY);
+
+        /* Increase failed pong count */
+        if (strnlen(dbus_error_name, len + 1) == len
+                && strncmp(dbus_error_name, DBUS_ERROR_NO_REPLY, len) == 0) {
+            DEBUG(1,
+                  ("A service PING timed out on [%s]. "
+                   "Attempt [%d]\n",
+                   svc->name, svc->failed_pongs));
+            svc->failed_pongs++;
             break;
+        }
 
-        DEBUG(0,("A service PING returned an error [%s], closing connection.\n",
-                 dbus_error_name));
+        DEBUG(0,
+              ("A service PING returned an error [%s], closing connection.\n",
+               dbus_error_name));
         /* Falling through to default intentionally*/
     default:
         /*
@@ -2348,7 +2384,7 @@ int main(int argc, const char *argv[])
     }
 
     /* Warn if nscd seems to be running */
-    ret = check_file(NSCD_SOCKET_PATH, -1, -1, -1, CHECK_SOCK, NULL);
+    ret = check_file(NSCD_SOCKET_PATH, -1, -1, -1, CHECK_SOCK, NULL, false);
     if (ret == EOK) {
         sss_log(SSS_LOG_NOTICE,
                 "nscd socket was detected.  Nscd caching capabilities "

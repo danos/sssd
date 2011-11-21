@@ -74,7 +74,7 @@
                     <term>krb5_server (string)</term>
                     <listitem>
                         <para>
-                            Specifies the list of IP addresses or hostnames
+                            Specifies the comma-separated list of IP addresses or hostnames
                             of the Kerberos servers to which SSSD should
                             connect in the order of preference. For more
                             information on failover and server redundancy,
@@ -260,7 +260,10 @@
                         </para>
                         <para>
                             Please note that this feature currently only
-                            available on a Linux platform.
+                            available on a Linux platform. Passwords stored in
+                            this way are kept in plaintext in the kernel
+                            keyring and are potentially accessible by the root
+                            user (with difficulty).
                         </para>
                         <para>
                             Default: false

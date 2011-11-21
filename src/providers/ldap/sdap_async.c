@@ -580,7 +580,7 @@ static void sdap_exop_modify_passwd_done(struct sdap_op *op,
     }
 
     DEBUG(3, ("ldap_extended_operation result: %s(%d), %s\n",
-              ldap_err2string(state->result), state->result, errmsg));
+            sss_ldap_err2string(state->result), state->result, errmsg));
 
     if (state->result != LDAP_SUCCESS) {
         if (errmsg) {
@@ -615,14 +615,21 @@ int sdap_exop_modify_passwd_recv(struct tevent_req *req,
     struct sdap_exop_modify_passwd_state *state = tevent_req_data(req,
                                          struct sdap_exop_modify_passwd_state);
 
-    *result = SDAP_ERROR;
     *user_error_message = talloc_steal(mem_ctx, state->user_error_message);
 
-    TEVENT_REQ_RETURN_ON_ERROR(req);
-
-    if (state->result == LDAP_SUCCESS) {
-        *result = SDAP_SUCCESS;
+    switch (state->result) {
+        case LDAP_SUCCESS:
+            *result = SDAP_SUCCESS;
+            break;
+        case LDAP_CONSTRAINT_VIOLATION:
+            *result = SDAP_AUTH_PW_CONSTRAINT_VIOLATION;
+            break;
+        default:
+            *result = SDAP_ERROR;
+            break;
     }
+
+    TEVENT_REQ_RETURN_ON_ERROR(req);
 
     return EOK;
 }
@@ -867,7 +874,7 @@ static errno_t sdap_get_generic_step(struct tevent_req *req)
     ldap_control_free(page_control);
     m_controls[0] = NULL;
     if (lret != LDAP_SUCCESS) {
-        DEBUG(3, ("ldap_search_ext failed: %s\n", ldap_err2string(lret)));
+        DEBUG(3, ("ldap_search_ext failed: %s\n", sss_ldap_err2string(lret)));
         if (lret == LDAP_SERVER_DOWN) {
             ret = ETIMEDOUT;
             optret = sss_ldap_get_diagnostic_msg(state, state->sh->ldap,
@@ -878,7 +885,7 @@ static errno_t sdap_get_generic_step(struct tevent_req *req)
             }
             else {
                 sss_log(SSS_LOG_ERR, "LDAP connection error, %s",
-                                     ldap_err2string(lret));
+                                     sss_ldap_err2string(lret));
             }
         }
 
@@ -964,11 +971,11 @@ static void sdap_get_generic_done(struct sdap_op *op,
         }
 
         DEBUG(6, ("Search result: %s(%d), %s\n",
-                  ldap_err2string(result), result, errmsg));
+                  sss_ldap_err2string(result), result, errmsg));
 
         if (result != LDAP_SUCCESS && result != LDAP_NO_SUCH_OBJECT) {
             DEBUG(2, ("Unexpected result from ldap: %s(%d), %s\n",
-                      ldap_err2string(result), result, errmsg));
+                      sss_ldap_err2string(result), result, errmsg));
         }
         ldap_memfree(errmsg);
 
@@ -1062,5 +1069,94 @@ int sdap_get_generic_recv(struct tevent_req *req,
     *reply = talloc_steal(mem_ctx, state->reply);
 
     return EOK;
+}
+
+errno_t sdap_check_aliases(struct sysdb_ctx *sysdb,
+                           struct sysdb_attrs *user_attrs,
+                           struct sss_domain_info *dom,
+                           struct sdap_options *opts,
+                           bool steal_memberships)
+{
+    errno_t ret;
+    const char **aliases = NULL;
+    const char *name = NULL;
+    struct ldb_message *msg;
+    TALLOC_CTX *tmp_ctx = NULL;
+    char **parents;
+    uid_t alias_uid;
+    int i;
+
+    tmp_ctx = talloc_new(NULL);
+    if (!tmp_ctx) return ENOMEM;
+
+    ret = sysdb_attrs_primary_name(sysdb, user_attrs,
+                                   opts->user_map[SDAP_AT_USER_NAME].name,
+                                   &name);
+    if (ret != EOK) {
+        DEBUG(1, ("Could not get the primary name\n"));
+        goto done;
+    }
+
+    ret = sysdb_attrs_get_aliases(tmp_ctx, user_attrs, name, &aliases);
+    if (ret != EOK) {
+        DEBUG(1, ("Failed to get the alias list\n"));
+        goto done;
+    }
+
+    for (i = 0; aliases[i]; i++) {
+        /* In RFC2307 schema, another group might be referencing user
+         * using secondary name, so there might be fake users in the cache
+         * from a previous getgr call */
+        ret = sysdb_search_user_by_name(tmp_ctx, sysdb, dom,
+                                        aliases[i], NULL, &msg);
+        if (ret && ret != ENOENT) {
+            DEBUG(1, ("Error searching the cache\n"));
+            goto done;
+        } else if (ret == ENOENT) {
+            DEBUG(9, ("No user with primary name same as alias %s\n", aliases[i]));
+            continue;
+        }
+
+        alias_uid = ldb_msg_find_attr_as_uint64(msg, SYSDB_UIDNUM, 0);
+        if (alias_uid) {
+            DEBUG(1, ("Cache contains non-fake user with same name "
+                      "as alias %s\n", aliases[i]));
+            ret = EIO;
+            goto done;
+        }
+        DEBUG(7, ("%s is a fake user\n", aliases[i]));
+
+        if (steal_memberships) {
+            /* Get direct sysdb parents */
+            ret = sysdb_get_direct_parents(tmp_ctx, sysdb, dom,
+                                           SYSDB_MEMBER_USER,
+                                           aliases[i], &parents);
+            if (ret) {
+                DEBUG(1, ("Could not get direct parents for %s: %d [%s]\n",
+                          aliases[i], ret, strerror(ret)));
+                goto done;
+            }
+
+            ret = sysdb_update_members(sysdb, dom, name, SYSDB_MEMBER_USER,
+                                       (const char *const *) parents,
+                                       NULL);
+            if (ret != EOK) {
+                DEBUG(1, ("Membership update failed [%d]: %s\n",
+                          ret, strerror(ret)));
+                goto done;
+            }
+        }
+
+        ret = sysdb_delete_user(tmp_ctx, sysdb, dom, aliases[i], alias_uid);
+        if (ret) {
+            DEBUG(1, ("Error deleting fake user %s\n", aliases[i]));
+            goto done;
+        }
+    }
+
+    ret = EOK;
+done:
+    talloc_free(tmp_ctx);
+    return ret;
 }
 
