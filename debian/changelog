@@ -1,4 +1,4 @@
-sssd (1.5.13-1) UNRELEASED; urgency=low
+sssd (1.5.15-1) UNRELEASED; urgency=low
 
   [ Petter Reinholdtsen ]
   * New upstream version 1.2.4:
