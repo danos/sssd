@@ -46,6 +46,7 @@ sssd (1.5.15-1) UNRELEASED; urgency=low
     - Add 'forward_pass' to auth stack to fix ecryptfs mounts. (LP: 826643)
     - Add pam_localuser.so to account stack to allow local users to log in.
       (LP: 860488)
+    - Drop the priority so that pam_unix is always before pam_sss.
   * control: sssd now Recommends libpam-sss and libnss-sss, since sssd is
     mostly useless without them. (LP: 767337)
   * sssd.prerm: Remove empty script.
