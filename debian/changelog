@@ -49,6 +49,7 @@ sssd (1.5.15-1) UNRELEASED; urgency=low
   * control: sssd now Recommends libpam-sss and libnss-sss, since sssd is
     mostly useless without them. (LP: 767337)
   * sssd.prerm: Remove empty script.
+  * control, compat: Bump debhelper build-dep and compat level to 8.
 
  -- Petter Reinholdtsen <pere@debian.org>  Tue, 14 Sep 2010 12:06:37 +0200
 
