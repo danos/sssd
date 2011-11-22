@@ -3,7 +3,7 @@ Section: utils
 Priority: extra
 Maintainer: Petter Reinholdtsen <pere@debian.org>
 Uploaders: Morten Werner Forsbring <werner@debian.org>
-Build-Depends: cdbs, debhelper (>= 8), dnsutils, quilt,
+Build-Depends: cdbs, debhelper (>= 8), dnsutils,
  libpopt-dev,
  libdbus-1-dev,
  libldap2-dev,
