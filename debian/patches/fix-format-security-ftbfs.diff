@@ -1,8 +1,9 @@
-diff -urNad '--exclude=CVS' '--exclude=.svn' '--exclude=.git' '--exclude=.arch' '--exclude=.hg' '--exclude=_darcs' '--exclude=.bzr' sssd-1.5.15~/src/db/sysdb.c sssd-1.5.15/src/db/sysdb.c
---- sssd-1.5.15~/src/db/sysdb.c 2011-11-19 23:29:52.806638926 +0100
-+++ sssd-1.5.15/src/db/sysdb.c  2011-11-19 23:30:22.000000000 +0100
+Index: pkg-sssd/src/db/sysdb.c
+===================================================================
+--- pkg-sssd.orig/src/db/sysdb.c	2011-11-22 20:24:59.680695414 +0200
++++ pkg-sssd/src/db/sysdb.c	2011-11-22 20:26:34.135503356 +0200
 @@ -817,7 +817,7 @@
-
+ 
      ret = ldb_search(ldb, mem_ctx, &res,
                       basedn, LDB_SCOPE_SUBTREE,
 -                     attrs, filter);
@@ -10,12 +11,13 @@ diff -urNad '--exclude=CVS' '--exclude=.svn' '--exclude=.git' '--exclude=.arch' 
      if (ret != LDB_SUCCESS) {
          ret = EIO;
          goto done;
-diff -urNad '--exclude=CVS' '--exclude=.svn' '--exclude=.git' '--exclude=.arch' '--exclude=.hg' '--exclude=_darcs' '--exclude=.bzr' sssd-1.5.15~/src/db/sysdb_search.c sssd-1.5.15/src/db/sysdb_search.c
---- sssd-1.5.15~/src/db/sysdb_search.c  2011-11-02 20:17:20.000000000 +0100
-+++ sssd-1.5.15/src/db/sysdb_search.c   2011-11-19 23:30:31.786637145 +0100
+Index: pkg-sssd/src/db/sysdb_search.c
+===================================================================
+--- pkg-sssd.orig/src/db/sysdb_search.c	2011-11-22 20:24:59.668695058 +0200
++++ pkg-sssd/src/db/sysdb_search.c	2011-11-22 20:26:34.135503356 +0200
 @@ -358,7 +358,7 @@
      }
-
+ 
      ret = ldb_search(ctx->ldb, tmpctx, &res, base_dn,
 -                     LDB_SCOPE_SUBTREE, attrs, fmt_filter);
 +                     LDB_SCOPE_SUBTREE, attrs, "%s", fmt_filter);

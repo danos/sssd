@@ -1,7 +1,8 @@
-diff -urNad '--exclude=CVS' '--exclude=.svn' '--exclude=.git' '--exclude=.arch' '--exclude=.hg' '--exclude=_darcs' '--exclude=.bzr' sssd-1.5.8~/src/config/SSSDConfig.py sssd-1.5.8/src/config/SSSDConfig.py
---- sssd-1.5.8~/src/config/SSSDConfig.py	2011-05-27 23:16:11.000000000 +0300
-+++ sssd-1.5.8/src/config/SSSDConfig.py	2011-09-27 09:10:33.588891678 +0300
-@@ -245,9 +245,9 @@
+Index: pkg-sssd/src/config/SSSDConfig.py
+===================================================================
+--- pkg-sssd.orig/src/config/SSSDConfig.py	2011-11-22 20:26:08.782749600 +0200
++++ pkg-sssd/src/config/SSSDConfig.py	2011-11-22 20:26:27.879317350 +0200
+@@ -254,9 +254,9 @@
          SSSDChangeConf.__init__(self)
          #TODO: get these from a global setting
          if not schemafile:
@@ -13,7 +14,7 @@ diff -urNad '--exclude=CVS' '--exclude=.svn' '--exclude=.git' '--exclude=.arch' 
  
          try:
              #Read the primary config file
-@@ -1146,10 +1146,10 @@
+@@ -1155,10 +1155,10 @@
  
          schemafile:
            The path to the api schema config file. Usually
@@ -26,9 +27,10 @@ diff -urNad '--exclude=CVS' '--exclude=.svn' '--exclude=.git' '--exclude=.arch' 
  
          === Returns ===
          The newly-created SSSDConfig object.
-diff -urNad '--exclude=CVS' '--exclude=.svn' '--exclude=.git' '--exclude=.arch' '--exclude=.hg' '--exclude=_darcs' '--exclude=.bzr' sssd-1.5.8~/src/config/SSSDConfigTest.py sssd-1.5.8/src/config/SSSDConfigTest.py
---- sssd-1.5.8~/src/config/SSSDConfigTest.py	2011-05-27 23:16:11.000000000 +0300
-+++ sssd-1.5.8/src/config/SSSDConfigTest.py	2011-09-27 09:13:57.598894585 +0300
+Index: pkg-sssd/src/config/SSSDConfigTest.py
+===================================================================
+--- pkg-sssd.orig/src/config/SSSDConfigTest.py	2011-11-22 20:26:08.782749600 +0200
++++ pkg-sssd/src/config/SSSDConfigTest.py	2011-11-22 20:26:27.879317350 +0200
 @@ -18,8 +18,8 @@
          pass
  
@@ -138,7 +140,7 @@ diff -urNad '--exclude=CVS' '--exclude=.svn' '--exclude=.git' '--exclude=.arch' 
  
      def tearDown(self):
          pass
-@@ -423,8 +423,8 @@
+@@ -424,8 +424,8 @@
  
  class SSSDConfigTestSSSDDomain(unittest.TestCase):
      def setUp(self):
@@ -149,7 +151,7 @@ diff -urNad '--exclude=CVS' '--exclude=.svn' '--exclude=.git' '--exclude=.arch' 
  
      def tearDown(self):
          pass
-@@ -1041,21 +1041,21 @@
+@@ -1060,21 +1060,21 @@
  
      def testInit(self):
          # Positive test
@@ -177,7 +179,7 @@ diff -urNad '--exclude=CVS' '--exclude=.svn' '--exclude=.git' '--exclude=.arch' 
          sssdconfig.import_config(srcdir + "/testconfigs/sssd-valid.conf")
  
          # Verify that all sections were imported
-@@ -1100,36 +1100,36 @@
+@@ -1119,36 +1119,36 @@
          #TODO: Check the types and values of the settings
  
          # Negative Test - Missing config file
@@ -226,7 +228,7 @@ diff -urNad '--exclude=CVS' '--exclude=.svn' '--exclude=.git' '--exclude=.arch' 
          sssdconfig.new_config()
  
          # Check that the defaults were set
-@@ -1166,8 +1166,8 @@
+@@ -1185,8 +1185,8 @@
          pass
  
      def testListServices(self):
@@ -237,7 +239,7 @@ diff -urNad '--exclude=CVS' '--exclude=.svn' '--exclude=.git' '--exclude=.arch' 
  
          # Negative Test - sssdconfig not initialized
          self.assertRaises(SSSDConfig.NotInitializedError, sssdconfig.list_services)
-@@ -1189,8 +1189,8 @@
+@@ -1208,8 +1208,8 @@
                              service)
  
      def testGetService(self):
@@ -248,7 +250,7 @@ diff -urNad '--exclude=CVS' '--exclude=.svn' '--exclude=.git' '--exclude=.arch' 
  
          # Negative Test - Not initialized
          self.assertRaises(SSSDConfig.NotInitializedError, sssdconfig.get_service, 'sssd')
-@@ -1213,8 +1213,8 @@
+@@ -1232,8 +1232,8 @@
          self.assertFalse(service.options.has_key('nosuchoption'))
  
      def testNewService(self):
@@ -259,7 +261,7 @@ diff -urNad '--exclude=CVS' '--exclude=.svn' '--exclude=.git' '--exclude=.arch' 
  
          # Negative Test - Not initialized
          self.assertRaises(SSSDConfig.NotInitializedError, sssdconfig.new_service, 'sssd')
-@@ -1231,8 +1231,8 @@
+@@ -1250,8 +1250,8 @@
          # are set to the defaults from the schema
  
      def testDeleteService(self):
@@ -270,7 +272,7 @@ diff -urNad '--exclude=CVS' '--exclude=.svn' '--exclude=.git' '--exclude=.arch' 
  
          # Negative Test - Not initialized
          self.assertRaises(SSSDConfig.NotInitializedError, sssdconfig.delete_service, 'sssd')
-@@ -1243,8 +1243,8 @@
+@@ -1262,8 +1262,8 @@
          service = sssdconfig.delete_service('sssd')
  
      def testSaveService(self):
@@ -281,7 +283,7 @@ diff -urNad '--exclude=CVS' '--exclude=.svn' '--exclude=.git' '--exclude=.arch' 
  
          new_service = SSSDConfig.SSSDService('sssd', sssdconfig.schema)
  
-@@ -1261,8 +1261,8 @@
+@@ -1280,8 +1280,8 @@
          self.assertRaises(TypeError, sssdconfig.save_service, self)
  
      def testListActiveDomains(self):
@@ -292,7 +294,7 @@ diff -urNad '--exclude=CVS' '--exclude=.svn' '--exclude=.git' '--exclude=.arch' 
  
          # Negative Test - Not Initialized
          self.assertRaises(SSSDConfig.NotInitializedError, sssdconfig.list_active_domains)
-@@ -1285,8 +1285,8 @@
+@@ -1304,8 +1304,8 @@
                              domain)
  
      def testListInactiveDomains(self):
@@ -303,7 +305,7 @@ diff -urNad '--exclude=CVS' '--exclude=.svn' '--exclude=.git' '--exclude=.arch' 
  
          # Negative Test - Not Initialized
          self.assertRaises(SSSDConfig.NotInitializedError, sssdconfig.list_inactive_domains)
-@@ -1312,8 +1312,8 @@
+@@ -1331,8 +1331,8 @@
                              domain)
  
      def testListDomains(self):
@@ -314,7 +316,7 @@ diff -urNad '--exclude=CVS' '--exclude=.svn' '--exclude=.git' '--exclude=.arch' 
  
          # Negative Test - Not Initialized
          self.assertRaises(SSSDConfig.NotInitializedError, sssdconfig.list_domains)
-@@ -1341,8 +1341,8 @@
+@@ -1360,8 +1360,8 @@
                              domain)
  
      def testGetDomain(self):
@@ -325,7 +327,7 @@ diff -urNad '--exclude=CVS' '--exclude=.svn' '--exclude=.git' '--exclude=.arch' 
  
          # Negative Test - Not initialized
          self.assertRaises(SSSDConfig.NotInitializedError, sssdconfig.get_domain, 'sssd')
-@@ -1376,8 +1376,8 @@
+@@ -1395,8 +1395,8 @@
          self.assertFalse(domain.options.has_key('nosuchoption'))
  
      def testNewDomain(self):
@@ -336,7 +338,7 @@ diff -urNad '--exclude=CVS' '--exclude=.svn' '--exclude=.git' '--exclude=.arch' 
  
          # Negative Test - Not initialized
          self.assertRaises(SSSDConfig.NotInitializedError, sssdconfig.new_domain, 'example.com')
-@@ -1394,8 +1394,8 @@
+@@ -1413,8 +1413,8 @@
          # are set to the defaults from the schema
  
      def testDeleteDomain(self):
@@ -347,7 +349,7 @@ diff -urNad '--exclude=CVS' '--exclude=.svn' '--exclude=.git' '--exclude=.arch' 
  
          # Negative Test - Not initialized
          self.assertRaises(SSSDConfig.NotInitializedError, sssdconfig.delete_domain, 'IPA')
-@@ -1412,8 +1412,8 @@
+@@ -1431,8 +1431,8 @@
          self.assertFalse(sssdconfig.has_section('domain/IPA'))
  
      def testSaveDomain(self):
@@ -358,7 +360,7 @@ diff -urNad '--exclude=CVS' '--exclude=.svn' '--exclude=.git' '--exclude=.arch' 
          # Negative Test - Not initialized
          self.assertRaises(SSSDConfig.NotInitializedError, sssdconfig.save_domain, 'IPA')
  
-@@ -1547,8 +1547,8 @@
+@@ -1566,8 +1566,8 @@
          self.assertFalse(domain2.get_option('ldap_id_use_start_tls'))
  
      def testActivateDomain(self):
@@ -369,7 +371,7 @@ diff -urNad '--exclude=CVS' '--exclude=.svn' '--exclude=.git' '--exclude=.arch' 
  
          domain_name = 'PROXY'
  
-@@ -1584,8 +1584,8 @@
+@@ -1603,8 +1603,8 @@
                            sssdconfig.activate_domain, self)
  
      def testDeactivateDomain(self):
