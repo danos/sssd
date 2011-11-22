@@ -41,7 +41,6 @@ sssd (1.5.15-1) UNRELEASED; urgency=low
     with upstream. (LP: 859611)
   * fix-python-api-path.dpatch: Use the new location for the API files.
     (LP: 859611)
-  * fix-configure.dpatch: Fix configure failure with the new version.
   * libpam-sss.pam-auth-update:
     - Add 'forward_pass' to auth stack to fix ecryptfs mounts. (LP: 826643)
     - Add pam_localuser.so to account stack to allow local users to log in.
