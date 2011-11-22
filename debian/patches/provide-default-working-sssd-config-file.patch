@@ -1,13 +1,6 @@
-#! /bin/sh /usr/share/dpatch/dpatch-run
-## provide-default-working-sssd-config-file.dpatch by Mathias Gug <mathiaz@ubuntu.com>
-##
-## All lines beginning with `## DP:' are a description of the patch.
-## Description: Provide a default configuration that is working.
-
-@DPATCH@
-diff -urNad l-new-upstream~/server/examples/sssd.conf l-new-upstream/server/examples/sssd.conf
---- l-new-upstream~/src/examples/sssd.conf	2010-01-18 13:09:10.000000000 -0500
-+++ l-new-upstream/src/examples/sssd.conf	2010-01-18 13:18:18.000000000 -0500
+diff -urNad a/server/examples/sssd.conf b/server/examples/sssd.conf
+--- a/src/examples/sssd.conf	2010-01-18 13:09:10.000000000 -0500
++++ b/src/examples/sssd.conf	2010-01-18 13:18:18.000000000 -0500
 @@ -13,7 +13,7 @@
  # Add new domain configurations as [domain/<NAME>] sections, and
  # then add the list of domains (in the order you want them to be

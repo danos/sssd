@@ -50,6 +50,7 @@ sssd (1.5.15-1) UNRELEASED; urgency=low
     mostly useless without them. (LP: 767337)
   * sssd.prerm: Remove empty script.
   * control, compat: Bump debhelper build-dep and compat level to 8.
+  * Switch to quilt.
 
  -- Petter Reinholdtsen <pere@debian.org>  Tue, 14 Sep 2010 12:06:37 +0200
 

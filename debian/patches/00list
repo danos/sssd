@@ -1,3 +1,0 @@
-provide-default-working-sssd-config-file.dpatch
-fix-python-api-path.dpatch
-fix-configure.dpatch

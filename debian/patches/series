@@ -1,0 +1,3 @@
+provide-default-working-sssd-config-file.patch
+fix-python-api-path.patch
+fix-configure.patch
