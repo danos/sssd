@@ -1,38 +1,26 @@
 #!/usr/bin/make -f
-
-include /usr/share/cdbs/1/rules/debhelper.mk
-include /usr/share/cdbs/1/class/autotools.mk
-include /usr/share/cdbs/1/rules/dpatch.mk
-
-DEB_CONFIGURE_EXTRA_FLAGS = --enable-krb5-locator-plugin \
-	--libdir=\$${prefix}/lib/$(DEB_HOST_MULTIARCH) \
-	--with-ldb-lib-dir=\$${prefix}/lib/$(DEB_HOST_MULTIARCH)/ldb/modules/ldb \
-	--with-krb5-plugin-path=\$${libdir}/krb5/plugins/libkrb5
+%:
+	dh $@ --with quilt,autoreconf
 
 APIDOCDIR = /usr/share/sssd
 
-install/libnss-sss::
-	mkdir -p $(CURDIR)/debian/tmp/lib/$(DEB_HOST_MULTIARCH)
-	mv $(CURDIR)/debian/tmp/usr/lib/$(DEB_HOST_MULTIARCH)/libnss_sss.so.2 $(CURDIR)/debian/tmp/lib/$(DEB_HOST_MULTIARCH)/libnss_sss.so.2
-	install -D debian/libnss-sss.overrides $(CURDIR)/debian/tmp/usr/share/lintian/overrides/libnss-sss
-	install -D debian/sssd.overrides $(CURDIR)/debian/tmp/usr/share/lintian/overrides/sssd
+override_dh_auto_configure:
+	dh_auto_configure -- --enable-krb5-locator-plugin \
+	--libdir=\$${prefix}/lib/$(DEB_HOST_MULTIARCH) \
+	--with-ldb-lib-dir=\$${prefix}/lib/$(DEB_HOST_MULTIARCH)/ldb/modules/ldb \
+	--with-krb5-plugin-path=\$${libdir}/krb5/plugins/libkrb5 \
+	--enable-nsslibdir=/lib/$(DEB_HOST_MULTIARCH) \
+	--enable-pammoddir=/lib/$(DEB_HOST_MULTIARCH) 
 
-install/libpam-sss::
-	mkdir -p $(CURDIR)/debian/tmp/lib/$(DEB_HOST_MULTIARCH)/security/
-	mv $(CURDIR)/debian/tmp/usr/lib/$(DEB_HOST_MULTIARCH)/security/pam_sss.so $(CURDIR)/debian/tmp/lib/$(DEB_HOST_MULTIARCH)/security/pam_sss.so
-	mkdir -p $(CURDIR)/debian/libpam-sss/usr/share/pam-configs
-	install -m644 debian/libpam-sss.pam-auth-update \
-		$(CURDIR)/debian/libpam-sss/usr/share/pam-configs/sss
-
-install/sssd::
+override_dh_install:
+	dh_install
 	mkdir -p $(CURDIR)/debian/sssd$(APIDOCDIR)/sssd.api.d/
-	install -D -m640 $(CURDIR)/src/config/etc/sssd.api.conf $(CURDIR)/debian/sssd$(APIDOCDIR)/sssd.api.conf
-	install -m640 $(CURDIR)/src/config/etc/sssd.api.d/* $(CURDIR)/debian/sssd/$(APIDOCDIR)/sssd.api.d/ 
-	install -D -m755 $(CURDIR)/debian/generate-config $(CURDIR)/debian/sssd/usr/lib/sssd/generate-config
+	install -D -m640 $(CURDIR)/src/config/etc/sssd.api.conf \
+		$(CURDIR)/debian/sssd/$(APIDOCDIR)/sssd.api.conf
+	install -m640 $(CURDIR)/src/config/etc/sssd.api.d/* \
+		$(CURDIR)/debian/sssd/$(APIDOCDIR)/sssd.api.d/
+	install -D -m755 $(CURDIR)/debian/generate-config \
+		$(CURDIR)/debian/sssd/usr/lib/sssd/generate-config
 
-binary-install/python-sss::
 	find $(CURDIR)/debian/python-sss/ -name '*.la' -exec rm '{}' ';'
 	dh_pycentral -ppython-sss
-
-clean::
-	rm -f src/config/.files

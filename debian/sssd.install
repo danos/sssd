@@ -12,4 +12,4 @@ usr/sbin/sss_groupadd
 usr/sbin/sss_groupdel
 usr/sbin/sss_groupmod
 usr/share/man/man*/*
-usr/share/lintian/overrides/sssd
+debian/sssd.overrides	usr/share/lintian/overrides/sssd

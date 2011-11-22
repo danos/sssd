@@ -1,1 +1,2 @@
 lib/*/security/pam_sss.so
+debian/libpam-sss.pam-auth-update	usr/share/pam-configs/sss
