@@ -26,7 +26,7 @@ sssd (1.5.15-1) UNRELEASED; urgency=low
   * Update Standards-Version from 3.8.4 to 3.9.1.  No changes needed.
 
   [ Timo Aaltonen ]
-  * New upstream release (1.5.13).
+  * New upstream release (1.5.15) (Closes: #595564, #624194, #640678).
     - Add libunistring-dev to build-deps.
   * Drop patch to ensure LDAP authentication never accept a zero
     length password, which is now included upstream.
