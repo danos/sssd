@@ -51,6 +51,9 @@ sssd (1.5.15-1) UNRELEASED; urgency=low
   * sssd.prerm: Remove empty script.
   * control, compat: Bump debhelper build-dep and compat level to 8.
   * Switch to source format 3.0 (quilt).
+  * Do not install a working config file by default. The local domain
+    definition was broken (upstream #1014). The daemon will need to be
+    configured by other means before it's usable.
 
  -- Petter Reinholdtsen <pere@debian.org>  Tue, 14 Sep 2010 12:06:37 +0200
 

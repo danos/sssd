@@ -19,13 +19,11 @@ set -e
 
 case "$1" in
     configure)
-    # Install default configuration file on package install
+    # Try to autogenerate a configuration file on package install
     if [ -z "$2" ] && [ ! -e /etc/sssd/sssd.conf ]; then
         /usr/lib/sssd/generate-config > /etc/sssd/sssd.conf.new
 	if [ ! -s /etc/sssd/sssd.conf.new ] ; then
 	    rm /etc/sssd/sssd.conf.new
-	    # autodetection failed, use static example
-            cat /usr/share/doc/sssd/examples/sssd.conf > /etc/sssd/sssd.conf
 	else
 	    mv /etc/sssd/sssd.conf.new /etc/sssd/sssd.conf
 	fi
