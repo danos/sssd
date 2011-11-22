@@ -1,8 +1,8 @@
 usr/lib/sssd/*
-usr/lib/lib*.so.*
 usr/lib/*/ldb/modules/ldb/memberof.so
 usr/lib/*/libipa_hbac.so*
-usr/lib/krb5/plugins/libkrb5/*
+usr/lib/*/krb5/plugins/libkrb5/*
+usr/lib/*/sssd/lib*.so.*
 usr/share/locale/*/LC_MESSAGES/*
 usr/sbin/sssd
 usr/sbin/sss_useradd

@@ -3,7 +3,7 @@ Section: utils
 Priority: extra
 Maintainer: Petter Reinholdtsen <pere@debian.org>
 Uploaders: Morten Werner Forsbring <werner@debian.org>
-Build-Depends: cdbs, debhelper (>= 8), dnsutils,
+Build-Depends: cdbs, debhelper (>= 8.1.3~), dnsutils,
  libpopt-dev,
  libdbus-1-dev,
  libldap2-dev,
@@ -39,6 +39,7 @@ Homepage: https://fedorahosted.org/sssd/
 Package: sssd
 Architecture: any
 Depends: ${shlibs:Depends}, ${misc:Depends}, python, python-sss
+Pre-Depends: ${misc:Pre-Depends}
 Recommends: ldap-utils,
  bind9-host,
  libnss-sss,
@@ -55,7 +56,9 @@ Description: System Security Services Daemon
 Package: libnss-sss
 Architecture: any
 Depends: ${shlibs:Depends}, ${misc:Depends}, perl
+Pre-Depends: multiarch-support
 Recommends: sssd
+Multi-Arch: same
 Description: Nss library for the System Security Services Daemon 
  Provides a set of daemons to manage access to remote directories and
  authentication mechanisms. It provides an NSS and PAM interface toward
@@ -69,6 +72,7 @@ Package: libpam-sss
 Architecture: any
 Depends: ${shlibs:Depends}, ${misc:Depends}, libpam-runtime (>= 1.0.1-6)
 Recommends: sssd
+Multi-Arch: same
 Description: Pam module for the System Security Services Daemon 
  Provides a set of daemons to manage access to remote directories and
  authentication mechanisms. It provides an NSS and PAM interface toward

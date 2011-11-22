@@ -1,1 +1,1 @@
-lib/security/pam_sss.so
+lib/*/security/pam_sss.so

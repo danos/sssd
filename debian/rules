@@ -4,19 +4,22 @@ include /usr/share/cdbs/1/rules/debhelper.mk
 include /usr/share/cdbs/1/class/autotools.mk
 include /usr/share/cdbs/1/rules/dpatch.mk
 
-DEB_CONFIGURE_EXTRA_FLAGS = --enable-krb5-locator-plugin
+DEB_CONFIGURE_EXTRA_FLAGS = --enable-krb5-locator-plugin \
+	--libdir=\$${prefix}/lib/$(DEB_HOST_MULTIARCH) \
+	--with-ldb-lib-dir=\$${prefix}/lib/$(DEB_HOST_MULTIARCH)/ldb/modules/ldb \
+	--with-krb5-plugin-path=\$${libdir}/krb5/plugins/libkrb5
 
 APIDOCDIR = /usr/share/sssd
 
 install/libnss-sss::
-	mkdir -p $(CURDIR)/debian/tmp/lib/
-	mv $(CURDIR)/debian/tmp/usr/lib/libnss_sss.so.2 $(CURDIR)/debian/tmp/lib/libnss_sss.so.2
+	mkdir -p $(CURDIR)/debian/tmp/lib/$(DEB_HOST_MULTIARCH)
+	mv $(CURDIR)/debian/tmp/usr/lib/$(DEB_HOST_MULTIARCH)/libnss_sss.so.2 $(CURDIR)/debian/tmp/lib/$(DEB_HOST_MULTIARCH)/libnss_sss.so.2
 	install -D debian/libnss-sss.overrides $(CURDIR)/debian/tmp/usr/share/lintian/overrides/libnss-sss
 	install -D debian/sssd.overrides $(CURDIR)/debian/tmp/usr/share/lintian/overrides/sssd
 
 install/libpam-sss::
-	mkdir -p $(CURDIR)/debian/tmp/lib/security/
-	mv $(CURDIR)/debian/tmp/usr/lib/security/pam_sss.so $(CURDIR)/debian/tmp/lib/security/pam_sss.so
+	mkdir -p $(CURDIR)/debian/tmp/lib/$(DEB_HOST_MULTIARCH)/security/
+	mv $(CURDIR)/debian/tmp/usr/lib/$(DEB_HOST_MULTIARCH)/security/pam_sss.so $(CURDIR)/debian/tmp/lib/$(DEB_HOST_MULTIARCH)/security/pam_sss.so
 	mkdir -p $(CURDIR)/debian/libpam-sss/usr/share/pam-configs
 	install -m644 debian/libpam-sss.pam-auth-update \
 		$(CURDIR)/debian/libpam-sss/usr/share/pam-configs/sss
