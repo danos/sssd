@@ -59,7 +59,7 @@ sssd (1.5.15-1) UNRELEASED; urgency=low
   * Migrate to dh, drop cdbs build-dep, add quilt, dh-autoreconf and
     autopoint to build-deps.
   * Remove unnecessary libnss-sss.links.
-  * Add libdhash-dev to build-deps.
+  * Add libdhash-dev, libcollection-dev and libini-config-dev to build-deps.
 
  -- Petter Reinholdtsen <pere@debian.org>  Tue, 14 Sep 2010 12:06:37 +0200
 
