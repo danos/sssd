@@ -1,6 +1,6 @@
 #!/usr/bin/make -f
 %:
-	dh $@ --with quilt,autoreconf
+	dh $@ --with quilt,autoreconf --builddirectory=build
 
 APIDOCDIR = /usr/share/sssd
 
