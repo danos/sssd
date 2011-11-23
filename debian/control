@@ -3,7 +3,7 @@ Section: utils
 Priority: extra
 Maintainer: Petter Reinholdtsen <pere@debian.org>
 Uploaders: Morten Werner Forsbring <werner@debian.org>
-Build-Depends: debhelper (>= 8.1.3~), dnsutils, quilt, dh-autoreconf,
+Build-Depends: debhelper (>= 8.1.3~), dnsutils, quilt, dh-autoreconf, autopoint,
  libpopt-dev,
  libdbus-1-dev,
  libldap2-dev,
@@ -30,6 +30,7 @@ Build-Depends: debhelper (>= 8.1.3~), dnsutils, quilt, dh-autoreconf,
  python-central (>= 0.6),
  libsemanage1-dev,
  libunistring-dev,
+ libdhash-dev,
 Standards-Version: 3.9.1
 XS-Python-Version: current
 Vcs-Git: git://git.debian.org/git/collab-maint/pkg-sssd

@@ -56,8 +56,10 @@ sssd (1.5.15-1) UNRELEASED; urgency=low
     configured by other means before it's usable.
   * Add fix-format-security.diff (Closes: #643806)
   * Add support for Multi-Arch.
-  * Migrate to dh, drop cdbs build-dep, add quilt and dh-autoreconf..
+  * Migrate to dh, drop cdbs build-dep, add quilt, dh-autoreconf and
+    autopoint to build-deps.
   * Remove unnecessary libnss-sss.links.
+  * Add libdhash-dev to build-deps.
 
  -- Petter Reinholdtsen <pere@debian.org>  Tue, 14 Sep 2010 12:06:37 +0200
 
