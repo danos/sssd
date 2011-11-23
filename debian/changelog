@@ -60,6 +60,7 @@ sssd (1.5.15-1) UNRELEASED; urgency=low
     autopoint to build-deps.
   * Remove unnecessary libnss-sss.links.
   * Add libdhash-dev, libcollection-dev and libini-config-dev to build-deps.
+  * Drop cvs from build-depends.
 
  -- Petter Reinholdtsen <pere@debian.org>  Tue, 14 Sep 2010 12:06:37 +0200
 
