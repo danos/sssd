@@ -4,10 +4,9 @@
 
 APIDOCDIR = /usr/share/sssd
 DISTRIBUTION = $(shell lsb_release -i | sed 's/.*:\t//')
+INIT = init
 
-ifeq ($(DISTRIBUTION), Debian)
-	INIT = init
-else ifeq ($(DISTRIBUTION), Ubuntu)
+ifeq ($(DISTRIBUTION), Ubuntu)
 	INIT = upstart
 endif
 
