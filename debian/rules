@@ -6,9 +6,9 @@ APIDOCDIR = /usr/share/sssd
 DISTRIBUTION = $(shell lsb_release -i | sed 's/.*:\t//')
 
 ifeq ($(DISTRIBUTION), Debian)
-	INIT = sssd.init
+	INIT = init
 else ifeq ($(DISTRIBUTION), Ubuntu)
-	INIT = sssd.upstart
+	INIT = upstart
 endif
 
 override_dh_auto_configure:
