@@ -7,7 +7,7 @@ DISTRIBUTION = $(shell lsb_release -i | sed 's/.*:\t//')
 
 ifeq ($(DISTRIBUTION), Debian)
 	INIT = sssd.init
-else ifeq (($(DISTRIBUTION), Ubuntu)
+else ifeq ($(DISTRIBUTION), Ubuntu)
 	INIT = sssd.upstart
 endif
 
