@@ -48,7 +48,6 @@ sssd (1.5.15-1) UNRELEASED; urgency=low
     - Drop the priority so that pam_unix is always before pam_sss.
   * control: sssd now Recommends libpam-sss and libnss-sss, since sssd is
     mostly useless without them. (LP: 767337)
-  * sssd.prerm: Remove empty script.
   * control, compat: Bump debhelper build-dep and compat level to 8.
   * Switch to source format 3.0 (quilt).
   * Do not install a working config file by default. The local domain
