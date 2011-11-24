@@ -2,7 +2,6 @@
 
 invoke_failure() {
     # invoke-rc.d failed
-    echo "Stopping the sssd daemon failed."
 }
 
 #DEBHELPER#

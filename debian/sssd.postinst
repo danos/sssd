@@ -46,7 +46,9 @@ esac
 
 invoke_failure() {
     # invoke-rc.d failed, likely because of a missing sssd.conf
-    echo "sssd failed to start""
+    if [ ! -s /etc/sssd/sssd.conf ]; then
+        echo "... because /etc/sssd/sssd.conf is not available yet"
+    fi
 }
 
 # dh_installdeb will replace this with shell code automatically
