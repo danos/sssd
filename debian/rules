@@ -13,8 +13,6 @@ override_dh_auto_configure:
 	--enable-pammoddir=/lib/$(DEB_HOST_MULTIARCH)/security
 
 override_dh_install:
-	dh_install
-
 	mkdir -p $(CURDIR)/debian/sssd$(APIDOCDIR)/sssd.api.d/
 	install -D -m640 $(CURDIR)/src/config/etc/sssd.api.conf \
 		$(CURDIR)/debian/sssd/$(APIDOCDIR)/sssd.api.conf
@@ -23,8 +21,9 @@ override_dh_install:
 	install -D -m755 $(CURDIR)/debian/generate-config \
 		$(CURDIR)/debian/sssd/usr/lib/sssd/generate-config
 
+	mkdir -p $(CURDIR)/debian/tmp/usr/share/lintian/overrides/
 	install -D debian/libnss-sss.overrides \
-		$(CURDIR)/debian/tmp/usr/share/lintian/overrides/libns
+		$(CURDIR)/debian/tmp/usr/share/lintian/overrides/libnss-sss
 	install -D debian/sssd.overrides \
 		$(CURDIR)/debian/tmp/usr/share/lintian/overrides/sssd
 
@@ -32,5 +31,8 @@ override_dh_install:
 	install -m644 debian/libpam-sss.pam-auth-update \
 		$(CURDIR)/debian/libpam-sss/usr/share/pam-configs/sss
 
-	find $(CURDIR)/debian/python-sss/ -name '*.la' -exec rm '{}' ';'
+	dh_install
+
+	find $(CURDIR)/debian/tmp/ -name '*.la' -exec rm '{}' ';'
 	dh_pycentral -ppython-sss
+	dh_pycentral -ppython-libipa-hbac

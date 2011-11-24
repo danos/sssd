@@ -61,6 +61,7 @@ sssd (1.5.15-1) UNRELEASED; urgency=low
   * Remove unnecessary libnss-sss.links.
   * Add libdhash-dev, libcollection-dev and libini-config-dev to build-deps.
   * Drop cvs from build-depends.
+  * Add new packages: libipa-hbac0, libipa-hbac-dev, python-libipa-hbac.
 
  -- Petter Reinholdtsen <pere@debian.org>  Tue, 14 Sep 2010 12:06:37 +0200
 

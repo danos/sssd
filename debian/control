@@ -40,7 +40,9 @@ Homepage: https://fedorahosted.org/sssd/
 
 Package: sssd
 Architecture: any
-Depends: ${shlibs:Depends}, ${misc:Depends}, python, python-sss
+Depends: ${shlibs:Depends}, ${misc:Depends}, python,
+ python-sss,
+ libipa-hbac0 (= ${binary:Version}),
 Pre-Depends: ${misc:Pre-Depends}
 Recommends: ldap-utils,
  bind9-host,
@@ -83,6 +85,39 @@ Description: Pam module for the System Security Services Daemon
  services for projects like FreeIPA.
  .
  This package provide the pam module to connect to the sssd daemon.
+
+Package: libipa-hbac0
+Section: lib
+Architecture: any
+Depends: ${shlibs:Depends}
+Conflicts: sssd (<< 1.5.15)
+Replaces: sssd (<< 1.5.15)
+Multi-Arch: same
+Description: FreeIPA HBAC Evaluator library
+ Utility library to validate FreeIPA HBAC rules for authorization requests.
+
+Package: libipa-hbac-dev
+Section: libdevel
+Architecture: any
+Depends: libipa-hbac0 (= ${binary:Version})
+Conflicts: sssd (<< 1.5.15)
+Replaces: sssd (<< 1.5.15)
+Description: FreeIPA HBAC Evaluator library
+ Utility library to validate FreeIPA HBAC rules for authorization requests.
+ .
+ This package contains header files and symlinks to develop programs which will
+ use the libipa-hbac library.
+
+Package: python-libipa-hbac
+Section: python
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}, ${python:Depends},
+ libipa-hbac0 (= ${binary:Version})
+Conflicts: python-sss (<< 1.5.15)
+Replaces: python-sss (<< 1.5.15)
+Description: Python bindings for the FreeIPA HBAC Evaluator library
+ The libipa_hbac-python contains the bindings so that libipa_hbac can be
+ used by Python applications.
 
 Package: python-sss
 Section: python
