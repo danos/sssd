@@ -68,6 +68,7 @@ sssd (1.5.15-1) UNRELEASED; urgency=low
     build-deps. Default to sysvinit, use upstart if Ubuntu.
   * Add ensure-all-input-valid-utf8.diff from upsream: Ensure that all
     input strings are valid UTF-8.
+  * sssd.upstart.in: Test if the config file exists, and exit if not.
 
  -- Petter Reinholdtsen <pere@debian.org>  Tue, 14 Sep 2010 12:06:37 +0200
 
