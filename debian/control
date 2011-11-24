@@ -87,9 +87,10 @@ Description: Pam module for the System Security Services Daemon
  This package provide the pam module to connect to the sssd daemon.
 
 Package: libipa-hbac0
-Section: lib
+Section: libs
 Architecture: any
 Depends: ${shlibs:Depends}
+Pre-Depends: multiarch-support
 Conflicts: sssd (<< 1.5.15)
 Replaces: sssd (<< 1.5.15)
 Multi-Arch: same
