@@ -26,8 +26,8 @@ case "$1" in
 	    rm /etc/sssd/sssd.conf.new
 	else
 	    mv /etc/sssd/sssd.conf.new /etc/sssd/sssd.conf
+            chmod 0600 /etc/sssd/sssd.conf
 	fi
-        chmod 0600 /etc/sssd/sssd.conf
     fi
     # Fix configuration file on package upgrade
     if dpkg --compare-versions "$2" lt-nl 1.0.2-0ubuntu1; then
