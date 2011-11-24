@@ -64,6 +64,8 @@ sssd (1.5.15-1) UNRELEASED; urgency=low
   * Add new packages: libipa-hbac0, libipa-hbac-dev, python-libipa-hbac.
   * libnss-sss.overrides: Add an override for 
     "package-name-doesnt-match-sonames".
+  * Determine the used init system during build, add lsb-release to
+    build-deps.
 
  -- Petter Reinholdtsen <pere@debian.org>  Tue, 14 Sep 2010 12:06:37 +0200
 

@@ -3,6 +3,13 @@
 	dh $@ --with quilt,autoreconf --builddirectory=build
 
 APIDOCDIR = /usr/share/sssd
+DISTRIBUTION = $(shell lsb_release -i | sed 's/.*:\t//')
+
+ifeq ($(DISTRIBUTION), Debian)
+	INIT = sssd.init
+else ifeq (($(DISTRIBUTION), Ubuntu)
+	INIT = sssd.upstart
+endif
 
 override_dh_auto_configure:
 	dh_auto_configure -- --enable-krb5-locator-plugin \
@@ -31,8 +38,14 @@ override_dh_install:
 	install -m644 debian/libpam-sss.pam-auth-update \
 		$(CURDIR)/debian/libpam-sss/usr/share/pam-configs/sss
 
+	cat $(CURDIR)/sssd.$(INIT).in > $(CURDIR)/sssd.$(INIT)
+
 	dh_install
 
 	find $(CURDIR)/debian/tmp/ -name '*.la' -exec rm '{}' ';'
 	dh_pycentral -ppython-sss
 	dh_pycentral -ppython-libipa-hbac
+
+override_dh_auto_clean:
+	dh_auto_clean
+	rm -f $(CURDIR)/sssd.$(INIT)
