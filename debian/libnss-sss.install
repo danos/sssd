@@ -1,2 +1,2 @@
 lib/*/libnss_sss.so.2
-debian/libnss-sss.overrides	usr/share/lintian/overrides/libnss-sss
+usr/share/lintian/overrides/libnss-sss

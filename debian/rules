@@ -14,6 +14,7 @@ override_dh_auto_configure:
 
 override_dh_install:
 	dh_install
+
 	mkdir -p $(CURDIR)/debian/sssd$(APIDOCDIR)/sssd.api.d/
 	install -D -m640 $(CURDIR)/src/config/etc/sssd.api.conf \
 		$(CURDIR)/debian/sssd/$(APIDOCDIR)/sssd.api.conf
@@ -21,6 +22,15 @@ override_dh_install:
 		$(CURDIR)/debian/sssd/$(APIDOCDIR)/sssd.api.d/
 	install -D -m755 $(CURDIR)/debian/generate-config \
 		$(CURDIR)/debian/sssd/usr/lib/sssd/generate-config
+
+	install -D debian/libnss-sss.overrides \
+		$(CURDIR)/debian/tmp/usr/share/lintian/overrides/libns
+	install -D debian/sssd.overrides \
+		$(CURDIR)/debian/tmp/usr/share/lintian/overrides/sssd
+
+	mkdir -p $(CURDIR)/debian/libpam-sss/usr/share/pam-configs
+	install -m644 debian/libpam-sss.pam-auth-update \
+		$(CURDIR)/debian/libpam-sss/usr/share/pam-configs/sss
 
 	find $(CURDIR)/debian/python-sss/ -name '*.la' -exec rm '{}' ';'
 	dh_pycentral -ppython-sss
