@@ -66,6 +66,8 @@ sssd (1.5.15-1) UNRELEASED; urgency=low
     "package-name-doesnt-match-sonames".
   * Determine the used init system during build, add lsb-release to
     build-deps. Default to sysvinit, use upstart if Ubuntu.
+  * Add ensure-all-input-valid-utf8.diff from upsream: Ensure that all
+    input strings are valid UTF-8.
 
  -- Petter Reinholdtsen <pere@debian.org>  Tue, 14 Sep 2010 12:06:37 +0200
 
