@@ -13,13 +13,13 @@ override_dh_auto_configure:
 	--enable-pammoddir=/lib/$(DEB_HOST_MULTIARCH)/security
 
 override_dh_install:
-	mkdir -p $(CURDIR)/debian/sssd$(APIDOCDIR)/sssd.api.d/
+	mkdir -p $(CURDIR)/debian/tmp/$(APIDOCDIR)/sssd.api.d/
 	install -D -m640 $(CURDIR)/src/config/etc/sssd.api.conf \
-		$(CURDIR)/debian/sssd/$(APIDOCDIR)/sssd.api.conf
+		$(CURDIR)/debian/tmp/$(APIDOCDIR)/sssd.api.conf
 	install -m640 $(CURDIR)/src/config/etc/sssd.api.d/* \
-		$(CURDIR)/debian/sssd/$(APIDOCDIR)/sssd.api.d/
+		$(CURDIR)/debian/tmp/$(APIDOCDIR)/sssd.api.d/
 	install -D -m755 $(CURDIR)/debian/generate-config \
-		$(CURDIR)/debian/sssd/usr/lib/sssd/generate-config
+		$(CURDIR)/debian/tmp/usr/lib/sssd/generate-config
 
 	mkdir -p $(CURDIR)/debian/tmp/usr/share/lintian/overrides/
 	install -D debian/libnss-sss.overrides \
