@@ -70,6 +70,8 @@ sssd (1.5.15-1) UNRELEASED; urgency=low
   * sssd.upstart.in: Test if the config file exists, and exit if not.
   * Fail gracefully if invoke-rc.d returns an error on postinst/prerm, like
     when the daemon fails to start when there is no config file.
+  * sssd.init.in: Check that /etc/default/sssd is a real file before sourcing
+    it (Closes: #587895).
 
  -- Petter Reinholdtsen <pere@debian.org>  Tue, 14 Sep 2010 12:06:37 +0200
 
