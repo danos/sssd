@@ -49,6 +49,8 @@ Recommends: ldap-utils,
  bind9-host,
  libnss-sss,
  libpam-sss,
+ libsasl2-modules-gssapi-mit,
+ libsasl2-modules-ldap,
 Description: System Security Services Daemon 
  Provides a set of daemons to manage access to remote directories and
  authentication mechanisms. It provides an NSS and PAM interface toward
