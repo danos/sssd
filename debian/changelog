@@ -75,6 +75,10 @@ sssd (1.5.15-1) UNRELEASED; urgency=low
   * control: Add libsasl2-modules-gssapi-mit and libsasl2-modules-ldap to
     Recommends for sssd.
 
+  [ Stéphane Graber ]
+  * Fix prerm invoke_failure hook to simply return as empty functions
+    are invalid shell syntax.
+
  -- Petter Reinholdtsen <pere@debian.org>  Tue, 14 Sep 2010 12:06:37 +0200
 
 sssd (1.2.1-4.3) unstable; urgency=medium
