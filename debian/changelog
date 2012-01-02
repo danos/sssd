@@ -74,6 +74,7 @@ sssd (1.5.15-1) UNRELEASED; urgency=low
     it (Closes: #587895).
   * control: Add libsasl2-modules-gssapi-mit and libsasl2-modules-ldap to
     Recommends for sssd.
+  * rules: Move the rule for purging .la files before dh_install.
 
   [ Stéphane Graber ]
   * Fix prerm invoke_failure hook to simply return as empty functions

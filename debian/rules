@@ -39,9 +39,10 @@ override_dh_install:
 
 	cat $(CURDIR)/debian/sssd.$(INIT).in > $(CURDIR)/debian/sssd.$(INIT)
 
+	find $(CURDIR)/debian/tmp/ -name '*.la' -exec rm '{}' ';'
+
 	dh_install
 
-	find $(CURDIR)/debian/tmp/ -name '*.la' -exec rm '{}' ';'
 	dh_pycentral -ppython-sss
 	dh_pycentral -ppython-libipa-hbac
 
