@@ -75,6 +75,7 @@ sssd (1.5.15-1) UNRELEASED; urgency=low
   * control: Add libsasl2-modules-gssapi-mit and libsasl2-modules-ldap to
     Recommends for sssd.
   * rules: Move the rule for purging .la files before dh_install.
+  * sssd.install: Fix the wildcard for plugins to include .so symlinks.
 
   [ Stéphane Graber ]
   * Fix prerm invoke_failure hook to simply return as empty functions
