@@ -50,7 +50,7 @@ sssd (1.5.16-1) UNRELEASED; urgency=low
   * control: sssd now Recommends libpam-sss and libnss-sss, since sssd is
     mostly useless without them. (LP: 767337)
   * control, compat: Bump debhelper build-dep and compat level to 8.
-  * Switch to source format 3.0 (quilt).
+  * Switch patch-system to quilt.
   * Do not install a working config file by default. The local domain
     definition was broken (upstream #1014). The daemon will need to be
     configured by other means before it's usable.
