@@ -16,10 +16,12 @@ respawn
 env DEFAULTFILE=/etc/default/sssd
 
 pre-start script
-	test -f /etc/sssd/sssd.conf || {stop; exit 0;}
+	test -f /etc/sssd/sssd.conf || { stop; exit 0; }
+end script
+
+script
 	if [ -f "$DEFAULTFILE" ]; then
 	. "$DEFAULTFILE"
 	fi
+	exec sssd $DAEMON_OPTS
 end script
-
-exec sssd $DAEMON_OPTS
