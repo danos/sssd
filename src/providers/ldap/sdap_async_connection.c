@@ -264,9 +264,15 @@ static void sdap_sys_connect_done(struct tevent_req *subreq)
     lret = ldap_set_option(state->sh->ldap, LDAP_OPT_X_SASL_NOCANON,
                            sasl_nocanon ? LDAP_OPT_ON : LDAP_OPT_OFF);
     if (lret != LDAP_OPT_SUCCESS) {
-        DEBUG(1, ("Failed to set LDAP SASL nocanon option to %s\n",
-                   sasl_nocanon ? "true" : "false"));
-        goto fail;
+        /* Do not fail, just warn into both debug logs and syslog */
+        DEBUG(3,
+              ("Failed to set LDAP SASL nocanon option to %s. If your system "
+               "is configured to use SASL, LDAP operations might fail.\n",
+              sasl_nocanon ? "true" : "false"));
+        sss_log(SSS_LOG_INFO,
+                "Failed to set LDAP SASL nocanon option to %s. If your system "
+                "is configured to use SASL, LDAP operations might fail.\n",
+                sasl_nocanon ? "true" : "false");
     }
 
     /* if we do not use start_tls the connection is not really connected yet
@@ -1226,16 +1232,12 @@ static void sdap_cli_connect_done(struct tevent_req *subreq)
     ret = sdap_connect_recv(subreq, state, &state->sh);
     talloc_zfree(subreq);
     if (ret) {
-        if (ret == ETIMEDOUT) { /* retry another server */
-            fo_set_port_status(state->srv, PORT_NOT_WORKING);
-            ret = sdap_cli_resolve_next(req);
-            if (ret != EOK) {
-                tevent_req_error(req, ret);
-            }
-            return;
+        /* retry another server */
+        fo_set_port_status(state->srv, PORT_NOT_WORKING);
+        ret = sdap_cli_resolve_next(req);
+        if (ret != EOK) {
+            tevent_req_error(req, ret);
         }
-
-        tevent_req_error(req, ret);
         return;
     }
 

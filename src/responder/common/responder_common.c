@@ -35,6 +35,7 @@
 #include <popt.h>
 #include "config.h"
 #include "util/util.h"
+#include "util/sss_utf8.h"
 #include "db/sysdb.h"
 #include "confdb/confdb.h"
 #include "dbus/dbus.h"
@@ -682,4 +683,3 @@ int sss_dp_get_domain_conn(struct resp_ctx *rctx, const char *domain,
 
     return EOK;
 }
-
