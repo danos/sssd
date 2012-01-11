@@ -1,4 +1,4 @@
-sssd (1.5.15-1) UNRELEASED; urgency=low
+sssd (1.5.16-1) UNRELEASED; urgency=low
 
   [ Petter Reinholdtsen ]
   * New upstream version 1.2.4:
@@ -26,7 +26,8 @@ sssd (1.5.15-1) UNRELEASED; urgency=low
   * Update Standards-Version from 3.8.4 to 3.9.1.  No changes needed.
 
   [ Timo Aaltonen ]
-  * New upstream release (1.5.15) (Closes: #595564, #624194, #640678).
+  * New upstream release (1.5.16) (Closes: #595564, #624194, #640678,
+    #643806).
     - Add libunistring-dev to build-deps.
   * Drop patch to ensure LDAP authentication never accept a zero
     length password, which is now included upstream.
@@ -53,7 +54,6 @@ sssd (1.5.15-1) UNRELEASED; urgency=low
   * Do not install a working config file by default. The local domain
     definition was broken (upstream #1014). The daemon will need to be
     configured by other means before it's usable.
-  * Add fix-format-security.diff (Closes: #643806)
   * Add support for Multi-Arch.
   * Migrate to dh, drop cdbs build-dep, add quilt, dh-autoreconf and
     autopoint to build-deps.
@@ -65,8 +65,6 @@ sssd (1.5.15-1) UNRELEASED; urgency=low
     "package-name-doesnt-match-sonames".
   * Determine the used init system during build, add lsb-release to
     build-deps. Default to sysvinit, use upstart if Ubuntu.
-  * Add ensure-all-input-valid-utf8.diff from upsream: Ensure that all
-    input strings are valid UTF-8.
   * sssd.upstart.in: Test if the config file exists, and exit if not.
   * Fail gracefully if invoke-rc.d returns an error on postinst/prerm, like
     when the daemon fails to start when there is no config file.

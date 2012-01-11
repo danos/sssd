@@ -1,3 +1,1 @@
 fix-python-api-path.patch
-fix-format-security-ftbfs.diff
-ensure-all-input-valid-utf8.diff
