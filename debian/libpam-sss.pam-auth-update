@@ -1,6 +1,6 @@
 Name: SSS authentication
 Default: yes
-Priority: 128
+Priority: 512
 
 Auth-Type: Primary
 Auth:
