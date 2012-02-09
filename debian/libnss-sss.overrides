@@ -1,0 +1,7 @@
+# we ship a shared library that is used for the NSS system
+# nobody should directly link to our library
+non-dev-pkg-with-shlib-symlink lib/libnss_sss.so.2 lib/libnss_sss.so
+shlib-without-versioned-soname lib/libnss_sss.so.2 libnss_sss.so
+no-symbols-control-file lib/libnss_sss.so.2
+postinst-must-call-ldconfig lib/libnss_sss.so.2
+package-name-doesnt-match-sonames libnss-sss2

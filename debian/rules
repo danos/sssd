@@ -1,0 +1,54 @@
+#!/usr/bin/make -f
+%:
+	dh $@ --with quilt,autoreconf --builddirectory=build
+
+APIDOCDIR = /usr/share/sssd
+DISTRIBUTION = $(shell lsb_release -i | sed 's/.*:\t//')
+INIT = init
+
+ifeq ($(DISTRIBUTION), Ubuntu)
+	INIT = upstart
+endif
+
+override_dh_auto_configure:
+	dh_auto_configure -- --enable-krb5-locator-plugin \
+	--libdir=\$${prefix}/lib/$(DEB_HOST_MULTIARCH) \
+	--with-ldb-lib-dir=\$${prefix}/lib/$(DEB_HOST_MULTIARCH)/ldb/modules/ldb \
+	--with-krb5-plugin-path=\$${libdir}/krb5/plugins/libkrb5 \
+	--enable-nsslibdir=/lib/$(DEB_HOST_MULTIARCH) \
+	--enable-pammoddir=/lib/$(DEB_HOST_MULTIARCH)/security
+
+override_dh_install:
+	mkdir -p $(CURDIR)/debian/tmp/$(APIDOCDIR)/sssd.api.d/
+	install -D -m640 $(CURDIR)/src/config/etc/sssd.api.conf \
+		$(CURDIR)/debian/tmp/$(APIDOCDIR)/sssd.api.conf
+	install -m640 $(CURDIR)/src/config/etc/sssd.api.d/* \
+		$(CURDIR)/debian/tmp/$(APIDOCDIR)/sssd.api.d/
+	install -D -m755 $(CURDIR)/debian/generate-config \
+		$(CURDIR)/debian/tmp/usr/lib/sssd/generate-config
+
+	mkdir -p $(CURDIR)/debian/tmp/usr/share/lintian/overrides/
+	install -D debian/libnss-sss.overrides \
+		$(CURDIR)/debian/tmp/usr/share/lintian/overrides/libnss-sss
+	install -D debian/sssd.overrides \
+		$(CURDIR)/debian/tmp/usr/share/lintian/overrides/sssd
+
+	mkdir -p $(CURDIR)/debian/libpam-sss/usr/share/pam-configs
+	install -m644 debian/libpam-sss.pam-auth-update \
+		$(CURDIR)/debian/libpam-sss/usr/share/pam-configs/sss
+
+	cat $(CURDIR)/debian/sssd.$(INIT).in > $(CURDIR)/debian/sssd.$(INIT)
+
+	find $(CURDIR)/debian/tmp/ -name '*.la' -exec rm '{}' ';'
+
+	dh_install
+
+	dh_pycentral -ppython-sss
+	dh_pycentral -ppython-libipa-hbac
+
+override_dh_installinit:
+	dh_installinit --error-handler=invoke_failure
+
+override_dh_auto_clean:
+	dh_auto_clean
+	rm -f $(CURDIR)/debian/sssd.$(INIT)

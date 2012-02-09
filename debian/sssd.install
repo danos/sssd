@@ -1,0 +1,15 @@
+usr/lib/sssd/*
+usr/lib/*/ldb/modules/ldb/memberof.so
+usr/lib/*/krb5/plugins/libkrb5/*
+usr/lib/*/sssd/lib*.so*
+usr/share/locale/*/LC_MESSAGES/*
+usr/share/sssd/*
+usr/sbin/sssd
+usr/sbin/sss_useradd
+usr/sbin/sss_userdel
+usr/sbin/sss_usermod
+usr/sbin/sss_groupadd
+usr/sbin/sss_groupdel
+usr/sbin/sss_groupmod
+usr/share/man/man*/*
+usr/share/lintian/overrides/sssd
