@@ -73,6 +73,7 @@ sssd (1.5.16-1) UNRELEASED; urgency=low
     Recommends for sssd.
   * rules: Move the rule for purging .la files before dh_install.
   * sssd.install: Fix the wildcard for plugins to include .so symlinks.
+  * control: Add check to build-depends for unit tests.
 
   [ Stéphane Graber ]
   * Fix prerm invoke_failure hook to simply return as empty functions
