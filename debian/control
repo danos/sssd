@@ -52,6 +52,8 @@ Recommends: ldap-utils,
  libpam-sss,
  libsasl2-modules-gssapi-mit,
  libsasl2-modules-ldap,
+Suggests:
+ sssd-tools,
 Description: System Security Services Daemon 
  Provides a set of daemons to manage access to remote directories and
  authentication mechanisms. It provides an NSS and PAM interface toward
@@ -60,6 +62,22 @@ Description: System Security Services Daemon
  services for projects like FreeIPA.
  .
  This package provides the daemon.
+
+Package: sssd-tools
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends},
+ sssd (= ${binary:Version}),
+Breaks: sssd (<= 1.8.0)
+Replaces: sssd (<= 1.8.0)
+Description: System Security Services Daemon -- tools
+ Provides a set of daemons to manage access to remote directories and
+ authentication mechanisms. It provides an NSS and PAM interface toward
+ the system and a pluggable backend system to connect to multiple different
+ account sources. It is also the basis to provide client auditing and policy
+ services for projects like FreeIPA.
+ .
+ This package provides tools to manage users, groups and nested groups when
+ using the local id provider.
 
 Package: libnss-sss
 Architecture: any

@@ -11,6 +11,9 @@ sssd (1.8.0~beta3-1) UNRELEASED; urgency=low
     the proper path now.
   * rules: Add --fail-missing to dh_install.
   * Add packages for libsss-sudo0, libsss-sudo-dev.
+  * Split sssd-tools from the main package
+    - add Breaks/Replaces sssd (<= 1.8.0)
+    - add to sssd Suggests
 
  -- Timo Aaltonen <tjaalton@ubuntu.com>  Thu, 16 Feb 2012 10:24:46 +0200
 
