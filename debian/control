@@ -113,6 +113,25 @@ Description: FreeIPA HBAC Evaluator library
  This package contains header files and symlinks to develop programs which will
  use the libipa-hbac library.
 
+Package: libsss-sudo0
+Section: libs
+Architecture: any
+Depends: ${shlibs:Depends}
+Pre-Depends: multiarch-support
+Multi-Arch: same
+Description: Utility library to allow communication between SUDO and SSSD
+ Utility library to allow communication between SUDO and SSSD.
+
+Package: libsss-sudo-dev
+Section: libdevel
+Architecture: any
+Depends: libsss-sudo0 (= ${binary:Version})
+Description: Utility library to allow communication between SUDO and SSSD -- development files
+ Utility library to allow communication between SUDO and SSSD.
+ .
+ This package contains header files and symlinks to develop programs which will
+ use the libsss-sudo library.
+
 Package: python-libipa-hbac
 Section: python
 Architecture: any

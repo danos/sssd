@@ -10,6 +10,7 @@ sssd (1.8.0~beta3-1) UNRELEASED; urgency=low
   * rules: Drop special handling of the sssd.api.d, upstream uses
     the proper path now.
   * rules: Add --fail-missing to dh_install.
+  * Add packages for libsss-sudo0, libsss-sudo-dev.
 
  -- Timo Aaltonen <tjaalton@ubuntu.com>  Thu, 16 Feb 2012 10:24:46 +0200
 
