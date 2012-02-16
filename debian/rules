@@ -16,7 +16,10 @@ override_dh_auto_configure:
 	--with-ldb-lib-dir=\$${prefix}/lib/$(DEB_HOST_MULTIARCH)/ldb/modules/ldb \
 	--with-krb5-plugin-path=\$${libdir}/krb5/plugins/libkrb5 \
 	--enable-nsslibdir=/lib/$(DEB_HOST_MULTIARCH) \
-	--enable-pammoddir=/lib/$(DEB_HOST_MULTIARCH)/security
+	--enable-pammoddir=/lib/$(DEB_HOST_MULTIARCH)/security \
+	--disable-static \
+	--disable-rpath \
+	--enable-all-experimental-features
 
 override_dh_install:
 	mkdir -p $(CURDIR)/debian/tmp/$(APIDOCDIR)/sssd.api.d/
