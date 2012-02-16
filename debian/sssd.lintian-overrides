@@ -1,4 +1,1 @@
-# seems that dh_makeshlibs/cdbs adds these automatically to the maintainer 
-# scripts
-postinst-has-useless-call-to-ldconfig
-postrm-has-useless-call-to-ldconfig
+manpage-has-errors-from-man usr/share/man/man5/sssd-ldap.5.*
