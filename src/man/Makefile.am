@@ -32,15 +32,18 @@ if HAVE_PROFILE_CATALOGS
 XSLTPROC_FLAGS += --stringparam profile.condition "$(CONDS)"
 endif
 
+EXTRA_DIST = $(wildcard $(srcdir)/*.xml) $(wildcard $(srcdir)/include/*.xml)
 man_MANS = \
     sss_useradd.8 sss_userdel.8 sss_usermod.8 \
     sss_groupadd.8 sss_groupdel.8 sss_groupmod.8 \
     sssd.8 sssd.conf.5 sssd-ldap.5 \
     sssd-krb5.5 sssd-ipa.5 sssd-simple.5 \
     sssd_krb5_locator_plugin.8 sss_groupshow.8 \
-    pam_sss.8 sss_obfuscate.8 sss_cache.8 sss_debuglevel.8 \
-    sss_ssh_authorizedkeys.1 sss_ssh_knownhostsproxy.1
-EXTRA_DIST = $(man_MANS:%=%.xml) $(wildcard $(srcdir)/include/*.xml)
+    pam_sss.8 sss_obfuscate.8 sss_cache.8 sss_debuglevel.8
+
+if BUILD_SSH
+man_MANS += sss_ssh_authorizedkeys.1 sss_ssh_knownhostsproxy.1
+endif
 
 SUFFIXES = .1.xml .1 .3.xml .3 .5.xml .5 .8.xml .8
 .1.xml.1:
@@ -90,7 +93,7 @@ EXTRA_DIST += \
 	$(POTFILE)\
 	$(PO4A_CONFIG)
 
-XML_DOC = $(wildcard $(srcdir)/*.xml) $(wildcard $(srcdir)/include/*.xml)
+XML_DOC = $(man_MANS:%=$(srcdir)/%.xml) $(wildcard $(srcdir)/include/*.xml)
 
 if HAVE_PO4A
 

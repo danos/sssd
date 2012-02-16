@@ -33,8 +33,8 @@
 #include "db/sysdb_services.h"
 
 struct getserv_ctx {
-    struct tevent_context *ev;
     uint16_t port;
+    struct tevent_context *ev;
     struct nss_dom_ctx *dctx;
 
     struct sss_domain_info **domains;
@@ -681,10 +681,10 @@ fill_service(struct sss_packet *packet,
         }
         to_sized_string(&cased_proto, tmpstr);
 
-        sss_packet_grow(packet, 2 * sizeof(uint16_t)
-                            + sizeof(uint32_t)
-                            + cased_name.len
-                            + cased_proto.len);
+        ret = sss_packet_grow(packet, 2 * sizeof(uint16_t)
+                              + sizeof(uint32_t)
+                              + cased_name.len
+                              + cased_proto.len);
         if (ret != EOK) {
             num = 0;
             goto done;
@@ -1464,7 +1464,7 @@ setservent_step_done(struct tevent_req *req)
     talloc_zfree(req);
     if (ret == ENOENT) {
         DEBUG(SSSDBG_TRACE_FUNC,
-              ("Domain [%d] returned no results\n", dctx->domain->name));
+              ("Domain [%s] returned no results\n", dctx->domain->name));
     } else if (ret != EOK) {
         DEBUG(SSSDBG_CRIT_FAILURE,
               ("Error [%s] while retrieving info from domain [%s]. "
