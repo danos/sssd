@@ -19,7 +19,9 @@ override_dh_auto_configure:
 	--enable-pammoddir=/lib/$(DEB_HOST_MULTIARCH)/security \
 	--disable-static \
 	--disable-rpath \
-	--enable-all-experimental-features
+	--with-autofs \
+	--with-ssh \
+	--with-sudo
 
 override_dh_install:
 	install -D -m755 $(CURDIR)/debian/generate-config \

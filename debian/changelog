@@ -4,7 +4,8 @@ sssd (1.8.0~beta3-1) UNRELEASED; urgency=low
   * rules: Add configure flags
     - disable RPATH
     - disable building static libs
-    - enable all experimental features
+    - enable ssh user and host key retrieval, autofs request
+      and sudo rules caching
   * Drop fix-python-api-path.patch, included upstream.
   * sssd.examples: Install the renamed example config.
   * rules: Drop special handling of the sssd.api.d, upstream uses
