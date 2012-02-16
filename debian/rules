@@ -56,3 +56,5 @@ override_dh_installinit:
 override_dh_auto_clean:
 	dh_auto_clean
 	rm -f $(CURDIR)/debian/sssd.$(INIT)
+	rm -f $(CURDIR)/po/*.gmo
+	rm -f $(CURDIR)/src/config/*.pyc

@@ -20,6 +20,7 @@ sssd (1.8.0~beta3-1) UNRELEASED; urgency=low
     add Breaks/Replaces.
   * rules: Remove some files we don't want to install, to make dh_install
     happy.
+  * rules: Clean *.gmo and *.pyc.
 
  -- Timo Aaltonen <tjaalton@ubuntu.com>  Thu, 16 Feb 2012 10:24:46 +0200
 
