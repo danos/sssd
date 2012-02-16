@@ -37,7 +37,11 @@ override_dh_install:
 
 	cat $(CURDIR)/debian/sssd.$(INIT).in > $(CURDIR)/debian/sssd.$(INIT)
 
+	# remove files we don't want to install
 	find $(CURDIR)/debian/tmp/ -name '*.la' -exec rm '{}' ';'
+	find $(CURDIR)/debian/tmp/ -name '*.pyc' -exec rm '{}' ';'
+	find $(CURDIR)/debian/tmp/ -name '*.egg-info' -exec rm '{}' ';'
+	rm -f $(CURDIR)/debian/tmp/etc/rc.d/init.d/sssd
 
 	dh_install --fail-missing
 
