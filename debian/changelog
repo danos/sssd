@@ -5,6 +5,7 @@ sssd (1.8.0~beta3-1) UNRELEASED; urgency=low
     - disable RPATH
     - disable building static libs
     - enable all experimental features
+  * Drop fix-python-api-path.patch, included upstream.
 
  -- Timo Aaltonen <tjaalton@ubuntu.com>  Thu, 16 Feb 2012 10:24:46 +0200
 
