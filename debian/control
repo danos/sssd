@@ -99,6 +99,8 @@ Architecture: any
 Depends: ${shlibs:Depends}, ${misc:Depends}, libpam-runtime (>= 1.0.1-6)
 Recommends: sssd
 Multi-Arch: same
+Breaks: sssd (<< 1.8.0~beta3-1)
+Replaces: sssd (<< 1.8.0~beta3-1)
 Description: Pam module for the System Security Services Daemon 
  Provides a set of daemons to manage access to remote directories and
  authentication mechanisms. It provides an NSS and PAM interface toward
