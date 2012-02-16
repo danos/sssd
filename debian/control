@@ -67,6 +67,7 @@ Package: sssd-tools
 Architecture: any
 Depends: ${shlibs:Depends}, ${misc:Depends},
  sssd (= ${binary:Version}),
+ python,
 Breaks: sssd (<< 1.8.0~beta3-1)
 Replaces: sssd (<< 1.8.0~beta3-1)
 Description: System Security Services Daemon -- tools
