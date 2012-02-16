@@ -140,15 +140,17 @@ Architecture: any
 Depends: ${shlibs:Depends}
 Pre-Depends: multiarch-support
 Multi-Arch: same
-Description: Utility library to allow communication between SUDO and SSSD
- Utility library to allow communication between SUDO and SSSD.
+Description: Communicator library for sudo
+ Utility library to allow communication between sudo and SSSD for caching
+ sudo rules by SSSD.
 
 Package: libsss-sudo-dev
 Section: libdevel
 Architecture: any
 Depends: libsss-sudo0 (= ${binary:Version})
-Description: Utility library to allow communication between SUDO and SSSD -- development files
- Utility library to allow communication between SUDO and SSSD.
+Description: Communicator library for sudo -- development files
+ Utility library to allow communication between sudo and SSSD for caching
+ sudo rules by SSSD.
  .
  This package contains header files and symlinks to develop programs which will
  use the libsss-sudo library.
