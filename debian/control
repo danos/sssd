@@ -67,8 +67,8 @@ Package: sssd-tools
 Architecture: any
 Depends: ${shlibs:Depends}, ${misc:Depends},
  sssd (= ${binary:Version}),
-Breaks: sssd (<= 1.8.0)
-Replaces: sssd (<= 1.8.0)
+Breaks: sssd (<= 1.8.0~beta3-1)
+Replaces: sssd (<= 1.8.0~beta3-1)
 Description: System Security Services Daemon -- tools
  Provides a set of daemons to manage access to remote directories and
  authentication mechanisms. It provides an NSS and PAM interface toward

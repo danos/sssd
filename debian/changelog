@@ -12,7 +12,7 @@ sssd (1.8.0~beta3-1) UNRELEASED; urgency=low
   * rules: Add --fail-missing to dh_install.
   * Add packages for libsss-sudo0, libsss-sudo-dev.
   * Split sssd-tools from the main package
-    - add Breaks/Replaces sssd (<= 1.8.0)
+    - add Breaks/Replaces sssd (<< 1.8.0~beta3-1)
     - add to sssd Suggests
   * sssd.install: Add new files.
   * libpam-sss.install, control: Move pam_sss.8 to the correct package,
