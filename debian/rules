@@ -39,7 +39,7 @@ override_dh_install:
 
 	find $(CURDIR)/debian/tmp/ -name '*.la' -exec rm '{}' ';'
 
-	dh_install
+	dh_install --fail-missing
 
 	dh_pycentral -ppython-sss
 	dh_pycentral -ppython-libipa-hbac
