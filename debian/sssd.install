@@ -17,4 +17,3 @@ usr/share/man/man5/sssd-ldap.5*
 usr/share/man/man5/sssd-simple.5*
 usr/share/man/man8/sssd.8*
 usr/share/man/man8/sssd_krb5_locator_plugin.8*
-usr/share/lintian/overrides/sssd

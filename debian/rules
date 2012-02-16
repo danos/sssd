@@ -27,12 +27,6 @@ override_dh_install:
 	install -D -m755 $(CURDIR)/debian/generate-config \
 		$(CURDIR)/debian/tmp/usr/lib/sssd/generate-config
 
-	mkdir -p $(CURDIR)/debian/tmp/usr/share/lintian/overrides/
-	install -D debian/libnss-sss.overrides \
-		$(CURDIR)/debian/tmp/usr/share/lintian/overrides/libnss-sss
-	install -D debian/sssd.overrides \
-		$(CURDIR)/debian/tmp/usr/share/lintian/overrides/sssd
-
 	mkdir -p $(CURDIR)/debian/libpam-sss/usr/share/pam-configs
 	install -m644 debian/libpam-sss.pam-auth-update \
 		$(CURDIR)/debian/libpam-sss/usr/share/pam-configs/sss
