@@ -1,10 +1,15 @@
+usr/bin/sss_ssh_authorizedkeys
+usr/bin/sss_ssh_knownhostsproxy
 usr/lib/sssd/*
 usr/lib/*/ldb/modules/ldb/memberof.so
 usr/lib/*/krb5/plugins/libkrb5/*
 usr/lib/*/sssd/lib*.so*
+usr/lib/*/sssd/modules/libsss_autofs.so
 usr/share/locale/*/LC_MESSAGES/*
 usr/share/sssd/*
 usr/sbin/sssd
+usr/share/man/man1/sss_ssh_authorizedkeys.1*
+usr/share/man/man1/sss_ssh_knownhostsproxy.1*
 usr/share/man/man5/sssd.conf.5*
 usr/share/man/man5/sssd-ipa.5*
 usr/share/man/man5/sssd-krb5.5*
