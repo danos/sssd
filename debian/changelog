@@ -1,11 +1,17 @@
 sssd (1.8.0~beta3-1) UNRELEASED; urgency=low
 
-  * New upstream release.
+  * New upstream prerelease:
+    - Support for the service map in NSS
+    - Support for setting default SELinux user context from FreeIPA
+    - Support for retrieving SSH user and host keys from LDAP (Experimental)
+    - Support for caching autofs LDAP requests (Experimental)
+    - Support for caching SUDO rules (Experimental)
   * rules: Add configure flags
-    - disable RPATH
-    - disable building static libs
-    - enable ssh user and host key retrieval, autofs request
-      and sudo rules caching
+    - Disable RPATH
+    - Disable building static libs
+    - Enable ssh user and host key retrieval, autofs request
+      and sudo rules caching. The respective packages need to add support
+      for these to be useful.
   * Drop fix-python-api-path.patch, included upstream.
   * sssd.examples: Install the renamed example config.
   * rules: Drop special handling of the sssd.api.d, upstream uses
