@@ -870,7 +870,8 @@ struct tevent_req *sdap_get_rootdse_send(TALLOC_CTX *memctx,
                                    "", LDAP_SCOPE_BASE,
                                    "(objectclass=*)", attrs, NULL, 0,
                                    dp_opt_get_int(state->opts->basic,
-                                                  SDAP_SEARCH_TIMEOUT));
+                                                  SDAP_SEARCH_TIMEOUT),
+                                   false);
     if (!subreq) {
         talloc_zfree(req);
         return NULL;
@@ -1023,6 +1024,7 @@ struct sdap_get_generic_ext_state {
     sdap_parse_cb parse_cb;
     void *cb_data;
 
+    bool allow_paging;
 };
 
 static errno_t sdap_get_generic_ext_step(struct tevent_req *req);
@@ -1045,6 +1047,7 @@ sdap_get_generic_ext_send(TALLOC_CTX *memctx,
                           LDAPControl **clientctrls,
                           int sizelimit,
                           int timeout,
+                          bool allow_paging,
                           sdap_parse_cb parse_cb,
                           void *cb_data)
 {
@@ -1052,6 +1055,7 @@ sdap_get_generic_ext_send(TALLOC_CTX *memctx,
     struct sdap_get_generic_ext_state *state;
     struct tevent_req *req;
     int i;
+    LDAPControl *control;
 
     req = tevent_req_create(memctx, &state, struct sdap_get_generic_ext_state);
     if (!req) return NULL;
@@ -1072,6 +1076,35 @@ sdap_get_generic_ext_send(TALLOC_CTX *memctx,
     state->parse_cb = parse_cb;
     state->cb_data = cb_data;
     state->clientctrls = clientctrls;
+
+
+    /* Be extra careful and never allow paging for BASE searches,
+     * even if requested.
+     */
+    if (scope == LDAP_SCOPE_BASE) {
+        state->allow_paging = false;
+    } else {
+        state->allow_paging = allow_paging;
+    }
+
+    /* Also check for deref/asq requests and force
+     * paging on for those requests
+     */
+    /* X-DEREF */
+    control = ldap_control_find(LDAP_CONTROL_X_DEREF,
+                                serverctrls,
+                                NULL);
+    if (control) {
+        state->allow_paging = true;
+    }
+
+    /* ASQ */
+    control = ldap_control_find(LDAP_SERVER_ASQ_OID,
+                                serverctrls,
+                                NULL);
+    if (control) {
+        state->allow_paging = true;
+    }
 
     for (state->nserverctrls=0;
          serverctrls && serverctrls[state->nserverctrls];
@@ -1135,6 +1168,7 @@ static errno_t sdap_get_generic_ext_step(struct tevent_req *req)
     disable_paging = dp_opt_get_bool(state->opts->basic, SDAP_DISABLE_PAGING);
 
     if (!disable_paging
+            && state->allow_paging
             && sdap_is_control_supported(state->sh,
                                          LDAP_CONTROL_PAGEDRESULTS)) {
         lret = ldap_create_page_control(state->sh->ldap,
@@ -1254,6 +1288,9 @@ static void sdap_get_generic_ext_done(struct sdap_op *op,
             DEBUG(2, ("Unexpected result from ldap: %s(%d), %s\n",
                       sss_ldap_err2string(result), result,
                       errmsg ? errmsg : "no errmsg set"));
+            ldap_memfree(errmsg);
+            tevent_req_error(req, EIO);
+            return;
         }
         ldap_memfree(errmsg);
 
@@ -1344,7 +1381,8 @@ struct tevent_req *sdap_get_generic_send(TALLOC_CTX *memctx,
                                          const char **attrs,
                                          struct sdap_attr_map *map,
                                          int map_num_attrs,
-                                         int timeout)
+                                         int timeout,
+                                         bool allow_paging)
 {
     struct tevent_req *req = NULL;
     struct tevent_req *subreq = NULL;
@@ -1358,7 +1396,7 @@ struct tevent_req *sdap_get_generic_send(TALLOC_CTX *memctx,
 
     subreq = sdap_get_generic_ext_send(state, ev, opts, sh, search_base,
                                        scope, filter, attrs, false, NULL,
-                                       NULL, 0, timeout,
+                                       NULL, 0, timeout, allow_paging,
                                        sdap_get_generic_parse_entry, state);
     if (!subreq) {
         talloc_zfree(req);
@@ -1492,7 +1530,7 @@ sdap_x_deref_search_send(TALLOC_CTX *memctx, struct tevent_context *ev,
     subreq = sdap_get_generic_ext_send(state, ev, opts, sh, base_dn,
                                        LDAP_SCOPE_BASE, NULL, attrs,
                                        false, state->ctrls, NULL, 0, timeout,
-                                       sdap_x_deref_parse_entry,
+                                       true, sdap_x_deref_parse_entry,
                                        state);
     if (!subreq) {
         talloc_zfree(req);
@@ -1717,7 +1755,7 @@ sdap_asq_search_send(TALLOC_CTX *memctx, struct tevent_context *ev,
     subreq = sdap_get_generic_ext_send(state, ev, opts, sh, base_dn,
                                        LDAP_SCOPE_BASE, NULL, attrs,
                                        false, state->ctrls, NULL, 0, timeout,
-                                       sdap_asq_search_parse_entry,
+                                       true, sdap_asq_search_parse_entry,
                                        state);
     if (!subreq) {
         talloc_zfree(req);

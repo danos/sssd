@@ -186,7 +186,6 @@ errno_t get_sysdb_attr_name(TALLOC_CTX *mem_ctx,
 errno_t list_missing_attrs(TALLOC_CTX *mem_ctx,
                            struct sdap_attr_map *map,
                            size_t map_size,
-                           const char **expected_attrs,
                            struct sysdb_attrs *recvd_attrs,
                            char ***missing_attrs);
 
@@ -203,5 +202,10 @@ errno_t msgs2attrs_array(TALLOC_CTX *mem_ctx, size_t count,
 errno_t sdap_parse_search_base(TALLOC_CTX *mem_ctx,
                                struct dp_option *opts, int class,
                                struct sdap_search_base ***_search_bases);
+errno_t common_parse_search_base(TALLOC_CTX *mem_ctx,
+                                 const char *unparsed_base,
+                                 const char *class_name,
+                                 const char *old_filter,
+                                 struct sdap_search_base ***_search_bases);
 
 #endif /* _LDAP_COMMON_H_ */

@@ -26,14 +26,19 @@
 #define SSS_SSH_SBUS_SERVICE_VERSION 0x0001
 #define SSS_SSH_SBUS_SERVICE_NAME    "ssh"
 
+#define SSS_SSH_KNOWN_HOSTS_PATH PUBCONF_PATH"/known_hosts"
+#define SSS_SSH_KNOWN_HOSTS_TEMP_TMPL PUBCONF_PATH"/.known_hosts.XXXXXX"
+
 struct ssh_ctx {
     struct resp_ctx *rctx;
+    struct resolv_ctx *resolv;
 };
 
 struct ssh_cmd_ctx {
     struct cli_ctx *cctx;
     enum sss_dp_acct_type type;
     char *name;
+    char *alias;
     char *domname;
 
     struct sss_domain_info *domain;

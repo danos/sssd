@@ -746,7 +746,8 @@ sdap_process_missing_member_2307bis(struct tevent_req *req,
                                        grp_state->opts->user_map,
                                        SDAP_OPTS_USER,
                                        dp_opt_get_int(grp_state->opts->basic,
-                                                      SDAP_SEARCH_TIMEOUT));
+                                                      SDAP_SEARCH_TIMEOUT),
+                                       false);
         if (!subreq) {
             return ENOMEM;
         }
@@ -1109,7 +1110,8 @@ next:
                                        state->opts->user_map,
                                        SDAP_OPTS_USER,
                                        dp_opt_get_int(state->opts->basic,
-                                                      SDAP_SEARCH_TIMEOUT));
+                                                      SDAP_SEARCH_TIMEOUT),
+                                       false);
         if (!subreq) {
             tevent_req_error(req, ENOMEM);
             return;
@@ -1121,7 +1123,7 @@ next:
     }
 
     if (state->check_count == 0) {
-        ret = sdap_save_users(state, state->sysdb, state->attrs,
+        ret = sdap_save_users(state, state->sysdb,
                               state->dom, state->opts,
                               state->new_members, state->count, NULL);
         if (ret) {
@@ -1258,7 +1260,8 @@ static errno_t sdap_get_groups_next_base(struct tevent_req *req)
             state->search_bases[state->base_iter]->scope,
             state->filter, state->attrs,
             state->opts->group_map, SDAP_OPTS_GROUP,
-            state->timeout);
+            state->timeout,
+            state->enumeration); /* If we're enumerating, we need paging */
     if (!subreq) {
         return ENOMEM;
     }
@@ -1685,8 +1688,8 @@ static errno_t sdap_nested_group_populate_users(struct sysdb_ctx *sysdb,
                                     opts->user_map[SDAP_AT_USER_NAME].name,
                                     &username);
         if (ret != EOK) {
-            DEBUG(1, ("User entry %d has no name attribute\n", i));
-            goto done;
+            DEBUG(1, ("User entry %d has no name attribute. Skipping\n", i));
+            continue;
         }
 
         ret = sysdb_attrs_get_el(users[i], SYSDB_ORIG_DN, &el);
@@ -2537,7 +2540,8 @@ static errno_t sdap_nested_group_lookup_user(struct tevent_req *req,
                                    state->opts->user_map,
                                    SDAP_OPTS_USER,
                                    dp_opt_get_int(state->opts->basic,
-                                                  SDAP_SEARCH_TIMEOUT));
+                                                  SDAP_SEARCH_TIMEOUT),
+                                   false);
     if (!subreq) {
         talloc_free(sdap_attrs);
         return EIO;
@@ -2618,7 +2622,8 @@ static errno_t sdap_nested_group_lookup_group(struct tevent_req *req)
                                    state->opts->group_map,
                                    SDAP_OPTS_GROUP,
                                    dp_opt_get_int(state->opts->basic,
-                                                  SDAP_SEARCH_TIMEOUT));
+                                                  SDAP_SEARCH_TIMEOUT),
+                                   false);
     if (!subreq) {
         talloc_free(sdap_attrs);
         return EIO;

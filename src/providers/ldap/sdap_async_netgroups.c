@@ -49,6 +49,7 @@ static errno_t sdap_save_netgroup(TALLOC_CTX *memctx,
     const char *name = NULL;
     int ret;
     char *timestamp = NULL;
+    char **missing = NULL;
 
     ret = sysdb_attrs_get_el(attrs,
                              opts->netgroup_map[SDAP_AT_NETGROUP_NAME].sys_name,
@@ -127,7 +128,17 @@ static errno_t sdap_save_netgroup(TALLOC_CTX *memctx,
         goto fail;
     }
 
-    ret = sysdb_add_netgroup(ctx, name, NULL, netgroup_attrs,
+    /* Make sure that any attributes we requested from LDAP that we
+     * did not receive are also removed from the sysdb
+     */
+    ret = list_missing_attrs(attrs, opts->netgroup_map, SDAP_OPTS_NETGROUP,
+                             attrs, &missing);
+    if (ret != EOK) {
+        DEBUG(SSSDBG_CRIT_FAILURE, ("Failed to list missing attributes\n"));
+        goto fail;
+    }
+
+    ret = sysdb_add_netgroup(ctx, name, NULL, netgroup_attrs, missing,
                              dom->netgroup_timeout, now);
     if (ret) goto fail;
 
@@ -432,7 +443,8 @@ static errno_t netgr_translate_members_ldap_step(struct tevent_req *req)
                                    cn_attr, state->opts->netgroup_map,
                                    SDAP_OPTS_NETGROUP,
                                    dp_opt_get_int(state->opts->basic,
-                                                  SDAP_SEARCH_TIMEOUT));
+                                                  SDAP_SEARCH_TIMEOUT),
+                                   false);
     if (!subreq) {
         DEBUG(1, ("sdap_get_generic_send failed.\n"));
         return ENOMEM;
@@ -621,7 +633,8 @@ static errno_t sdap_get_netgroups_next_base(struct tevent_req *req)
             state->search_bases[state->base_iter]->scope,
             state->filter, state->attrs,
             state->opts->netgroup_map, SDAP_OPTS_NETGROUP,
-            state->timeout);
+            state->timeout,
+            false);
     if (!subreq) {
         return ENOMEM;
     }

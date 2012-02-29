@@ -22,15 +22,18 @@
 
 #include <talloc.h>
 #include <string.h>
+#include <netdb.h>
 
 #include "util/util.h"
 #include "util/crypto/sss_crypto.h"
+#include "util/sss_ssh.h"
 #include "db/sysdb.h"
 #include "db/sysdb_ssh.h"
 #include "providers/data_provider.h"
 #include "responder/common/responder.h"
 #include "responder/common/responder_packet.h"
 #include "responder/ssh/sshsrv_private.h"
+#include "resolv/async_resolv.h"
 
 static errno_t
 ssh_cmd_parse_request(struct ssh_cmd_ctx *cmd_ctx);
@@ -82,14 +85,16 @@ done:
     return ssh_cmd_done(cmd_ctx, ret);
 }
 
-static errno_t
-ssh_host_pubkeys_search(struct ssh_cmd_ctx *cmd_ctx);
+static void
+ssh_host_pubkeys_resolv_done(struct tevent_req *req);
 
 static int
 sss_ssh_cmd_get_host_pubkeys(struct cli_ctx *cctx)
 {
+    struct ssh_ctx *ssh_ctx = cctx->rctx->pvt_ctx;
     struct ssh_cmd_ctx *cmd_ctx;
     errno_t ret;
+    struct tevent_req *req;
 
     cmd_ctx = talloc_zero(cctx, struct ssh_cmd_ctx);
     if (!cmd_ctx) {
@@ -119,10 +124,52 @@ sss_ssh_cmd_get_host_pubkeys(struct cli_ctx *cctx)
         cmd_ctx->check_next = true;
     }
 
-    ret = ssh_host_pubkeys_search(cmd_ctx);
+    /* canonicalize host name */
+    req = resolv_gethostbyname_send(cmd_ctx, cctx->rctx->ev, ssh_ctx->resolv,
+                                    cmd_ctx->name, IPV4_FIRST,
+                                    default_host_dbs);
+    if (!req) {
+        ret = ENOMEM;
+        DEBUG(SSSDBG_OP_FAILURE,
+              ("Out of memory sending resolver request\n"));
+        goto done;
+    }
+
+    tevent_req_set_callback(req, ssh_host_pubkeys_resolv_done, cmd_ctx);
+    ret = EAGAIN;
 
 done:
     return ssh_cmd_done(cmd_ctx, ret);
+}
+
+static errno_t
+ssh_host_pubkeys_search(struct ssh_cmd_ctx *cmd_ctx);
+
+static void
+ssh_host_pubkeys_resolv_done(struct tevent_req *req)
+{
+    struct ssh_cmd_ctx *cmd_ctx = tevent_req_callback_data(req,
+                                                           struct ssh_cmd_ctx);
+    errno_t ret;
+    int resolv_status;
+    struct resolv_hostent *hostent;
+
+    ret = resolv_gethostbyname_recv(req, cmd_ctx,
+                                    &resolv_status, NULL, &hostent);
+    talloc_zfree(req);
+    if (ret == EOK) {
+        if (strcmp(cmd_ctx->name, hostent->name) != 0) {
+            cmd_ctx->alias = cmd_ctx->name;
+            cmd_ctx->name = hostent->name;
+        }
+    } else {
+        DEBUG(SSSDBG_OP_FAILURE,
+              ("Failed to resolve [%s]: %s\n", cmd_ctx->name,
+               resolv_strerror(resolv_status)));
+    }
+
+    ret = ssh_host_pubkeys_search(cmd_ctx);
+    ssh_cmd_done(cmd_ctx, ret);
 }
 
 static void
@@ -312,7 +359,7 @@ ssh_host_pubkeys_search(struct ssh_cmd_ctx *cmd_ctx)
     if (NEED_CHECK_PROVIDER(cmd_ctx->domain->provider)) {
         req = sss_dp_get_account_send(cmd_ctx, cmd_ctx->cctx->rctx,
                                       cmd_ctx->domain, false, SSS_DP_HOST,
-                                      cmd_ctx->name, 0, NULL);
+                                      cmd_ctx->name, 0, cmd_ctx->alias);
         if (!req) {
             DEBUG(SSSDBG_CRIT_FAILURE,
                   ("Out of memory sending data provider request\n"));
@@ -338,6 +385,9 @@ ssh_host_pubkeys_search(struct ssh_cmd_ctx *cmd_ctx)
 
     return ssh_host_pubkeys_search_next(cmd_ctx);
 }
+
+static errno_t
+ssh_host_pubkeys_update_known_hosts(struct ssh_cmd_ctx *cmd_ctx);
 
 static errno_t
 ssh_host_pubkeys_search_next(struct ssh_cmd_ctx *cmd_ctx)
@@ -388,6 +438,8 @@ ssh_host_pubkeys_search_next(struct ssh_cmd_ctx *cmd_ctx)
     }
 
     /* one result found */
+    ssh_host_pubkeys_update_known_hosts(cmd_ctx);
+
     return EOK;
 }
 
@@ -409,6 +461,135 @@ ssh_host_pubkeys_search_dp_callback(uint16_t err_maj,
 
     ret = ssh_host_pubkeys_search_next(cmd_ctx);
     ssh_cmd_done(cmd_ctx, ret);
+}
+
+static errno_t
+ssh_host_pubkeys_update_known_hosts(struct ssh_cmd_ctx *cmd_ctx)
+{
+    TALLOC_CTX *tmp_ctx;
+    errno_t ret;
+    const char *attrs[] = {
+        SYSDB_NAME,
+        SYSDB_NAME_ALIAS,
+        SYSDB_SSH_PUBKEY,
+        NULL
+    };
+    struct cli_ctx *cctx = cmd_ctx->cctx;
+    struct sss_domain_info *dom = cctx->rctx->domains;
+    struct sysdb_ctx *sysdb;
+    struct ldb_message **hosts;
+    size_t num_hosts, i, j, k;
+    struct sss_ssh_ent *ent;
+    int fd = -1;
+    char *filename, *pubkey, *line;
+    ssize_t wret;
+
+    tmp_ctx = talloc_new(NULL);
+    if (!tmp_ctx) {
+        return ENOMEM;
+    }
+
+    /* write known_hosts file */
+    filename = talloc_strdup(tmp_ctx, SSS_SSH_KNOWN_HOSTS_TEMP_TMPL);
+    if (!filename) {
+        ret = ENOMEM;
+        goto done;
+    }
+
+    fd = mkstemp(filename);
+    if (fd == -1) {
+        filename = NULL;
+        ret = errno;
+        goto done;
+    }
+
+    while (dom) {
+        ret = sysdb_get_ctx_from_list(cctx->rctx->db_list, dom, &sysdb);
+        if (ret != EOK) {
+            DEBUG(SSSDBG_FATAL_FAILURE,
+                  ("Fatal: Sysdb CTX not found for this domain!\n"));
+            ret = EFAULT;
+            goto done;
+        }
+
+        ret = sysdb_search_ssh_hosts(tmp_ctx, sysdb, "*", attrs,
+                                     &hosts, &num_hosts);
+        if (ret != EOK) {
+            if (ret != ENOENT) {
+                DEBUG(SSSDBG_OP_FAILURE,
+                      ("Host search failed for domain [%s]\n", dom->name));
+            }
+            continue;
+        }
+
+        for (i = 0; i < num_hosts; i++) {
+            ret = sss_ssh_make_ent(tmp_ctx, hosts[i], &ent);
+            if (ret != EOK) {
+                DEBUG(SSSDBG_OP_FAILURE,
+                      ("Failed to get SSH host public keys\n"));
+                continue;
+            }
+
+            for (j = 0; j < ent->num_pubkeys; j++) {
+                pubkey = sss_ssh_format_pubkey(tmp_ctx, ent, &ent->pubkeys[j],
+                                               SSS_SSH_FORMAT_OPENSSH);
+                if (!pubkey) {
+                    DEBUG(SSSDBG_OP_FAILURE,
+                          ("Out of memory formatting SSH public key\n"));
+                    continue;
+                }
+
+                line = talloc_strdup(tmp_ctx, ent->name);
+                if (!line) {
+                    ret = ENOMEM;
+                    goto done;
+                }
+
+                for (k = 0; k < ent->num_aliases; k++) {
+                    line = talloc_asprintf_append(line, ",%s", ent->aliases[k]);
+                    if (!line) {
+                        ret = ENOMEM;
+                        goto done;
+                    }
+                }
+
+                line = talloc_asprintf_append(line, " %s\n", pubkey);
+                if (!line) {
+                    ret = ENOMEM;
+                    goto done;
+                }
+
+                wret = sss_atomic_write(fd, line, strlen(line));
+                if (wret == -1) {
+                    ret = errno;
+                    goto done;
+                }
+            }
+        }
+
+        dom = dom->next;
+    }
+
+    ret = fchmod(fd, 0644);
+    if (ret == -1) {
+        ret = errno;
+        goto done;
+    }
+
+    ret = rename(filename, SSS_SSH_KNOWN_HOSTS_PATH);
+    if (ret == -1) {
+        ret = errno;
+        goto done;
+    }
+
+    ret = EOK;
+
+done:
+    if (fd != -1) close(fd);
+    if (ret != EOK && filename) unlink(filename);
+    talloc_free(tmp_ctx);
+
+    return ret;
 }
 
 static errno_t

@@ -53,7 +53,6 @@ sdap_get_services_process(struct tevent_req *subreq);
 static errno_t
 sdap_save_services(TALLOC_CTX *memctx,
                    struct sysdb_ctx *sysdb,
-                   const char **attrs,
                    struct sss_domain_info *dom,
                    struct sdap_options *opts,
                    struct sysdb_attrs **services,
@@ -65,7 +64,6 @@ sdap_save_service(TALLOC_CTX *mem_ctx,
                   struct sdap_options *opts,
                   struct sss_domain_info *dom,
                   struct sysdb_attrs *attrs,
-                  const char **ldap_attrs,
                   char **_usn_value,
                   time_t now);
 
@@ -148,7 +146,8 @@ sdap_get_services_next_base(struct tevent_req *req)
             state->search_bases[state->base_iter]->scope,
             state->filter, state->attrs,
             state->opts->service_map, SDAP_OPTS_SERVICES,
-            state->timeout);
+            state->timeout,
+            state->enumeration); /* If we're enumerating, we need paging */
     if (!subreq) {
         return ENOMEM;
     }
@@ -230,7 +229,6 @@ sdap_get_services_process(struct tevent_req *subreq)
     }
 
     ret = sdap_save_services(state, state->sysdb,
-                             state->attrs,
                              state->dom, state->opts,
                              state->services, state->count,
                              &state->higher_usn);
@@ -250,7 +248,6 @@ sdap_get_services_process(struct tevent_req *subreq)
 static errno_t
 sdap_save_services(TALLOC_CTX *mem_ctx,
                    struct sysdb_ctx *sysdb,
-                   const char **attrs,
                    struct sss_domain_info *dom,
                    struct sdap_options *opts,
                    struct sysdb_attrs **services,
@@ -285,7 +282,7 @@ sdap_save_services(TALLOC_CTX *mem_ctx,
         usn_value = NULL;
 
         ret = sdap_save_service(tmp_ctx, sysdb, opts, dom,
-                                services[i], attrs,
+                                services[i],
                                 &usn_value, now);
 
         /* Do not fail completely on errors.
@@ -343,7 +340,6 @@ sdap_save_service(TALLOC_CTX *mem_ctx,
                   struct sdap_options *opts,
                   struct sss_domain_info *dom,
                   struct sysdb_attrs *attrs,
-                  const char **ldap_attrs,
                   char **_usn_value,
                   time_t now)
 {
@@ -450,7 +446,7 @@ sdap_save_service(TALLOC_CTX *mem_ctx,
      * that have been removed from LDAP
      */
     ret = list_missing_attrs(svc_attrs, opts->service_map, SDAP_OPTS_SERVICES,
-                             ldap_attrs, attrs, &missing);
+                             attrs, &missing);
     if (ret != EOK) {
         DEBUG(SSSDBG_MINOR_FAILURE,
               ("Failed to identify removed attributes: [%s]\n",

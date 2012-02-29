@@ -127,7 +127,7 @@ set_autofs_map(struct autofs_ctx *actx,
     int hret;
 
     if (map->mapname == NULL) {
-        DEBUG(SSSDBG_CRIT_FAILURE, ("Missing netgroup name.\n"));
+        DEBUG(SSSDBG_CRIT_FAILURE, ("Missing autofs map name.\n"));
         return EINVAL;
     }
 
@@ -161,7 +161,7 @@ autofs_map_hash_remove(TALLOC_CTX *ctx)
     key.type = HASH_KEY_STRING;
     key.str = map->mapname;
 
-    /* Remove the netgroup result object from the lookup table */
+    /* Remove the autofs map result object from the lookup table */
     hret = hash_delete(map->map_table, &key);
     if (hret != HASH_SUCCESS) {
         DEBUG(SSSDBG_CRIT_FAILURE,
@@ -219,7 +219,8 @@ sss_autofs_cmd_setautomntent(struct cli_ctx *client)
 
     req = setautomntent_send(cmdctx, rawname, cmdctx);
     if (!req) {
-        DEBUG(0, ("Fatal error calling setautomntent_send\n"));
+        DEBUG(SSSDBG_CRIT_FAILURE,
+              ("Fatal error calling setautomntent_send\n"));
         ret = EIO;
         goto done;
     }
@@ -813,7 +814,12 @@ setautomntent_recv(struct tevent_req *req)
 static errno_t
 getautomntent_process(struct autofs_cmd_ctx *cmdctx,
                       struct autofs_map_ctx *map,
-                      uint32_t cursor);
+                      uint32_t cursor, uint32_t max_entries);
+static void
+getautomntent_implicit_done(struct tevent_req *req);
+static errno_t
+fill_autofs_entry(struct ldb_message *entry, struct sss_packet *packet, size_t *rp);
+
 
 static int
 sss_autofs_cmd_getautomntent(struct cli_ctx *client)
@@ -825,9 +831,8 @@ sss_autofs_cmd_getautomntent(struct cli_ctx *client)
     size_t blen;
     errno_t ret;
     uint32_t namelen;
-    char *name;
-    uint32_t cursor;
     size_t c = 0;
+    struct tevent_req *req;
 
     DEBUG(SSSDBG_TRACE_INTERNAL, ("sss_autofs_cmd_getautomntent\n"));
 
@@ -853,30 +858,39 @@ sss_autofs_cmd_getautomntent(struct cli_ctx *client)
         goto done;
     }
 
-    name = (char *) body+c;
+    cmdctx->mapname = (char *) body+c;
 
     /* if not null-terminated fail */
-    if (name[namelen] != '\0') {
+    if (cmdctx->mapname[namelen] != '\0') {
         ret = EINVAL;
         goto done;
     }
 
     /* If the name isn't valid UTF-8, fail */
-    if (!sss_utf8_check((const uint8_t *) name, namelen -1)) {
+    if (!sss_utf8_check((const uint8_t *) cmdctx->mapname, namelen -1)) {
         ret = EINVAL;
         goto done;
     }
 
-    SAFEALIGN_COPY_UINT32_CHECK(&cursor, body+c+namelen+1, blen, &c);
+    SAFEALIGN_COPY_UINT32_CHECK(&cmdctx->cursor, body+c+namelen+1, blen, &c);
+    SAFEALIGN_COPY_UINT32_CHECK(&cmdctx->max_entries, body+c+namelen+1, blen, &c);
 
     DEBUG(SSSDBG_TRACE_FUNC,
-          ("Requested data of map %s cursor %d\n", name, cursor));
+          ("Requested data of map %s cursor %d max entries %d\n",
+           cmdctx->mapname, cmdctx->cursor, cmdctx->max_entries));
 
-    ret = get_autofs_map(actx, name, &map);
+    ret = get_autofs_map(actx, cmdctx->mapname, &map);
     if (ret == ENOENT) {
-        /* FIXME */
-        DEBUG(SSSDBG_MINOR_FAILURE,
-              ("implicit setautomntent not yet implemented\n"));
+        DEBUG(SSSDBG_TRACE_FUNC, ("Performing implicit setautomntent\n"));
+        req = setautomntent_send(cmdctx, cmdctx->mapname, cmdctx);
+        if (req == NULL) {
+            DEBUG(SSSDBG_CRIT_FAILURE, ("setautomntent_send failed\n"));
+            ret = EIO;
+            goto done;
+        }
+
+        tevent_req_set_callback(req, getautomntent_implicit_done, cmdctx);
+        ret = EOK;
         goto done;
     } else if (ret != EOK) {
         DEBUG(SSSDBG_OP_FAILURE,
@@ -886,10 +900,16 @@ sss_autofs_cmd_getautomntent(struct cli_ctx *client)
     }
 
     if (map->ready == false) {
-        /* FIXME */
-        DEBUG(SSSDBG_MINOR_FAILURE,
-              ("implicit setautomntent not yet implemented\n"));
-        ret = ENOENT;
+        DEBUG(SSSDBG_TRACE_FUNC, ("Performing implicit setautomntent\n"));
+        req = setautomntent_send(cmdctx, cmdctx->mapname, cmdctx);
+        if (req == NULL) {
+            DEBUG(SSSDBG_CRIT_FAILURE, ("setautomntent_send failed\n"));
+            ret = EIO;
+            goto done;
+        }
+
+        tevent_req_set_callback(req, getautomntent_implicit_done, cmdctx);
+        ret = EOK;
         goto done;
     } else if (map->found == false) {
         DEBUG(SSSDBG_TRACE_FUNC, ("negative cache hit\n"));
@@ -900,27 +920,65 @@ sss_autofs_cmd_getautomntent(struct cli_ctx *client)
     DEBUG(SSSDBG_TRACE_INTERNAL,
           ("returning entries for [%s]\n", map->mapname));
 
-    ret = getautomntent_process(cmdctx, map, cursor);
+    ret = getautomntent_process(cmdctx, map, cmdctx->cursor, cmdctx->max_entries);
 
 done:
     return autofs_cmd_done(cmdctx, ret);
 }
 
+static void
+getautomntent_implicit_done(struct tevent_req *req)
+{
+    errno_t ret;
+    struct autofs_map_ctx *map;
+    struct autofs_cmd_ctx *cmdctx =
+        tevent_req_callback_data(req, struct autofs_cmd_ctx);
+    struct autofs_ctx *actx =
+        talloc_get_type(cmdctx->cctx->rctx->pvt_ctx, struct autofs_ctx);
+
+    ret = setautomntent_recv(req);
+    talloc_zfree(req);
+    if (ret != EOK) {
+        if (ret != ENOENT) {
+            DEBUG(SSSDBG_CRIT_FAILURE, ("setautomntent_recv failed\n"));
+        } else {
+            DEBUG(SSSDBG_MINOR_FAILURE, ("No such map\n"));
+        }
+        goto done;
+    }
+
+    ret = get_autofs_map(actx, cmdctx->mapname, &map);
+    if (ret != EOK) {
+        DEBUG(SSSDBG_CRIT_FAILURE,
+              ("Cannot get map after setautomntent succeeded?\n"));
+        goto done;
+    }
+
+    if (map->ready == false) {
+        DEBUG(SSSDBG_CRIT_FAILURE,
+              ("Map not ready after setautomntent succeeded\n"));
+        goto done;
+    }
+
+    ret = getautomntent_process(cmdctx, map,
+                                cmdctx->cursor, cmdctx->max_entries);
+done:
+    autofs_cmd_done(cmdctx, ret);
+    return;
+}
+
 static errno_t
 getautomntent_process(struct autofs_cmd_ctx *cmdctx,
                       struct autofs_map_ctx *map,
-                      uint32_t cursor)
+                      uint32_t cursor, uint32_t max_entries)
 {
     struct cli_ctx *client = cmdctx->cctx;
     errno_t ret;
-    const char *key;
-    size_t keylen;
-    const char *value;
-    size_t valuelen;
     struct ldb_message *entry;
-    size_t len;
+    size_t rp;
+    uint32_t i, stop, left, nentries;
     uint8_t *body;
-    size_t blen, rp;
+    size_t blen;
 
     /* create response packet */
     ret = sss_packet_new(client->creq, 0,
@@ -939,46 +997,35 @@ getautomntent_process(struct autofs_cmd_ctx *cmdctx,
         }
         goto done;
     }
-    entry = map->entries[cursor];
 
-    key = ldb_msg_find_attr_as_string(entry, SYSDB_AUTOFS_ENTRY_KEY, NULL);
-    value = ldb_msg_find_attr_as_string(entry, SYSDB_AUTOFS_ENTRY_VALUE, NULL);
-    if (!key || !value) {
-        ret = EAGAIN;
-        DEBUG(SSSDBG_MINOR_FAILURE, ("Incomplete entry\n"));
-        goto done;
-    }
-
-    /* FIXME - split below into a separate function */
-    keylen = 1 + strlen(key);
-    valuelen = 1 + strlen(value);
-    len = sizeof(uint32_t) + sizeof(uint32_t) + keylen  + sizeof(uint32_t)+ valuelen;
-
-    ret = sss_packet_grow(client->creq->out, len);
+    ret = sss_packet_grow(client->creq->out, sizeof(uint32_t));
     if (ret != EOK) {
+        DEBUG(SSSDBG_OP_FAILURE, ("Cannot grow packet\n"));
         goto done;
     }
 
     sss_packet_get_body(client->creq->out, &body, &blen);
+    rp = sizeof(uint32_t);  /* We'll write the number of entries here */
+
+    left = map->entry_count - cursor;
+    stop = max_entries < left ? max_entries : left;
+
+    nentries = 0;
+    for (i=0; i < stop; i++) {
+        entry = map->entries[cursor];
+        cursor++;
+
+        ret = fill_autofs_entry(entry, client->creq->out, &rp);
+        if (ret != EOK) {
+            DEBUG(SSSDBG_MINOR_FAILURE,
+                  ("Cannot fill entry %d/%d, skipping\n", i, stop));
+            continue;
+        }
+        nentries++;
+    }
 
     rp = 0;
-    SAFEALIGN_SET_UINT32(&body[rp], len, &rp);
-    SAFEALIGN_SET_UINT32(&body[rp], keylen, &rp);
-
-    if (keylen == 1) {
-        body[rp] = '\0';
-    } else {
-        memcpy(&body[rp], key, keylen);
-    }
-    rp += keylen;
-
-    SAFEALIGN_SET_UINT32(&body[rp], valuelen, &rp);
-    if (valuelen == 1) {
-        body[rp] = '\0';
-    } else {
-        memcpy(&body[rp], value, valuelen);
-    }
-    rp += valuelen;
+    SAFEALIGN_SET_UINT32(&body[rp], nentries, &rp);
 
     ret = EOK;
 done:
@@ -989,9 +1036,63 @@ done:
 }
 
 static errno_t
-getautomnbyname_process(struct autofs_cmd_ctx *cmdctx,
-                        struct autofs_map_ctx *map,
-                        const char *key);
+fill_autofs_entry(struct ldb_message *entry, struct sss_packet *packet, size_t *rp)
+{
+    errno_t ret;
+    const char *key;
+    size_t keylen;
+    const char *value;
+    size_t valuelen;
+    uint8_t *body;
+    size_t blen;
+    size_t len;
+
+    key = ldb_msg_find_attr_as_string(entry, SYSDB_AUTOFS_ENTRY_KEY, NULL);
+    value = ldb_msg_find_attr_as_string(entry, SYSDB_AUTOFS_ENTRY_VALUE, NULL);
+    if (!key || !value) {
+        DEBUG(SSSDBG_MINOR_FAILURE, ("Incomplete entry\n"));
+        return EINVAL;
+    }
+
+    keylen = 1 + strlen(key);
+    valuelen = 1 + strlen(value);
+    len = sizeof(uint32_t) + sizeof(uint32_t) + keylen + sizeof(uint32_t) + valuelen;
+
+    ret = sss_packet_grow(packet, len);
+    if (ret != EOK) {
+        DEBUG(SSSDBG_OP_FAILURE, ("Cannot grow packet\n"));
+        return ret;
+    }
+
+    sss_packet_get_body(packet, &body, &blen);
+
+    SAFEALIGN_SET_UINT32(&body[*rp], len, rp);
+    SAFEALIGN_SET_UINT32(&body[*rp], keylen, rp);
+
+    if (keylen == 1) {
+        body[*rp] = '\0';
+    } else {
+        memcpy(&body[*rp], key, keylen);
+    }
+    *rp += keylen;
+
+    SAFEALIGN_SET_UINT32(&body[*rp], valuelen, rp);
+    if (valuelen == 1) {
+        body[*rp] = '\0';
+    } else {
+        memcpy(&body[*rp], value, valuelen);
+    }
+    *rp += valuelen;
+
+    return EOK;
+}
+
+static errno_t
+getautomntbyname_process(struct autofs_cmd_ctx *cmdctx,
+                         struct autofs_map_ctx *map,
+                         const char *key);
+static void
+getautomntbyname_implicit_done(struct tevent_req *req);
 
 static int
 sss_autofs_cmd_getautomntbyname(struct cli_ctx *client)
@@ -1003,12 +1104,11 @@ sss_autofs_cmd_getautomntbyname(struct cli_ctx *client)
     uint8_t *body;
     size_t blen;
     uint32_t namelen;
-    char *name;
     uint32_t keylen;
-    char *key;
     size_t c = 0;
+    struct tevent_req *req;
 
-    DEBUG(SSSDBG_TRACE_INTERNAL, ("sss_autofs_cmd_getautomnbyname\n"));
+    DEBUG(SSSDBG_TRACE_INTERNAL, ("sss_autofs_cmd_getautomntbyname\n"));
 
     cmdctx = talloc_zero(client, struct autofs_cmd_ctx);
     if (!cmdctx) {
@@ -1033,16 +1133,16 @@ sss_autofs_cmd_getautomntbyname(struct cli_ctx *client)
         goto done;
     }
 
-    name = (char *) body+c;
+    cmdctx->mapname = (char *) body+c;
 
     /* if not null-terminated fail */
-    if (name[namelen] != '\0') {
+    if (cmdctx->mapname[namelen] != '\0') {
         ret = EINVAL;
         goto done;
     }
 
     /* If the name isn't valid UTF-8, fail */
-    if (!sss_utf8_check((const uint8_t *) name, namelen -1)) {
+    if (!sss_utf8_check((const uint8_t *) cmdctx->mapname, namelen -1)) {
         ret = EINVAL;
         goto done;
     }
@@ -1057,28 +1157,35 @@ sss_autofs_cmd_getautomntbyname(struct cli_ctx *client)
         goto done;
     }
 
-    key = (char *) body+c;
+    cmdctx->key = (char *) body+c;
 
     /* if not null-terminated fail */
-    if (key[keylen] != '\0') {
+    if (cmdctx->key[keylen] != '\0') {
         ret = EINVAL;
         goto done;
     }
 
     /* If the key isn't valid UTF-8, fail */
-    if (!sss_utf8_check((const uint8_t *) key, keylen -1)) {
+    if (!sss_utf8_check((const uint8_t *) cmdctx->key, keylen -1)) {
         ret = EINVAL;
         goto done;
     }
 
     DEBUG(SSSDBG_TRACE_FUNC,
-          ("Requested data of map %s key %s\n", name, key));
+          ("Requested data of map %s key %s\n", cmdctx->mapname, cmdctx->key));
 
-    ret = get_autofs_map(actx, name, &map);
+    ret = get_autofs_map(actx, cmdctx->mapname, &map);
     if (ret == ENOENT) {
-        /* FIXME */
-        DEBUG(SSSDBG_MINOR_FAILURE,
-              ("implicit setautomntent not yet implemented\n"));
+        DEBUG(SSSDBG_TRACE_FUNC, ("Performing implicit setautomntent\n"));
+        req = setautomntent_send(cmdctx, cmdctx->mapname, cmdctx);
+        if (req == NULL) {
+            DEBUG(SSSDBG_CRIT_FAILURE, ("setautomntent_send failed\n"));
+            ret = EIO;
+            goto done;
+        }
+
+        tevent_req_set_callback(req, getautomntbyname_implicit_done, cmdctx);
+        ret = EOK;
         goto done;
     } else if (ret != EOK) {
         DEBUG(SSSDBG_OP_FAILURE,
@@ -1088,10 +1195,16 @@ sss_autofs_cmd_getautomntbyname(struct cli_ctx *client)
     }
 
     if (map->ready == false) {
-        /* FIXME */
-        DEBUG(SSSDBG_MINOR_FAILURE,
-              ("implicit setautomntent not yet implemented\n"));
-        ret = ENOENT;
+        DEBUG(SSSDBG_TRACE_FUNC, ("Performing implicit setautomntent\n"));
+        req = setautomntent_send(cmdctx, cmdctx->mapname, cmdctx);
+        if (req == NULL) {
+            DEBUG(SSSDBG_CRIT_FAILURE, ("setautomntent_send failed\n"));
+            ret = EIO;
+            goto done;
+        }
+
+        tevent_req_set_callback(req, getautomntbyname_implicit_done, cmdctx);
+        ret = EOK;
         goto done;
     } else if (map->found == false) {
         DEBUG(SSSDBG_TRACE_FUNC, ("negative cache hit\n"));
@@ -1100,18 +1213,58 @@ sss_autofs_cmd_getautomntbyname(struct cli_ctx *client)
     }
 
     DEBUG(SSSDBG_TRACE_INTERNAL,
-          ("Looking up value for [%s] in [%s]\n", key, map->mapname));
+          ("Looking up value for [%s] in [%s]\n", cmdctx->key, map->mapname));
 
-    ret = getautomnbyname_process(cmdctx, map, key);
+    ret = getautomntbyname_process(cmdctx, map, cmdctx->key);
 
 done:
     return autofs_cmd_done(cmdctx, ret);
 }
 
+static void
+getautomntbyname_implicit_done(struct tevent_req *req)
+{
+    errno_t ret;
+    struct autofs_map_ctx *map;
+    struct autofs_cmd_ctx *cmdctx =
+        tevent_req_callback_data(req, struct autofs_cmd_ctx);
+    struct autofs_ctx *actx =
+        talloc_get_type(cmdctx->cctx->rctx->pvt_ctx, struct autofs_ctx);
+
+    ret = setautomntent_recv(req);
+    talloc_zfree(req);
+    if (ret != EOK) {
+        if (ret != ENOENT) {
+            DEBUG(SSSDBG_CRIT_FAILURE, ("setautomntent_recv failed\n"));
+        } else {
+            DEBUG(SSSDBG_MINOR_FAILURE, ("No such map\n"));
+        }
+        goto done;
+    }
+
+    ret = get_autofs_map(actx, cmdctx->mapname, &map);
+    if (ret != EOK) {
+        DEBUG(SSSDBG_CRIT_FAILURE,
+              ("Cannot get map after setautomntent succeeded?\n"));
+        goto done;
+    }
+
+    if (map->ready == false) {
+        DEBUG(SSSDBG_CRIT_FAILURE,
+              ("Map not ready after setautomntent succeeded\n"));
+        goto done;
+    }
+
+    ret = getautomntbyname_process(cmdctx, map, cmdctx->key);
+done:
+    autofs_cmd_done(cmdctx, ret);
+    return;
+}
+
 static errno_t
-getautomnbyname_process(struct autofs_cmd_ctx *cmdctx,
-                        struct autofs_map_ctx *map,
-                        const char *key)
+getautomntbyname_process(struct autofs_cmd_ctx *cmdctx,
+                         struct autofs_map_ctx *map,
+                         const char *key)
 {
     struct cli_ctx *client = cmdctx->cctx;
     errno_t ret;

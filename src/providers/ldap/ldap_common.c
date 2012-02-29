@@ -706,19 +706,9 @@ errno_t sdap_parse_search_base(TALLOC_CTX *mem_ctx,
                                struct dp_option *opts, int class,
                                struct sdap_search_base ***_search_bases)
 {
-    errno_t ret;
-    struct sdap_search_base **search_bases;
-    TALLOC_CTX *tmp_ctx;
-    struct ldb_context *ldb;
-    struct ldb_dn *ldn;
-    struct ldb_parse_tree *tree;
     const char *class_name;
     char *unparsed_base;
-    char **split_bases;
-    char *filter;
     const char *old_filter = NULL;
-    int count;
-    int i, c;
 
     *_search_bases = NULL;
 
@@ -751,10 +741,33 @@ errno_t sdap_parse_search_base(TALLOC_CTX *mem_ctx,
               ("Unknown search base type: [%d]\n", class));
         class_name = "UNKNOWN";
         /* Non-fatal */
+        break;
     }
 
     unparsed_base = dp_opt_get_string(opts, class);
     if (!unparsed_base || unparsed_base[0] == '\0') return ENOENT;
+
+    return common_parse_search_base(mem_ctx, unparsed_base,
+                                    class_name, old_filter,
+                                    _search_bases);
+}
+
+errno_t common_parse_search_base(TALLOC_CTX *mem_ctx,
+                                 const char *unparsed_base,
+                                 const char *class_name,
+                                 const char *old_filter,
+                                 struct sdap_search_base ***_search_bases)
+{
+    errno_t ret;
+    struct sdap_search_base **search_bases;
+    TALLOC_CTX *tmp_ctx;
+    struct ldb_context *ldb;
+    struct ldb_dn *ldn;
+    struct ldb_parse_tree *tree;
+    char **split_bases;
+    char *filter;
+    int count;
+    int i, c;
 
     tmp_ctx = talloc_new(NULL);
     if (!tmp_ctx) {
@@ -1498,7 +1511,6 @@ errno_t get_sysdb_attr_name(TALLOC_CTX *mem_ctx,
 errno_t list_missing_attrs(TALLOC_CTX *mem_ctx,
                            struct sdap_attr_map *map,
                            size_t map_size,
-                           const char **expected_attrs,
                            struct sysdb_attrs *recvd_attrs,
                            char ***missing_attrs)
 {
@@ -1506,16 +1518,22 @@ errno_t list_missing_attrs(TALLOC_CTX *mem_ctx,
     size_t attr_count = 0;
     size_t i, j, k;
     char **missing = NULL;
+    const char **expected_attrs;
     char *sysdb_name;
     TALLOC_CTX *tmp_ctx;
 
-    if (!expected_attrs || !recvd_attrs || !missing_attrs) {
+    if (!recvd_attrs || !missing_attrs) {
         return EINVAL;
     }
 
     tmp_ctx = talloc_new(NULL);
     if (!tmp_ctx) {
         return ENOMEM;
+    }
+
+    ret = build_attrs_from_map(tmp_ctx, map, map_size, &expected_attrs);
+    if (ret != EOK) {
+        goto done;
     }
 
     /* Count the expected attrs */
@@ -1578,11 +1596,14 @@ errno_t list_missing_attrs(TALLOC_CTX *mem_ctx,
         }
     }
 
-    /* Terminate the list */
-    missing[k] = NULL;
-
+    if (k == 0) {
+        *missing = NULL;
+    } else {
+        /* Terminate the list */
+        missing[k] = NULL;
+        *missing_attrs = talloc_steal(mem_ctx, missing);
+    }
     ret = EOK;
-    *missing_attrs = talloc_steal(mem_ctx, missing);
 
 done:
     talloc_free(tmp_ctx);

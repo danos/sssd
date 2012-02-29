@@ -68,14 +68,24 @@ static void sudosrv_check_user_dp_callback(uint16_t err_maj, uint32_t err_min,
 
 static errno_t sudosrv_get_user(struct sudo_dom_ctx *dctx)
 {
+    TALLOC_CTX *tmp_ctx = NULL;
     struct sss_domain_info *dom = dctx->domain;
     struct sudo_cmd_ctx *cmd_ctx = dctx->cmd_ctx;
     struct cli_ctx *cli_ctx = dctx->cmd_ctx->cli_ctx;
     struct sysdb_ctx *sysdb;
+    struct ldb_result *user;
     time_t cache_expire = 0;
     struct tevent_req *dpreq;
     struct dp_callback_ctx *cb_ctx;
+    const char *original_name = NULL;
+    char *name = NULL;
     errno_t ret;
+
+    tmp_ctx = talloc_new(NULL);
+    if (tmp_ctx == NULL) {
+        DEBUG(SSSDBG_CRIT_FAILURE, ("talloc_new() failed\n"));
+        return ENOMEM;
+    }
 
     while (dom) {
        /* if it is a domainless search, skip domains that require fully
@@ -89,31 +99,43 @@ static errno_t sudosrv_get_user(struct sudo_dom_ctx *dctx)
         /* make sure to update the dctx if we changed domain */
         dctx->domain = dom;
 
+        talloc_free(name);
+        name = sss_get_cased_name(tmp_ctx, cmd_ctx->username,
+                                  dom->case_sensitive);
+        if (name == NULL) {
+            DEBUG(SSSDBG_CRIT_FAILURE, ("Out of memory\n"));
+            ret = ENOMEM;
+            goto done;
+        }
+
         DEBUG(SSSDBG_FUNC_DATA, ("Requesting info about [%s@%s]\n",
-              cmd_ctx->username, dom->name));
+              name, dom->name));
 
         ret = sysdb_get_ctx_from_list(cli_ctx->rctx->db_list,
                                       dctx->domain, &sysdb);
         if (ret != EOK) {
              DEBUG(SSSDBG_CRIT_FAILURE,
                    ("sysdb context not found for this domain!\n"));
-             return EIO;
+             ret = EIO;
+             goto done;
         }
 
-        ret = sysdb_getpwnam(dctx, sysdb, cmd_ctx->username, &dctx->user);
+        ret = sysdb_getpwnam(dctx, sysdb, name, &user);
         if (ret != EOK) {
             DEBUG(SSSDBG_OP_FAILURE,
                   ("Failed to make request to our cache!\n"));
-            return EIO;
+            ret = EIO;
+            goto done;
         }
 
-        if (dctx->user->count > 1) {
+        if (user->count > 1) {
             DEBUG(SSSDBG_CRIT_FAILURE,
                   ("getpwnam call returned more than one result !?!\n"));
-            return EIO;
+            ret = EIO;
+            goto done;
         }
 
-        if (dctx->user->count == 0 && !dctx->check_provider) {
+        if (user->count == 0 && !dctx->check_provider) {
             /* if a multidomain search, try with next */
             if (cmd_ctx->check_next) {
                 dctx->check_provider = true;
@@ -122,18 +144,19 @@ static errno_t sudosrv_get_user(struct sudo_dom_ctx *dctx)
             }
 
             DEBUG(SSSDBG_MINOR_FAILURE, ("No results for getpwnam call\n"));
-            return ENOENT;
+            ret = ENOENT;
+            goto done;
         }
 
         /* One result found, check cache expiry */
-        if (dctx->user->count == 1) {
-            cache_expire = ldb_msg_find_attr_as_uint64(dctx->user->msgs[0],
+        if (user->count == 1) {
+            cache_expire = ldb_msg_find_attr_as_uint64(user->msgs[0],
                                                        SYSDB_CACHE_EXPIRE, 0);
         }
 
         /* If cache miss and we haven't checked DP yet OR the entry is
          * outdated, go to DP */
-        if ((dctx->user->count == 0 || cache_expire < time(NULL))
+        if ((user->count == 0 || cache_expire < time(NULL))
             && dctx->check_provider) {
             dpreq = sss_dp_get_account_send(cli_ctx, cli_ctx->rctx,
                                             dom, false, SSS_DP_INITGROUPS,
@@ -141,13 +164,15 @@ static errno_t sudosrv_get_user(struct sudo_dom_ctx *dctx)
             if (!dpreq) {
                 DEBUG(SSSDBG_CRIT_FAILURE,
                       ("Out of memory sending data provider request\n"));
-                return ENOMEM;
+                ret = ENOMEM;
+                goto done;
             }
 
             cb_ctx = talloc_zero(cli_ctx, struct dp_callback_ctx);
             if(!cb_ctx) {
                 talloc_zfree(dpreq);
-                return ENOMEM;
+                ret = ENOMEM;
+                goto done;
             }
 
             cb_ctx->callback = sudosrv_check_user_dp_callback;
@@ -158,15 +183,37 @@ static errno_t sudosrv_get_user(struct sudo_dom_ctx *dctx)
             tevent_req_set_callback(dpreq, sudosrv_dp_send_acct_req_done, cb_ctx);
 
             /* tell caller we are in an async call */
-            return EAGAIN;
+            ret = EAGAIN;
+            goto done;
+        }
+
+        /* user is stored in cache, remember cased and original name */
+        original_name = ldb_msg_find_attr_as_string(user->msgs[0],
+                                                    SYSDB_NAME, NULL);
+        if (name == NULL) {
+            DEBUG(SSSDBG_CRIT_FAILURE, ("A user with no name?\n"));
+            ret = EFAULT;
+            goto done;
+        }
+
+        dctx->cased_username = talloc_move(dctx, &name);
+        dctx->orig_username = talloc_strdup(dctx, original_name);
+        if (dctx->orig_username== NULL) {
+            DEBUG(SSSDBG_CRIT_FAILURE, ("Out of memory\n"));
+            ret = ENOMEM;
+            goto done;
         }
 
         DEBUG(SSSDBG_TRACE_FUNC, ("Returning info for user [%s@%s]\n",
               cmd_ctx->username, dctx->domain->name));
-        return EOK;
+        ret = EOK;
+        goto done;
     }
 
-    return ENOENT;
+    ret = ENOENT;
+done:
+    talloc_free(tmp_ctx);
+    return ret;
 }
 
 static void sudosrv_dp_send_acct_req_done(struct tevent_req *req)
@@ -256,7 +303,7 @@ errno_t sudosrv_get_rules(struct sudo_dom_ctx *dctx)
                                     cmd_ctx->cli_ctx->rctx,
                                     dctx->domain, false,
                                     cmd_ctx->type,
-                                    cmd_ctx->username);
+                                    dctx->orig_username);
     if (dpreq == NULL) {
         DEBUG(SSSDBG_CRIT_FAILURE,
               ("Cannot issue DP request.\n"));
@@ -373,7 +420,7 @@ static errno_t sudosrv_get_sudorules_from_cache(struct sudo_dom_ctx *dctx)
     }
 
     if (dctx->cmd_ctx->type == SSS_DP_SUDO_USER) {
-        ret = sysdb_get_sudo_user_info(tmp_ctx, dctx->cmd_ctx->username,
+        ret = sysdb_get_sudo_user_info(tmp_ctx, dctx->orig_username,
                                        sysdb, &uid, &groupnames);
         if (ret != EOK) {
             DEBUG(SSSDBG_CRIT_FAILURE,
@@ -386,7 +433,7 @@ static errno_t sudosrv_get_sudorules_from_cache(struct sudo_dom_ctx *dctx)
     }
 
     ret = sudosrv_get_sudorules_query_cache(dctx, sysdb, dctx->cmd_ctx->type,
-                                            dctx->cmd_ctx->username,
+                                            dctx->orig_username,
                                             uid, groupnames,
                                             &dctx->res, &dctx->res_count);
     if (ret != EOK) {
@@ -398,7 +445,7 @@ static errno_t sudosrv_get_sudorules_from_cache(struct sudo_dom_ctx *dctx)
     /* Store result in in-memory cache */
     ret = sudosrv_cache_set_entry(sudo_ctx->rctx->ev, sudo_ctx,
                                   sudo_ctx->cache, dctx->domain,
-                                  dctx->cmd_ctx->username, dctx->res_count,
+                                  dctx->cased_username, dctx->res_count,
                                   dctx->res, sudo_ctx->cache_timeout);
     if (ret != EOK) {
         DEBUG(SSSDBG_MINOR_FAILURE, ("Unable to store rules in cache for "
