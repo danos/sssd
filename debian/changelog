@@ -1,6 +1,6 @@
-sssd (1.8.0~beta3-1) UNRELEASED; urgency=low
+sssd (1.8.0-1) UNRELEASED; urgency=low
 
-  * New upstream prerelease:
+  * New upstream release:
     - Support for the service map in NSS
     - Support for setting default SELinux user context from FreeIPA
     - Support for retrieving SSH user and host keys from LDAP (Experimental)
