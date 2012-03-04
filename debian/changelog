@@ -26,7 +26,7 @@ sssd (1.8.0-1) UNRELEASED; urgency=low
     add Breaks/Replaces.
   * rules: Remove some files we don't want to install, to make dh_install
     happy.
-  * rules: Clean *.gmo and *.pyc.
+  * rules: Clean po/*.gmo, po/stamp-po and *.pyc.
   * Install lintian overrides using dh_lintian.
   * {sssd,libnss-sss}.lintian-overrides: Update.
   * Move libsasl2-modules-gssapi to sssd Depends to make sure it gets
