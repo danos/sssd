@@ -1,4 +1,4 @@
-sssd (1.8.0-1) UNRELEASED; urgency=low
+sssd (1.8.1-1) UNRELEASED; urgency=low
 
   * New upstream release:
     - Support for the service map in NSS
