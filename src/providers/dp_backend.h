@@ -195,8 +195,11 @@ int be_fo_service_add_callback(TALLOC_CTX *memctx,
                                struct be_ctx *ctx, const char *service_name,
                                be_svc_callback_fn_t *fn, void *private_data);
 int be_fo_get_server_count(struct be_ctx *ctx, const char *service_name);
-int be_fo_add_srv_server(struct be_ctx *ctx, const char *service_name,
-                         const char *query_service, enum be_fo_protocol proto,
+int be_fo_add_srv_server(struct be_ctx *ctx,
+                         const char *service_name,
+                         const char *query_service,
+                         const char *default_discovery_domain,
+                         enum be_fo_protocol proto,
                          bool proto_fallback, void *user_data);
 int be_fo_add_server(struct be_ctx *ctx, const char *service_name,
                      const char *server, int port, void *user_data);
@@ -204,8 +207,14 @@ int be_fo_add_server(struct be_ctx *ctx, const char *service_name,
 struct tevent_req *be_resolve_server_send(TALLOC_CTX *memctx,
                                           struct tevent_context *ev,
                                           struct be_ctx *ctx,
-                                          const char *service_name);
+                                          const char *service_name,
+                                          bool first_try);
 int be_resolve_server_recv(struct tevent_req *req, struct fo_server **srv);
+
+void be_fo_set_port_status(struct be_ctx *ctx,
+                           struct fo_server *server,
+                           enum port_status status);
+
 /*
  * Instruct fail-over to try next server on the next connect attempt.
  * Should be used after connection to service was unexpectedly dropped

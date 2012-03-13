@@ -185,6 +185,7 @@ dist_noinst_SCRIPTS = \
     src/config/SSSDConfig.py \
     src/config/SSSDConfigTest.py \
     src/config/sssd_upgrade_config.py \
+    contrib/rhel/update_debug_levels.py \
     src/tests/pyhbac-test.py
 
 dist_noinst_DATA = \
@@ -1146,6 +1147,7 @@ libsss_ipa_la_SOURCES = \
     src/providers/ldap/ldap_id_services.c \
     src/providers/ldap/ldap_auth.c \
     src/providers/ldap/ldap_common.c \
+    src/providers/ldap/sdap_access.c \
     src/providers/ldap/sdap_async.c \
     src/providers/ldap/sdap_async_users.c \
     src/providers/ldap/sdap_async_groups.c \
@@ -1453,23 +1455,11 @@ rpms: rpmbrprep
 	cd $(RPMBUILD); \
 	rpmbuild --define "_topdir $(RPMBUILD)" -ba SPECS/sssd.spec
 
-experimental-rpms: rpmbrprep
-	cd $(RPMBUILD); \
-	rpmbuild --define "_topdir $(RPMBUILD)"   \
-		 --define "enable_experimental 1" \
-		 -ba SPECS/sssd.spec
-
 if GIT_CHECKOUT
 prerelease-rpms:
 	cp $(srcdir)/version.m4 $(srcdir)/version.m4.orig
 	sed -e "s/m4_define(\[PRERELEASE_VERSION_NUMBER\], \[.*\])/m4_define(\[PRERELEASE_VERSION_NUMBER\], \[.`date +%Y%m%d.%H%M`.git`git log -1 --pretty=format:%h`\])/" < $(srcdir)/version.m4.orig > $(srcdir)/version.m4
 	$(MAKE) rpms
-	mv $(srcdir)/version.m4.orig $(srcdir)/version.m4
-
-prerelease-experimental-rpms:
-	cp $(srcdir)/version.m4 $(srcdir)/version.m4.orig
-	sed -e "s/m4_define(\[PRERELEASE_VERSION_NUMBER\], \[.*\])/m4_define(\[PRERELEASE_VERSION_NUMBER\], \[.`date +%Y%m%d.%H%M`.git`git log -1 --pretty=format:%h`\])/" < $(srcdir)/version.m4.orig > $(srcdir)/version.m4
-	$(MAKE) experimental-rpms
 	mv $(srcdir)/version.m4.orig $(srcdir)/version.m4
 endif
 
