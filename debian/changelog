@@ -31,6 +31,7 @@ sssd (1.8.1-1) UNRELEASED; urgency=low
   * {sssd,libnss-sss}.lintian-overrides: Update.
   * Move libsasl2-modules-gssapi to sssd Depends to make sure it gets
     installed, as it's needed in most cases.
+  * control: Update maintainer address and repo location.
 
  -- Timo Aaltonen <tjaalton@ubuntu.com>  Thu, 16 Feb 2012 10:24:46 +0200
 

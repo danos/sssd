@@ -1,7 +1,7 @@
 Source: sssd
 Section: utils
 Priority: extra
-Maintainer: Petter Reinholdtsen <pere@debian.org>
+Maintainer: Debian SSSD Team <pkg-sssd-devel@lists.alioth.debian.org>
 Uploaders: Morten Werner Forsbring <werner@debian.org>
 Build-Depends: debhelper (>= 8.1.3~), quilt, dh-autoreconf, autopoint, lsb-release,
  dnsutils,
@@ -36,8 +36,8 @@ Build-Depends: debhelper (>= 8.1.3~), quilt, dh-autoreconf, autopoint, lsb-relea
  check,
 Standards-Version: 3.9.1
 XS-Python-Version: current
-Vcs-Git: git://git.debian.org/git/collab-maint/pkg-sssd
-Vcs-Browser: http://git.debian.org/?p=collab-maint/pkg-sssd.git
+Vcs-Git: git://git.debian.org/git/pkg-sssd/sssd
+Vcs-Browser: http://git.debian.org/?p=pkg-sssd/sssd.git
 Homepage: https://fedorahosted.org/sssd/
 
 Package: sssd
