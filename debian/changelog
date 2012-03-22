@@ -86,6 +86,7 @@ sssd (1.8.1-1) unstable; urgency=low
   * control: Bump the debhelper build-dep to 9.
   * control: Add ${misc:Depends} to libipa-hbac*, libsss-sudo*.
   * control, rules: Migrate to dh_python2 (Closes: #617071).
+  * control: Add myself to uploaders.
 
   [ Petter Reinholdtsen ]
   * New upstream version 1.2.4:

@@ -2,7 +2,7 @@ Source: sssd
 Section: utils
 Priority: extra
 Maintainer: Debian SSSD Team <pkg-sssd-devel@lists.alioth.debian.org>
-Uploaders: Morten Werner Forsbring <werner@debian.org>
+Uploaders: Morten Werner Forsbring <werner@debian.org>, Timo Aaltonen <tjaalton@ubuntu.com>
 Build-Depends: debhelper (>= 9), quilt, dh-autoreconf, autopoint, lsb-release,
  dnsutils,
  libpopt-dev,
