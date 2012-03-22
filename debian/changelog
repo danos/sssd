@@ -1,6 +1,56 @@
 sssd (1.8.1-1) unstable; urgency=low
 
-  * New upstream release (Closes: #647980, #639965):
+  [ Timo Aaltonen ]
+  * New upstream release (1.5.16) (Closes: #595564, #624194, #640678,
+    #643806).
+    - Add libunistring-dev to build-deps.
+  * Drop patch to ensure LDAP authentication never accept a zero
+    length password, which is now included upstream.
+  * sssd.upstart.ubuntu:
+    - Don't start before net-device-up. (LP: 812943)
+    - Source /etc/default/sssd. (LP: 812943)
+  * sssd.default: Added a file to include the sssd daemon defaults,
+    currently has '-D -f'.
+  * sssd.init: Drop separate OPTIONS, '-D' comes from /etc/default/sssd
+    now..
+  * rules: Install the Python API files to /usr/share/sssd, as discussed
+    with upstream. (LP: 859611)
+  * fix-python-api-path.dpatch: Use the new location for the API files.
+    (LP: 859611)
+  * libpam-sss.pam-auth-update:
+    - Add 'forward_pass' to auth stack to fix ecryptfs mounts. (LP: 826643)
+    - Add pam_localuser.so to account stack to allow local users to log in.
+      (LP: 860488)
+  * control: sssd now Recommends libpam-sss and libnss-sss, since sssd is
+    mostly useless without them. (LP: 767337)
+  * control, compat: Bump debhelper build-dep and compat level to 8.
+  * Switch patch-system to quilt.
+  * Do not install a working config file by default. The local domain
+    definition was broken (upstream #1014). The daemon will need to be
+    configured by other means before it's usable.
+  * Add support for Multi-Arch (Closes: #634123).
+  * Migrate to dh, drop cdbs build-dep, add quilt, dh-autoreconf and
+    autopoint to build-deps.
+  * Remove unnecessary libnss-sss.links.
+  * Add libdhash-dev, libcollection-dev and libini-config-dev to build-deps.
+  * Drop cvs from build-depends.
+  * Add new packages: libipa-hbac0, libipa-hbac-dev, python-libipa-hbac.
+  * libnss-sss.overrides: Add an override for
+    "package-name-doesnt-match-sonames".
+  * Determine the used init system during build, add lsb-release to
+    build-deps. Default to sysvinit, use upstart if Ubuntu.
+  * sssd.upstart.in: Test if the config file exists, and exit if not.
+  * Fail gracefully if invoke-rc.d returns an error on postinst/prerm, like
+    when the daemon fails to start when there is no config file.
+  * sssd.init.in: Check that /etc/default/sssd is a real file before sourcing
+    it (Closes: #587895).
+  * control: Add libsasl2-modules-gssapi-mit and libsasl2-modules-ldap to
+    Recommends for sssd.
+  * rules: Move the rule for purging .la files before dh_install
+    (Closes: #633206).
+  * sssd.install: Fix the wildcard for plugins to include .so symlinks.
+  * control: Add check to build-depends for unit tests.
+  * New upstream release (1.8.1) (Closes: #647980, #639965):
     - Support for the service map in NSS
     - Support for setting default SELinux user context from FreeIPA
     - Support for retrieving SSH user and host keys from LDAP (Experimental)
@@ -37,10 +87,6 @@ sssd (1.8.1-1) unstable; urgency=low
   * control: Add ${misc:Depends} to libipa-hbac*, libsss-sudo*.
   * control, rules: Migrate to dh_python2 (Closes: #617071).
 
- -- Timo Aaltonen <tjaalton@ubuntu.com>  Thu, 22 Mar 2012 13:28:27 +0200
-
-sssd (1.5.16-1) UNRELEASED; urgency=low
-
   [ Petter Reinholdtsen ]
   * New upstream version 1.2.4:
     - Resolves long-standing issues related to group processing with
@@ -66,62 +112,11 @@ sssd (1.5.16-1) UNRELEASED; urgency=low
   * Correct package description for python-sss (Closes: #596215).
   * Update Standards-Version from 3.8.4 to 3.9.1.  No changes needed.
 
-  [ Timo Aaltonen ]
-  * New upstream release (1.5.16) (Closes: #595564, #624194, #640678,
-    #643806).
-    - Add libunistring-dev to build-deps.
-  * Drop patch to ensure LDAP authentication never accept a zero
-    length password, which is now included upstream.
-  * sssd.upstart.ubuntu:
-    - Don't start before net-device-up. (LP: 812943)
-    - Source /etc/default/sssd. (LP: 812943)
-  * sssd.default: Added a file to include the sssd daemon defaults,
-    currently has '-D -f'.
-  * sssd.init: Drop separate OPTIONS, '-D' comes from /etc/default/sssd
-    now..
-  * rules: Install the Python API files to /usr/share/sssd, as discussed
-    with upstream. (LP: 859611)
-  * fix-python-api-path.dpatch: Use the new location for the API files.
-    (LP: 859611)
-  * libpam-sss.pam-auth-update:
-    - Add 'forward_pass' to auth stack to fix ecryptfs mounts. (LP: 826643)
-    - Add pam_localuser.so to account stack to allow local users to log in.
-      (LP: 860488)
-  * control: sssd now Recommends libpam-sss and libnss-sss, since sssd is
-    mostly useless without them. (LP: 767337)
-  * control, compat: Bump debhelper build-dep and compat level to 8.
-  * Switch patch-system to quilt.
-  * Do not install a working config file by default. The local domain
-    definition was broken (upstream #1014). The daemon will need to be
-    configured by other means before it's usable.
-  * Add support for Multi-Arch (Closes: #634123).
-  * Migrate to dh, drop cdbs build-dep, add quilt, dh-autoreconf and
-    autopoint to build-deps.
-  * Remove unnecessary libnss-sss.links.
-  * Add libdhash-dev, libcollection-dev and libini-config-dev to build-deps.
-  * Drop cvs from build-depends.
-  * Add new packages: libipa-hbac0, libipa-hbac-dev, python-libipa-hbac.
-  * libnss-sss.overrides: Add an override for 
-    "package-name-doesnt-match-sonames".
-  * Determine the used init system during build, add lsb-release to
-    build-deps. Default to sysvinit, use upstart if Ubuntu.
-  * sssd.upstart.in: Test if the config file exists, and exit if not.
-  * Fail gracefully if invoke-rc.d returns an error on postinst/prerm, like
-    when the daemon fails to start when there is no config file.
-  * sssd.init.in: Check that /etc/default/sssd is a real file before sourcing
-    it (Closes: #587895).
-  * control: Add libsasl2-modules-gssapi-mit and libsasl2-modules-ldap to
-    Recommends for sssd.
-  * rules: Move the rule for purging .la files before dh_install
-    (Closes: #633206).
-  * sssd.install: Fix the wildcard for plugins to include .so symlinks.
-  * control: Add check to build-depends for unit tests.
-
   [ Stéphane Graber ]
   * Fix prerm invoke_failure hook to simply return as empty functions
     are invalid shell syntax.
 
- -- Petter Reinholdtsen <pere@debian.org>  Tue, 14 Sep 2010 12:06:37 +0200
+ -- Timo Aaltonen <tjaalton@ubuntu.com>  Thu, 22 Mar 2012 13:28:27 +0200
 
 sssd (1.2.1-4.3) unstable; urgency=medium
 
