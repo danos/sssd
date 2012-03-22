@@ -114,7 +114,7 @@ Description: Pam module for the System Security Services Daemon
 Package: libipa-hbac0
 Section: libs
 Architecture: any
-Depends: ${shlibs:Depends}
+Depends: ${shlibs:Depends}, ${misc:Depends},
 Pre-Depends: multiarch-support
 Conflicts: sssd (<< 1.5.15)
 Replaces: sssd (<< 1.5.15)
@@ -125,7 +125,7 @@ Description: FreeIPA HBAC Evaluator library
 Package: libipa-hbac-dev
 Section: libdevel
 Architecture: any
-Depends: libipa-hbac0 (= ${binary:Version})
+Depends: ${misc:Depends}, libipa-hbac0 (= ${binary:Version})
 Conflicts: sssd (<< 1.5.15)
 Replaces: sssd (<< 1.5.15)
 Description: FreeIPA HBAC Evaluator library
@@ -137,7 +137,7 @@ Description: FreeIPA HBAC Evaluator library
 Package: libsss-sudo0
 Section: libs
 Architecture: any
-Depends: ${shlibs:Depends}
+Depends: ${shlibs:Depends}, ${misc:Depends},
 Pre-Depends: multiarch-support
 Multi-Arch: same
 Description: Communicator library for sudo
@@ -147,7 +147,7 @@ Description: Communicator library for sudo
 Package: libsss-sudo-dev
 Section: libdevel
 Architecture: any
-Depends: libsss-sudo0 (= ${binary:Version})
+Depends: ${misc:Depends}, libsss-sudo0 (= ${binary:Version})
 Description: Communicator library for sudo -- development files
  Utility library to allow communication between sudo and SSSD for caching
  sudo rules by SSSD.
