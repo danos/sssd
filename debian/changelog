@@ -1,4 +1,4 @@
-sssd (1.8.1-1) UNRELEASED; urgency=low
+sssd (1.8.1-1) unstable; urgency=low
 
   * New upstream release:
     - Support for the service map in NSS
@@ -37,7 +37,7 @@ sssd (1.8.1-1) UNRELEASED; urgency=low
   * control: Add ${misc:Depends} to libipa-hbac*, libsss-sudo*.
   * control, rules: Migrate to dh_python2.
 
- -- Timo Aaltonen <tjaalton@ubuntu.com>  Thu, 16 Feb 2012 10:24:46 +0200
+ -- Timo Aaltonen <tjaalton@ubuntu.com>  Thu, 22 Mar 2012 13:28:27 +0200
 
 sssd (1.5.16-1) UNRELEASED; urgency=low
 
