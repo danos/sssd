@@ -1,6 +1,6 @@
 sssd (1.8.1-1) unstable; urgency=low
 
-  * New upstream release:
+  * New upstream release (Closes: #647980, #639965):
     - Support for the service map in NSS
     - Support for setting default SELinux user context from FreeIPA
     - Support for retrieving SSH user and host keys from LDAP (Experimental)
@@ -35,7 +35,7 @@ sssd (1.8.1-1) unstable; urgency=low
   * control: Bump the Standards-Version to 3.9.3, no changes.
   * control: Bump the debhelper build-dep to 9.
   * control: Add ${misc:Depends} to libipa-hbac*, libsss-sudo*.
-  * control, rules: Migrate to dh_python2.
+  * control, rules: Migrate to dh_python2 (Closes: #617071).
 
  -- Timo Aaltonen <tjaalton@ubuntu.com>  Thu, 22 Mar 2012 13:28:27 +0200
 
@@ -94,7 +94,7 @@ sssd (1.5.16-1) UNRELEASED; urgency=low
   * Do not install a working config file by default. The local domain
     definition was broken (upstream #1014). The daemon will need to be
     configured by other means before it's usable.
-  * Add support for Multi-Arch.
+  * Add support for Multi-Arch (Closes: #634123).
   * Migrate to dh, drop cdbs build-dep, add quilt, dh-autoreconf and
     autopoint to build-deps.
   * Remove unnecessary libnss-sss.links.
@@ -112,7 +112,8 @@ sssd (1.5.16-1) UNRELEASED; urgency=low
     it (Closes: #587895).
   * control: Add libsasl2-modules-gssapi-mit and libsasl2-modules-ldap to
     Recommends for sssd.
-  * rules: Move the rule for purging .la files before dh_install.
+  * rules: Move the rule for purging .la files before dh_install
+    (Closes: #633206).
   * sssd.install: Fix the wildcard for plugins to include .so symlinks.
   * control: Add check to build-depends for unit tests.
 
