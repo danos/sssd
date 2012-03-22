@@ -1,6 +1,6 @@
 #!/usr/bin/make -f
 %:
-	dh $@ --with quilt,autoreconf --builddirectory=build
+	dh $@ --with quilt,autoreconf,python2 --builddirectory=build
 
 APIDOCDIR = /usr/share/sssd
 DISTRIBUTION = $(shell lsb_release -i | sed 's/.*:\t//')
@@ -40,9 +40,6 @@ override_dh_install:
 	rm -f $(CURDIR)/debian/tmp/etc/rc.d/init.d/sssd
 
 	dh_install --fail-missing
-
-	dh_pycentral -ppython-sss
-	dh_pycentral -ppython-libipa-hbac
 
 override_dh_installinit:
 	dh_installinit --error-handler=invoke_failure

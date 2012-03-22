@@ -26,8 +26,7 @@ Build-Depends: debhelper (>= 9), quilt, dh-autoreconf, autopoint, lsb-release,
  krb5-config,
  libkrb5-dev,
  libc-ares-dev,
- python-dev (>= 2.3.5-11),
- python-central (>= 0.6),
+ python-dev (>= 2.6.6-3~),
  libsemanage1-dev,
  libunistring-dev,
  libdhash-dev,
@@ -35,7 +34,6 @@ Build-Depends: debhelper (>= 9), quilt, dh-autoreconf, autopoint, lsb-release,
  libini-config-dev,
  check,
 Standards-Version: 3.9.3
-XS-Python-Version: current
 Vcs-Git: git://git.debian.org/git/pkg-sssd/sssd
 Vcs-Browser: http://git.debian.org/?p=pkg-sssd/sssd.git
 Homepage: https://fedorahosted.org/sssd/
@@ -172,7 +170,6 @@ Architecture: any
 Depends: ${shlibs:Depends}, ${misc:Depends}, ${python:Depends}
 Provides: ${python:Provides}
 Recommends: sssd
-XB-Python-Version: ${python:Versions}
 Description: Python module for the System Security Services Daemon
  Provides a set of daemons to manage access to remote directories and
  authentication mechanisms. It provides an NSS and PAM interface toward
