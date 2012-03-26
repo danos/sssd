@@ -17,6 +17,8 @@ sssd (1.8.1-1) unstable; urgency=low
     - Drop cvs and python-central.
     - Migrate to dh, drop cdbs build-dep, add quilt, dh-autoreconf and
       autopoint to build-deps.
+  * Add new packages: sssd-tools, libipa-hbac0, libipa-hbac-dev, libsss-sudo0,
+    libsss-sudo-dev, python-libipa-hbac.
   * Drop patch to ensure LDAP authentication never accept a zero
     length password, which is now included upstream.
   * sssd.upstart.ubuntu:
@@ -43,7 +45,6 @@ sssd (1.8.1-1) unstable; urgency=low
     configured by other means before it's usable.
   * Add support for Multi-Arch (Closes: #634123).
   * Remove unnecessary libnss-sss.links.
-  * Add new packages: libipa-hbac0, libipa-hbac-dev, python-libipa-hbac.
   * libnss-sss.overrides: Add an override for
     "package-name-doesnt-match-sonames".
   * Determine the used init system during build, add lsb-release to
