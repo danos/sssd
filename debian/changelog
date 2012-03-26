@@ -9,20 +9,17 @@ sssd (1.8.1-1) unstable; urgency=low
     - Support for retrieving SSH user and host keys from LDAP (Experimental)
     - Support for caching autofs LDAP requests (Experimental)
     - Support for caching SUDO rules (Experimental)
-  * New upstream release (1.5.16)
-    - fix performance issues with groups with many members.
-      (Closes: #595564)
-  * Update build-deps.
-    - Add libunistring-dev, libdhash-dev, libcollection-dev and 
+  * Update build-deps:
+    - Add libunistring-dev, libdhash-dev, libcollection-dev and
       libini-config-dev.
     - Add check for unit tests.
     - Drop cvs and python-central.
     - Migrate to dh, drop cdbs build-dep, add quilt, dh-autoreconf and
       autopoint to build-deps.
-  * Add new packages: 
-    - libipa-hbac0, libipa-hbac-dev, libsss-sudo0, libsss-sudo-dev, 
+  * Add new packages:
+    - libipa-hbac0, libipa-hbac-dev, libsss-sudo0, libsss-sudo-dev,
       and python-libipa-hbac.
-    - Split sssd-tools: add Breaks/Replaces sssd (<< 1.8.0~beta3-1) and 
+    - Split sssd-tools: add Breaks/Replaces sssd (<< 1.8.0~beta3-1) and
       add to sssd Suggests
   * Drop patch to ensure LDAP authentication never accept a zero
     length password, which is now included upstream.
