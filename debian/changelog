@@ -119,6 +119,14 @@ sssd (1.8.1-1) unstable; urgency=low
 
  -- Timo Aaltonen <tjaalton@ubuntu.com>  Thu, 22 Mar 2012 13:28:27 +0200
 
+sssd (1.2.1-4.4) unstable; urgency=low
+
+  * Non-maintainer upload.
+  * Fix FTBFS with -Werror=format-security. Thanks Philippe De Swert for patch.
+    (Closes: #643806).
+
+ -- Hector Oron <zumbi@debian.org>  Sun, 19 Feb 2012 19:33:04 +0000
+
 sssd (1.2.1-4.3) unstable; urgency=medium
 
   * Non-maintainer upload.
