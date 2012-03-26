@@ -3,7 +3,13 @@ sssd (1.8.1-1) unstable; urgency=low
   [ Timo Aaltonen ]
   * New upstream release (1.5.16) (Closes: #595564, #624194, #640678,
     #643806).
-    - Add libunistring-dev to build-deps.
+  * Update build-deps.
+    - Add libunistring-dev, libdhash-dev, libcollection-dev and 
+      libini-config-dev.
+    - Add check for unit tests.
+    - Drop cvs and python-central.
+    - Migrate to dh, drop cdbs build-dep, add quilt, dh-autoreconf and
+      autopoint to build-deps.
   * Drop patch to ensure LDAP authentication never accept a zero
     length password, which is now included upstream.
   * sssd.upstart.ubuntu:
@@ -29,11 +35,7 @@ sssd (1.8.1-1) unstable; urgency=low
     definition was broken (upstream #1014). The daemon will need to be
     configured by other means before it's usable.
   * Add support for Multi-Arch (Closes: #634123).
-  * Migrate to dh, drop cdbs build-dep, add quilt, dh-autoreconf and
-    autopoint to build-deps.
   * Remove unnecessary libnss-sss.links.
-  * Add libdhash-dev, libcollection-dev and libini-config-dev to build-deps.
-  * Drop cvs from build-depends.
   * Add new packages: libipa-hbac0, libipa-hbac-dev, python-libipa-hbac.
   * libnss-sss.overrides: Add an override for
     "package-name-doesnt-match-sonames".
@@ -49,7 +51,6 @@ sssd (1.8.1-1) unstable; urgency=low
   * rules: Move the rule for purging .la files before dh_install
     (Closes: #633206).
   * sssd.install: Fix the wildcard for plugins to include .so symlinks.
-  * control: Add check to build-depends for unit tests.
   * New upstream release (1.8.1) (Closes: #647980, #639965):
     - Support for the service map in NSS
     - Support for setting default SELinux user context from FreeIPA
