@@ -17,8 +17,11 @@ sssd (1.8.1-1) unstable; urgency=low
     - Drop cvs and python-central.
     - Migrate to dh, drop cdbs build-dep, add quilt, dh-autoreconf and
       autopoint to build-deps.
-  * Add new packages: sssd-tools, libipa-hbac0, libipa-hbac-dev, libsss-sudo0,
-    libsss-sudo-dev, python-libipa-hbac.
+  * Add new packages: 
+    - libipa-hbac0, libipa-hbac-dev, libsss-sudo0, libsss-sudo-dev, 
+      and python-libipa-hbac.
+    - Split sssd-tools: add Breaks/Replaces sssd (<< 1.8.0~beta3-1) and 
+      add to sssd Suggests
   * Drop patch to ensure LDAP authentication never accept a zero
     length password, which is now included upstream.
   * sssd.upstart.ubuntu:
@@ -70,10 +73,6 @@ sssd (1.8.1-1) unstable; urgency=low
   * rules: Drop special handling of the sssd.api.d, upstream uses
     the proper path now.
   * rules: Add --fail-missing to dh_install.
-  * Add packages for libsss-sudo0, libsss-sudo-dev.
-  * Split sssd-tools from the main package
-    - add Breaks/Replaces sssd (<< 1.8.0~beta3-1)
-    - add to sssd Suggests
   * sssd.install: Add new files.
   * libpam-sss.install, control: Move pam_sss.8 to the correct package,
     add Breaks/Replaces.
