@@ -1,8 +1,15 @@
 sssd (1.8.1-1) unstable; urgency=low
 
   [ Timo Aaltonen ]
-  * New upstream release (1.5.16) (Closes: #595564, #624194, #640678,
-    #643806).
+  * New upstream release (1.8.1) (Closes: #647980, #624194, #639965)
+    - Support for the service map in NSS
+    - Support for setting default SELinux user context from FreeIPA
+    - Support for retrieving SSH user and host keys from LDAP (Experimental)
+    - Support for caching autofs LDAP requests (Experimental)
+    - Support for caching SUDO rules (Experimental)
+  * New upstream release (1.5.16)
+    - fix performance issues with groups with many members.
+      (Closes: #595564)
   * Update build-deps.
     - Add libunistring-dev, libdhash-dev, libcollection-dev and 
       libini-config-dev.
@@ -51,12 +58,6 @@ sssd (1.8.1-1) unstable; urgency=low
   * rules: Move the rule for purging .la files before dh_install
     (Closes: #633206).
   * sssd.install: Fix the wildcard for plugins to include .so symlinks.
-  * New upstream release (1.8.1) (Closes: #647980, #639965):
-    - Support for the service map in NSS
-    - Support for setting default SELinux user context from FreeIPA
-    - Support for retrieving SSH user and host keys from LDAP (Experimental)
-    - Support for caching autofs LDAP requests (Experimental)
-    - Support for caching SUDO rules (Experimental)
   * rules: Add configure flags
     - Disable RPATH
     - Disable building static libs
