@@ -1,5 +1,7 @@
 sssd (1.8.1-1) unstable; urgency=low
 
+  * New maintainer, Debian SSSD Team. (Closes: #660985)
+
   [ Timo Aaltonen ]
   * New upstream release (1.8.1) (Closes: #647980, #624194, #639965)
     - Support for the service map in NSS
