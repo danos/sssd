@@ -43,7 +43,7 @@ Architecture: any
 Depends: ${shlibs:Depends}, ${misc:Depends}, python,
  python-sss,
  libipa-hbac0 (= ${binary:Version}),
- libsasl2-modules-gssapi-mit,
+ libsasl2-modules-gssapi-mit | libsasl2-modules-gssapi-heimdal,
 Pre-Depends: ${misc:Pre-Depends}
 Recommends: ldap-utils,
  bind9-host,
