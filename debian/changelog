@@ -1,7 +1,9 @@
 sssd (1.8.1-2) UNRELEASED; urgency=low
 
+  * control: Move the dependency of libsasl2-modules-gssapi-mit to
+    Recommends.
   * control: sssd works with Heimdal gssapi modules too, add
-    libsasl2-modules-gssapi-mit as an option for the Depends.
+    libsasl2-modules-gssapi-mit as an option for the Recommends.
   * libpam-sss.pam-auth-update: Drop the dependency to 128, since pam_sss
     should always be below pam_unix.
 
