@@ -37,6 +37,7 @@ Standards-Version: 3.9.3
 Vcs-Git: git://git.debian.org/git/pkg-sssd/sssd
 Vcs-Browser: http://git.debian.org/?p=pkg-sssd/sssd.git
 Homepage: https://fedorahosted.org/sssd/
+DM-Upload-Allowed: yes
 
 Package: sssd
 Architecture: any

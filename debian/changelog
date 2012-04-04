@@ -8,6 +8,7 @@ sssd (1.8.1-2) UNRELEASED; urgency=low
     should always be below pam_unix.
   * sssd.postrm: Try to remove /etc/sssd only if it exists.
     (Closes: #666226)
+  * control: Added DM-Upload-Allowed field.
 
  -- Timo Aaltonen <tjaalton@ubuntu.com>  Tue, 27 Mar 2012 15:12:06 +0300
 
