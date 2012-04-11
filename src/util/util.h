@@ -405,6 +405,10 @@ char *
 sss_get_cased_name(TALLOC_CTX *mem_ctx, const char *orig_name,
                    bool case_sensitive);
 
+errno_t
+sss_get_cased_name_list(TALLOC_CTX *mem_ctx, const char * const *orig,
+                        bool case_sensitive, const char ***_cased);
+
 /* from backup-file.c */
 int backup_file(const char *src, int dbglvl);
 
@@ -516,6 +520,7 @@ char *
 sss_tc_utf8_str_tolower(TALLOC_CTX *mem_ctx, const char *s);
 uint8_t *
 sss_tc_utf8_tolower(TALLOC_CTX *mem_ctx, const uint8_t *s, size_t len, size_t *_nlen);
+bool sss_string_equal(bool cs, const char *s1, const char *s2);
 
 /* len includes terminating '\0' */
 struct sized_string {

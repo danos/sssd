@@ -1373,21 +1373,14 @@ static void sdap_cli_rootdse_done(struct tevent_req *subreq)
             return;
         }
 
-        else if (ret == ENOENT) {
-            /* RootDSE was not available on
-             * the server.
-             * Continue, and just assume that the
-             * features requested by the config
-             * work properly.
-             */
-            state->use_rootdse = false;
-            rootdse = NULL;
-        }
-
-        else {
-            tevent_req_error(req, ret);
-            return;
-        }
+        /* RootDSE was not available on
+         * the server.
+         * Continue, and just assume that the
+         * features requested by the config
+         * work properly.
+         */
+        state->use_rootdse = false;
+        rootdse = NULL;
     }
 
     if (state->use_rootdse) {
@@ -1627,7 +1620,8 @@ static int synchronous_tls_setup(LDAP *ldap)
     int ldaperr;
     int msgid;
     char *errmsg = NULL;
-    LDAPMessage *result;
+    char *diag_msg;
+    LDAPMessage *result = NULL;
     TALLOC_CTX *tmp_ctx;
 
     DEBUG(4, ("Executing START TLS\n"));
@@ -1637,11 +1631,11 @@ static int synchronous_tls_setup(LDAP *ldap)
 
     lret = ldap_start_tls(ldap, NULL, NULL, &msgid);
     if (lret != LDAP_SUCCESS) {
-        optret = sss_ldap_get_diagnostic_msg(tmp_ctx, ldap, &errmsg);
+        optret = sss_ldap_get_diagnostic_msg(tmp_ctx, ldap, &diag_msg);
         if (optret == LDAP_SUCCESS) {
             DEBUG(3, ("ldap_start_tls failed: [%s] [%s]\n",
-                      sss_ldap_err2string(lret), errmsg));
-            sss_log(SSS_LOG_ERR, "Could not start TLS. %s", errmsg);
+                      sss_ldap_err2string(lret), diag_msg));
+            sss_log(SSS_LOG_ERR, "Could not start TLS. %s", diag_msg);
         } else {
             DEBUG(3, ("ldap_start_tls failed: [%s]\n", sss_ldap_err2string(lret)));
             sss_log(SSS_LOG_ERR, "Could not start TLS. "
@@ -1668,7 +1662,6 @@ static int synchronous_tls_setup(LDAP *ldap)
 
     DEBUG(3, ("START TLS result: %s(%d), %s\n",
               sss_ldap_err2string(ldaperr), ldaperr, errmsg));
-    ldap_memfree(errmsg);
 
     if (ldap_tls_inplace(ldap)) {
         DEBUG(9, ("SSL/TLS handler already in place.\n"));
@@ -1679,11 +1672,11 @@ static int synchronous_tls_setup(LDAP *ldap)
     lret = ldap_install_tls(ldap);
     if (lret != LDAP_SUCCESS) {
 
-        optret = sss_ldap_get_diagnostic_msg(tmp_ctx, ldap, &errmsg);
+        optret = sss_ldap_get_diagnostic_msg(tmp_ctx, ldap, &diag_msg);
         if (optret == LDAP_SUCCESS) {
             DEBUG(3, ("ldap_install_tls failed: [%s] [%s]\n",
-                      sss_ldap_err2string(lret), errmsg));
-            sss_log(SSS_LOG_ERR, "Could not start TLS encryption. %s", errmsg);
+                      sss_ldap_err2string(lret), diag_msg));
+            sss_log(SSS_LOG_ERR, "Could not start TLS encryption. %s", diag_msg);
         } else {
             DEBUG(3, ("ldap_install_tls failed: [%s]\n",
                       sss_ldap_err2string(lret)));
@@ -1696,6 +1689,8 @@ static int synchronous_tls_setup(LDAP *ldap)
 
     lret = LDAP_SUCCESS;
 done:
+    if (result) ldap_msgfree(result);
+    if (errmsg) ldap_memfree(errmsg);
     talloc_zfree(tmp_ctx);
     return lret;
 }
