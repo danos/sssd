@@ -1,5 +1,17 @@
-sssd (1.8.1-2) unstable; urgency=low
+sssd (1.8.2-1) UNRELEASED; urgency=low
 
+  * New upstream release 1.8.2.
+    - Several fixes to case-insensitive domain functions
+    - Fix for GSSAPI binds when the keytab contains unrelated
+      principals
+    - Fixed several segfaults
+    - Workarounds added for LDAP servers with unreadable RootDSE
+    - SSH knownhostproxy will no longer enter an infinite loop
+      preventing login
+    - The provided SYSV init script now starts SSSD earlier at startup
+      and stops it later during shutdown
+    - Assorted minor fixes for issues discovered by static analysis
+      tools
   * control: Move the dependency of libsasl2-modules-gssapi-mit to
     Recommends.
   * control: sssd works with Heimdal gssapi modules too, add
