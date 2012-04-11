@@ -16,8 +16,9 @@ sssd (1.8.2-1) UNRELEASED; urgency=low
     Recommends.
   * control: sssd works with Heimdal gssapi modules too, add
     libsasl2-modules-gssapi-mit as an option for the Recommends.
+    (LP: #966146)
   * libpam-sss.pam-auth-update: Drop the dependency to 128, since pam_sss
-    should always be below pam_unix.
+    should always be below pam_unix. (LP: #957486)
   * sssd.postrm: Try to remove /etc/sssd only if it exists.
     (Closes: #666226)
 
