@@ -1,6 +1,6 @@
 sssd (1.8.2-1) UNRELEASED; urgency=low
 
-  * New upstream release 1.8.2.
+  * New upstream bugfix release 1.8.2.
     - Several fixes to case-insensitive domain functions
     - Fix for GSSAPI binds when the keytab contains unrelated
       principals
