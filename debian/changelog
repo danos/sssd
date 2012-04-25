@@ -33,6 +33,8 @@ sssd (1.8.2-1) UNRELEASED; urgency=low
     - debian/control: sssd Suggests apparmor (>= 2.3)
     - debian/sssd.preinst: disable profile on clean install or upgrades
       from earlier than when we shipped the profile
+  * rules: Mangle the date stamp on pam_sss.8 so that the compressed file is
+    identical across all archs. (Closes: #670019)
 
  -- Timo Aaltonen <tjaalton@ubuntu.com>  Wed, 04 Apr 2012 11:40:40 +0300
 

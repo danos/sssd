@@ -5,6 +5,10 @@
 APIDOCDIR = /usr/share/sssd
 DISTRIBUTION = $(shell lsb_release -i | sed 's/.*:\t//')
 INIT = init
+PKGDATE = $(shell dpkg-parsechangelog | \
+	awk -F" " '/^Date/ { print $$4 "/" $$3 "/" $$5 }' | \
+	sed 's/Jan/01/;s/Feb/02/;s/Mar/03/;s/Apr/04/;s/May/05/;s/Jun/06/;s/Jul/07/;s/Aug/08/;s/Sep/09/;s/Oct/10/;s/Nov/11/;s/Dec/12/;s/\//\\\//g')
+CURDATE = $(shell date +%m/%e/%Y | sed 's/\//\\\//g')
 
 ifeq ($(DISTRIBUTION), Ubuntu)
 	INIT = upstart
@@ -42,6 +46,8 @@ override_dh_install:
 	rm -f $(CURDIR)/debian/tmp/etc/rc.d/init.d/sssd
 
 	dh_install --fail-missing
+
+	sed -i 's/${CURDATE}/${PKGDATE}/g' $(CURDIR)/debian/tmp/usr/share/man/man8/pam_sss.8
 
 override_dh_python2:
 	dh_python2 --no-guessing-versions
