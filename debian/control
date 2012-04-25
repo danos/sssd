@@ -51,6 +51,7 @@ Recommends: ldap-utils,
  libsasl2-modules-gssapi-mit | libsasl2-modules-gssapi-heimdal,
  libsasl2-modules-ldap,
 Suggests:
+ apparmor,
  sssd-tools,
 Description: System Security Services Daemon 
  Provides a set of daemons to manage access to remote directories and

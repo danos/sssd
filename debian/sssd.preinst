@@ -23,8 +23,20 @@ rm_conffile() {
     fi
 }
 
+disable_profile() {
+    APP_CONFFILE="/etc/apparmor.d/usr.sbin.sssd"
+    APP_DISABLE="/etc/apparmor.d/disable/usr.sbin.sssd"
+    # Create a symlink to the yet-to-be-unpacked profile
+    if [ ! -e "$APP_CONFFILE" ]; then
+        mkdir -p `dirname $APP_DISABLE` 2>/dev/null || true
+        ln -sf $APP_CONFFILE $APP_DISABLE
+    fi
+}
+
 case "$1" in
 install)
+    # Disable AppArmor profile on install
+    disable_profile
     ;;
 upgrade)
     if dpkg --compare-versions "$2" le "1.0.5-1"; then
@@ -35,6 +47,9 @@ upgrade)
         rm_conffile sssd "/etc/sssd/sssd.api.d/sssd-local.conf"
         rm_conffile sssd "/etc/sssd/sssd.api.d/sssd-krb5.conf"
         rm_conffile sssd "/etc/sssd/sssd.api.d/sssd-ldap.conf"
+    fi
+    if dpkg --compare-versions "$2" lt "1.8.2-1"; then
+        disable_profile
     fi
     ;;
 esac

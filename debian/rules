@@ -30,6 +30,8 @@ override_dh_install:
 	mkdir -p $(CURDIR)/debian/libpam-sss/usr/share/pam-configs
 	install -m644 debian/libpam-sss.pam-auth-update \
 		$(CURDIR)/debian/libpam-sss/usr/share/pam-configs/sss
+	install -D $(CURDIR)/debian/apparmor-profile \
+		$(CURDIR)/debian/sssd/etc/apparmor.d/usr.sbin.sssd
 
 	cat $(CURDIR)/debian/sssd.$(INIT).in > $(CURDIR)/debian/sssd.$(INIT)
 
@@ -45,6 +47,7 @@ override_dh_python2:
 	dh_python2 --no-guessing-versions
 
 override_dh_installinit:
+	dh_apparmor -psssd --profile-name=usr.sbin.sssd
 	dh_installinit --error-handler=invoke_failure
 
 override_dh_auto_clean:
