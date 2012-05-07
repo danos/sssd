@@ -9,8 +9,8 @@ msgid ""
 msgstr ""
 "Project-Id-Version: SSSD\n"
 "Report-Msgid-Bugs-To: sssd-devel@lists.fedorahosted.org\n"
-"POT-Creation-Date: 2012-04-09 13:53-0400\n"
-"PO-Revision-Date: 2012-03-08 11:41+0000\n"
+"POT-Creation-Date: 2012-04-20 11:22-0400\n"
+"PO-Revision-Date: 2012-04-20 16:09+0000\n"
 "Last-Translator: Piotr Drąg <piotrdrag@gmail.com>\n"
 "Language-Team: Polish (http://www.transifex.net/projects/p/fedora/language/"
 "pl/)\n"
@@ -874,7 +874,13 @@ msgstr "Podstawa katalogów domowych"
 msgid "The name of the NSS library to use"
 msgstr "Nazwa używanej biblioteki NSS"
 
-#: src/config/SSSDConfig.py:304
+#: src/config/SSSDConfig.py:302
+msgid "Whether to look up canonical group name from cache if possible"
+msgstr ""
+"Określa, czy wyszukiwać kanoniczną nazwę grupy w pamięci podręcznej, jeśli "
+"to możliwe"
+
+#: src/config/SSSDConfig.py:305
 msgid "PAM stack to use"
 msgstr "Używany stos PAM"
 
@@ -983,23 +989,23 @@ msgstr "Zmiana hasła nie powiodła się. "
 msgid "Server message: "
 msgstr "Komunikat serwera: "
 
-#: src/sss_client/pam_sss.c:1286
+#: src/sss_client/pam_sss.c:1288
 msgid "New Password: "
 msgstr "Nowe hasło: "
 
-#: src/sss_client/pam_sss.c:1287
+#: src/sss_client/pam_sss.c:1289
 msgid "Reenter new Password: "
 msgstr "Proszę ponownie podać nowe hasło: "
 
-#: src/sss_client/pam_sss.c:1373
+#: src/sss_client/pam_sss.c:1375
 msgid "Password: "
 msgstr "Hasło: "
 
-#: src/sss_client/pam_sss.c:1405
+#: src/sss_client/pam_sss.c:1407
 msgid "Current Password: "
 msgstr "Bieżące hasło: "
 
-#: src/sss_client/pam_sss.c:1552
+#: src/sss_client/pam_sss.c:1554
 msgid "Password expired. Change your password now."
 msgstr "Hasło wygasło. Proszę je zmienić teraz."
 
@@ -1069,11 +1075,11 @@ msgstr "Ścieżka do polecenia pośrednika musi być bezwzględna\n"
 
 #: src/sss_client/ssh/sss_ssh_knownhostsproxy.c:263
 msgid "Host name cannot be resolved\n"
-msgstr ""
+msgstr "Nie można rozwiązać nazwy komputera\n"
 
 #: src/sss_client/ssh/sss_ssh_knownhostsproxy.c:274
 msgid "Reverse lookup failed\n"
-msgstr ""
+msgstr "Odwrócone wyszukanie się nie powiodło\n"
 
 #: src/tools/sss_useradd.c:49 src/tools/sss_usermod.c:48
 msgid "The UID of the user"

@@ -87,6 +87,8 @@
                             <para>
                                 Supported services: nss, pam
                                 <phrase condition="with_sudo">, sudo</phrase>
+                                <phrase condition="with_autofs">, autofs</phrase>
+                                <phrase condition="with_ssh">, ssh</phrase>
                             </para>
                         </listitem>
                     </varlistentry>
@@ -254,6 +256,19 @@
                     </listitem>
                 </varlistentry>
                 <varlistentry>
+                    <term>timeout (integer)</term>
+                    <listitem>
+                        <para>
+                            Timeout in seconds between heartbeats for this
+                            service. This is used to ensure that the process
+                            is alive and capable of answering requests.
+                        </para>
+                        <para>
+                            Default: 10
+                        </para>
+                    </listitem>
+                </varlistentry>
+                <varlistentry>
                     <term>reconnection_retries (integer)</term>
                     <listitem>
                         <para>
@@ -263,22 +278,6 @@
                         </para>
                         <para>
                             Default: 3
-                        </para>
-                    </listitem>
-                </varlistentry>
-                <varlistentry>
-                    <term>command (string)</term>
-                    <listitem>
-                        <para>
-                            By default, the executable
-                            representing this service is called
-                            <command>sssd_${service_name}</command>.
-                            This directive allows to change the executable
-                            name for the service. In the vast majority of
-                            configurations, the default values should suffice.
-                        </para>
-                        <para>
-                            Default: <command>sssd_${service_name}</command>
                         </para>
                     </listitem>
                 </varlistentry>
@@ -704,20 +703,6 @@
                 </varlistentry>
 
                 <varlistentry>
-                    <term>timeout (integer)</term>
-                    <listitem>
-                        <para>
-                            Timeout in seconds between heartbeats for this domain.
-                            This is used to ensure that the backend process is
-                            alive and capable of answering requests.
-                        </para>
-                        <para>
-                            Default: 10
-                        </para>
-                    </listitem>
-                </varlistentry>
-
-                <varlistentry>
                     <term>enumerate (bool)</term>
                     <listitem>
                         <para>
@@ -1052,6 +1037,66 @@
                     </listitem>
                 </varlistentry>
 
+                <varlistentry condition="with_autofs">
+                    <term>autofs_provider (string)</term>
+                    <listitem>
+                        <para>
+                            <xi:include xmlns:xi="http://www.w3.org/2001/XInclude" href="include/experimental.xml" />
+                        </para>
+                        <para>
+                            The autofs provider used for the domain.
+                            Supported autofs providers are:
+                        </para>
+                        <para>
+                            <quote>ldap</quote> to load maps stored in LDAP. See
+                            <citerefentry>
+                                <refentrytitle>sssd-ldap</refentrytitle>
+                                <manvolnum>5</manvolnum>
+                            </citerefentry> for more information on configuring LDAP.
+                        </para>
+                        <para>
+                            <quote>ipa</quote> to load maps stored in an IPA
+                            server. See
+                            <citerefentry>
+                                <refentrytitle>sssd-ipa</refentrytitle>
+                                <manvolnum>5</manvolnum>
+                            </citerefentry> for more information on configuring IPA.
+                        </para>
+                        <para>
+                            <quote>none</quote> disables autofs explicitly.
+                        </para>
+                        <para>
+                            Default: The value of <quote>id_provider</quote> is used if it
+                            is set.
+                        </para>
+                    </listitem>
+                </varlistentry>
+
+                <varlistentry>
+                    <term>hostid_provider (string)</term>
+                    <listitem>
+                        <para>
+                            The provider used for retrieving host identity information.
+                            Supported hostid providers are:
+                        </para>
+                        <para>
+                            <quote>ipa</quote> to load host identity stored in an IPA
+                            server. See
+                            <citerefentry>
+                                <refentrytitle>sssd-ipa</refentrytitle>
+                                <manvolnum>5</manvolnum>
+                            </citerefentry> for more information on configuring IPA.
+                        </para>
+                        <para>
+                            <quote>none</quote> disables hostid explicitly.
+                        </para>
+                        <para>
+                            Default: The value of <quote>id_provider</quote> is used if it
+                            is set.
+                        </para>
+                    </listitem>
+                </varlistentry>
+
                 <varlistentry>
                     <term>lookup_family_order (string)</term>
                     <listitem>
@@ -1160,6 +1205,23 @@
                             library are in the form of
                             _nss_$(libName)_$(function), for example
                             _nss_files_getpwent.
+                        </para>
+                    </listitem>
+                </varlistentry>
+
+                <varlistentry>
+                    <term>proxy_fast_alias (boolean)</term>
+                    <listitem>
+                        <para>
+                            When a user or group is looked up by name in
+                            the proxy provider, a second lookup by ID is
+                            performed to "canonicalize" the name in case
+                            the requested name was an alias. Setting this
+                            option to true would cause the SSSD to perform
+                            the ID lookup from cache for performance reasons.
+                        </para>
+                        <para>
+                            Default: false
                         </para>
                     </listitem>
                 </varlistentry>
