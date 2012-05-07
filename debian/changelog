@@ -1,4 +1,4 @@
-sssd (1.8.2-1) UNRELEASED; urgency=low
+sssd (1.8.3-1) UNRELEASED; urgency=low
 
   * New upstream bugfix release 1.8.2.
     - Several fixes to case-insensitive domain functions
@@ -12,6 +12,11 @@ sssd (1.8.2-1) UNRELEASED; urgency=low
       and stops it later during shutdown
     - Assorted minor fixes for issues discovered by static analysis
       tools
+  * New upstream bugfix release 1.8.3.
+    - Numerous manpage and translation updates
+    - LDAP: Handle situations where the RootDSE isn't available anonymously
+    - LDAP: Fix regression for users using non-standard LDAP attributes for
+      user information
   * control: Move the dependency of libsasl2-modules-gssapi-mit to
     Recommends.
   * control: sssd works with Heimdal gssapi modules too, add
