@@ -48,7 +48,7 @@ upgrade)
         rm_conffile sssd "/etc/sssd/sssd.api.d/sssd-krb5.conf"
         rm_conffile sssd "/etc/sssd/sssd.api.d/sssd-ldap.conf"
     fi
-    if dpkg --compare-versions "$2" lt "1.8.2-1"; then
+    if dpkg --compare-versions "$2" lt "1.8.3-1"; then
         disable_profile
     fi
     ;;
