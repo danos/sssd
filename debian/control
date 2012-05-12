@@ -35,6 +35,7 @@ Build-Depends: debhelper (>= 9), quilt, dh-autoreconf, autopoint, lsb-release,
  libcollection-dev,
  libini-config-dev,
  check,
+ dh-apparmor,
 Standards-Version: 3.9.3
 Vcs-Git: git://git.debian.org/git/pkg-sssd/sssd
 Vcs-Browser: http://git.debian.org/?p=pkg-sssd/sssd.git

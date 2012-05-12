@@ -36,6 +36,7 @@ sssd (1.8.3-1) UNRELEASED; urgency=low
     - debian/rules: use dh_apparmor to install profile before sssd is
       restarted
     - debian/control: sssd Suggests apparmor (>= 2.3)
+    - debian/control: Add dh-apparmor to build-depends
     - debian/sssd.preinst: disable profile on clean install or upgrades
       from earlier than when we shipped the profile
   * rules: Mangle the date stamp on pam_sss.8 so that the compressed file is
