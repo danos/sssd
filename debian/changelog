@@ -44,6 +44,8 @@ sssd (1.8.3-1) UNRELEASED; urgency=low
   * control: Add build-depends on libnl-dev to enable Netlink support.
   * control: Add build-depends on libkeyutil-dev to enable support for
     kernel keyring manipulation.
+  * sssd.logrotate: Rotate logs weekly, keep four previous rotations.
+    (Closes: #672984)
 
  -- Timo Aaltonen <tjaalton@ubuntu.com>  Wed, 04 Apr 2012 11:40:40 +0300
 
