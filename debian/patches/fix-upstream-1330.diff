@@ -1,0 +1,40 @@
+commit 6da9b3bcbee97fbfdb02c652ddcd0ab048224997
+Author: Stephen Gallagher <sgallagh@redhat.com>
+Date:   Mon May 21 20:36:44 2012 -0400
+
+    KRB5: Avoid NULL-dereference with empty keytab
+    
+    https://fedorahosted.org/sssd/ticket/1330
+
+diff --git a/src/util/sss_krb5.c b/src/util/sss_krb5.c
+index a59afb2..c944bf0 100644
+--- a/src/util/sss_krb5.c
++++ b/src/util/sss_krb5.c
+@@ -1104,14 +1104,20 @@ sss_krb5_read_etypes_for_keytab(TALLOC_CTX *mem_ctx,
+     }
+ 
+     if (ret == 0) {
+-        /* Sort the preferred enctypes first */
+-        qsort(etypes, count, sizeof(*etypes), compare_etypes);
+-        etypes = talloc_realloc(tmp_ctx, etypes, krb5_enctype, count);
+-        if (etypes == NULL) {
+-            ret = ENOMEM;
++        if (etypes) {
++            /* Sort the preferred enctypes first */
++            qsort(etypes, count, sizeof(*etypes), compare_etypes);
++            etypes = talloc_realloc(tmp_ctx, etypes, krb5_enctype, count);
++            if (etypes == NULL) {
++                ret = ENOMEM;
++            } else {
++                *etype_list = talloc_steal(mem_ctx, etypes);
++                *n_etype_list = count;
++            }
+         } else {
+-            *etype_list = talloc_steal(mem_ctx, etypes);
+-            *n_etype_list = count;
++            /* The key table was empty. There are no enctypes to match */
++            *etype_list = NULL;
++            *n_etype_list = 0;
+         }
+     }
+ 

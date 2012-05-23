@@ -1,0 +1,254 @@
+commit fbd3a264e5ab80f8aa8918732cd5360389b42a90
+Author: Stef Walter <stefw@gnome.org>
+Date:   Tue Apr 10 22:20:53 2012 +0200
+
+    Limit krb5_get_init_creds_keytab() to etypes in keytab
+    
+     * Load the enctypes for the keys in the keytab and pass
+       them to krb5_get_init_creds_keytab().
+     * This fixes the problem where the server offers a enctype
+       that krb5 supports, but we don't have a key for in the keytab.
+    
+    https://bugzilla.redhat.com/show_bug.cgi?id=811375
+
+diff --git a/src/providers/krb5/krb5_child.c b/src/providers/krb5/krb5_child.c
+index 209643a..9a84684 100644
+--- a/src/providers/krb5/krb5_child.c
++++ b/src/providers/krb5/krb5_child.c
+@@ -610,6 +610,14 @@ static krb5_error_code get_and_save_tgt_with_keytab(krb5_context ctx,
+     krb5_error_code kerr = 0;
+     krb5_creds creds;
+     krb5_get_init_creds_opt options;
++    krb5_enctype *etype_list;
++    krb5_error_code krberr;
++    TALLOC_CTX *tmp_ctx;
++    int n_etype_list;
++
++    tmp_ctx = talloc_new(NULL);
++    if (tmp_ctx == NULL)
++        return ENOMEM;
+ 
+     memset(&creds, 0, sizeof(creds));
+     memset(&options, 0, sizeof(options));
+@@ -619,6 +627,18 @@ static krb5_error_code get_and_save_tgt_with_keytab(krb5_context ctx,
+     krb5_get_init_creds_opt_set_proxiable(&options, 0);
+     krb5_set_canonicalize(&options);
+ 
++    krberr = sss_krb5_read_etypes_for_keytab(tmp_ctx, ctx, keytab, princ,
++                                             &etype_list, &n_etype_list);
++    if (krberr) {
++        DEBUG(SSSDBG_MINOR_FAILURE, ("Failed to load etypes from keytab: %s\n",
++                                     sss_krb5_get_error_message(ctx, krberr)));
++    } else if (n_etype_list > 0) {
++        krb5_get_init_creds_opt_set_etype_list(&options, etype_list,
++                                               n_etype_list);
++        DEBUG(SSSDBG_FUNC_DATA, ("Loaded %d enctypes from keytab\n",
++                                 n_etype_list));
++    }
++
+     kerr = krb5_get_init_creds_keytab(ctx, &creds, princ, keytab, 0, NULL,
+                                       &options);
+     if (kerr != 0) {
+@@ -635,6 +655,7 @@ static krb5_error_code get_and_save_tgt_with_keytab(krb5_context ctx,
+ 
+ done:
+     krb5_free_cred_contents(ctx, &creds);
++    talloc_free(tmp_ctx);
+ 
+     return kerr;
+ 
+diff --git a/src/providers/ldap/ldap_child.c b/src/providers/ldap/ldap_child.c
+index e66406c..0679dbf 100644
+--- a/src/providers/ldap/ldap_child.c
++++ b/src/providers/ldap/ldap_child.c
+@@ -155,6 +155,8 @@ static krb5_error_code ldap_child_get_tgt_sync(TALLOC_CTX *memctx,
+     krb5_get_init_creds_opt options;
+     krb5_error_code krberr;
+     krb5_timestamp kdc_time_offset;
++    krb5_enctype *etype_list;
++    int n_etype_list;
+     int canonicalize = 0;
+     int kdc_time_offset_usec;
+     int ret;
+@@ -270,6 +272,19 @@ static krb5_error_code ldap_child_get_tgt_sync(TALLOC_CTX *memctx,
+     }
+     sss_krb5_get_init_creds_opt_set_canonicalize(&options, canonicalize);
+ 
++    krberr = sss_krb5_read_etypes_for_keytab(memctx, context, keytab, kprinc,
++                                             &etype_list, &n_etype_list);
++    if (krberr) {
++        DEBUG(SSSDBG_MINOR_FAILURE, ("Failed to load etypes from keytab: %s\n",
++                                     sss_krb5_get_error_message(context,
++                                                                krberr)));
++    } else if (n_etype_list > 0) {
++        krb5_get_init_creds_opt_set_etype_list(&options, etype_list,
++                                               n_etype_list);
++        DEBUG(SSSDBG_FUNC_DATA, ("Loaded %d enctypes from keytab for %s\n",
++                                 n_etype_list, full_princ));
++    }
++
+     krberr = krb5_get_init_creds_keytab(context, &my_creds, kprinc,
+                                         keytab, 0, NULL, &options);
+ 
+diff --git a/src/util/sss_krb5.c b/src/util/sss_krb5.c
+index a38a0c1..a59afb2 100644
+--- a/src/util/sss_krb5.c
++++ b/src/util/sss_krb5.c
+@@ -981,3 +981,140 @@ sss_krb5_free_keytab_entry_contents(krb5_context context,
+     return krb5_kt_free_entry(context, entry);
+ }
+ #endif
++
++static int
++is_preferred_etype (krb5_enctype etype)
++{
++    static const krb5_enctype preferred[] = {
++        ENCTYPE_DES3_CBC_SHA1,
++        ENCTYPE_ARCFOUR_HMAC,
++        ENCTYPE_AES128_CTS_HMAC_SHA1_96,
++        ENCTYPE_AES256_CTS_HMAC_SHA1_96,
++#ifdef ENCTYPE_CAMELLIA128_CTS_CMAC
++        ENCTYPE_CAMELLIA128_CTS_CMAC,
++#endif
++#ifdef ENCTYPE_CAMELLIA128_CTS_CMAC
++        ENCTYPE_CAMELLIA256_CTS_CMAC,
++#endif
++        0
++    };
++    int i;
++
++    for (i = 0; preferred[i] != 0; i++) {
++        if (preferred[i] == etype) {
++            return 1;
++        }
++    }
++
++    return 0;
++}
++
++static int
++compare_etypes (const void *one,
++                const void *two)
++{
++    const krb5_enctype *e1 = one;
++    const krb5_enctype *e2 = two;
++    int p1, p2;
++
++    p1 = is_preferred_etype(*e1);
++    p2 = is_preferred_etype(*e2);
++
++    if (p1 == p2) {
++        return (int)*e2 - (int)*e1;
++    }
++
++    /* Sort preferred etypes first */
++    return p2 - p1;
++}
++
++krb5_error_code
++sss_krb5_read_etypes_for_keytab(TALLOC_CTX *mem_ctx,
++                                krb5_context context,
++                                krb5_keytab keytab,
++                                krb5_principal princ,
++                                krb5_enctype **etype_list,
++                                int *n_etype_list)
++{
++    krb5_kt_cursor cursor;
++    krb5_keytab_entry entry;
++    krb5_enctype *etypes = NULL;
++    krb5_kvno max_kvno = 0;
++    int allocated = 0;
++    TALLOC_CTX *tmp_ctx;
++    int count = 0;
++    int ret;
++
++    tmp_ctx = talloc_new(NULL);
++    if (!tmp_ctx) return ENOMEM;
++
++    ret = krb5_kt_start_seq_get(context, keytab, &cursor);
++    if (ret != 0) {
++        talloc_free(tmp_ctx);
++        return ret;
++    }
++
++    for (;;) {
++        ret = krb5_kt_next_entry(context, keytab, &entry, &cursor);
++        if (ret != 0) {
++            break;
++        }
++
++        if (!krb5_c_valid_enctype(entry.key.enctype) ||
++            !krb5_principal_compare(context, entry.principal, princ)) {
++            continue;
++        }
++
++        /* Make sure our list is for the highest kvno found for client. */
++        if (entry.vno > max_kvno) {
++            count = 0;
++            max_kvno = entry.vno;
++        } else if (entry.vno != max_kvno) {
++            continue;
++        }
++
++        /*
++         * Reallocate and add enctype. When reallocating always reserve
++         * one for extra logic below.
++         */
++        if (count + 1 >= allocated) {
++            allocated += 16;
++            etypes = talloc_realloc(tmp_ctx, etypes, krb5_enctype, allocated);
++            if (etypes == NULL) {
++                ret = ENOMEM;
++                break;
++            }
++        }
++        etypes[count] = entry.key.enctype;
++        count++;
++
++        /* All DES key types work with des-cbc-crc, which is more likely to be
++         * accepted by the KDC (since MIT KDCs refuse des-cbc-md5). */
++        if (entry.key.enctype == ENCTYPE_DES_CBC_MD5 ||
++            entry.key.enctype == ENCTYPE_DES_CBC_MD4) {
++            etypes[count] = ENCTYPE_DES_CBC_CRC;
++            count++;
++        }
++    }
++
++    krb5_kt_end_seq_get(context, keytab, &cursor);
++
++    if (ret == KRB5_KT_END) {
++        ret = 0;
++    }
++
++    if (ret == 0) {
++        /* Sort the preferred enctypes first */
++        qsort(etypes, count, sizeof(*etypes), compare_etypes);
++        etypes = talloc_realloc(tmp_ctx, etypes, krb5_enctype, count);
++        if (etypes == NULL) {
++            ret = ENOMEM;
++        } else {
++            *etype_list = talloc_steal(mem_ctx, etypes);
++            *n_etype_list = count;
++        }
++    }
++
++    talloc_free(tmp_ctx);
++    return ret;
++}
+diff --git a/src/util/sss_krb5.h b/src/util/sss_krb5.h
+index 50c4b69..349dbaa 100644
+--- a/src/util/sss_krb5.h
++++ b/src/util/sss_krb5.h
+@@ -132,4 +132,12 @@ typedef krb5_ticket_times sss_krb5_ticket_times;
+ typedef krb5_times sss_krb5_ticket_times;
+ #endif
+ 
++krb5_error_code
++sss_krb5_read_etypes_for_keytab(TALLOC_CTX *mem_ctx,
++                                krb5_context context,
++                                krb5_keytab keytab,
++                                krb5_principal princ,
++                                krb5_enctype **etype_list,
++                                int *n_etype_list);
++
+ #endif /* __SSS_KRB5_H__ */

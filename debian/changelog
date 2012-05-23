@@ -46,6 +46,14 @@ sssd (1.8.3-1) UNRELEASED; urgency=low
     kernel keyring manipulation.
   * sssd.logrotate: Rotate logs weekly, keep four previous rotations.
     (Closes: #672984)
+  * Pull patches from the stable branch to fix an issue that results in broken
+    credential cache (LP: #985031)
+    - patches/fix-upstream-1298.diff
+      If canon'ing principals, write ccache with updated default principal
+    - patches/fix-upstream-1297.diff
+      Limit krb5_get_init_creds_keytab() to etypes in keytab
+    - patches/fix-upstream-1330.diff
+      KRB5: Avoid NULL-dereference with empty keytab
 
  -- Timo Aaltonen <tjaalton@ubuntu.com>  Wed, 04 Apr 2012 11:40:40 +0300
 
