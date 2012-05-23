@@ -54,6 +54,9 @@ sssd (1.8.3-1) UNRELEASED; urgency=low
       Limit krb5_get_init_creds_keytab() to etypes in keytab
     - patches/fix-upstream-1330.diff
       KRB5: Avoid NULL-dereference with empty keytab
+  * patches/fix-upstream-1343.diff
+    - LDAP nested groups: Do not process callback with _post deep in the nested
+      structure (LP: #981125)
 
  -- Timo Aaltonen <tjaalton@ubuntu.com>  Wed, 04 Apr 2012 11:40:40 +0300
 
