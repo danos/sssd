@@ -16,7 +16,7 @@ respawn
 env DEFAULTFILE=/etc/default/sssd
 
 pre-start script
-	test -f /etc/sssd/sssd.conf || { stop; exit 0; }
+	test -f /etc/sssd/sssd.conf || { stop; exit 0; }
 	/lib/init/apparmor-profile-load usr.sbin.sssd
 end script
 

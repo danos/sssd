@@ -57,6 +57,8 @@ sssd (1.8.3-1) UNRELEASED; urgency=low
   * patches/fix-upstream-1343.diff
     - LDAP nested groups: Do not process callback with _post deep in the nested
       structure (LP: #981125)
+  * sssd.upstart.in: Delete an invisible control character from the pre-start
+    script. (LP: #1003845)
 
  -- Timo Aaltonen <tjaalton@ubuntu.com>  Wed, 04 Apr 2012 11:40:40 +0300
 
