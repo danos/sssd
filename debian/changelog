@@ -1,3 +1,17 @@
+sssd (1.9.0~beta1-1) UNRELEASED; urgency=low
+
+  * New upstream prerelease 1.9.0beta1. Highlights:
+    - Add native support for autofs to the IPA provider
+    - Support for ID-mapping when connecting to Active Directory
+    - Support for handling very large (> 1500 users) groups in Active
+      Directory
+    - Support for sub-domains (will be used for dealing with trust
+      relationships)
+    - Add a new fast in-memory cache to speed up lookups of cached data
+      on repeated requests
+
+ -- Timo Aaltonen <tjaalton@ubuntu.com>  Thu, 24 May 2012 14:46:39 +0300
+
 sssd (1.8.3-1) UNRELEASED; urgency=low
 
   * New upstream bugfix release 1.8.2.
