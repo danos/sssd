@@ -46,6 +46,7 @@ Architecture: any
 Depends: ${shlibs:Depends}, ${misc:Depends}, python,
  python-sss,
  libipa-hbac0 (= ${binary:Version}),
+ libsss-idmap0 (= ${binary:Version}),
 Pre-Depends: ${misc:Pre-Depends}
 Recommends: ldap-utils,
  bind9-host,
@@ -135,6 +136,25 @@ Description: FreeIPA HBAC Evaluator library
  .
  This package contains header files and symlinks to develop programs which will
  use the libipa-hbac library.
+
+Package: libsss-idmap0
+Section: libs
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends},
+Pre-Depends: multiarch-support
+Multi-Arch: same
+Description: ID mapping library for SSSD
+ Utility library to convert SIDs to Unix uids and gids.
+
+Package: libsss-idmap-dev
+Section: libdevel
+Architecture: any
+Depends: ${misc:Depends}, libsss-idmap0 (= ${binary:Version})
+Description: ID mapping library for SSSD -- development files
+ Utility library to convert SIDs to Unix uids and gids.
+ .
+ This package contains header files and symlinks to develop programs which will
+ use the libsss-idmap library.
 
 Package: libsss-sudo0
 Section: libs

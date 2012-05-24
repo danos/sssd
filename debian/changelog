@@ -9,6 +9,10 @@ sssd (1.9.0~beta1-1) UNRELEASED; urgency=low
       relationships)
     - Add a new fast in-memory cache to speed up lookups of cached data
       on repeated requests
+  * Update the packaging for the new version, thanks Esko Järnfors!
+    - Add libsss-idmap0, libsss-idmap-dev packages
+    - Add sssd Depends on libsss-idmap0
+    - Add /var/lib/sss/mc directory for the new mmap cache
 
  -- Timo Aaltonen <tjaalton@ubuntu.com>  Thu, 24 May 2012 14:46:39 +0300
 
