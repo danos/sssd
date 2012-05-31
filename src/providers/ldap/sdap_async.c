@@ -1286,10 +1286,15 @@ static void sdap_get_generic_ext_done(struct sdap_op *op,
                   sss_ldap_err2string(result), result,
                   errmsg ? errmsg : "no errmsg set"));
 
-        if (result != LDAP_SUCCESS && result != LDAP_NO_SUCH_OBJECT) {
-            DEBUG(2, ("Unexpected result from ldap: %s(%d), %s\n",
-                      sss_ldap_err2string(result), result,
-                      errmsg ? errmsg : "no errmsg set"));
+        if (result == LDAP_SIZELIMIT_EXCEEDED) {
+            /* Try to return what we've got */
+            DEBUG(SSSDBG_MINOR_FAILURE,
+                  ("LDAP sizelimit was exceeded, returning incomplete data\n"));
+        } else if (result != LDAP_SUCCESS && result != LDAP_NO_SUCH_OBJECT) {
+            DEBUG(SSSDBG_OP_FAILURE,
+                  ("Unexpected result from ldap: %s(%d), %s\n",
+                   sss_ldap_err2string(result), result,
+                   errmsg ? errmsg : "no errmsg set"));
             ldap_memfree(errmsg);
             tevent_req_error(req, EIO);
             return;
@@ -2021,8 +2026,8 @@ static void sdap_deref_search_done(struct tevent_req *subreq)
 
     talloc_zfree(subreq);
     if (ret != EOK) {
-        DEBUG(2, ("dereference processing failed [%d]: %s\n",
-                  ret, strerror(ret)));
+        DEBUG(2, ("dereference processing failed [%d]: %s\n", ret, strerror(ret)));
+        sss_log(SSS_LOG_WARNING, "dereference processing failed : %s", strerror(ret));
         tevent_req_error(req, ret);
         return;
     }

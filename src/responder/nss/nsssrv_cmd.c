@@ -1855,7 +1855,7 @@ static int fill_grent(struct sss_packet *packet,
                 if (add_domain) {
                     ret = snprintf((char *)&body[rzero + rsize],
                                     name.len + delim + dom_len,
-                                    namefmt, name, domain);
+                                    namefmt, name.str, domain);
                     if (ret >= (name.len + delim + dom_len)) {
                         /* need more space,
                          * got creative with the print format ? */
@@ -1871,7 +1871,7 @@ static int fill_grent(struct sss_packet *packet,
                         /* retry */
                         ret = snprintf((char *)&body[rzero + rsize],
                                         name.len + delim + dom_len,
-                                        namefmt, name, domain);
+                                        namefmt, name.str, domain);
                     }
 
                     if (ret != name.len + delim + dom_len - 1) {
@@ -2632,7 +2632,7 @@ static errno_t nss_cmd_setgrent_step(struct setent_step_ctx *step_ctx)
             dctx->check_provider = false;
 
             dpreq = sss_dp_get_account_send(step_ctx, rctx, dctx->domain, true,
-                                          SSS_DP_USER, NULL, 0, NULL);
+                                            SSS_DP_GROUP, NULL, 0, NULL);
             if (!dpreq) {
                 DEBUG(SSSDBG_MINOR_FAILURE,
                       ("Enum Cache refresh for domain [%s] failed."
