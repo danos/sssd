@@ -1,4 +1,4 @@
-sssd (1.8.4-1) UNRELEASED; urgency=low
+sssd (1.8.4-1) unstable; urgency=low
 
   * New upstream bugfix release 1.8.2.
     - Several fixes to case-insensitive domain functions
@@ -57,7 +57,7 @@ sssd (1.8.4-1) UNRELEASED; urgency=low
   * sssd.upstart.in: Delete an invisible control character from the pre-start
     script. (LP: #1003845)
 
- -- Timo Aaltonen <tjaalton@ubuntu.com>  Wed, 04 Apr 2012 11:40:40 +0300
+ -- Timo Aaltonen <tjaalton@ubuntu.com>  Fri, 01 Jun 2012 11:43:42 +0300
 
 sssd (1.8.1-1) unstable; urgency=low
 
