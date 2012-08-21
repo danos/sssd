@@ -67,6 +67,7 @@ sssd (1.9.0~beta6-1) UNRELEASED; urgency=low
   * python-sss.install: py-files got moved under SSSDConfig.
   * control, rules: Use default build flags, bump dpkg-dev build-dep to
     1.6.1~.
+  * Bump libsss-sudo soname.
 
  -- Timo Aaltonen <tjaalton@ubuntu.com>  Thu, 24 May 2012 14:46:39 +0300
 
