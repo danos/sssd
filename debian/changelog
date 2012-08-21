@@ -2,6 +2,9 @@ sssd (1.8.4-2) UNRELEASED; urgency=low
 
   * rules: Fix the current date format, and move the date mangling to
     happen before dh_install is run. (Closes: #670019)
+  * sssd.{preinst,postrm}: Install the apparmor profile in force-complain
+    mode on install, and remove the profile directory on purge (if empty). Also
+    migrate from previous setup which installed it as disabled.
 
  -- Timo Aaltonen <tjaalton@ubuntu.com>  Tue, 05 Jun 2012 11:39:33 +0300
 
