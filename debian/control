@@ -4,6 +4,7 @@ Priority: extra
 Maintainer: Debian SSSD Team <pkg-sssd-devel@lists.alioth.debian.org>
 Uploaders: Timo Aaltonen <tjaalton@ubuntu.com>
 Build-Depends: debhelper (>= 9), quilt, dh-autoreconf, autopoint, lsb-release,
+ dpkg-dev (>= 1.6.1~),
  dnsutils,
  libpopt-dev,
  libdbus-1-dev,
