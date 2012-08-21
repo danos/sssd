@@ -30,12 +30,12 @@ Build-Depends: debhelper (>= 9), quilt, dh-autoreconf, autopoint, lsb-release,
  libc-ares-dev,
  python-dev (>= 2.6.6-3~),
  libsemanage1-dev,
- libunistring-dev,
  libdhash-dev,
  libcollection-dev,
  libini-config-dev,
  check,
  dh-apparmor,
+ libglib2.0-dev,
 Standards-Version: 3.9.3
 Vcs-Git: git://git.debian.org/git/pkg-sssd/sssd
 Vcs-Browser: http://git.debian.org/?p=pkg-sssd/sssd.git
