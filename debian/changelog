@@ -16,7 +16,17 @@ sssd (1.9.0~beta1-1) UNRELEASED; urgency=low
 
  -- Timo Aaltonen <tjaalton@ubuntu.com>  Thu, 24 May 2012 14:46:39 +0300
 
-sssd (1.8.3-1) UNRELEASED; urgency=low
+sssd (1.8.4-2) UNRELEASED; urgency=low
+
+  * rules: Fix the current date format, and move the date mangling to
+    happen before dh_install is run. (Closes: #670019)
+  * sssd.{preinst,postrm}: Install the apparmor profile in force-complain
+    mode on install, and remove the profile directory on purge (if empty). Also
+    migrate from previous setup which installed it as disabled.
+
+ -- Timo Aaltonen <tjaalton@ubuntu.com>  Tue, 05 Jun 2012 11:39:33 +0300
+
+sssd (1.8.4-1) unstable; urgency=low
 
   * New upstream bugfix release 1.8.2.
     - Several fixes to case-insensitive domain functions
@@ -35,6 +45,14 @@ sssd (1.8.3-1) UNRELEASED; urgency=low
     - LDAP: Handle situations where the RootDSE isn't available anonymously
     - LDAP: Fix regression for users using non-standard LDAP attributes for
       user information
+  * New upstream bugfix release 1.8.4. (LP: #981125, #985031)
+    - Fix a bug causing AD servers not to fail over properly when the KDC
+      on the primary server is down
+    - Fix an endianness bug on big-endian systems when looking up services
+    - Fix a segfault dealing with nested groups (LP: #981125)
+    - Make the nowait cache updates work for netgroups
+    - Fix a regression that broke domains with use_fully_qualified_names = True
+      (LP: #985031)
   * control: Move the dependency of libsasl2-modules-gssapi-mit to
     Recommends.
   * control: sssd works with Heimdal gssapi modules too, add
@@ -64,21 +82,10 @@ sssd (1.8.3-1) UNRELEASED; urgency=low
     kernel keyring manipulation.
   * sssd.logrotate: Rotate logs weekly, keep four previous rotations.
     (Closes: #672984)
-  * Pull patches from the stable branch to fix an issue that results in broken
-    credential cache (LP: #985031)
-    - patches/fix-upstream-1298.diff
-      If canon'ing principals, write ccache with updated default principal
-    - patches/fix-upstream-1297.diff
-      Limit krb5_get_init_creds_keytab() to etypes in keytab
-    - patches/fix-upstream-1330.diff
-      KRB5: Avoid NULL-dereference with empty keytab
-  * patches/fix-upstream-1343.diff
-    - LDAP nested groups: Do not process callback with _post deep in the nested
-      structure (LP: #981125)
   * sssd.upstart.in: Delete an invisible control character from the pre-start
     script. (LP: #1003845)
 
- -- Timo Aaltonen <tjaalton@ubuntu.com>  Wed, 04 Apr 2012 11:40:40 +0300
+ -- Timo Aaltonen <tjaalton@ubuntu.com>  Fri, 01 Jun 2012 11:43:42 +0300
 
 sssd (1.8.1-1) unstable; urgency=low
 
