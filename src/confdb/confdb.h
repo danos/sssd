@@ -57,19 +57,24 @@
 #define CONFDB_SERVICE_FORCE_TIMEOUT "force_timeout"
 #define CONFDB_SERVICE_RECON_RETRIES "reconnection_retries"
 #define CONFDB_SERVICE_FD_LIMIT "fd_limit"
+#define CONFDB_SERVICE_ALLOWED_UIDS "allowed_uids"
 
 /* Monitor */
 #define CONFDB_MONITOR_CONF_ENTRY "config/sssd"
 #define CONFDB_MONITOR_SBUS_TIMEOUT "sbus_timeout"
 #define CONFDB_MONITOR_ACTIVE_SERVICES "services"
 #define CONFDB_MONITOR_ACTIVE_DOMAINS "domains"
-#define CONFDB_MONITOR_NAME_REGEX   "re_expression"
-#define CONFDB_MONITOR_FULL_NAME_FORMAT "full_name_format"
 #define CONFDB_MONITOR_TRY_INOTIFY "try_inotify"
 #define CONFDB_MONITOR_KRB5_RCACHEDIR "krb5_rcache_dir"
 
+/* Both monitor and domains */
+#define CONFDB_NAME_REGEX   "re_expression"
+#define CONFDB_FULL_NAME_FORMAT "full_name_format"
+
 /* Responders */
 #define CONFDB_RESPONDER_GET_DOMAINS_TIMEOUT "get_domains_timeout"
+#define CONFDB_RESPONDER_CLI_IDLE_TIMEOUT "client_idle_timeout"
+#define CONFDB_RESPONDER_CLI_IDLE_DEFAULT_TIMEOUT 60
 
 /* NSS */
 #define CONFDB_NSS_CONF_ENTRY "config/nss"
@@ -82,10 +87,12 @@
 #define CONFDB_NSS_PWFIELD  "pwfield"
 #define CONFDB_NSS_OVERRIDE_HOMEDIR "override_homedir"
 #define CONFDB_NSS_FALLBACK_HOMEDIR "fallback_homedir"
+#define CONFDB_NSS_OVERRIDE_SHELL  "override_shell"
 #define CONFDB_NSS_VETOED_SHELL  "vetoed_shells"
 #define CONFDB_NSS_ALLOWED_SHELL "allowed_shells"
 #define CONFDB_NSS_SHELL_FALLBACK "shell_fallback"
 #define CONFDB_NSS_DEFAULT_SHELL "default_shell"
+#define CONFDB_MEMCACHE_TIMEOUT "memcache_timeout"
 
 /* PAM */
 #define CONFDB_PAM_CONF_ENTRY "config/pam"
@@ -114,6 +121,9 @@
 #define CONFDB_SSH_HASH_KNOWN_HOSTS "ssh_hash_known_hosts"
 #define CONFDB_DEFAULT_SSH_HASH_KNOWN_HOSTS true
 
+/* PAC */
+#define CONFDB_PAC_CONF_ENTRY "config/pac"
+
 /* Data Provider */
 #define CONFDB_DP_CONF_ENTRY "config/dp"
 
@@ -126,7 +136,7 @@
 #define CONFDB_DOMAIN_CHPASS_PROVIDER "chpass_provider"
 #define CONFDB_DOMAIN_SUDO_PROVIDER "sudo_provider"
 #define CONFDB_DOMAIN_AUTOFS_PROVIDER "autofs_provider"
-#define CONFDB_DOMAIN_SESSION_PROVIDER "session_provider"
+#define CONFDB_DOMAIN_SELINUX_PROVIDER "selinux_provider"
 #define CONFDB_DOMAIN_HOSTID_PROVIDER "hostid_provider"
 #define CONFDB_DOMAIN_SUBDOMAINS_PROVIDER "subdomains_provider"
 #define CONFDB_DOMAIN_COMMAND "command"
@@ -148,12 +158,14 @@
 #define CONFDB_DOMAIN_OVERRIDE_GID "override_gid"
 #define CONFDB_DOMAIN_CASE_SENSITIVE "case_sensitive"
 #define CONFDB_DOMAIN_SUBDOMAIN_HOMEDIR "subdomain_homedir"
+#define CONFDB_DOMAIN_DEFAULT_SUBDOMAIN_HOMEDIR "/home/%d/%u"
 
 #define CONFDB_DOMAIN_USER_CACHE_TIMEOUT "entry_cache_user_timeout"
 #define CONFDB_DOMAIN_GROUP_CACHE_TIMEOUT "entry_cache_group_timeout"
 #define CONFDB_DOMAIN_NETGROUP_CACHE_TIMEOUT "entry_cache_netgroup_timeout"
 #define CONFDB_DOMAIN_SERVICE_CACHE_TIMEOUT "entry_cache_service_timeout"
 #define CONFDB_DOMAIN_AUTOFS_CACHE_TIMEOUT "entry_cache_autofs_timeout"
+#define CONFDB_DOMAIN_SUDO_CACHE_TIMEOUT "entry_cache_sudo_timeout"
 #define CONFDB_DOMAIN_PWD_EXPIRATION_WARNING "pwd_expiration_warning"
 
 /* Local Provider */
@@ -196,16 +208,19 @@ struct sss_domain_info {
     const char *override_homedir;
     const char *fallback_homedir;
     const char *subdomain_homedir;
+    const char *override_shell;
 
     uint32_t user_timeout;
     uint32_t group_timeout;
     uint32_t netgroup_timeout;
     uint32_t service_timeout;
     uint32_t autofsmap_timeout;
+    uint32_t sudo_timeout;
 
     int pwd_expiration_warning;
 
     struct sysdb_ctx *sysdb;
+    struct sss_names_ctx *names;
 
     struct sss_domain_info **subdomains;
     uint32_t subdomain_count;
@@ -401,6 +416,11 @@ int confdb_get_int(struct confdb_ctx *cdb,
 int confdb_get_bool(struct confdb_ctx *cdb,
                     const char *section, const char *attribute,
                     bool defval, bool *result);
+
+int confdb_set_bool(struct confdb_ctx *cdb,
+                     const char *section,
+                     const char *attribute,
+                     bool val);
 
 /**
  * @brief Convenience function to retrieve a single-valued attribute as a

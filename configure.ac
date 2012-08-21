@@ -82,12 +82,15 @@ WITH_LOG_PATH
 WITH_PUBCONF_PATH
 WITH_PIPE_PATH
 WITH_MCACHE_PATH
+WITH_DEFAULT_CCACHE_DIR
+WITH_DEFAULT_CCNAME_TEMPLATE
 WITH_INIT_DIR
 WITH_TEST_DIR
 WITH_MANPAGES
 WITH_XML_CATALOG
 WITH_KRB5_PLUGIN_PATH
 WITH_KRB5_RCACHE_DIR
+WITH_KRB5AUTHDATA_PLUGIN_PATH
 WITH_PYTHON_BINDINGS
 WITH_SELINUX
 WITH_NSCD
@@ -99,6 +102,7 @@ WITH_SUDO
 WITH_SUDO_LIB_PATH
 WITH_AUTOFS
 WITH_SSH
+WITH_CRYPTO
 
 m4_include([src/external/pkg.m4])
 m4_include([src/external/libpopt.m4])
@@ -124,6 +128,7 @@ m4_include([src/external/nsupdate.m4])
 m4_include([src/external/libkeyutils.m4])
 m4_include([src/external/libnl.m4])
 m4_include([src/external/systemd.m4])
+m4_include([src/external/pac_responder.m4])
 m4_include([src/util/signal.m4])
 
 WITH_UNICODE_LIB
@@ -210,8 +215,12 @@ if test x$HAVE_SYSTEMD_UNIT != x; then
     AM_CHECK_SYSTEMD
 fi
 
-AM_CHECK_NSS
-AM_CONDITIONAL([HAVE_NSS], [test x"$NSS_CFLAGS" != x])
+if test x$cryptolib = xnss; then
+    AM_CHECK_NSS
+fi
+if test x$cryptolib = xlibcrypto; then
+    AM_CHECK_LIBCRYPTO
+fi
 
 AC_CHECK_HEADERS([sys/inotify.h])
 
@@ -250,5 +259,7 @@ AC_CONFIG_FILES([Makefile contrib/sssd.spec src/examples/rwtab src/doxy.config
                  src/providers/ipa/ipa_hbac.pc src/providers/ipa/ipa_hbac.doxy
                  src/lib/idmap/sss_idmap.pc src/lib/idmap/sss_idmap.doxy
                  src/sss_client/sudo/libsss_sudo.pc
-                 src/sss_client/sudo/sss_sudo.doxy])
+                 src/sss_client/sudo/sss_sudo.doxy
+                 src/config/setup.py
+                 src/config/SSSDConfig/__init__.py])
 AC_OUTPUT

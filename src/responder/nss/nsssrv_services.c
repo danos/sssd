@@ -597,7 +597,8 @@ fill_service(struct sss_packet *packet,
     errno_t ret;
     unsigned int msg_count = *count;
     size_t rzero, rsize, aptr;
-    unsigned int num, i, j;
+    unsigned int num = 0;
+    unsigned int i, j;
     uint32_t num_aliases, written_aliases;
     struct ldb_message *msg;
     struct ldb_message_element *el;
@@ -623,7 +624,6 @@ fill_service(struct sss_packet *packet,
     rzero = 2 * sizeof(uint32_t);
     rsize = 0;
 
-    num = 0;
     for (i = 0; i < msg_count; i++) {
         talloc_zfree(tmp_ctx);
         tmp_ctx = talloc_new(NULL);
@@ -779,7 +779,7 @@ done:
 
 errno_t parse_getservbyname(TALLOC_CTX *mem_ctx,
                             uint8_t *body, size_t blen,
-                            struct sss_names_ctx *names,
+                            struct sss_domain_info *domains,
                             char **domain_name,
                             char **service_name,
                             char **service_protocol);
@@ -820,7 +820,7 @@ int nss_cmd_getservbyname(struct cli_ctx *cctx)
     }
 
     ret = parse_getservbyname(cmdctx, body, blen,
-                              cctx->rctx->names,
+                              cctx->rctx->domains,
                               &domname,
                               &service_name,
                               &service_protocol);
@@ -870,7 +870,7 @@ done:
 
 errno_t parse_getservbyname(TALLOC_CTX *mem_ctx,
                             uint8_t *body, size_t blen,
-                            struct sss_names_ctx *names,
+                            struct sss_domain_info *domains,
                             char **domain_name,
                             char **service_name,
                             char **service_protocol)
@@ -959,8 +959,8 @@ errno_t parse_getservbyname(TALLOC_CTX *mem_ctx,
         }
     }
 
-    ret = sss_parse_name(tmp_ctx, names, rawname,
-                         &domname, &svc_name);
+    ret = sss_parse_name_for_domains(tmp_ctx, domains, rawname,
+                                     &domname, &svc_name);
     if (ret != EOK) {
         DEBUG(SSSDBG_MINOR_FAILURE,
               ("Could not split name and domain of [%s]\n",
@@ -1034,7 +1034,6 @@ nss_cmd_getserv_done(struct tevent_req *req)
 
 errno_t parse_getservbyport(TALLOC_CTX *mem_ctx,
                             uint8_t *body, size_t blen,
-                            struct sss_names_ctx *names,
                             uint16_t *service_port,
                             char **service_protocol)
 {
@@ -1138,7 +1137,6 @@ int nss_cmd_getservbyport(struct cli_ctx *cctx)
     }
 
     ret = parse_getservbyport(cmdctx, body, blen,
-                              cctx->rctx->names,
                               &port,
                               &service_protocol);
     if (ret != EOK) {
@@ -1474,7 +1472,7 @@ static void
 setservent_step_done(struct tevent_req *req)
 {
     errno_t ret;
-    struct ldb_result *res;
+    struct ldb_result *res = NULL;
     struct setent_step_ctx *step_ctx =
             tevent_req_callback_data(req, struct setent_step_ctx);
     struct nss_dom_ctx *dctx = step_ctx->dctx;

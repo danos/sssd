@@ -201,6 +201,7 @@ sysdb_get_sudo_filter(TALLOC_CTX *mem_ctx, const char *username,
     TALLOC_CTX *tmp_ctx = NULL;
     char *filter = NULL;
     char *specific_filter = NULL;
+    time_t now;
     errno_t ret;
     int i;
 
@@ -264,6 +265,13 @@ sysdb_get_sudo_filter(TALLOC_CTX *mem_ctx, const char *username,
         NULL_CHECK(filter, ret, done);
     }
 
+    if (flags & SYSDB_SUDO_FILTER_ONLY_EXPIRED) {
+        now = time(NULL);
+        filter = talloc_asprintf_append(filter, "(&(%s<=%lld))",
+                                        SYSDB_CACHE_EXPIRE, (long long)now);
+        NULL_CHECK(filter, ret, done);
+    }
+
     filter = talloc_strdup_append(filter, ")");
     NULL_CHECK(filter, ret, done);
 
@@ -286,7 +294,7 @@ sysdb_get_sudo_user_info(TALLOC_CTX *mem_ctx, const char *username,
     struct ldb_message *msg;
     char **sysdb_groupnames = NULL;
     struct ldb_message_element *groups;
-    uid_t uid;
+    uid_t uid = 0;
     int i;
 
     tmp_ctx = talloc_new(NULL);
@@ -302,38 +310,48 @@ sysdb_get_sudo_user_info(TALLOC_CTX *mem_ctx, const char *username,
         goto done;
     }
 
-    uid = ldb_msg_find_attr_as_uint64(msg, SYSDB_UIDNUM, 0);
-    if (!uid) {
-        DEBUG(SSSDBG_CRIT_FAILURE, ("A user with no UID?\n"));
-        ret = EIO;
-        goto done;
+    if (_uid != NULL) {
+        uid = ldb_msg_find_attr_as_uint64(msg, SYSDB_UIDNUM, 0);
+        if (!uid) {
+            DEBUG(SSSDBG_CRIT_FAILURE, ("A user with no UID?\n"));
+            ret = EIO;
+            goto done;
+        }
     }
 
-    groups = ldb_msg_find_element(msg, SYSDB_MEMBEROF);
-    if (!groups || groups->num_values == 0) {
-        /* No groups for this user in sysdb currently */
-        sysdb_groupnames = NULL;
-    } else {
-        sysdb_groupnames = talloc_array(tmp_ctx, char *, groups->num_values+1);
-        NULL_CHECK(sysdb_groupnames, ret, done);
+    if (groupnames != NULL) {
+        groups = ldb_msg_find_element(msg, SYSDB_MEMBEROF);
+        if (!groups || groups->num_values == 0) {
+            /* No groups for this user in sysdb currently */
+            sysdb_groupnames = NULL;
+        } else {
+            sysdb_groupnames = talloc_array(tmp_ctx, char *, groups->num_values+1);
+            NULL_CHECK(sysdb_groupnames, ret, done);
 
-        /* Get a list of the groups by groupname only */
-        for (i = 0; i < groups->num_values; i++) {
-            ret = sysdb_group_dn_name(sysdb,
-                                      sysdb_groupnames,
-                                      (const char *)groups->values[i].data,
-                                      &sysdb_groupnames[i]);
-            if (ret != EOK) {
-                ret = ENOMEM;
-                goto done;
+            /* Get a list of the groups by groupname only */
+            for (i = 0; i < groups->num_values; i++) {
+                ret = sysdb_group_dn_name(sysdb,
+                                          sysdb_groupnames,
+                                          (const char *)groups->values[i].data,
+                                          &sysdb_groupnames[i]);
+                if (ret != EOK) {
+                    ret = ENOMEM;
+                    goto done;
+                }
             }
+            sysdb_groupnames[groups->num_values] = NULL;
         }
-        sysdb_groupnames[groups->num_values] = NULL;
     }
 
     ret = EOK;
-    *_uid = uid;
-    *groupnames = talloc_steal(mem_ctx, sysdb_groupnames);
+
+    if (_uid != NULL) {
+        *_uid = uid;
+    }
+
+    if (groupnames != NULL) {
+        *groupnames = talloc_steal(mem_ctx, sysdb_groupnames);
+    }
 done:
     talloc_free(tmp_ctx);
     return ret;
@@ -373,13 +391,16 @@ sysdb_save_sudorule(struct sysdb_ctx *sysdb_ctx,
     return EOK;
 }
 
-errno_t sysdb_sudo_set_refreshed(struct sysdb_ctx *sysdb,
-                                 bool refreshed)
+static errno_t sysdb_sudo_set_refresh_time(struct sysdb_ctx *sysdb,
+                                           const char *attr_name,
+                                           time_t value)
 {
-    errno_t ret;
-    struct ldb_dn *dn;
     TALLOC_CTX *tmp_ctx;
-
+    struct ldb_dn *dn;
+    struct ldb_message *msg = NULL;
+    struct ldb_result *res = NULL;
+    errno_t ret;
+    int lret;
 
     tmp_ctx = talloc_new(NULL);
     if (!tmp_ctx) {
@@ -394,91 +415,123 @@ errno_t sysdb_sudo_set_refreshed(struct sysdb_ctx *sysdb,
         goto done;
     }
 
-    ret = sysdb_set_bool(sysdb, dn, SUDORULE_SUBDIR,
-                         SYSDB_SUDO_AT_REFRESHED, refreshed);
-
-done:
-    talloc_free(tmp_ctx);
-    return ret;
-}
-
-errno_t sysdb_sudo_get_refreshed(struct sysdb_ctx *sysdb,
-                                 bool *refreshed)
-{
-    errno_t ret;
-    struct ldb_dn *dn;
-    TALLOC_CTX *tmp_ctx;
-
-
-    tmp_ctx = talloc_new(NULL);
-    if (!tmp_ctx) {
-        ret = ENOMEM;
+    lret = ldb_search(sysdb->ldb, tmp_ctx, &res, dn, LDB_SCOPE_BASE,
+                      NULL, NULL);
+    if (lret != LDB_SUCCESS) {
+        ret = sysdb_error_to_errno(lret);
         goto done;
     }
 
-    dn = ldb_dn_new_fmt(tmp_ctx, sysdb->ldb, SYSDB_TMPL_CUSTOM_SUBTREE,
-                        SUDORULE_SUBDIR, sysdb->domain->name);
-    if (!dn) {
+    msg = ldb_msg_new(tmp_ctx);
+    if (msg == NULL) {
         ret = ENOMEM;
         goto done;
     }
+    msg->dn = dn;
 
-    ret = sysdb_get_bool(sysdb, dn, SYSDB_SUDO_AT_REFRESHED, refreshed);
-
-done:
-    talloc_free(tmp_ctx);
-    return ret;
-}
-
-char **sysdb_sudo_build_sudouser(TALLOC_CTX *mem_ctx, const char *username,
-                                 uid_t uid, char **groupnames, bool include_all)
-{
-    char **sudouser = NULL;
-    int count = 0;
-    errno_t ret;
-    int i;
-
-    if (username == NULL || uid == 0) {
-        return NULL;
-    }
-
-    count = include_all ? 3 : 2;
-    sudouser = talloc_array(NULL, char*, count + 1);
-    NULL_CHECK(sudouser, ret, done);
-
-    sudouser[0] = talloc_strdup(sudouser, username);
-    NULL_CHECK(sudouser[0], ret, done);
-
-    sudouser[1] = talloc_asprintf(sudouser, "#%llu", (unsigned long long)uid);
-    NULL_CHECK(sudouser[1], ret, done);
-
-    if (include_all) {
-        sudouser[2] = talloc_strdup(sudouser, "ALL");
-        NULL_CHECK(sudouser[2], ret, done);
-    }
-
-    if (groupnames != NULL) {
-        for (i = 0; groupnames[i] != NULL; i++) {
-            count++;
-            sudouser = talloc_realloc(NULL, sudouser, char*, count + 1);
-            NULL_CHECK(sudouser, ret, done);
-
-            sudouser[count - 1] = talloc_asprintf(sudouser, "%s", groupnames[i]);
-            NULL_CHECK(sudouser[count - 1], ret, done);
+    if (res->count == 0) {
+        lret = ldb_msg_add_string(msg, "cn", SUDORULE_SUBDIR);
+        if (lret != LDB_SUCCESS) {
+            ret = sysdb_error_to_errno(lret);
+            goto done;
+        }
+    } else if (res->count != 1) {
+        DEBUG(SSSDBG_CRIT_FAILURE,
+              ("Got more than one reply for base search!\n"));
+        ret = EIO;
+        goto done;
+    } else {
+        lret = ldb_msg_add_empty(msg, attr_name, LDB_FLAG_MOD_REPLACE, NULL);
+        if (lret != LDB_SUCCESS) {
+            ret = sysdb_error_to_errno(lret);
+            goto done;
         }
     }
 
-    sudouser[count] = NULL;
+    lret = ldb_msg_add_fmt(msg, attr_name, "%lld", (long long)value);
+    if (lret != LDB_SUCCESS) {
+        ret = sysdb_error_to_errno(lret);
+        goto done;
+    }
+
+    if (res->count) {
+        lret = ldb_modify(sysdb->ldb, msg);
+    } else {
+        lret = ldb_add(sysdb->ldb, msg);
+    }
+
+    ret = sysdb_error_to_errno(lret);
+
+done:
+    talloc_free(tmp_ctx);
+    return ret;
+}
+
+static errno_t sysdb_sudo_get_refresh_time(struct sysdb_ctx *sysdb,
+                                           const char *attr_name,
+                                           time_t *value)
+{
+    TALLOC_CTX *tmp_ctx;
+    struct ldb_dn *dn;
+    struct ldb_result *res;
+    errno_t ret;
+    int lret;
+    const char *attrs[2] = {attr_name, NULL};
+
+    tmp_ctx = talloc_new(NULL);
+    if (tmp_ctx == NULL) {
+        return ENOMEM;
+    }
+
+    dn = ldb_dn_new_fmt(tmp_ctx, sysdb->ldb, SYSDB_TMPL_CUSTOM_SUBTREE,
+                        SUDORULE_SUBDIR, sysdb->domain->name);
+    if (!dn) {
+        ret = ENOMEM;
+        goto done;
+    }
+
+    lret = ldb_search(sysdb->ldb, tmp_ctx, &res, dn, LDB_SCOPE_BASE,
+                      attrs, NULL);
+    if (lret != LDB_SUCCESS) {
+        ret = sysdb_error_to_errno(lret);
+        goto done;
+    }
+
+    if (res->count == 0) {
+        /* This entry has not been populated in LDB
+         * This is a common case, as unlike LDAP,
+         * LDB does not need to have all of its parent
+         * objects actually exist.
+         */
+        *value = 0;
+        ret = EOK;
+        goto done;
+    } else if (res->count != 1) {
+        DEBUG(SSSDBG_CRIT_FAILURE,
+              ("Got more than one reply for base search!\n"));
+        ret = EIO;
+        goto done;
+    }
+
+    *value = ldb_msg_find_attr_as_int(res->msgs[0], attr_name, 0);
 
     ret = EOK;
 
 done:
-    if (ret != EOK) {
-        talloc_free(sudouser);
-        return NULL;
-    }
+    talloc_free(tmp_ctx);
+    return ret;
+}
 
-    return talloc_steal(mem_ctx, sudouser);
+errno_t sysdb_sudo_set_last_full_refresh(struct sysdb_ctx *sysdb, time_t value)
+{
+    return sysdb_sudo_set_refresh_time(sysdb, SYSDB_SUDO_AT_LAST_FULL_REFRESH,
+                                       value);
+}
+
+errno_t sysdb_sudo_get_last_full_refresh(struct sysdb_ctx *sysdb, time_t *value)
+{
+    return sysdb_sudo_get_refresh_time(sysdb, SYSDB_SUDO_AT_LAST_FULL_REFRESH,
+                                       value);
 }
 
 /* ====================  Purge functions ==================== */
@@ -590,158 +643,3 @@ done:
     talloc_free(tmp_ctx);
     return ret;
 }
-
-errno_t sysdb_sudo_purge_bysudouser(struct sysdb_ctx *sysdb,
-                                    char **sudouser)
-{
-    TALLOC_CTX *tmp_ctx = NULL;
-    char *filter = NULL;
-    char *value = NULL;
-    const char *rule_name = NULL;
-    struct ldb_message_element *attr = NULL;
-    struct ldb_message *msg = NULL;
-    struct ldb_message **rules = NULL;
-    size_t num_rules;
-    errno_t ret;
-    errno_t sret;
-    int lret;
-    int i, j, k;
-    bool in_transaction = false;
-    const char *attrs[] = { SYSDB_OBJECTCLASS,
-                            SYSDB_NAME,
-                            SYSDB_SUDO_CACHE_AT_USER,
-                            NULL };
-
-    if (sudouser == NULL || sudouser[0] == NULL) {
-        return EOK;
-    }
-
-    tmp_ctx = talloc_new(NULL);
-    NULL_CHECK(tmp_ctx, ret, done);
-
-    /* create search filter */
-    filter = talloc_strdup(tmp_ctx, "(|");
-    NULL_CHECK(filter, ret, done);
-    for (i = 0; sudouser[i] != NULL; i++) {
-        filter = talloc_asprintf_append(filter, "(%s=%s)",
-                                        SYSDB_SUDO_CACHE_AT_USER, sudouser[i]);
-        NULL_CHECK(filter, ret, done);
-    }
-    filter = talloc_strdup_append(filter, ")");
-    NULL_CHECK(filter, ret, done);
-
-    /* search the rules */
-    ret = sysdb_search_custom(tmp_ctx, sysdb, filter, SUDORULE_SUBDIR, attrs,
-                              &num_rules, &rules);
-    if (ret != EOK && ret != ENOENT) {
-        DEBUG(SSSDBG_CRIT_FAILURE, ("Error looking up SUDO rules"));
-        goto done;
-    } if (ret == ENOENT) {
-        DEBUG(SSSDBG_TRACE_FUNC, ("No rules matched\n"));
-        ret = EOK;
-        goto done;
-    }
-
-    ret = sysdb_transaction_start(sysdb);
-    if (ret != EOK) {
-        goto done;
-    }
-    in_transaction = true;
-
-    /*
-     * remove values from sudoUser and delete the rule
-     * if the attribute is empty afterwards
-     */
-
-    for (i = 0; i < num_rules; i++) {
-        /* find name */
-        rule_name = ldb_msg_find_attr_as_string(rules[i], SYSDB_NAME, NULL);
-        if (rule_name == NULL) {
-            DEBUG(SSSDBG_OP_FAILURE, ("A rule without a name?\n"));
-            /* skip this one but still delete other entries */
-            continue;
-        }
-
-        /* find sudoUser */
-        attr = ldb_msg_find_element(rules[i], SYSDB_SUDO_CACHE_AT_USER);
-        if (attr == NULL) {
-            /* this should never happen because we search by this attribute */
-            DEBUG(SSSDBG_CRIT_FAILURE, ("BUG: sudoUser attribute is missing\n"));
-            continue;
-        }
-
-        /* create message */
-        msg = ldb_msg_new(tmp_ctx);
-        NULL_CHECK(msg, ret, done);
-
-        msg->dn = ldb_dn_new_fmt(msg, sysdb->ldb, SYSDB_TMPL_CUSTOM, rule_name,
-                                 SUDORULE_SUBDIR, sysdb->domain->name);
-        NULL_CHECK(msg->dn, ret, done);
-
-        /* create empty sudoUser */
-        lret = ldb_msg_add_empty(msg, SYSDB_SUDO_CACHE_AT_USER,
-                                 LDB_FLAG_MOD_DELETE, NULL);
-        if (lret != LDB_SUCCESS) {
-            ret = sysdb_error_to_errno(lret);
-            goto done;
-        }
-
-        /* filter values */
-        for (j = 0; j < attr->num_values; j++) {
-            value = (char*)(attr->values[j].data);
-            for (k = 0; sudouser[k] != NULL; k++) {
-                if (strcmp(value, sudouser[k]) == 0) {
-                    /* delete value from cache */
-                    lret = ldb_msg_add_string(msg, SYSDB_SUDO_CACHE_AT_USER,
-                                              sudouser[k]);
-                    if (lret != LDB_SUCCESS) {
-                        ret = sysdb_error_to_errno(lret);
-                        goto done;
-                    }
-                    break;
-                }
-            }
-        }
-
-        /* update the cache */
-        if (msg->elements[0].num_values == attr->num_values) {
-            /* sudoUser would remain empty, delete the rule */
-            ret = sysdb_sudo_purge_byname(sysdb, rule_name);
-            if (ret != EOK) {
-                DEBUG(SSSDBG_OP_FAILURE, ("Could not delete rule %s\n",
-                      rule_name));
-                goto done;
-            }
-        } else {
-            /* sudoUser will not be empty, modify the rule */
-            DEBUG(SSSDBG_TRACE_INTERNAL, ("Modifying sudoUser of rule %s\n",
-                  rule_name));
-            lret = ldb_modify(sysdb->ldb, msg);
-            if (lret != LDB_SUCCESS) {
-                DEBUG(SSSDBG_OP_FAILURE, ("Could not modify rule %s\n",
-                      rule_name));
-                ret = sysdb_error_to_errno(lret);
-                goto done;
-            }
-        }
-
-        talloc_free(msg);
-    }
-
-    ret = sysdb_transaction_commit(sysdb);
-    if (ret == EOK) {
-        in_transaction = false;
-    }
-
-done:
-    if (in_transaction) {
-        sret = sysdb_transaction_cancel(sysdb);
-        if (sret != EOK) {
-            DEBUG(SSSDBG_OP_FAILURE, ("Could not cancel transaction\n"));
-        }
-    }
-
-    talloc_free(tmp_ctx);
-    return ret;
-}
-

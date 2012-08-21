@@ -1,6 +1,10 @@
 /*
+    SSSD
+
+    IPA Backend Module -- selinux loading
+
     Authors:
-        Pavel Březina <pbrezina@redhat.com>
+        Jan Zeleny <jzeleny@redhat.com>
 
     Copyright (C) 2011 Red Hat
 
@@ -18,24 +22,19 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-#ifndef _SDAP_SUDO_TIMER_H_
-#define _SDAP_SUDO_TIMER_H_
+#ifndef _IPA_SELINUX_H_
+#define _IPA_SELINUX_H_
 
-#include <time.h>
-
-#include "providers/dp_backend.h"
 #include "providers/ldap/ldap_common.h"
 
-struct sdap_sudo_refresh_ctx;
+struct ipa_selinux_ctx {
+    struct ipa_id_ctx *id_ctx;
 
-int sdap_sudo_refresh_set_timer(struct sdap_sudo_refresh_ctx *ctx,
-                                struct timeval tv);
+    struct sdap_search_base **selinux_search_bases;
+    struct sdap_search_base **host_search_bases;
+    struct sdap_search_base **hbac_search_bases;
+};
 
-struct sdap_sudo_refresh_ctx *
-sdap_sudo_refresh_ctx_init(TALLOC_CTX *mem_ctx,
-                           struct be_ctx *be_ctx,
-                           struct sdap_id_ctx *id_ctx,
-                           struct sdap_options *opts,
-                           struct timeval last_refresh);
+void ipa_selinux_handler(struct be_req *be_req);
 
-#endif /* _SDAP_SUDO_TIMER_H_ */
+#endif

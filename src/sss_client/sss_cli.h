@@ -44,9 +44,10 @@ typedef int errno_t;
 
 #define SSS_NSS_PROTOCOL_VERSION 1
 #define SSS_PAM_PROTOCOL_VERSION 3
-#define SSS_SUDO_PROTOCOL_VERSION 0
+#define SSS_SUDO_PROTOCOL_VERSION 1
 #define SSS_AUTOFS_PROTOCOL_VERSION 1
 #define SSS_SSH_PROTOCOL_VERSION 0
+#define SSS_PAC_PROTOCOL_VERSION 1
 
 #ifdef LOGIN_NAME_MAX
 #define SSS_NAME_MAX LOGIN_NAME_MAX
@@ -217,6 +218,10 @@ enum sss_cli_command {
     SSS_CMD_RENEW            = 0x00F8, /**< Renew a credential with a limited
                                         * lifetime, e.g. a Kerberos Ticket
                                         * Granting Ticket (TGT) */
+
+/* PAC responder calls */
+    SSS_PAC_ADD_PAC_USER     = 0x0101,
+
 };
 
 /**
@@ -363,10 +368,6 @@ enum response_type {
                           * the user.This should only be used in the case where
                           * it is not possile to use SSS_PAM_USER_INFO.
                           * @param A zero terminated string. */
-    SSS_PAM_SELINUX_MAP, /**< A content of a SELinux user mapping file. This
-                          * file should be then written to a particular
-                          * subdir in /etc/selinux for pam_selinux to read
-                          * @param A zero terminated string. */
 };
 
 /**
@@ -480,6 +481,10 @@ int sss_pam_make_request(enum sss_cli_command cmd,
                                      struct sss_cli_req_data *rd,
                                      uint8_t **repbuf, size_t *replen,
                                      int *errnop);
+int sss_pac_make_request(enum sss_cli_command cmd,
+                         struct sss_cli_req_data *rd,
+                         uint8_t **repbuf, size_t *replen,
+                         int *errnop);
 
 int sss_sudo_make_request(enum sss_cli_command cmd,
                           struct sss_cli_req_data *rd,

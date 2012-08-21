@@ -98,7 +98,8 @@ void sdap_handler_done(struct be_req *req, int dp_err,
 
 int sdap_service_init(TALLOC_CTX *memctx, struct be_ctx *ctx,
                       const char *service_name, const char *dns_service_name,
-                      const char *urls, struct sdap_service **_service);
+                      const char *urls, const char *backup_urls,
+                      struct sdap_service **_service);
 
 int sdap_gssapi_init(TALLOC_CTX *mem_ctx,
                      struct dp_option *opts,
@@ -126,7 +127,10 @@ int ldap_get_options(TALLOC_CTX *memctx,
 int ldap_get_sudo_options(TALLOC_CTX *memctx,
                           struct confdb_ctx *cdb,
                           const char *conf_path,
-                          struct sdap_options *opts);
+                          struct sdap_options *opts,
+                          bool *use_host_filter,
+                          bool *include_regexp,
+                          bool *include_netgroups);
 
 int ldap_get_autofs_options(TALLOC_CTX *memctx,
                             struct confdb_ctx *cdb,

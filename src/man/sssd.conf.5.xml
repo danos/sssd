@@ -39,7 +39,8 @@
 
         <para>
             A line comment starts with a hash sign (<quote>#</quote>) or a
-            semicolon (<quote>;</quote>)
+            semicolon (<quote>;</quote>).
+            Inline comments are not supported.
         </para>
 
         <para>
@@ -89,6 +90,7 @@
                                 <phrase condition="with_sudo">, sudo</phrase>
                                 <phrase condition="with_autofs">, autofs</phrase>
                                 <phrase condition="with_ssh">, ssh</phrase>
+                                <phrase condition="with_pac_responder">, pac</phrase>
                             </para>
                         </listitem>
                     </varlistentry>
@@ -122,25 +124,12 @@
                         <term>re_expression (string)</term>
                         <listitem>
                             <para>
-                                Regular expression that describes how to parse the string
+                                Default regular expression that describes how to parse the string
                                 containing user name and domain into these components.
                             </para>
                             <para>
-                                Default: <quote>(?P&lt;name&gt;[^@]+)@?(?P&lt;domain&gt;[^@]*$)</quote>
-                                which translates to "the name is everything up to the
-                                <quote>@</quote> sign, the domain everything after that"
-                            </para>
-                            <para>
-                                PLEASE NOTE: the support for non-unique named
-                                subpatterns is not available on all platforms
-                                (e.g. RHEL5 and SLES10). Only platforms with
-                                libpcre version 7 or higher can support non-unique
-                                named subpatterns.
-                            </para>
-                            <para>
-                                PLEASE NOTE ALSO: older version of libpcre only
-                                support the Python syntax (?P&lt;name&gt;) to label
-                                subpatterns.
+                                Each domain can have an individual regular expression configured.
+                                see DOMAIN SECTIONS for more info on these regular expressions.
                             </para>
                         </listitem>
                     </varlistentry>
@@ -148,7 +137,7 @@
                         <term>full_name_format (string)</term>
                         <listitem>
                             <para>
-                                A <citerefentry>
+                                The default <citerefentry>
                                     <refentrytitle>printf</refentrytitle>
                                     <manvolnum>3</manvolnum>
                                 </citerefentry>-compatible format that describes how to
@@ -156,7 +145,8 @@
                                 name.
                             </para>
                             <para>
-                                Default: <quote>%1$s@%2$s</quote>.
+                                Each domain can have an individual format string configured.
+                                see DOMAIN SECTIONS for more info on this option.
                             </para>
                         </listitem>
                     </varlistentry>
@@ -314,6 +304,21 @@
                         </para>
                     </listitem>
                 </varlistentry>
+                <varlistentry>
+                    <term>client_idle_timeout</term>
+                    <listitem>
+                        <para>
+                            This option specifies the number of seconds that
+                            a client of an SSSD process can hold onto a file
+                            descriptor without communicating on it. This value
+                            is limited in order to avoid resource exhaustion
+                            on the system.
+                        </para>
+                        <para>
+                            Default: 60
+                        </para>
+                    </listitem>
+                </varlistentry>
             </variablelist>
         </refsect2>
 
@@ -444,6 +449,16 @@
                         <para>
                             This option can also be set per-domain.
                         </para>
+                        <para>
+                            example:
+                            <programlisting>
+override_homedir = /home/%u
+                            </programlisting>
+                        </para>
+                        <para>
+                            Default: Not set (SSSD will use the value
+                            retrieved from LDAP)
+                        </para>
                     </listitem>
                 </varlistentry>
                 <varlistentry>
@@ -459,8 +474,28 @@
                             as for override_homedir.
                         </para>
                         <para>
+                            example:
+                            <programlisting>
+override_homedir = /home/%u
+                            </programlisting>
+                        </para>
+                        <para>
                             Default: not set (no substitution for unset home
                             directories)
+                        </para>
+                    </listitem>
+                </varlistentry>
+                <varlistentry>
+                    <term>override_shell (string)</term>
+                    <listitem>
+                        <para>
+                            Override the login shell for all users. This
+                            option can be specified globally in the [nss]
+                            section or per-domain.
+                        </para>
+                        <para>
+                            Default: not set (SSSD will use the value
+                            retrieved from LDAP)
                         </para>
                     </listitem>
                 </varlistentry>
@@ -521,7 +556,7 @@
                     <listitem>
                         <para>
                             The default shell to use if the provider does not
-                            return one during lookup. This option supercedes
+                            return one during lookup. This option supersedes
                             any other shell options if it takes effect.
                         </para>
                         <para>
@@ -540,6 +575,18 @@
                         </para>
                         <para>
                             Default: 60
+                        </para>
+                    </listitem>
+                </varlistentry>
+                <varlistentry>
+                    <term>memcache_timeout (int)</term>
+                    <listitem>
+                        <para>
+                            Specifies time in seconds for which records
+                            in the in-memory cache will be valid
+                        </para>
+                        <para>
+                            Default: 300
                         </para>
                     </listitem>
                 </varlistentry>
@@ -704,31 +751,6 @@
             </para>
             <variablelist>
                 <varlistentry>
-                    <term>sudo_cache_timeout (integer)</term>
-                    <listitem>
-                        <para>
-                            For any sudo request that comes while SSSD is
-                            online, the SSSD will attempt to update the cached
-                            rules in order to ensure that sudo has the latest
-                            ruleset.
-                        </para>
-                        <para>
-                            The user may, however, run a couple of sudo commands
-                            successively, which would trigger multiple LDAP requests.
-                            In order to speed up this use-case, the sudo service
-                            maintains an in-memory cache that would be used for
-                            performing fast replies.
-                        </para>
-                        <para>
-                            This option controls how long (in seconds) can the sudo
-                            service cache rules for a user.
-                        </para>
-                        <para>
-                            Default: 180
-                        </para>
-                    </listitem>
-                </varlistentry>
-                <varlistentry>
                     <term>sudo_timed (bool)</term>
                     <listitem>
                         <para>
@@ -786,11 +808,69 @@
                     <term>ssh_hash_known_hosts (bool)</term>
                     <listitem>
                         <para>
-                            Whether or not to hash host names and adresses in
+                            Whether or not to hash host names and addresses in
                             the managed known_hosts file.
                         </para>
                         <para>
                             Default: true
+                        </para>
+                    </listitem>
+                </varlistentry>
+            </variablelist>
+        </refsect2>
+
+        <refsect2 id='PAC_RESPONDER' condition="with_pac_responder">
+            <title>PAC responder configuration options</title>
+            <para>
+                <xi:include xmlns:xi="http://www.w3.org/2001/XInclude"
+                            href="include/experimental.xml" />
+            </para>
+            <para>
+                The PAC responder works together with the authorization data
+                plugin for MIT Kerberos sssd_pac_plugin.so and a sub-domain
+                provider. The plugin sends the PAC data during a GSSAPI
+                authentication to the PAC responder. The sub-domain provider
+                collects domain SID and ID ranges of the domain the client is
+                joined to and of remote trusted domains from the local domain
+                controller.  If the PAC is decoded and evaluated some of the
+                following operations are done:
+                <itemizedlist>
+                    <listitem><para>If the remote user does not exist in the
+                    cache, it is created. The uid is calculated based on the
+                    SID, trusted domains will have UPGs and the gid will have
+                    the same value as the uid. The home directory is set based
+                    on the subdomain_homedir parameter. The shell will be empty
+                    by default, i.e. the system defaults are used, but can be
+                    overwritten with the default_shell parameter.</para>
+                    </listitem>
+                    <listitem><para>If there are SIDs of groups from the domain
+                    the sssd client belongs to, the user will be added to those
+                    groups.</para></listitem>
+                </itemizedlist>
+            </para>
+            <para>
+                These options can be used to configure the PAC responder.
+            </para>
+            <variablelist>
+                <varlistentry>
+                    <term>allowed_uids (string)</term>
+                    <listitem>
+                        <para>
+                            Specifies the comma-separated list of UID values or
+                            user names that are allowed to access the PAC
+                            responder. User names are resolved to UIDs at
+                            startup.
+                        </para>
+                        <para>
+                            Default: 0 (only the root user is allowed to access
+                            the PAC responder)
+                        </para>
+                        <para>
+                            Please note that although the UID 0 is used as the
+                            default it will be overwritten with this option. If
+                            you still want to allow the root user to access the
+                            PAC responder, which would be the typical case, you
+                            have to add 0 to the list of allowed UIDs as well.
                         </para>
                     </listitem>
                 </varlistentry>
@@ -933,7 +1013,20 @@
                         </para>
                     </listitem>
                 </varlistentry>
-                
+
+                <varlistentry condition="with_sudo">
+                    <term>entry_cache_sudo_timeout (integer)</term>
+                    <listitem>
+                        <para>
+                            How many seconds should sudo consider
+                            rules valid before asking the backend again
+                        </para>
+                        <para>
+                            Default: entry_cache_timeout
+                        </para>
+                    </listitem>
+                </varlistentry>
+
                 <varlistentry>
                     <term>cache_credentials (bool)</term>
                     <listitem>
@@ -993,20 +1086,40 @@
                     <term>id_provider (string)</term>
                     <listitem>
                         <para>
-                            The Data Provider identity backend to use for this
-                            domain.
-                        </para>
-                        <para>
-                            Supported backends:
+                            The identification provider used for the domain.
+                            Supported ID providers are:
                         </para>
                         <para>
                             proxy: Support a legacy NSS provider
                         </para>
                         <para>
-                            local: SSSD internal local provider
+                            <quote>local</quote>: SSSD internal provider for
+                            local users
                         </para>
                         <para>
-                            ldap:  LDAP provider
+                            <quote>ldap</quote>:  LDAP provider. See
+                            <citerefentry>
+                                <refentrytitle>sssd-ldap</refentrytitle>
+                                <manvolnum>5</manvolnum>
+                            </citerefentry> for more information on
+                            configuring LDAP.
+                        </para>
+                        <para>
+                            <quote>ipa</quote>: FreeIPA and Red Hat Enterprise
+                            Identity Management provider. See
+                            <citerefentry>
+                                <refentrytitle>sssd-ipa</refentrytitle>
+                                <manvolnum>5</manvolnum>
+                            </citerefentry> for more information on
+                            configuring FreeIPA.
+                        </para>
+                        <para>
+                            <quote>ad</quote>: Active Directory provider. See
+                            <citerefentry>
+                                <refentrytitle>sssd-ipa</refentrytitle>
+                                <manvolnum>5</manvolnum>
+                            </citerefentry> for more information on
+                            configuring Active Directory.
                         </para>
                     </listitem>
                 </varlistentry>
@@ -1054,6 +1167,23 @@
                             </citerefentry> for more information on configuring Kerberos.
                         </para>
                         <para>
+                            <quote>ipa</quote>: FreeIPA and Red Hat Enterprise
+                            Identity Management provider. See
+                            <citerefentry>
+                                <refentrytitle>sssd-ipa</refentrytitle>
+                                <manvolnum>5</manvolnum>
+                            </citerefentry> for more information on
+                            configuring FreeIPA.
+                        </para>
+                        <para>
+                            <quote>ad</quote>: Active Directory provider. See
+                            <citerefentry>
+                                <refentrytitle>sssd-ad</refentrytitle>
+                                <manvolnum>5</manvolnum>
+                            </citerefentry> for more information on
+                            configuring Active Directory.
+                        </para>
+                        <para>
                             <quote>proxy</quote> for relaying authentication to some other PAM target.
                         </para>
                         <para>
@@ -1081,6 +1211,30 @@
                             <quote>deny</quote> always deny access.
                         </para>
                         <para>
+                            <quote>ldap</quote> for native LDAP authentication. See
+                            <citerefentry>
+                                <refentrytitle>sssd-ldap</refentrytitle>
+                                <manvolnum>5</manvolnum>
+                            </citerefentry> for more information on configuring LDAP.
+                        </para>
+                        <para>
+                            <quote>ipa</quote>: FreeIPA and Red Hat Enterprise
+                            Identity Management provider. See
+                            <citerefentry>
+                                <refentrytitle>sssd-ipa</refentrytitle>
+                                <manvolnum>5</manvolnum>
+                            </citerefentry> for more information on
+                            configuring FreeIPA.
+                        </para>
+                        <para>
+                            <quote>ad</quote>: Active Directory provider. See
+                            <citerefentry>
+                                <refentrytitle>sssd-ad</refentrytitle>
+                                <manvolnum>5</manvolnum>
+                            </citerefentry> for more information on
+                            configuring Active Directory.
+                        </para>
+                        <para>
                             <quote>simple</quote> access control based on access
                             or deny lists. See <citerefentry>
                             <refentrytitle>sssd-simple</refentrytitle>
@@ -1101,14 +1255,6 @@
                             Supported change password providers are:
                         </para>
                         <para>
-                            <quote>ipa</quote> to change a password stored
-                            in an IPA server.  See
-                            <citerefentry>
-                                <refentrytitle>sssd-ipa</refentrytitle>
-                                <manvolnum>5</manvolnum>
-                            </citerefentry> for more information on configuring IPA.
-                        </para>
-                        <para>
                             <quote>ldap</quote> to change a password stored
                             in a LDAP server.  See
                             <citerefentry>
@@ -1123,6 +1269,23 @@
                                 <refentrytitle>sssd-krb5</refentrytitle>
                                 <manvolnum>5</manvolnum>
                             </citerefentry> for more information on configuring Kerberos.
+                        </para>
+                        <para>
+                            <quote>ipa</quote>: FreeIPA and Red Hat Enterprise
+                            Identity Management provider. See
+                            <citerefentry>
+                                <refentrytitle>sssd-ipa</refentrytitle>
+                                <manvolnum>5</manvolnum>
+                            </citerefentry> for more information on
+                            configuring FreeIPA.
+                        </para>
+                        <para>
+                            <quote>ad</quote>: Active Directory provider. See
+                            <citerefentry>
+                                <refentrytitle>sssd-ad</refentrytitle>
+                                <manvolnum>5</manvolnum>
+                            </citerefentry> for more information on
+                            configuring Active Directory.
                         </para>
                         <para>
                             <quote>proxy</quote> for relaying password changes
@@ -1165,15 +1328,16 @@
                     </listitem>
                 </varlistentry>
                 <varlistentry>
-                    <term>session_provider (string)</term>
+                    <term>selinux_provider (string)</term>
                     <listitem>
                         <para>
-                            The provider which should handle loading of session
-                            settings.
-                            Supported session providers are:
+                            The provider which should handle loading of selinux
+                            settings. Note that this provider will be called right
+                            after access provider ends.
+                            Supported selinux providers are:
                         </para>
                         <para>
-                            <quote>ipa</quote> to load session settings
+                            <quote>ipa</quote> to load selinux settings
                             from an IPA server. See
                             <citerefentry>
                                 <refentrytitle>sssd-ipa</refentrytitle>
@@ -1181,11 +1345,11 @@
                             </citerefentry> for more information on configuring IPA.
                         </para>
                         <para>
-                            <quote>none</quote> disallows fetching session settings explicitly.
+                            <quote>none</quote> disallows fetching selinux settings explicitly.
                         </para>
                         <para>
                             Default: <quote>id_provider</quote> is used if it
-                            is set and can handle session loading requests.
+                            is set and can handle selinux loading requests.
                         </para>
                     </listitem>
                 </varlistentry>
@@ -1270,6 +1434,49 @@
                         <para>
                             Default: The value of <quote>id_provider</quote> is used if it
                             is set.
+                        </para>
+                    </listitem>
+                </varlistentry>
+
+                <varlistentry>
+                    <term>re_expression (string)</term>
+                    <listitem>
+                        <para>
+                            Regular expression for this domain that describes how to parse
+                            the string containing user name and domain into these components.
+                        </para>
+                        <para>
+                            Default: <quote>(?P&lt;name&gt;[^@]+)@?(?P&lt;domain&gt;[^@]*$)</quote>
+                            which translates to "the name is everything up to the
+                            <quote>@</quote> sign, the domain everything after that"
+                        </para>
+                        <para>
+                            PLEASE NOTE: the support for non-unique named
+                            subpatterns is not available on all platforms
+                            (e.g. RHEL5 and SLES10). Only platforms with
+                            libpcre version 7 or higher can support non-unique
+                            named subpatterns.
+                        </para>
+                        <para>
+                            PLEASE NOTE ALSO: older version of libpcre only
+                            support the Python syntax (?P&lt;name&gt;) to label
+                            subpatterns.
+                        </para>
+                    </listitem>
+                </varlistentry>
+                <varlistentry>
+                    <term>full_name_format (string)</term>
+                    <listitem>
+                        <para>
+                            A <citerefentry>
+                                <refentrytitle>printf</refentrytitle>
+                                <manvolnum>3</manvolnum>
+                            </citerefentry>-compatible format that describes how to
+                             translate a (name, domain) tuple for this domain into a fully
+                             qualified name.
+                        </para>
+                        <para>
+                            Default: <quote>%1$s@%2$s</quote>.
                         </para>
                     </listitem>
                 </varlistentry>
@@ -1381,6 +1588,9 @@
                         <para>
                             The value can be overridden by
                             <emphasis>override_homedir</emphasis> option.
+                        </para>
+                        <para>
+                            Default: <filename>/home/%d/%u</filename>
                         </para>
                     </listitem>
                 </varlistentry>
@@ -1581,37 +1791,7 @@ enumerate = False
         </para>
     </refsect1>
 
-    <refsect1 id='see_also'>
-        <title>SEE ALSO</title>
-        <para>
-            <citerefentry>
-                <refentrytitle>sssd-ldap</refentrytitle><manvolnum>5</manvolnum>
-            </citerefentry>,
-            <citerefentry>
-                <refentrytitle>sssd-krb5</refentrytitle><manvolnum>5</manvolnum>
-            </citerefentry>,
-            <citerefentry>
-                <refentrytitle>sss_groupadd</refentrytitle><manvolnum>8</manvolnum>
-            </citerefentry>,
-            <citerefentry>
-                <refentrytitle>sss_groupdel</refentrytitle><manvolnum>8</manvolnum>
-            </citerefentry>,
-            <citerefentry>
-                <refentrytitle>sss_groupmod</refentrytitle><manvolnum>8</manvolnum>
-            </citerefentry>,
-            <citerefentry>
-                <refentrytitle>sss_useradd</refentrytitle><manvolnum>8</manvolnum>
-            </citerefentry>,
-            <citerefentry>
-                <refentrytitle>sss_userdel</refentrytitle><manvolnum>8</manvolnum>
-            </citerefentry>,
-            <citerefentry>
-                <refentrytitle>sss_usermod</refentrytitle><manvolnum>8</manvolnum>
-            </citerefentry>,
-            <citerefentry>
-                <refentrytitle>pam_sss</refentrytitle><manvolnum>8</manvolnum>
-            </citerefentry>.
-        </para>
-    </refsect1>
+	<xi:include xmlns:xi="http://www.w3.org/2001/XInclude" href="include/seealso.xml" />
+
 </refentry>
 </reference>

@@ -197,8 +197,8 @@ static struct tevent_req *setnetgrent_send(TALLOC_CTX *mem_ctx,
     dctx = state->dctx;
     dctx->cmdctx = state->cmdctx;
 
-    ret = sss_parse_name(state, client->rctx->names, rawname,
-                         &domname, &state->netgr_shortname);
+    ret = sss_parse_name_for_domains(state, client->rctx->domains, rawname,
+                                     &domname, &state->netgr_shortname);
     if (ret != EOK) {
         DEBUG(2, ("Invalid name received [%s]\n", rawname));
         goto error;
@@ -416,6 +416,7 @@ static errno_t lookup_netgr_step(struct setent_step_ctx *step_ctx)
     struct getent_ctx *netgr;
     struct sysdb_ctx *sysdb;
     char *name = NULL;
+    uint32_t lifetime;
 
     /* Check each domain for this netgroup name */
     while (dom) {
@@ -531,7 +532,14 @@ static errno_t lookup_netgr_step(struct setent_step_ctx *step_ctx)
                   name, dom->name));
         netgr->ready = true;
         netgr->found = true;
-        set_netgr_lifetime(dom->netgroup_timeout, step_ctx, netgr);
+        if (step_ctx->nctx->cache_refresh_percent) {
+            lifetime = dom->netgroup_timeout *
+                (step_ctx->nctx->cache_refresh_percent / 100);
+        } else {
+            lifetime = dom->netgroup_timeout;
+        }
+        if (lifetime < 10) lifetime = 10;
+        set_netgr_lifetime(lifetime, step_ctx, netgr);
         return EOK;
     }
 

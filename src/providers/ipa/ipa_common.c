@@ -146,6 +146,12 @@ static errno_t ipa_parse_search_base(TALLOC_CTX *mem_ctx,
     case IPA_SUBDOMAINS_SEARCH_BASE:
         class_name = "IPA_SUBDOMAINS";
         break;
+    case IPA_MASTER_DOMAIN_SEARCH_BASE:
+        class_name = "IPA_MASTER_DOMAIN";
+        break;
+    case IPA_RANGES_SEARCH_BASE:
+        class_name = "IPA_RANGES";
+        break;
     default:
         DEBUG(SSSDBG_CONF_SETTINGS,
               ("Unknown search base type: [%d]\n", class));
@@ -513,6 +519,52 @@ int ipa_get_id_options(struct ipa_options *ipa_opts,
                                 &ipa_opts->subdomains_search_bases);
     if (ret != EOK) goto done;
 
+    if (NULL == dp_opt_get_string(ipa_opts->basic,
+                                  IPA_MASTER_DOMAIN_SEARCH_BASE)) {
+        value = talloc_asprintf(tmpctx, "cn=ad,cn=etc,%s", basedn);
+        if (value == NULL) {
+            ret = ENOMEM;
+            goto done;
+        }
+
+        ret = dp_opt_set_string(ipa_opts->basic, IPA_MASTER_DOMAIN_SEARCH_BASE, value);
+        if (ret != EOK) {
+            goto done;
+        }
+
+        DEBUG(SSSDBG_CONF_SETTINGS, ("Option %s set to %s\n",
+                  ipa_opts->basic[IPA_MASTER_DOMAIN_SEARCH_BASE].opt_name,
+                  dp_opt_get_string(ipa_opts->basic,
+                                    IPA_MASTER_DOMAIN_SEARCH_BASE)));
+    }
+    ret = ipa_parse_search_base(ipa_opts, ipa_opts->basic,
+                                IPA_MASTER_DOMAIN_SEARCH_BASE,
+                                &ipa_opts->master_domain_search_bases);
+    if (ret != EOK) goto done;
+
+    if (NULL == dp_opt_get_string(ipa_opts->basic,
+                                  IPA_RANGES_SEARCH_BASE)) {
+        value = talloc_asprintf(tmpctx, "cn=ranges,cn=etc,%s", basedn);
+        if (value == NULL) {
+            ret = ENOMEM;
+            goto done;
+        }
+
+        ret = dp_opt_set_string(ipa_opts->basic, IPA_RANGES_SEARCH_BASE, value);
+        if (ret != EOK) {
+            goto done;
+        }
+
+        DEBUG(SSSDBG_CONF_SETTINGS, ("Option %s set to %s\n",
+                  ipa_opts->basic[IPA_RANGES_SEARCH_BASE].opt_name,
+                  dp_opt_get_string(ipa_opts->basic,
+                                    IPA_RANGES_SEARCH_BASE)));
+    }
+    ret = ipa_parse_search_base(ipa_opts, ipa_opts->basic,
+                                IPA_RANGES_SEARCH_BASE,
+                                &ipa_opts->ranges_search_bases);
+    if (ret != EOK) goto done;
+
     ret = sdap_get_map(ipa_opts->id, cdb, conf_path,
                        ipa_attr_map,
                        SDAP_AT_GENERAL,
@@ -620,7 +672,7 @@ int ipa_get_auth_options(struct ipa_options *ipa_opts,
 
     /* If there is no KDC, try the deprecated krb5_kdcip option, too */
     /* FIXME - this can be removed in a future version */
-    ret = krb5_try_kdcip(ipa_opts, cdb, conf_path, ipa_opts->auth, KRB5_KDC);
+    ret = krb5_try_kdcip(cdb, conf_path, ipa_opts->auth, KRB5_KDC);
     if (ret != EOK) {
         DEBUG(1, ("sss_krb5_try_kdcip failed.\n"));
         goto done;
@@ -745,20 +797,74 @@ static void ipa_resolve_callback(void *private_data, struct fo_server *server)
     talloc_free(tmp_ctx);
 }
 
+errno_t ipa_servers_init(struct be_ctx *ctx,
+                         struct ipa_service *service,
+                         struct ipa_options *options,
+                         const char *servers,
+                         bool primary)
+{
+    TALLOC_CTX *tmp_ctx;
+    char **list = NULL;
+    char *ipa_domain;
+    int ret;
+    int i;
+
+    tmp_ctx = talloc_new(NULL);
+    if (!tmp_ctx) {
+        return ENOMEM;
+    }
+
+    /* split server parm into a list */
+    ret = split_on_separator(tmp_ctx, servers, ',', true, &list, NULL);
+    if (ret != EOK) {
+        DEBUG(SSSDBG_CRIT_FAILURE, ("Failed to parse server list!\n"));
+        goto done;
+    }
+
+    /* now for each one add a new server to the failover service */
+    for (i = 0; list[i]; i++) {
+
+        talloc_steal(service, list[i]);
+
+        if (be_fo_is_srv_identifier(list[i])) {
+            ipa_domain = dp_opt_get_string(options->basic, IPA_DOMAIN);
+            ret = be_fo_add_srv_server(ctx, "IPA", "ldap", ipa_domain,
+                                       BE_FO_PROTO_TCP, false, NULL);
+            if (ret) {
+                DEBUG(SSSDBG_FATAL_FAILURE, ("Failed to add server\n"));
+                goto done;
+            }
+
+            DEBUG(SSSDBG_TRACE_FUNC, ("Added service lookup for service IPA\n"));
+            continue;
+        }
+
+        ret = be_fo_add_server(ctx, "IPA", list[i], 0, NULL, primary);
+        if (ret && ret != EEXIST) {
+            DEBUG(SSSDBG_FATAL_FAILURE, ("Failed to add server\n"));
+            goto done;
+        }
+
+        DEBUG(SSSDBG_TRACE_FUNC, ("Added Server %s\n", list[i]));
+    }
+
+done:
+    talloc_free(tmp_ctx);
+    return ret;
+}
+
 int ipa_service_init(TALLOC_CTX *memctx, struct be_ctx *ctx,
-                     const char *servers,
+                     const char *primary_servers,
+                     const char *backup_servers,
                      struct ipa_options *options,
                      struct ipa_service **_service)
 {
     TALLOC_CTX *tmp_ctx;
     struct ipa_service *service;
-    char **list = NULL;
     char *realm;
-    char *ipa_domain;
     int ret;
-    int i;
 
-    tmp_ctx = talloc_new(memctx);
+    tmp_ctx = talloc_new(NULL);
     if (!tmp_ctx) {
         return ENOMEM;
     }
@@ -811,42 +917,29 @@ int ipa_service_init(TALLOC_CTX *memctx, struct be_ctx *ctx,
         goto done;
     }
 
-    if (!servers) {
-        servers = BE_SRV_IDENTIFIER;
+    if (!primary_servers) {
+        if (backup_servers) {
+            DEBUG(SSSDBG_CONF_SETTINGS, ("Missing primary IPA server but "
+                                         "backup server given - using it as primary!\n"));
+            primary_servers = backup_servers;
+            backup_servers = NULL;
+        } else {
+            DEBUG(SSSDBG_CONF_SETTINGS, ("Missing primary and backup IPA "
+                                         "servers - using service discovery!\n"));
+            primary_servers = BE_SRV_IDENTIFIER;
+        }
     }
 
-    /* split server parm into a list */
-    ret = split_on_separator(tmp_ctx, servers, ',', true, &list, NULL);
+    ret = ipa_servers_init(ctx, service, options, primary_servers, true);
     if (ret != EOK) {
-        DEBUG(1, ("Failed to parse server list!\n"));
         goto done;
     }
 
-    /* now for each one add a new server to the failover service */
-    for (i = 0; list[i]; i++) {
-
-        talloc_steal(service, list[i]);
-
-        if (be_fo_is_srv_identifier(list[i])) {
-            ipa_domain = dp_opt_get_string(options->basic, IPA_DOMAIN);
-            ret = be_fo_add_srv_server(ctx, "IPA", "ldap", ipa_domain,
-                                       BE_FO_PROTO_TCP, false, NULL);
-            if (ret) {
-                DEBUG(0, ("Failed to add server\n"));
-                goto done;
-            }
-
-            DEBUG(6, ("Added service lookup for service IPA\n"));
-            continue;
-        }
-
-        ret = be_fo_add_server(ctx, "IPA", list[i], 0, NULL);
-        if (ret && ret != EEXIST) {
-            DEBUG(0, ("Failed to add server\n"));
+    if (backup_servers) {
+        ret = ipa_servers_init(ctx, service, options, backup_servers, false);
+        if (ret != EOK) {
             goto done;
         }
-
-        DEBUG(6, ("Added Server %s\n", list[i]));
     }
 
     ret = be_fo_service_add_callback(memctx, ctx, "IPA",

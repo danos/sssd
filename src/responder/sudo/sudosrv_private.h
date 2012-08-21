@@ -23,6 +23,7 @@
 
 #include <stdint.h>
 #include <talloc.h>
+#include <sys/types.h>
 
 #include "src/db/sysdb.h"
 #include "responder/common/responder.h"
@@ -32,8 +33,13 @@
 #define SSS_SUDO_SBUS_SERVICE_NAME "sudo"
 
 enum sss_dp_sudo_type {
-    SSS_DP_SUDO_DEFAULTS,
-    SSS_DP_SUDO_USER
+    SSS_DP_SUDO_REFRESH_RULES,
+    SSS_DP_SUDO_FULL_REFRESH
+};
+
+enum sss_sudo_type {
+    SSS_SUDO_DEFAULTS,
+    SSS_SUDO_USER
 };
 
 struct sudo_ctx {
@@ -42,35 +48,33 @@ struct sudo_ctx {
     /*
      * options
      */
-    int cache_timeout;
     bool timed;
-
-    /*
-     * Key: domain          for SSS_DP_SUDO_DEFAULTS
-     *      domain:username for SSS_DP_SUDO_USER
-     * Val: struct sudo_cache_entry *
-     */
-    hash_table_t *cache;
 };
 
 struct sudo_cmd_ctx {
     struct cli_ctx *cli_ctx;
     struct sudo_ctx *sudo_ctx;
-    enum sss_dp_sudo_type type;
+    enum sss_sudo_type type;
+
+    /* input data */
+    uid_t uid;
     char *username;
+    const char *orig_username;
+    const char *cased_username;
+    struct sss_domain_info *domain;
     bool check_next;
+
+    size_t expired_rules_num;
+
+    /* output data */
+    struct sysdb_attrs **rules;
+    size_t num_rules;
 };
 
 struct sudo_dom_ctx {
     struct sudo_cmd_ctx *cmd_ctx;
     struct sss_domain_info *domain;
     bool check_provider;
-    const char *orig_username;
-    const char *cased_username;
-
-    /* cache results */
-    struct sysdb_attrs **res;
-    size_t res_count;
 };
 
 struct sudo_dp_request {
@@ -80,46 +84,27 @@ struct sudo_dp_request {
 
 struct sss_cmd_table *get_sudo_cmds(void);
 
-errno_t sudosrv_cmd_done(struct sudo_dom_ctx *dctx, int ret);
+errno_t sudosrv_cmd_done(struct sudo_cmd_ctx *cmd_ctx, int ret);
 
 errno_t sudosrv_get_sudorules(struct sudo_dom_ctx *dctx);
 
-errno_t sudosrv_get_rules(struct sudo_dom_ctx *dctx);
+errno_t sudosrv_get_rules(struct sudo_cmd_ctx *cmd_ctx);
 
-char * sudosrv_get_sudorules_parse_query(TALLOC_CTX *mem_ctx,
-                                         const char *query_body,
-                                         int query_len);
+errno_t sudosrv_parse_query(TALLOC_CTX *mem_ctx,
+                            struct resp_ctx *rctx,
+                            uint8_t *query_body,
+                            size_t query_len,
+                            uid_t *_uid,
+                            char **_username,
+                            struct sss_domain_info **_domain);
 
-int sudosrv_get_sudorules_build_response(TALLOC_CTX *mem_ctx,
-                                         uint32_t error,
-                                         int rules_num,
-                                         struct sysdb_attrs **rules,
-                                         uint8_t **_response_body,
-                                         size_t *_response_len);
-
-int sudosrv_response_append_string(TALLOC_CTX *mem_ctx,
-                                   const char *str,
-                                   size_t str_len,
-                                   uint8_t **_response_body,
-                                   size_t *_response_len);
-
-int sudosrv_response_append_uint32(TALLOC_CTX *mem_ctx,
-                                   uint32_t number,
-                                   uint8_t **_response_body,
-                                   size_t *_response_len);
-
-int sudosrv_response_append_rule(TALLOC_CTX *mem_ctx,
-                                 int attrs_num,
-                                 struct ldb_message_element *attrs,
-                                 uint8_t **_response_body,
-                                 size_t *_response_len);
-
-int sudosrv_response_append_attr(TALLOC_CTX *mem_ctx,
-                                 const char *name,
-                                 unsigned int values_num,
-                                 struct ldb_val *values,
-                                 uint8_t **_response_body,
-                                 size_t *_response_len);
+errno_t sudosrv_build_response(TALLOC_CTX *mem_ctx,
+                               uint32_t error,
+                               const char *domain,
+                               int rules_num,
+                               struct sysdb_attrs **rules,
+                               uint8_t **_response_body,
+                               size_t *_response_len);
 
 struct tevent_req *
 sss_dp_get_sudoers_send(TALLOC_CTX *mem_ctx,
@@ -127,7 +112,9 @@ sss_dp_get_sudoers_send(TALLOC_CTX *mem_ctx,
                         struct sss_domain_info *dom,
                         bool fast_reply,
                         enum sss_dp_sudo_type type,
-                        const char *name);
+                        const char *name,
+                        size_t num_rules,
+                        struct sysdb_attrs **rules);
 
 errno_t
 sss_dp_get_sudoers_recv(TALLOC_CTX *mem_ctx,
@@ -135,25 +122,5 @@ sss_dp_get_sudoers_recv(TALLOC_CTX *mem_ctx,
                         dbus_uint16_t *err_maj,
                         dbus_uint32_t *err_min,
                         char **err_msg);
-
-errno_t sudosrv_cache_init(TALLOC_CTX *mem_ctx,
-                           unsigned long count,
-                           hash_table_t **table);
-
-errno_t sudosrv_cache_lookup(hash_table_t *table,
-                             struct sudo_dom_ctx *dctx,
-                             bool check_next,
-                             const char *username,
-                             size_t *res_count,
-                             struct sysdb_attrs ***res);
-
-errno_t sudosrv_cache_set_entry(struct tevent_context *ev,
-                                struct sudo_ctx *sudo_ctx,
-                                hash_table_t *table,
-                                struct sss_domain_info *domain,
-                                const char *username,
-                                size_t res_count,
-                                struct sysdb_attrs **res,
-                                time_t timeout);
 
 #endif /* _SUDOSRV_PRIVATE_H_ */

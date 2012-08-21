@@ -162,8 +162,7 @@ static int nss_get_config(struct nss_ctx *nctx,
         nctx->cache_refresh_percent = 0;
     }
 
-    ret = sss_ncache_prepopulate(nctx->ncache, cdb, nctx->rctx->names,
-                                 nctx->rctx);
+    ret = sss_ncache_prepopulate(nctx->ncache, cdb, nctx->rctx);
     if (ret != EOK) {
         goto done;
     }
@@ -182,6 +181,11 @@ static int nss_get_config(struct nss_ctx *nctx,
                             CONFDB_NSS_FALLBACK_HOMEDIR, NULL,
                             &nctx->fallback_homedir);
     if (ret != EOK) goto done;
+
+    ret = confdb_get_string(cdb, nctx, CONFDB_NSS_CONF_ENTRY,
+                            CONFDB_NSS_OVERRIDE_SHELL, NULL,
+                            &nctx->override_shell);
+    if (ret != EOK && ret != ENOENT) goto done;
 
     ret = confdb_get_string_as_list(cdb, nctx, CONFDB_NSS_CONF_ENTRY,
                                     CONFDB_NSS_ALLOWED_SHELL,
@@ -262,6 +266,7 @@ int nss_process_init(TALLOC_CTX *mem_ctx,
     struct sss_cmd_table *nss_cmds;
     struct be_conn *iter;
     struct nss_ctx *nctx;
+    int memcache_timeout;
     int ret, max_retries;
     int hret;
     int fd_limit;
@@ -323,19 +328,28 @@ int nss_process_init(TALLOC_CTX *mem_ctx,
     }
 
     /* create mmap caches */
+    ret = confdb_get_int(nctx->rctx->cdb,
+                         CONFDB_NSS_CONF_ENTRY,
+                         CONFDB_MEMCACHE_TIMEOUT,
+                         300, &memcache_timeout);
+    if (ret != EOK) {
+        DEBUG(0, ("Failed to set up automatic reconnection\n"));
+        return ret;
+    }
+
     /* TODO: read cache sizes from configuration */
     ret = sss_mmap_cache_init(nctx, "passwd", SSS_MC_PASSWD,
-                              50000,
+                              50000, (time_t)memcache_timeout,
                               &nctx->pwd_mc_ctx);
     if (ret) {
-        DEBUG(SSSDBG_CRIT_FAILURE, ("passwd mmap cache is DISABLED"));
+        DEBUG(SSSDBG_CRIT_FAILURE, ("passwd mmap cache is DISABLED\n"));
     }
 
     ret = sss_mmap_cache_init(nctx, "group", SSS_MC_GROUP,
-                              50000,
+                              50000, (time_t)memcache_timeout,
                               &nctx->grp_mc_ctx);
     if (ret) {
-        DEBUG(SSSDBG_CRIT_FAILURE, ("group mmap cache is DISABLED"));
+        DEBUG(SSSDBG_CRIT_FAILURE, ("group mmap cache is DISABLED\n"));
     }
 
     /* Set up file descriptor limits */
@@ -351,7 +365,7 @@ int nss_process_init(TALLOC_CTX *mem_ctx,
     }
     responder_set_fd_limit(fd_limit);
 
-    DEBUG(1, ("NSS Initialization complete\n"));
+    DEBUG(SSSDBG_TRACE_FUNC, ("NSS Initialization complete\n"));
 
     return EOK;
 }

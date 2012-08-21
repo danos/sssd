@@ -31,6 +31,7 @@
 #include "providers/dp_backend.h"
 #include "providers/krb5/krb5_common.h"
 #include "providers/krb5/krb5_opts.h"
+#include "providers/krb5/krb5_utils.h"
 
 errno_t check_and_export_lifetime(struct dp_option *opts, const int opt_id,
                                   const char *env_name)
@@ -95,6 +96,7 @@ errno_t check_and_export_options(struct dp_option *opts,
     const char *dummy;
     char *use_fast_str;
     char *fast_principal;
+    enum sss_krb5_cc_type cc_be;
 
     realm = dp_opt_get_cstring(opts, KRB5_REALM);
     if (realm == NULL) {
@@ -164,13 +166,13 @@ errno_t check_and_export_options(struct dp_option *opts,
 
     dummy = dp_opt_get_cstring(opts, KRB5_KDC);
     if (dummy == NULL) {
-        DEBUG(1, ("No KDC explicitly configured, using defaults.\n"));
+        DEBUG(SSSDBG_CONF_SETTINGS, ("No KDC explicitly configured, using defaults.\n"));
     }
 
     dummy = dp_opt_get_cstring(opts, KRB5_KPASSWD);
     if (dummy == NULL) {
-        DEBUG(1, ("No kpasswd server explicitly configured, "
-                  "using the KDC or defaults.\n"));
+        DEBUG(SSSDBG_CONF_SETTINGS, ("No kpasswd server explicitly configured, "
+                                     "using the KDC or defaults.\n"));
     }
 
     dummy = dp_opt_get_cstring(opts, KRB5_CCNAME_TMPL);
@@ -178,18 +180,49 @@ errno_t check_and_export_options(struct dp_option *opts,
         DEBUG(1, ("Missing credential cache name template.\n"));
         return EINVAL;
     }
-    if (dummy[0] != '/' && strncmp(dummy, "FILE:", 5) != 0) {
-        DEBUG(1, ("Currently only file based credential caches are supported "
-                  "and krb5ccname_template must start with '/' or 'FILE:'\n"));
+
+    cc_be = sss_krb5_get_type(dummy);
+    switch (cc_be) {
+    case SSS_KRB5_TYPE_FILE:
+        DEBUG(SSSDBG_CONF_SETTINGS, ("ccache is of type FILE\n"));
+        krb5_ctx->cc_be = &file_cc;
+        if (dummy[0] != '/') {
+            /* FILE:/path/to/cc */
+            break;
+        }
+
+        DEBUG(SSSDBG_CONF_SETTINGS, ("The ccname template was "
+              "missing an explicit type, but is an absolute "
+              "path specifier. Assuming FILE:\n"));
+
+        dummy = talloc_asprintf(opts, "FILE:%s", dummy);
+        if (!dummy) return ENOMEM;
+
+        ret = dp_opt_set_string(opts, KRB5_CCNAME_TMPL, dummy);
+        if (ret != EOK) {
+            DEBUG(SSSDBG_CRIT_FAILURE, ("dp_opt_set_string failed.\n"));
+            return ret;
+        }
+        break;
+
+#ifdef HAVE_KRB5_DIRCACHE
+    case SSS_KRB5_TYPE_DIR:
+        DEBUG(SSSDBG_CONF_SETTINGS, ("ccache is of type DIR\n"));
+        krb5_ctx->cc_be = &dir_cc;
+        break;
+#endif
+
+    default:
+        DEBUG(SSSDBG_OP_FAILURE, ("Unknown ccname database\n"));
         return EINVAL;
+        break;
     }
 
     return EOK;
 }
 
-errno_t krb5_try_kdcip(TALLOC_CTX *memctx, struct confdb_ctx *cdb,
-                       const char *conf_path, struct dp_option *opts,
-                       int opt_id)
+errno_t krb5_try_kdcip(struct confdb_ctx *cdb, const char *conf_path,
+                       struct dp_option *opts, int opt_id)
 {
     char *krb5_servers = NULL;
     errno_t ret;
@@ -197,7 +230,7 @@ errno_t krb5_try_kdcip(TALLOC_CTX *memctx, struct confdb_ctx *cdb,
     krb5_servers = dp_opt_get_string(opts, opt_id);
     if (krb5_servers == NULL) {
         DEBUG(4, ("No KDC found in configuration, trying legacy option\n"));
-        ret = confdb_get_string(cdb, memctx, conf_path,
+        ret = confdb_get_string(cdb, NULL, conf_path,
                                 "krb5_kdcip", NULL, &krb5_servers);
         if (ret != EOK) {
             DEBUG(1, ("confdb_get_string failed.\n"));
@@ -213,11 +246,15 @@ errno_t krb5_try_kdcip(TALLOC_CTX *memctx, struct confdb_ctx *cdb,
                 return ret;
             }
 
-            DEBUG(9, ("Set krb5 server [%s] based on legacy krb5_kdcip option\n",
-                      krb5_servers));
-            DEBUG(0, ("Your configuration uses the deprecated option 'krb5_kdcip' "
-                      "to specify the KDC. Please change the configuration to use "
-                      "the 'krb5_server' option instead.\n"));
+            DEBUG(SSSDBG_CONF_SETTINGS,
+                  ("Set krb5 server [%s] based on legacy krb5_kdcip option\n",
+                   krb5_servers));
+            DEBUG(SSSDBG_FATAL_FAILURE,
+                  ("Your configuration uses the deprecated option "
+                   "'krb5_kdcip' to specify the KDC. Please change the "
+                   "configuration to use the 'krb5_server' option "
+                   "instead.\n"));
+            talloc_free(krb5_servers);
         }
     }
 
@@ -245,7 +282,7 @@ errno_t krb5_get_options(TALLOC_CTX *memctx, struct confdb_ctx *cdb,
 
     /* If there is no KDC, try the deprecated krb5_kdcip option, too */
     /* FIXME - this can be removed in a future version */
-    ret = krb5_try_kdcip(memctx, cdb, conf_path, opts, KRB5_KDC);
+    ret = krb5_try_kdcip(cdb, conf_path, opts, KRB5_KDC);
     if (ret != EOK) {
         DEBUG(1, ("sss_krb5_try_kdcip failed.\n"));
         goto done;
@@ -428,21 +465,122 @@ static void krb5_resolve_callback(void *private_data, struct fo_server *server)
     return;
 }
 
-
-int krb5_service_init(TALLOC_CTX *memctx, struct be_ctx *ctx,
-                      const char *service_name, const char *servers,
-                      const char *realm, struct krb5_service **_service)
+errno_t krb5_servers_init(struct be_ctx *ctx,
+                          struct krb5_service *service,
+                          const char *service_name,
+                          const char *servers,
+                          bool primary)
 {
     TALLOC_CTX *tmp_ctx;
-    struct krb5_service *service;
     char **list = NULL;
-    int ret;
+    errno_t ret;
     int i;
     char *port_str;
     long port;
     char *server_spec;
     char *endptr;
     struct servent *servent;
+
+    tmp_ctx = talloc_new(NULL);
+    if (!tmp_ctx) {
+        return ENOMEM;
+    }
+
+    ret = split_on_separator(tmp_ctx, servers, ',', true, &list, NULL);
+    if (ret != EOK) {
+        DEBUG(SSSDBG_CRIT_FAILURE, ("Failed to parse server list!\n"));
+        goto done;
+    }
+
+    for (i = 0; list[i]; i++) {
+
+        talloc_steal(service, list[i]);
+        server_spec = talloc_strdup(service, list[i]);
+        if (!server_spec) {
+            ret = ENOMEM;
+            goto done;
+        }
+
+        if (be_fo_is_srv_identifier(server_spec)) {
+            ret = be_fo_add_srv_server(ctx, service_name, service_name, NULL,
+                                       BE_FO_PROTO_UDP, true, NULL);
+            if (ret) {
+                DEBUG(SSSDBG_FATAL_FAILURE, ("Failed to add server\n"));
+                goto done;
+            }
+
+            DEBUG(SSSDBG_TRACE_FUNC, ("Added service lookup\n"));
+            continue;
+        }
+
+        port_str = strrchr(server_spec, ':');
+        if (port_str == NULL) {
+            port = 0;
+        } else {
+            *port_str = '\0';
+            ++port_str;
+            if (isdigit(*port_str)) {
+                errno = 0;
+                port = strtol(port_str, &endptr, 10);
+                if (errno != 0) {
+                    ret = errno;
+                    DEBUG(SSSDBG_CRIT_FAILURE, ("strtol failed on [%s]: [%d][%s].\n", port_str,
+                              ret, strerror(ret)));
+                    goto done;
+                }
+                if (*endptr != '\0') {
+                    DEBUG(SSSDBG_CRIT_FAILURE, ("Found additional characters [%s] in port number "
+                              "[%s].\n", endptr, port_str));
+                    ret = EINVAL;
+                    goto done;
+                }
+
+                if (port < 1 || port > 65535) {
+                    DEBUG(SSSDBG_CRIT_FAILURE, ("Illegal port number [%d].\n", port));
+                    ret = EINVAL;
+                    goto done;
+                }
+            } else if (isalpha(*port_str)) {
+                servent = getservbyname(port_str, NULL);
+                if (servent == NULL) {
+                    DEBUG(SSSDBG_CRIT_FAILURE, ("getservbyname cannot find service [%s].\n",
+                              port_str));
+                    ret = EINVAL;
+                    goto done;
+                }
+
+                port = servent->s_port;
+            } else {
+                DEBUG(SSSDBG_CRIT_FAILURE, ("Unsupported port specifier in [%s].\n", list[i]));
+                ret = EINVAL;
+                goto done;
+            }
+        }
+
+        ret = be_fo_add_server(ctx, service_name, server_spec, (int) port,
+                               list[i], primary);
+        if (ret && ret != EEXIST) {
+            DEBUG(SSSDBG_FATAL_FAILURE, ("Failed to add server\n"));
+            goto done;
+        }
+
+        DEBUG(SSSDBG_TRACE_FUNC, ("Added Server %s\n", list[i]));
+    }
+
+done:
+    talloc_free(tmp_ctx);
+    return ret;
+}
+
+int krb5_service_init(TALLOC_CTX *memctx, struct be_ctx *ctx,
+                      const char *service_name,
+                      const char *primary_servers,
+                      const char *backup_servers,
+                      const char *realm, struct krb5_service **_service)
+{
+    TALLOC_CTX *tmp_ctx;
+    struct krb5_service *service;
+    int ret;
 
     tmp_ctx = talloc_new(memctx);
     if (!tmp_ctx) {
@@ -473,89 +611,31 @@ int krb5_service_init(TALLOC_CTX *memctx, struct be_ctx *ctx,
         goto done;
     }
 
-    if (!servers) {
-        servers = BE_SRV_IDENTIFIER;
+    if (!primary_servers) {
+        if (backup_servers) {
+            DEBUG(SSSDBG_TRACE_FUNC,
+                  ("No primary servers defined but backup are present, "
+                   "setting backup servers as primary\n"));
+            primary_servers = backup_servers;
+            backup_servers = NULL;
+        } else {
+            DEBUG(SSSDBG_TRACE_FUNC,
+                  ("No primary or backup servers defined, "
+                   "using service discovery\n"));
+            primary_servers = BE_SRV_IDENTIFIER;
+        }
     }
 
-    ret = split_on_separator(tmp_ctx, servers, ',', true, &list, NULL);
+    ret = krb5_servers_init(ctx, service, service_name, primary_servers, true);
     if (ret != EOK) {
-        DEBUG(1, ("Failed to parse server list!\n"));
         goto done;
     }
 
-    for (i = 0; list[i]; i++) {
-
-        talloc_steal(service, list[i]);
-        server_spec = talloc_strdup(service, list[i]);
-        if (!server_spec) {
-            ret = ENOMEM;
+    if (backup_servers) {
+        ret = krb5_servers_init(ctx, service, service_name, backup_servers, false);
+        if (ret != EOK) {
             goto done;
         }
-
-        if (be_fo_is_srv_identifier(server_spec)) {
-            ret = be_fo_add_srv_server(ctx, service_name, service_name, NULL,
-                                       BE_FO_PROTO_UDP, true, NULL);
-            if (ret) {
-                DEBUG(0, ("Failed to add server\n"));
-                goto done;
-            }
-
-            DEBUG(6, ("Added service lookup\n"));
-            continue;
-        }
-
-        port_str = strrchr(server_spec, ':');
-        if (port_str == NULL) {
-            port = 0;
-        } else {
-            *port_str = '\0';
-            ++port_str;
-            if (isdigit(*port_str)) {
-                errno = 0;
-                port = strtol(port_str, &endptr, 10);
-                if (errno != 0) {
-                    ret = errno;
-                    DEBUG(1, ("strtol failed on [%s]: [%d][%s].\n", port_str,
-                              ret, strerror(ret)));
-                    goto done;
-                }
-                if (*endptr != '\0') {
-                    DEBUG(1, ("Found additional characters [%s] in port number "
-                              "[%s].\n", endptr, port_str));
-                    ret = EINVAL;
-                    goto done;
-                }
-
-                if (port < 1 || port > 65535) {
-                    DEBUG(1, ("Illegal port number [%d].\n", port));
-                    ret = EINVAL;
-                    goto done;
-                }
-            } else if (isalpha(*port_str)) {
-                servent = getservbyname(port_str, NULL);
-                if (servent == NULL) {
-                    DEBUG(1, ("getservbyname cannot find service [%s].\n",
-                              port_str));
-                    ret = EINVAL;
-                    goto done;
-                }
-
-                port = servent->s_port;
-            } else {
-                DEBUG(1, ("Unsupported port specifier in [%s].\n", list[i]));
-                ret = EINVAL;
-                goto done;
-            }
-        }
-
-        ret = be_fo_add_server(ctx, service_name, server_spec, (int) port,
-                               list[i]);
-        if (ret && ret != EEXIST) {
-            DEBUG(0, ("Failed to add server\n"));
-            goto done;
-        }
-
-        DEBUG(6, ("Added Server %s\n", list[i]));
     }
 
     ret = be_fo_service_add_callback(memctx, ctx, service_name,

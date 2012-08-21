@@ -57,14 +57,14 @@
 
             <variablelist>
                 <varlistentry>
-                    <term>ldap_uri (string)</term>
+                    <term>ldap_uri, ldap_backup_uri (string)</term>
                     <listitem>
                         <para>
                             Specifies the comma-separated list of URIs of the LDAP servers to which
                             SSSD should connect in the order of preference. Refer to the
                             <quote>FAILOVER</quote> section for more information on failover and server redundancy.
-                            If not specified, service discovery is enabled. For more information, refer
-                            to the <quote>SERVICE DISCOVERY</quote> section.
+                            If neither option is specified, service discovery is enabled. For more information,
+                            refer to the <quote>SERVICE DISCOVERY</quote> section.
                         </para>
                         <para>
                             The format of the URI must match the format defined in RFC 2732:
@@ -82,7 +82,7 @@
                 </varlistentry>
 
                 <varlistentry>
-                    <term>ldap_chpass_uri (string)</term>
+                    <term>ldap_chpass_uri, ldap_chpass_backup_uri (string)</term>
                     <listitem>
                         <para>
                             Specifies the comma-separated list of URIs of the LDAP servers to
@@ -831,6 +831,65 @@
                 </varlistentry>
 
                 <varlistentry>
+                    <term>ldap_groups_use_matching_rule_in_chain</term>
+                    <listitem>
+                        <para>
+                            This option tells SSSD to take advantage of an
+                            Active Directory-specific feature which may speed
+                            up group lookup operations on deployments with
+                            complex or deep nested groups.
+                        </para>
+                        <para>
+                            In most common cases, it is best to leave this
+                            option disabled. It generally only provides a
+                            performance increase on very complex nestings.
+                        </para>
+                        <para>
+                            If this option is enabled, SSSD will use it if it
+                            detects that the server supports it during initial
+                            connection. So "True" here essentially means
+                            "auto-detect".
+                        </para>
+                        <para>
+                            Note: This feature is currently known to work only
+                            with Active Directory 2008 R1 and later. See
+                            <ulink url="http://msdn.microsoft.com/en-us/library/windows/desktop/aa746475%28v=vs.85%29.aspx">
+                            MSDN(TM) documentation</ulink> for more details.
+                        </para>
+                        <para>
+                            Default: False
+                        </para>
+                    </listitem>
+                </varlistentry>
+
+                <varlistentry>
+                    <term>ldap_initgroups_use_matching_rule_in_chain</term>
+                    <listitem>
+                        <para>
+                            This option tells SSSD to take advantage of an
+                            Active Directory-specific feature which will speed
+                            up initgroups operations (most notably when
+                            dealing with complex or deep nested groups).
+                        </para>
+                        <para>
+                            If this option is enabled, SSSD will use it if it
+                            detects that the server supports it during initial
+                            connection. So "True" here essentially means
+                            "auto-detect".
+                        </para>
+                        <para>
+                            Note: This feature is currently known to work only
+                            with Active Directory 2008 R1 and later. See
+                            <ulink url="http://msdn.microsoft.com/en-us/library/windows/desktop/aa746475%28v=vs.85%29.aspx">
+                            MSDN(TM) documentation</ulink> for more details.
+                        </para>
+                        <para>
+                            Default: True
+                        </para>
+                    </listitem>
+                </varlistentry>
+
+                <varlistentry>
                     <term>ldap_netgroup_object_class (string)</term>
                     <listitem>
                         <para>
@@ -1415,7 +1474,7 @@
                 </varlistentry>
 
                 <varlistentry>
-                    <term>krb5_server (string)</term>
+                    <term>krb5_server, krb5_backup_server (string)</term>
                     <listitem>
                         <para>
                             Specifies the comma-separated list of IP addresses or hostnames
@@ -1864,27 +1923,136 @@ ldap_access_filter = memberOf=cn=allowedusers,ou=Groups,dc=example,dc=com
                 </varlistentry>
 
                 <varlistentry>
-                    <term>ldap_sudo_refresh_enabled (boolean)</term>
+                    <term>ldap_sudo_full_refresh_interval (integer)</term>
                     <listitem>
                         <para>
-                            Enables periodical download of all sudo rules.
-                            The cache is purged before each update.
+                            How many seconds SSSD will wait between executing
+                            a full refresh of sudo rules (which downloads all
+                            rules that are stored on the server).
                         </para>
                         <para>
-                            Default: false
+                            The value must be greater than
+                            <emphasis>ldap_sudo_smart_refresh_interval
+                            </emphasis>
+                        </para>
+                        <para>
+                            Default: 21600 (6 hours)
                         </para>
                     </listitem>
                 </varlistentry>
 
                 <varlistentry>
-                    <term>ldap_sudo_refresh_timeout (integer)</term>
+                    <term>ldap_sudo_smart_refresh_interval (integer)</term>
                     <listitem>
                         <para>
-                            How many seconds SSSD has to wait before refreshing
-                            its cache of sudo rules.
+                            How many seconds SSSD has to wait before executing
+                            a smart refresh of sudo rules (which downloads all
+                            rules that have USN higher than the highest USN of
+                            cached rules).
                         </para>
                         <para>
-                            Default: 300
+                            If USN attributes are not supported by the server,
+                            the modifyTimestamp attribute is used instead.
+                        </para>
+                        <para>
+                            Default: 900 (15 minutes)
+                        </para>
+                    </listitem>
+                </varlistentry>
+
+                <varlistentry>
+                    <term>ldap_sudo_use_host_filter (boolean)</term>
+                    <listitem>
+                        <para>
+                            If true, SSSD will download only rules that are
+                            applicable to this machine (using the IPv4 or IPv6
+                            host/network addresses and hostnames).
+                        </para>
+                        <para>
+                            Default: true
+                        </para>
+                    </listitem>
+                </varlistentry>
+
+                <varlistentry>
+                    <term>ldap_sudo_hostnames (string)</term>
+                    <listitem>
+                        <para>
+                            Space separated list of hostnames or fully qualified
+                            domain names that should be used to filter
+                            the rules.
+                        </para>
+                        <para>
+                            If this option is empty, SSSD will try to discover
+                            the hostname and the fully qualified domain name
+                            automatically.
+                        </para>
+                        <para>
+                            If <emphasis>ldap_sudo_use_host_filter</emphasis>
+                            is <emphasis>false</emphasis> then this option
+                            has no effect.
+                        </para>
+                        <para>
+                            Default: not specified
+                        </para>
+                    </listitem>
+                </varlistentry>
+
+                <varlistentry>
+                    <term>ldap_sudo_ip (string)</term>
+                    <listitem>
+                        <para>
+                            Space separated list of IPv4 or IPv6
+                            host/network addresses that should be used to filter
+                            the rules.
+                        </para>
+                        <para>
+                            If this option is empty, SSSD will try to
+                            discover the addresses automatically.
+                        </para>
+                        <para>
+                            If <emphasis>ldap_sudo_use_host_filter</emphasis>
+                            is <emphasis>false</emphasis> then this option
+                            has no effect.
+                        </para>
+                        <para>
+                            Default: not specified
+                        </para>
+                    </listitem>
+                </varlistentry>
+
+                <varlistentry>
+                    <term>ldap_sudo_include_netgroups (boolean)</term>
+                    <listitem>
+                        <para>
+                            If true then SSSD will download every rule that
+                            contains a netgroup in sudoHost attribute.
+                        </para>
+                        <para>
+                            If <emphasis>ldap_sudo_use_host_filter</emphasis>
+                            is <emphasis>false</emphasis> then this option
+                            has no effect.
+                        </para>
+                        <para>
+                            Default: true
+                        </para>
+                    </listitem>
+                </varlistentry>
+
+                <varlistentry>
+                    <term>ldap_sudo_include_regexp (boolean)</term>
+                    <listitem>
+                        <para>
+                            If true then SSSD will download every rule that
+                            contains a regular expression in sudoHost attribute.
+                        </para>
+                        <para>
+                            If <emphasis>ldap_sudo_use_host_filter</emphasis>
+                            is <emphasis>false</emphasis> then this option
+                            has no effect.
+                        </para>
+                        <para>
+                            Default: true
                         </para>
                     </listitem>
                 </varlistentry>
@@ -2173,19 +2341,7 @@ ldap_access_filter = memberOf=cn=allowedusers,ou=Groups,dc=example,dc=com
         </para>
     </refsect1>
 
-    <refsect1 id='see_also'>
-        <title>SEE ALSO</title>
-        <para>
-            <citerefentry>
-                <refentrytitle>sssd.conf</refentrytitle><manvolnum>5</manvolnum>
-            </citerefentry>,
-            <citerefentry>
-                <refentrytitle>sssd-krb5</refentrytitle><manvolnum>5</manvolnum>
-            </citerefentry>,
-            <citerefentry>
-                <refentrytitle>sssd</refentrytitle><manvolnum>8</manvolnum>
-            </citerefentry>
-        </para>
-    </refsect1>
+    <xi:include xmlns:xi="http://www.w3.org/2001/XInclude" href="include/seealso.xml" />
+
 </refentry>
 </reference>

@@ -87,17 +87,19 @@ struct resp_ctx {
 
     struct sss_domain_info *domains;
     int domains_timeout;
+    int client_idle_timeout;
     struct sysdb_ctx_list *db_list;
 
     struct sss_cmd_table *sss_cmds;
     const char *sss_pipe_name;
     const char *confdb_service_path;
 
-    struct sss_names_ctx *names;
-
     hash_table_t *dp_request_table;
 
     struct timeval get_domains_last_call;
+
+    size_t allowed_uids_count;
+    uid_t *allowed_uids;
 
     void *pvt_ctx;
 };
@@ -128,6 +130,8 @@ struct cli_ctx {
     int netgrent_cur;
 
     char *automntmap_name;
+
+    struct tevent_timer *idle;
 };
 
 struct sss_cmd_table {
@@ -153,6 +157,10 @@ int sss_process_init(TALLOC_CTX *mem_ctx,
 int sss_parse_name(TALLOC_CTX *memctx,
                    struct sss_names_ctx *snctx,
                    const char *orig, char **domain, char **name);
+
+int sss_parse_name_for_domains(TALLOC_CTX *memctx,
+                               struct sss_domain_info *domains,
+                               const char *orig, char **domain, char **name);
 
 int sss_dp_get_domain_conn(struct resp_ctx *rctx, const char *domain,
                            struct be_conn **_conn);
@@ -284,4 +292,11 @@ struct tevent_req *sss_dp_get_domains_send(TALLOC_CTX *mem_ctx,
                                            const char *hint);
 
 errno_t sss_dp_get_domains_recv(struct tevent_req *req);
+
+errno_t csv_string_to_uid_array(TALLOC_CTX *mem_ctx, const char *cvs_string,
+                                bool allow_sss_loop,
+                                size_t *_uid_count, uid_t **_uids);
+
+errno_t check_allowed_uids(uid_t uid, size_t allowed_uids_count,
+                           uid_t *allowed_uids);
 #endif /* __SSS_RESPONDER_H__ */

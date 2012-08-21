@@ -155,10 +155,20 @@ static const char *get_homedir_override(TALLOC_CTX *mem_ctx,
 
 static const char *get_shell_override(TALLOC_CTX *mem_ctx,
                                       struct ldb_message *msg,
-                                      struct nss_ctx *nctx)
+                                      struct nss_ctx *nctx,
+                                      struct sss_domain_info *dom)
 {
     const char *user_shell;
     int i;
+
+    /* Check whether we are unconditionally overriding the server
+     * for the login shell.
+     */
+    if (dom->override_shell) {
+        return dom->override_shell;
+    } else if (nctx->override_shell) {
+        return nctx->override_shell;
+    }
 
     user_shell = ldb_msg_find_attr_as_string(msg, SYSDB_SHELL, NULL);
     if (!user_shell) {
@@ -235,10 +245,12 @@ static int fill_pwent(struct sss_packet *packet,
     int i, ret, num, t;
     bool add_domain = dom->fqnames;
     const char *domain = dom->name;
-    const char *namefmt = nctx->rctx->names->fq_fmt;
+    const char *namefmt;
     bool packet_initialized = false;
     int ncret;
     TALLOC_CTX *tmp_ctx = NULL;
+
+    namefmt = dom->names->fq_fmt;
 
     if (add_domain) dom_len = strlen(domain);
 
@@ -258,7 +270,7 @@ static int fill_pwent(struct sss_packet *packet,
         gid = get_gid_override(msg, dom);
 
         if (!orig_name || !uid || !gid) {
-            DEBUG(2, ("Incomplete or fake user object for %s[%llu]! Skipping\n",
+            DEBUG(SSSDBG_OP_FAILURE, ("Incomplete user object for %s[%llu]! Skipping\n",
                       orig_name?orig_name:"<NULL>", (unsigned long long int)uid));
             continue;
         }
@@ -301,7 +313,7 @@ static int fill_pwent(struct sss_packet *packet,
         } else {
             to_sized_string(&homedir, tmpstr);
         }
-        tmpstr = get_shell_override(tmp_ctx, msg, nctx);
+        tmpstr = get_shell_override(tmp_ctx, msg, nctx, dom);
         if (!tmpstr) {
             to_sized_string(&shell, "");
         } else {
@@ -365,7 +377,7 @@ static int fill_pwent(struct sss_packet *packet,
 
         num++;
 
-        if (pw_mmap_cache) {
+        if (pw_mmap_cache && nctx->pwd_mc_ctx) {
             ret = sss_mmap_cache_pw_store(nctx->pwd_mc_ctx,
                                           &fullname, &pwfield,
                                           uid, gid,
@@ -794,10 +806,20 @@ static int nss_cmd_getpwnam(struct cli_ctx *cctx)
     rawname = (const char *)body;
 
     domname = NULL;
-    ret = sss_parse_name(cmdctx, cctx->rctx->names, rawname,
-                         &domname, &cmdctx->name);
-    if (ret != EOK) {
-        DEBUG(2, ("Invalid name received [%s]\n", rawname));
+    ret = sss_parse_name_for_domains(cmdctx, cctx->rctx->domains, rawname,
+                                     &domname, &cmdctx->name);
+    if (ret == EAGAIN) {
+        req = sss_dp_get_domains_send(cctx->rctx, cctx->rctx, true, domname);
+        if (req == NULL) {
+            ret = ENOMEM;
+        } else {
+            dctx->rawname = rawname;
+            tevent_req_set_callback(req, nss_cmd_getpwnam_cb, dctx);
+            ret = EAGAIN;
+        }
+        goto done;
+    } if (ret != EOK) {
+        DEBUG(SSSDBG_OP_FAILURE, ("Invalid name received [%s]\n", rawname));
         ret = ENOENT;
         goto done;
     }
@@ -808,18 +830,12 @@ static int nss_cmd_getpwnam(struct cli_ctx *cctx)
     if (domname) {
         dctx->domain = responder_get_domain(dctx, cctx->rctx, domname);
         if (!dctx->domain) {
-            req = sss_dp_get_domains_send(cctx->rctx, cctx->rctx, true, domname);
-            if (req == NULL) {
-                ret = ENOMEM;
-            } else {
-                dctx->domname = domname;
-                tevent_req_set_callback(req, nss_cmd_getpwnam_cb, dctx);
-                ret = EAGAIN;
-            }
+            ret = ENOENT;
             goto done;
         }
     } else {
         /* this is a multidomain search */
+        dctx->rawname = rawname;
         dctx->domain = cctx->rctx->domains;
         cmdctx->check_next = true;
         if (cctx->rctx->get_domains_last_call.tv_sec == 0) {
@@ -852,6 +868,8 @@ static void nss_cmd_getpwnam_cb(struct tevent_req *req)
     struct nss_dom_ctx *dctx = tevent_req_callback_data(req, struct nss_dom_ctx);
     struct nss_cmd_ctx *cmdctx = dctx->cmdctx;
     struct cli_ctx *cctx = cmdctx->cctx;
+    char *domname = NULL;
+    const char *rawname = dctx->rawname;
     errno_t ret;
 
     ret = sss_dp_get_domains_recv(req);
@@ -860,12 +878,27 @@ static void nss_cmd_getpwnam_cb(struct tevent_req *req)
         goto done;
     }
 
-    if (dctx->domname) {
-        dctx->domain = responder_get_domain(dctx, cctx->rctx, dctx->domname);
+    ret = sss_parse_name_for_domains(cmdctx, cctx->rctx->domains, rawname,
+                                     &domname, &cmdctx->name);
+    if (ret != EOK) {
+        DEBUG(SSSDBG_OP_FAILURE, ("Invalid name received [%s]\n", rawname));
+        ret = ENOENT;
+        goto done;
+    }
+
+    DEBUG(SSSDBG_TRACE_FUNC, ("Requesting info for [%s] from [%s]\n",
+              cmdctx->name, domname?domname:"<ALL>"));
+
+    if (domname) {
+        dctx->domain = responder_get_domain(dctx, cctx->rctx, domname);
         if (dctx->domain == NULL) {
             ret = ENOENT;
             goto done;
         }
+    } else {
+        /* this is a multidomain search */
+        dctx->domain = cctx->rctx->domains;
+        cmdctx->check_next = true;
     }
 
     dctx->check_provider = NEED_CHECK_PROVIDER(dctx->domain->provider);
@@ -1667,6 +1700,135 @@ done:
 #define MNUM_ROFFSET sizeof(uint32_t)
 #define STRS_ROFFSET 2*sizeof(uint32_t)
 
+static int fill_members(struct sss_packet *packet,
+                        struct sss_domain_info *dom,
+                        struct nss_ctx *nctx,
+                        struct ldb_message_element *el,
+                        size_t *_rzero,
+                        size_t *_rsize,
+                        int *_memnum)
+{
+    int i, ret = EOK;
+    int memnum = *_memnum;
+    size_t rzero= *_rzero;
+    size_t rsize = *_rsize;
+    char *tmpstr;
+    struct sized_string name;
+    const char *namefmt = dom->names->fq_fmt;
+    TALLOC_CTX *tmp_ctx = NULL;
+
+    size_t delim;
+    size_t dom_len;
+
+    uint8_t *body;
+    size_t blen;
+
+    const char *domain = dom->name;
+    bool add_domain = dom->fqnames;
+
+    if (add_domain) {
+        delim = 1;
+        dom_len = strlen(domain);
+    } else {
+        delim = 0;
+        dom_len = 0;
+    }
+
+    tmp_ctx = talloc_new(NULL);
+    if (tmp_ctx == NULL) {
+        return ENOMEM;
+    }
+
+    sss_packet_get_body(packet, &body, &blen);
+    for (i = 0; i < el->num_values; i++) {
+        tmpstr = sss_get_cased_name(tmp_ctx, (char *)el->values[i].data,
+                                    dom->case_sensitive);
+        if (tmpstr == NULL) {
+            DEBUG(SSSDBG_CRIT_FAILURE,
+                  ("sss_get_cased_name failed, skipping\n"));
+            continue;
+        }
+
+        if (nctx->filter_users_in_groups) {
+            ret = sss_ncache_check_user(nctx->ncache,
+                                        nctx->neg_timeout,
+                                        dom, tmpstr);
+            if (ret == EEXIST) {
+                DEBUG(SSSDBG_TRACE_FUNC, ("Group [%s] member [%s@%s] filtered out!"
+                                          " (negative cache)\n",
+                                          (char *)&body[rzero+STRS_ROFFSET],
+                                          tmpstr, domain));
+                continue;
+            }
+        }
+
+        to_sized_string(&name, tmpstr);
+
+        if (add_domain) {
+            ret = sss_packet_grow(packet, name.len + delim + dom_len);
+        } else {
+            ret = sss_packet_grow(packet, name.len);
+        }
+        if (ret != EOK) {
+            goto done;
+        }
+        sss_packet_get_body(packet, &body, &blen);
+
+        if (add_domain) {
+            ret = snprintf((char *)&body[rzero + rsize],
+                           name.len + delim + dom_len,
+                           namefmt, name.str, domain);
+            if (ret >= (name.len + delim + dom_len)) {
+                /* need more space,
+                 * got creative with the print format ? */
+                int t = ret - name.len + delim + dom_len + 1;
+                ret = sss_packet_grow(packet, t);
+                if (ret != EOK) {
+                    goto done;
+                }
+                sss_packet_get_body(packet, &body, &blen);
+                delim += t;
+
+                /* retry */
+                ret = snprintf((char *)&body[rzero + rsize],
+                               name.len + delim + dom_len,
+                               namefmt, name.str, domain);
+            }
+
+            if (ret != name.len + delim + dom_len - 1) {
+                DEBUG(SSSDBG_OP_FAILURE, ("Failed to generate a fully qualified name"
+                                          " for member [%s@%s] of group [%s]!"
+                                          " Skipping\n", name.str, domain,
+                                          (char *)&body[rzero+STRS_ROFFSET]));
+                /* reclaim space */
+                ret = sss_packet_shrink(packet, name.len + delim + dom_len);
+                if (ret != EOK) {
+                    goto done;
+                }
+                continue;
+            }
+
+        } else {
+            memcpy(&body[rzero + rsize], name.str, name.len);
+        }
+
+        if (add_domain) {
+            rsize += name.len + delim + dom_len;
+        } else {
+            rsize += name.len;
+        }
+
+        memnum++;
+    }
+
+done:
+    *_memnum = memnum;
+    *_rzero = rzero;
+    *_rsize = rsize;
+    talloc_zfree(tmp_ctx);
+    return ret;
+}
+
 static int fill_grent(struct sss_packet *packet,
                       struct sss_domain_info *dom,
                       struct nss_ctx *nctx,
@@ -1687,13 +1849,14 @@ static int fill_grent(struct sss_packet *packet,
     size_t delim;
     size_t dom_len;
     int i = 0;
-    int j = 0;
     int ret, num, memnum;
     size_t rzero, rsize;
     bool add_domain = dom->fqnames;
     const char *domain = dom->name;
-    const char *namefmt = nctx->rctx->names->fq_fmt;
+    const char *namefmt;
     TALLOC_CTX *tmp_ctx = NULL;
+
+    namefmt = dom->names->fq_fmt;
 
     if (add_domain) {
         delim = 1;
@@ -1821,104 +1984,37 @@ static int fill_grent(struct sss_packet *packet,
         memcpy(&body[rzero+STRS_ROFFSET + fullname.len],
                                             pwfield.str, pwfield.len);
 
+        memnum = 0;
         el = ldb_msg_find_element(msg, SYSDB_MEMBERUID);
         if (el) {
-            memnum = 0;
-
-            for (j = 0; j < el->num_values; j++) {
-                tmpstr = sss_get_cased_name(tmp_ctx, (char *)el->values[j].data,
-                                            dom->case_sensitive);
-                if (tmpstr == NULL) {
-                    DEBUG(SSSDBG_CRIT_FAILURE,
-                          ("sss_get_cased_name failed, skipping\n"));
-                    continue;
-                }
-
-                if (nctx->filter_users_in_groups) {
-                    ret = sss_ncache_check_user(nctx->ncache,
-                                                nctx->neg_timeout,
-                                                dom, tmpstr);
-                    if (ret == EEXIST) {
-                        DEBUG(6, ("Group [%s] member [%s@%s] filtered out!"
-                                  " (negative cache)\n",
-                                  (char *)&body[rzero+STRS_ROFFSET],
-                                  tmpstr, domain));
-                        continue;
-                    }
-                }
-
-                to_sized_string(&name, tmpstr);
-
-                if (add_domain) {
-                    ret = sss_packet_grow(packet, name.len + delim + dom_len);
-                } else {
-                    ret = sss_packet_grow(packet, name.len);
-                }
-                if (ret != EOK) {
-                    num = 0;
-                    goto done;
-                }
-                sss_packet_get_body(packet, &body, &blen);
-
-                if (add_domain) {
-                    ret = snprintf((char *)&body[rzero + rsize],
-                                    name.len + delim + dom_len,
-                                    namefmt, name, domain);
-                    if (ret >= (name.len + delim + dom_len)) {
-                        /* need more space,
-                         * got creative with the print format ? */
-                        int t = ret - name.len + delim + dom_len + 1;
-                        ret = sss_packet_grow(packet, t);
-                        if (ret != EOK) {
-                            num = 0;
-                            goto done;
-                        }
-                        sss_packet_get_body(packet, &body, &blen);
-                        delim += t;
-
-                        /* retry */
-                        ret = snprintf((char *)&body[rzero + rsize],
-                                        name.len + delim + dom_len,
-                                        namefmt, name, domain);
-                    }
-
-                    if (ret != name.len + delim + dom_len - 1) {
-                        DEBUG(1, ("Failed to generate a fully qualified name"
-                                  " for member [%s@%s] of group [%s]!"
-                                  " Skipping\n", name.str, domain,
-                                  (char *)&body[rzero+STRS_ROFFSET]));
-                        /* reclaim space */
-                        ret = sss_packet_shrink(packet,
-                                                name.len + delim + dom_len);
-                        if (ret != EOK) {
-                            num = 0;
-                            goto done;
-                        }
-                        continue;
-                    }
-
-                } else {
-                    memcpy(&body[rzero + rsize], name.str, name.len);
-                }
-
-                if (add_domain) {
-                    rsize += name.len + delim + dom_len;
-                } else {
-                    rsize += name.len;
-                }
-
-                memnum++;
+            ret = fill_members(packet, dom, nctx, el, &rzero, &rsize, &memnum);
+            if (ret != EOK) {
+                num = 0;
+                goto done;
             }
+            sss_packet_get_body(packet, &body, &blen);
+        }
 
-            if (memnum) {
-                /* set num of members */
-                SAFEALIGN_SET_UINT32(&body[rzero+MNUM_ROFFSET], memnum, NULL);
+        el = ldb_msg_find_element(msg, SYSDB_GHOST);
+        if (el) {
+            ret = fill_members(packet, dom, nctx, el, &rzero, &rsize, &memnum);
+            if (ret != EOK) {
+                num = 0;
+                goto done;
             }
+            sss_packet_get_body(packet, &body, &blen);
+        }
+        if (memnum) {
+            /* set num of members */
+            SAFEALIGN_SET_UINT32(&body[rzero+MNUM_ROFFSET], memnum, NULL);
         }
 
         num++;
 
-        if (gr_mmap_cache) {
+        if (gr_mmap_cache && nctx->grp_mc_ctx) {
+            /* body was reallocated, so fullname might be pointing to
+             * where body used to be, not where it is */
+            to_sized_string(&fullname, (const char *)&body[rzero+STRS_ROFFSET]);
             ret = sss_mmap_cache_gr_store(nctx->grp_mc_ctx,
                                           &fullname, &pwfield, gid, memnum,
                                           (char *)&body[rzero] + STRS_ROFFSET +
@@ -2197,9 +2293,19 @@ static int nss_cmd_getgrnam(struct cli_ctx *cctx)
     rawname = (const char *)body;
 
     domname = NULL;
-    ret = sss_parse_name(cmdctx, cctx->rctx->names, rawname,
-                         &domname, &cmdctx->name);
-    if (ret != EOK) {
+    ret = sss_parse_name_for_domains(cmdctx, cctx->rctx->domains, rawname,
+                                     &domname, &cmdctx->name);
+    if (ret == EAGAIN) {
+        req = sss_dp_get_domains_send(cctx->rctx, cctx->rctx, true, domname);
+        if (req == NULL) {
+            ret = ENOMEM;
+        } else {
+            dctx->rawname = rawname;
+            tevent_req_set_callback(req, nss_cmd_getgrnam_cb, dctx);
+            ret = EAGAIN;
+        }
+        goto done;
+    } else if (ret != EOK) {
         DEBUG(2, ("Invalid name received [%s]\n", rawname));
         ret = ENOENT;
         goto done;
@@ -2211,18 +2317,12 @@ static int nss_cmd_getgrnam(struct cli_ctx *cctx)
     if (domname) {
         dctx->domain = responder_get_domain(dctx, cctx->rctx, domname);
         if (!dctx->domain) {
-            req = sss_dp_get_domains_send(cctx->rctx, cctx->rctx, true, domname);
-            if (req == NULL) {
-                ret = ENOMEM;
-            } else {
-                dctx->domname = domname;
-                tevent_req_set_callback(req, nss_cmd_getgrnam_cb, dctx);
-                ret = EAGAIN;
-            }
+            ret = ENOENT;
             goto done;
         }
     } else {
         /* this is a multidomain search */
+        dctx->rawname = rawname;
         dctx->domain = cctx->rctx->domains;
         cmdctx->check_next = true;
         if (cctx->rctx->get_domains_last_call.tv_sec == 0) {
@@ -2255,6 +2355,8 @@ static void nss_cmd_getgrnam_cb(struct tevent_req *req)
     struct nss_dom_ctx *dctx = tevent_req_callback_data(req, struct nss_dom_ctx);
     struct nss_cmd_ctx *cmdctx = dctx->cmdctx;
     struct cli_ctx *cctx = cmdctx->cctx;
+    char *domname = NULL;
+    const char *rawname = dctx->rawname;
     errno_t ret;
 
     ret = sss_dp_get_domains_recv(req);
@@ -2263,12 +2365,26 @@ static void nss_cmd_getgrnam_cb(struct tevent_req *req)
         goto done;
     }
 
-    if (dctx->domname) {
-        dctx->domain = responder_get_domain(dctx, cctx->rctx, dctx->domname);
-        if (dctx->domain == NULL) {
+    ret = sss_parse_name_for_domains(cmdctx, cctx->rctx->domains, rawname,
+                                     &domname, &cmdctx->name);
+    if (ret != EOK) {
+        DEBUG(SSSDBG_OP_FAILURE, ("Invalid name received [%s]\n", rawname));
+        ret = ENOENT;
+        goto done;
+    }
+
+    DEBUG(SSSDBG_TRACE_FUNC, ("Requesting info for [%s] from [%s]\n",
+                              cmdctx->name, domname?domname:"<ALL>"));
+    if (domname) {
+        dctx->domain = responder_get_domain(dctx, cctx->rctx, domname);
+        if (!dctx->domain) {
             ret = ENOENT;
             goto done;
         }
+    } else {
+        /* this is a multidomain search */
+        dctx->domain = cctx->rctx->domains;
+        cmdctx->check_next = true;
     }
 
     dctx->check_provider = NEED_CHECK_PROVIDER(dctx->domain->provider);
@@ -3307,9 +3423,19 @@ static int nss_cmd_initgroups(struct cli_ctx *cctx)
     rawname = (const char *)body;
 
     domname = NULL;
-    ret = sss_parse_name(cmdctx, cctx->rctx->names, rawname,
-                         &domname, &cmdctx->name);
-    if (ret != EOK) {
+    ret = sss_parse_name_for_domains(cmdctx, cctx->rctx->domains, rawname,
+                                     &domname, &cmdctx->name);
+    if (ret == EAGAIN) {
+        req = sss_dp_get_domains_send(cctx->rctx, cctx->rctx, true, domname);
+        if (req == NULL) {
+            ret = ENOMEM;
+        } else {
+            dctx->rawname = rawname;
+            tevent_req_set_callback(req, nss_cmd_initgroups_cb, dctx);
+            ret = EAGAIN;
+        }
+        goto done;
+    } else if (ret != EOK) {
         DEBUG(2, ("Invalid name received [%s]\n", rawname));
         ret = ENOENT;
         goto done;
@@ -3321,18 +3447,12 @@ static int nss_cmd_initgroups(struct cli_ctx *cctx)
     if (domname) {
         dctx->domain = responder_get_domain(dctx, cctx->rctx, domname);
         if (!dctx->domain) {
-            req = sss_dp_get_domains_send(cctx->rctx, cctx->rctx, true, domname);
-            if (req == NULL) {
-                ret = ENOMEM;
-            } else {
-                dctx->domname = domname;
-                tevent_req_set_callback(req, nss_cmd_initgroups_cb, dctx);
-                ret = EAGAIN;
-            }
+            ret = ENOENT;
             goto done;
         }
     } else {
         /* this is a multidomain search */
+        dctx->rawname = rawname;
         dctx->domain = cctx->rctx->domains;
         cmdctx->check_next = true;
         if (cctx->rctx->get_domains_last_call.tv_sec == 0) {
@@ -3365,6 +3485,8 @@ static void nss_cmd_initgroups_cb(struct tevent_req *req)
     struct nss_dom_ctx *dctx = tevent_req_callback_data(req, struct nss_dom_ctx);
     struct nss_cmd_ctx *cmdctx = dctx->cmdctx;
     struct cli_ctx *cctx = cmdctx->cctx;
+    char *domname = NULL;
+    const char *rawname = dctx->rawname;
     errno_t ret;
 
     ret = sss_dp_get_domains_recv(req);
@@ -3373,12 +3495,27 @@ static void nss_cmd_initgroups_cb(struct tevent_req *req)
         goto done;
     }
 
-    if (dctx->domname) {
-        dctx->domain = responder_get_domain(dctx, cctx->rctx, dctx->domname);
-        if (dctx->domain == NULL) {
+    ret = sss_parse_name_for_domains(cmdctx, cctx->rctx->domains, rawname,
+                                     &domname, &cmdctx->name);
+    if (ret != EOK) {
+        DEBUG(SSSDBG_OP_FAILURE, ("Invalid name received [%s]\n", rawname));
+        ret = ENOENT;
+        goto done;
+    }
+
+    DEBUG(SSSDBG_TRACE_FUNC, ("Requesting info for [%s] from [%s]\n",
+                              cmdctx->name, domname?domname:"<ALL>"));
+
+    if (domname) {
+        dctx->domain = responder_get_domain(dctx, cctx->rctx, domname);
+        if (!dctx->domain) {
             ret = ENOENT;
             goto done;
         }
+    } else {
+        /* this is a multidomain search */
+        dctx->domain = cctx->rctx->domains;
+        cmdctx->check_next = true;
     }
 
     dctx->check_provider = NEED_CHECK_PROVIDER(dctx->domain->provider);

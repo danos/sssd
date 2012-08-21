@@ -105,4 +105,17 @@ int sdap_save_users(TALLOC_CTX *memctx,
                     struct sysdb_attrs **users,
                     int num_users,
                     char **_usn_value);
+
+int sdap_initgr_common_store(struct sysdb_ctx *sysdb,
+                             struct sdap_options *opts,
+                             const char *name,
+                             enum sysdb_member_type type,
+                             char **sysdb_grouplist,
+                             struct sysdb_attrs **ldap_groups,
+                             int ldap_groups_count);
+
+errno_t get_sysdb_grouplist(TALLOC_CTX *mem_ctx,
+                            struct sysdb_ctx *sysdb,
+                            const char *name,
+                            char ***grouplist);
 #endif /* _SDAP_ASYNC_PRIVATE_H_ */

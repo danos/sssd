@@ -45,6 +45,7 @@ option_strings = {
     'command' : _('Command to start service'),
     'reconnection_retries' : _('Number of times to attempt connection to Data Providers'),
     'fd_limit' : _('The number of file descriptors that may be opened by this responder'),
+    'client_idle_timeout' : _('Idle time before automatic disconnection of a client'),
 
     # [sssd]
     'services' : _('SSSD Services to start'),
@@ -64,10 +65,12 @@ option_strings = {
     'pwfield' : _('The value of the password field the NSS provider should return'),
     'override_homedir' : _('Override homedir value from the identity provider with this value'),
     'fallback_homedir' : _('Substitute empty homedir value from the identity provider with this value'),
+    'override_shell': _('Override shell value from the identity provider with this value'),
     'allowed_shells' : _('The list of shells users are allowed to log in with'),
     'vetoed_shells' : _('The list of shells that will be vetoed, and replaced with the fallback shell'),
     'shell_fallback' : _('If a shell stored in central directory is allowed but not available, use this fallback'),
     'default_shell': _('Shell to use if the provider does not list one'),
+    'memcache_timeout': _('How long will be in-memory cache records valid'),
 
     # [pam]
     'offline_credentials_expiration' : _('How long to allow cached logins between online logins (days)'),
@@ -79,13 +82,15 @@ option_strings = {
 
     # [sudo]
     'sudo_timed' : _('Whether to evaluate the time-based attributes in sudo rules'),
-    'sudo_cache_timeout' : _('How many seconds to keep sudorules cached before asking the provider again'),
 
     # [autofs]
     'autofs_negative_timeout' : _('Negative cache timeout length (seconds)'),
 
     # [ssh]
-    'ssh_hash_known_hosts': _('Whether to hash host names and adresses in the known_hosts file'),
+    'ssh_hash_known_hosts': _('Whether to hash host names and addresses in the known_hosts file'),
+
+    # [pac]
+    'allowed_uids': _('List of UIDs or user names allowed to access the PAC responder'),
 
     # [provider]
     'id_provider' : _('Identity provider'),
@@ -116,10 +121,12 @@ option_strings = {
     'entry_cache_netgroup_timeout' : _('Entry cache timeout length (seconds)'),
     'entry_cache_service_timeout' : _('Entry cache timeout length (seconds)'),
     'entry_cache_autofs_timeout' : _('Entry cache timeout length (seconds)'),
+    'entry_cache_sudo_timeout' : _('Entry cache timeout length (seconds)'),
 
     # [provider/ipa]
     'ipa_domain' : _('IPA domain'),
     'ipa_server' : _('IPA server address'),
+    'ipa_backup_server' : _('Address of backup IPA server'),
     'ipa_hostname' : _('IPA client hostname'),
     'ipa_dyndns_update' : _("Whether to automatically update the client's DNS entry in FreeIPA"),
     'ipa_dyndns_iface' : _("The interface whose IP should be used for dynamic DNS updates"),
@@ -128,10 +135,19 @@ option_strings = {
     'ipa_hbac_treat_deny_as' : _("If DENY rules are present, either DENY_ALL or IGNORE"),
     'ipa_hbac_support_srchost' : _("If set to false, host argument given by PAM will be ignored"),
     'ipa_automount_location' : _("The automounter location this IPA client is using"),
+    'ipa_master_domain_search_base': _("Search base for object containing info about IPA domain"),
+    'ipa_ranges_search_base': _("Search base for objects containing info about ID ranges"),
+
+    # [provider/ad]
+    'ad_domain' : _('Active Directory domain'),
+    'ad_server' : _('Active Directory server address'),
+    'ad_backup_server' : _('Active Directory backup server address'),
+    'ad_hostname' : _('Active Directory client hostname'),
 
     # [provider/krb5]
     'krb5_kdcip' : _('Kerberos server address'),
     'krb5_server' : _('Kerberos server address'),
+    'krb5_backup_server' : _('Kerberos backup server address'),
     'krb5_realm' : _('Kerberos realm'),
     'krb5_auth_timeout' : _('Authentication timeout'),
 
@@ -150,9 +166,11 @@ option_strings = {
 
     # [provider/krb5/chpass]
     'krb5_kpasswd' : _('Server where the change password service is running if not on the KDC'),
+    'krb5_backup_kpasswd' : _('Server where the change password service is running if not on the KDC'),
 
     # [provider/ldap]
     'ldap_uri' : _('ldap_uri, The URI of the LDAP server'),
+    'ldap_backup_uri' : _('ldap_backup_uri, The URI of the LDAP server'),
     'ldap_search_base' : _('The default base DN'),
     'ldap_schema' : _('The Schema Type in use on the LDAP server, rfc2307'),
     'ldap_default_bind_dn' : _('The default bind DN'),
@@ -271,6 +289,9 @@ option_strings = {
     'ldap_idmap_default_domain' : _('Name of the default domain for ID-mapping'),
     'ldap_idmap_default_domain_sid' : _('SID of the default domain for ID-mapping'),
 
+    'ldap_groups_use_matching_rule_in_chain' : _('Use LDAP_MATCHING_RULE_IN_CHAIN for group lookups'),
+    'ldap_initgroups_use_matching_rule_in_chain' : _('Use LDAP_MATCHING_RULE_IN_CHAIN for initgroup lookups'),
+
     # [provider/ldap/auth]
     'ldap_pwd_policy' : _('Policy to evaluate the password expiration'),
 
@@ -281,12 +302,18 @@ option_strings = {
 
     # [provider/ldap/chpass]
     'ldap_chpass_uri' : _('URI of an LDAP server where password changes are allowed'),
+    'ldap_chpass_backup_uri' : _('URI of a backup LDAP server where password changes are allowed'),
     'ldap_chpass_dns_service_name' : _('DNS service name for LDAP password change server'),
 
     # [provider/ldap/sudo]
     'ldap_sudo_search_base' : _('Base DN for sudo rules lookups'),
-    'ldap_sudo_refresh_enabled' : _('Enable periodical update of all sudo rules'),
-    'ldap_sudo_refresh_timeout' : _('Length of time between rules updates'),
+    'ldap_sudo_full_refresh_interval' : _('Automatic full refresh period'),
+    'ldap_sudo_smart_refresh_interval' : _('Automatic smart refresh period'),
+    'ldap_sudo_use_host_filter' : _('Whether to filter rules by hostname, IP addresses and network'),
+    'ldap_sudo_hostnames' : _('Hostnames and/or fully qualified domain names of this machine to filter sudo rules'),
+    'ldap_sudo_ip' : _('IPv4 or IPv6 addresses or network of this machine to filter sudo rules'),
+    'ldap_sudo_include_netgroups' : _('Whether to include rules that contains netgroup in host attribute'),
+    'ldap_sudo_include_regexp' : _('Whether to include rules that contains regular expression in host attribute'),
     'ldap_sudorule_object_class' : _('Object class for sudo rules'),
     'ldap_sudorule_name' : _('Sudo rule name'),
     'ldap_sudorule_command' : _('Sudo rule command attribute'),
@@ -338,9 +365,9 @@ class SSSDConfigSchema(SSSDChangeConf):
         SSSDChangeConf.__init__(self)
         #TODO: get these from a global setting
         if not schemafile:
-            schemafile = '/usr/share/sssd/sssd.api.conf'
+            schemafile = '@datadir@/sssd/sssd.api.conf'
         if not schemaplugindir:
-            schemaplugindir = '/usr/share/sssd/sssd.api.d'
+            schemaplugindir = '@datadir@/sssd/sssd.api.d'
 
         try:
             #Read the primary config file
@@ -1242,10 +1269,10 @@ class SSSDConfig(SSSDChangeConf):
 
         schemafile:
           The path to the api schema config file. Usually
-          /usr/share/sssd/sssd.api.conf
+          @datadir@/sssd/sssd.api.conf
         schemaplugindir:
           The path the directory containing the provider schema config files.
-          Usually /usr/share/sssd/sssd.api.d
+          Usually @datadir@/sssd/sssd.api.d
 
         === Returns ===
         The newly-created SSSDConfig object.
@@ -1271,7 +1298,7 @@ class SSSDConfig(SSSDChangeConf):
 
         configfile:
           The path to the SSSD config file. If not specified, use the system
-          default, usually /etc/sssd/sssd.conf
+          default, usually @sysconfdir@/sssd.conf
 
         === Returns ===
         No return value
@@ -1290,7 +1317,7 @@ class SSSDConfig(SSSDChangeConf):
 
         if not configfile:
             #TODO: get this from a global setting
-            configfile = '/etc/sssd/sssd.conf'
+            configfile = '@sysconfdir@/sssd/sssd.conf'
         # open will raise an IOError if it fails
         fd = open(configfile, 'r')
 

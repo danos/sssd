@@ -1,12 +1,10 @@
 /*
     SSSD
 
-    IPA Backend Module -- session loading
-
     Authors:
-        Jan Zeleny <jzeleny@redhat.com>
+        Stephen Gallagher <sgallagh@redhat.com>
 
-    Copyright (C) 2011 Red Hat
+    Copyright (C) 2012 Red Hat
 
     This program is free software; you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -21,20 +19,19 @@
     You should have received a copy of the GNU General Public License
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
+#include "util/util.h"
+#include "providers/ad/ad_common.h"
+#include "providers/ad/ad_id.h"
 
-#ifndef _IPA_SESSION_H_
-#define _IPA_SESSION_H_
+void
+ad_account_info_handler(struct be_req *breq)
+{
+    struct ad_id_ctx *ad_ctx;
+    struct sdap_id_ctx *sdap_id_ctx;
 
-#include "providers/ldap/ldap_common.h"
+    ad_ctx = talloc_get_type(breq->be_ctx->bet_info[BET_ID].pvt_bet_data,
+                             struct ad_id_ctx);
+    sdap_id_ctx = ad_ctx->sdap_id_ctx;
 
-struct ipa_session_ctx {
-    struct ipa_id_ctx *id_ctx;
-
-    struct sdap_search_base **selinux_search_bases;
-    struct sdap_search_base **host_search_bases;
-    struct sdap_search_base **hbac_search_bases;
-};
-
-void ipa_session_handler(struct be_req *be_req);
-
-#endif
+    return sdap_handle_account_info(breq, sdap_id_ctx);
+}

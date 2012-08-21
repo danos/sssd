@@ -327,7 +327,14 @@ int sss_krb5_verify_keytab_ex(const char *principal, const char *keytab_name,
 
     found = false;
     while((krb5_kt_next_entry(context, keytab, &entry, &cursor)) == 0){
-        krb5_unparse_name(context, entry.principal, &kt_principal);
+        krberr = krb5_unparse_name(context, entry.principal, &kt_principal);
+        if (krberr) {
+            DEBUG(SSSDBG_FATAL_FAILURE,
+                  ("Could not parse keytab entry\n"));
+            sss_log(SSS_LOG_ERR, "Could not parse keytab entry\n");
+            return EIO;
+        }
+
         if (strcmp(principal, kt_principal) == 0) {
             found = true;
         }
@@ -604,11 +611,10 @@ void KRB5_CALLCONV sss_krb5_free_unparsed_name(krb5_context context, char *name)
 }
 
 
-krb5_error_code check_for_valid_tgt(const char *ccname, const char *realm,
+krb5_error_code check_for_valid_tgt(krb5_context context,
+                                    krb5_ccache ccache, const char *realm,
                                     const char *client_princ_str, bool *result)
 {
-    krb5_context context = NULL;
-    krb5_ccache ccache = NULL;
     krb5_error_code krberr;
     TALLOC_CTX *tmp_ctx = NULL;
     krb5_creds mcred;
@@ -623,18 +629,6 @@ krb5_error_code check_for_valid_tgt(const char *ccname, const char *realm,
     if (tmp_ctx == NULL) {
         DEBUG(1, ("talloc_new failed.\n"));
         return ENOMEM;
-    }
-
-    krberr = krb5_init_context(&context);
-    if (krberr) {
-        DEBUG(1, ("Failed to init kerberos context\n"));
-        goto done;
-    }
-
-    krberr = krb5_cc_resolve(context, ccname, &ccache);
-    if (krberr != 0) {
-        DEBUG(1, ("krb5_cc_resolve failed.\n"));
-        goto done;
     }
 
     server_name = talloc_asprintf(tmp_ctx, "krbtgt/%s@%s", realm, realm);
@@ -685,10 +679,6 @@ done:
     if (server_principal != NULL) {
         krb5_free_principal(context, server_principal);
     }
-    if (ccache != NULL) {
-        krb5_cc_close(context, ccache);
-    }
-    if (context != NULL) krb5_free_context(context);
     talloc_free(tmp_ctx);
     return krberr;
 }
@@ -982,139 +972,96 @@ sss_krb5_free_keytab_entry_contents(krb5_context context,
 }
 #endif
 
-static int
-is_preferred_etype (krb5_enctype etype)
-{
-    static const krb5_enctype preferred[] = {
-        ENCTYPE_DES3_CBC_SHA1,
-        ENCTYPE_ARCFOUR_HMAC,
-        ENCTYPE_AES128_CTS_HMAC_SHA1_96,
-        ENCTYPE_AES256_CTS_HMAC_SHA1_96,
-#ifdef ENCTYPE_CAMELLIA128_CTS_CMAC
-        ENCTYPE_CAMELLIA128_CTS_CMAC,
-#endif
-#ifdef ENCTYPE_CAMELLIA128_CTS_CMAC
-        ENCTYPE_CAMELLIA256_CTS_CMAC,
-#endif
-        0
-    };
-    int i;
+#define SSS_KRB5_FILE   "FILE:"
+#define SSS_KRB5_DIR    "DIR:"
 
-    for (i = 0; preferred[i] != 0; i++) {
-        if (preferred[i] == etype) {
-            return 1;
-        }
+enum sss_krb5_cc_type
+sss_krb5_get_type(const char *full_location)
+{
+    if (!full_location) {
+        return SSS_KRB5_TYPE_UNKNOWN;
     }
 
-    return 0;
+    if (strncmp(full_location, SSS_KRB5_FILE,
+                sizeof(SSS_KRB5_FILE)-1) == 0) {
+        return SSS_KRB5_TYPE_FILE;
+    }
+#ifdef HAVE_KRB5_DIRCACHE
+    else if (strncmp(full_location, SSS_KRB5_DIR,
+               sizeof(SSS_KRB5_DIR)-1) == 0) {
+        return SSS_KRB5_TYPE_DIR;
+    }
+#endif /* HAVE_KRB5_DIRCACHE */
+    else if (full_location[0] == '/') {
+        return SSS_KRB5_TYPE_FILE;
+    }
+
+    return SSS_KRB5_TYPE_UNKNOWN;
 }
 
-static int
-compare_etypes (const void *one,
-                const void *two)
+const char *
+sss_krb5_residual_by_type(const char *full_location,
+                          enum sss_krb5_cc_type type)
 {
-    const krb5_enctype *e1 = one;
-    const krb5_enctype *e2 = two;
-    int p1, p2;
+    size_t offset;
 
-    p1 = is_preferred_etype(*e1);
-    p2 = is_preferred_etype(*e2);
+    if (full_location == NULL) return NULL;
 
-    if (p1 == p2) {
-        return (int)*e2 - (int)*e1;
-    }
-
-    /* Sort preferred etypes first */
-    return p2 - p1;
-}
-
-krb5_error_code
-sss_krb5_read_etypes_for_keytab(TALLOC_CTX *mem_ctx,
-                                krb5_context context,
-                                krb5_keytab keytab,
-                                krb5_principal princ,
-                                krb5_enctype **etype_list,
-                                int *n_etype_list)
-{
-    krb5_kt_cursor cursor;
-    krb5_keytab_entry entry;
-    krb5_enctype *etypes = NULL;
-    krb5_kvno max_kvno = 0;
-    int allocated = 0;
-    TALLOC_CTX *tmp_ctx;
-    int count = 0;
-    int ret;
-
-    tmp_ctx = talloc_new(NULL);
-    if (!tmp_ctx) return ENOMEM;
-
-    ret = krb5_kt_start_seq_get(context, keytab, &cursor);
-    if (ret != 0) {
-        talloc_free(tmp_ctx);
-        return ret;
-    }
-
-    for (;;) {
-        ret = krb5_kt_next_entry(context, keytab, &entry, &cursor);
-        if (ret != 0) {
-            break;
-        }
-
-        if (!krb5_c_valid_enctype(entry.key.enctype) ||
-            !krb5_principal_compare(context, entry.principal, princ)) {
-            continue;
-        }
-
-        /* Make sure our list is for the highest kvno found for client. */
-        if (entry.vno > max_kvno) {
-            count = 0;
-            max_kvno = entry.vno;
-        } else if (entry.vno != max_kvno) {
-            continue;
-        }
-
-        /*
-         * Reallocate and add enctype. When reallocating always reserve
-         * one for extra logic below.
-         */
-        if (count + 1 >= allocated) {
-            allocated += 16;
-            etypes = talloc_realloc(tmp_ctx, etypes, krb5_enctype, allocated);
-            if (etypes == NULL) {
-                ret = ENOMEM;
-                break;
+    switch (type) {
+        case SSS_KRB5_TYPE_FILE:
+            if (full_location[0] == '/') {
+                offset = 0;
+            } else {
+                offset = sizeof(SSS_KRB5_FILE)-1;
             }
-        }
-        etypes[count] = entry.key.enctype;
-        count++;
-
-        /* All DES key types work with des-cbc-crc, which is more likely to be
-         * accepted by the KDC (since MIT KDCs refuse des-cbc-md5). */
-        if (entry.key.enctype == ENCTYPE_DES_CBC_MD5 ||
-            entry.key.enctype == ENCTYPE_DES_CBC_MD4) {
-            etypes[count] = ENCTYPE_DES_CBC_CRC;
-            count++;
-        }
+            break;
+#ifdef HAVE_KRB5_DIRCACHE
+        case SSS_KRB5_TYPE_DIR:
+            offset = sizeof(SSS_KRB5_DIR)-1;
+            break;
+#endif /* HAVE_KRB5_DIRCACHE */
+        default:
+            return NULL;
     }
 
-    krb5_kt_end_seq_get(context, keytab, &cursor);
+    return full_location + offset;
+}
 
-    if (ret == KRB5_KT_END) {
-        ret = 0;
+const char *
+sss_krb5_cc_file_path(const char *full_location)
+{
+    enum sss_krb5_cc_type cc_type;
+    const char *residual;
+
+    cc_type = sss_krb5_get_type(full_location);
+    residual = sss_krb5_residual_by_type(full_location, cc_type);
+
+    switch(cc_type) {
+        case SSS_KRB5_TYPE_FILE:
+            return residual;
+#ifdef HAVE_KRB5_DIRCACHE
+        case SSS_KRB5_TYPE_DIR:
+            /* DIR::/run/user/tkt_foo */
+            if (residual[0] == ':') return residual+1;
+#endif
+        case SSS_KRB5_TYPE_UNKNOWN:
+            break;
     }
 
-    if (ret == 0) {
-        /* Sort the preferred enctypes first */
-        qsort(etypes, count, sizeof(*etypes), compare_etypes);
-        etypes = talloc_realloc(tmp_ctx, etypes, krb5_enctype, count);
-        if (etypes == NULL) {
-            ret = ENOMEM;
-        } else {
-            *etype_list = talloc_steal(mem_ctx, etypes);
-            *n_etype_list = count;
-        }
+    return NULL;
+}
+
+const char *
+sss_krb5_residual_check_type(const char *full_location,
+                             enum sss_krb5_cc_type expected_type)
+{
+    enum sss_krb5_cc_type type;
+
+    type = sss_krb5_get_type(full_location);
+    if (type != expected_type) {
+        DEBUG(SSSDBG_OP_FAILURE, ("Unexpected ccache type\n"));
+        return NULL;
     }
 
-    talloc_free(tmp_ctx);
-    return ret;
+    return sss_krb5_residual_by_type(full_location, type);
 }

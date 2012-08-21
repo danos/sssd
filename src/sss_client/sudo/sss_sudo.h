@@ -30,11 +30,7 @@
  */
 
 #include <stdint.h>
-
-/** The sss_sudo* functions in general return EOK on success */
-#ifndef EOK
-#define EOK 0
-#endif
+#include <sys/types.h>
 
 /** The value returned when the communication with SUDO is successful and
  *  the user was found in one of the domains
@@ -94,7 +90,9 @@ struct sss_sudo_result {
  * @brief Send a request to SSSD to retreive all SUDO rules for a given
  * user.
  *
+ * @param[in] uid         The uid of the user to retreive the rules for.
  * @param[in] username    The username to retreive the rules for
+ * @param[in] domainname  The domain name the user is a member of.
  * @param[out] _error     The result of the search in SSSD's domains. If the
  *                        user was present in the domain, the _error code is
  *                        SSS_SUDO_ERROR_OK and the _result structure is
@@ -109,12 +107,14 @@ struct sss_sudo_result {
  *                        the user was valid, this structure is "empty", which
  *                        means that the num_rules member is 0.
  *
- * @return The return value denotes whether communication with SSSD was
- * successful. It does not tell whether the result contains any rules or
- * whether SSSD knew the user at all. That information is transferred in the
- * _error parameter.
+ * @return 0 on success and other errno values on failure. The return value
+ *         denotes whether communication with SSSD was successful. It does not
+ *         tell whether the result contains any rules or whether SSSD knew the
+ *         user at all. That information is transferred in the _error parameter.
  */
-int sss_sudo_send_recv(const char *username,
+int sss_sudo_send_recv(uid_t uid,
+                       const char *username,
+                       const char *domainname,
                        uint32_t *_error,
                        struct sss_sudo_result **_result);
 
@@ -122,23 +122,35 @@ int sss_sudo_send_recv(const char *username,
  * @brief Send a request to SSSD to retrieve the default options, commonly
  * stored in the "cn=defaults" record,
  *
- * @param[out] _error     The result of the search in SSSD's domains. If the
- *                        options were present in the domain, the _error code
- *                        is SSS_SUDO_ERROR_OK and the _result structure is
- *                        returned even if it was empty (in other words
- *                        _result->num_rules == 0). Other problems are returned
- *                        as errno codes.
+ * @param[in] uid          The uid of the user to retreive the rules for.
  *
- * @param[out] _result    Newly allocated structure sss_result that contains
- *                        the options. If no options were found this structure
- *                        is "empty", which means that the num_rules member
- *                        is 0.
+ * @param[in] username     The username to retreive the rules for.
  *
- * @return The return value denotes whether communication with SSSD was
- * successful. It does not tell whether the result contains any options,
- * That information is transferred in the _error parameter.
+ * @param[out] _error      The result of the search in SSSD's domains. If the
+ *                         options were present in the domain, the _error code
+ *                         is SSS_SUDO_ERROR_OK and the _result structure is
+ *                         returned even if it was empty (in other words
+ *                         _result->num_rules == 0). Other problems are returned
+ *                         as errno codes.
+ *
+ * @param[out] _domainname The domain name the user is a member of.
+ *
+ * @param[out] _result     Newly allocated structure sss_result that contains
+ *                         the options. If no options were found this structure
+ *                         is "empty", which means that the num_rules member
+ *                         is 0.
+ *
+ * @return 0 on success and other errno values on failure. The return value
+ *         denotes whether communication with SSSD was successful. It does not
+ *         tell whether the result contains any rules or whether SSSD knew the
+ *         user at all. That information is transferred in the _error parameter.
+ *
+ * @note   The _domainname should be freed using free().
  */
-int sss_sudo_send_recv_defaults(uint32_t *_error,
+int sss_sudo_send_recv_defaults(uid_t uid,
+                                const char *username,
+                                uint32_t *_error,
+                                char **_domainname,
                                 struct sss_sudo_result **_result);
 
 /**
@@ -160,7 +172,7 @@ void sss_sudo_free_result(struct sss_sudo_result *result);
  *                        pointer. On failure (including when the attribute is
  *                        not found), the pointer address is not changed.
  *
- * @return EOK on success, ENOENT in case the attribute is not found and other
+ * @return 0 on success, ENOENT in case the attribute is not found and other
  * errno values on failure.
  *
  * @note the returned values should be freed using sss_sudo_free_values()

@@ -111,10 +111,16 @@ static int pack_buffer(struct response *r, int result, krb5_error_code krberr,
     r->size = 2 * sizeof(uint32_t) + sizeof(krb5_error_code) +
               len + sizeof(time_t);
 
+    DEBUG(SSSDBG_TRACE_INTERNAL, ("response size: %d\n",r->size));
+
     r->buf = talloc_array(r, uint8_t, r->size);
     if(!r->buf) {
         return ENOMEM;
     }
+
+    DEBUG(SSSDBG_TRACE_LIBS,
+          ("result [%d] krberr [%d] msgsize [%d] msg [%s]\n",
+           result, krberr, len, msg));
 
     /* result */
     SAFEALIGN_SET_UINT32(&r->buf[p], result, &p);
@@ -155,8 +161,6 @@ static krb5_error_code ldap_child_get_tgt_sync(TALLOC_CTX *memctx,
     krb5_get_init_creds_opt options;
     krb5_error_code krberr;
     krb5_timestamp kdc_time_offset;
-    krb5_enctype *etype_list;
-    int n_etype_list;
     int canonicalize = 0;
     int kdc_time_offset_usec;
     int ret;
@@ -181,7 +185,6 @@ static krb5_error_code ldap_child_get_tgt_sync(TALLOC_CTX *memctx,
             krberr = KRB5KRB_ERR_GENERIC;
             goto done;
         }
-
     } else {
         realm_name = talloc_strdup(memctx, realm_str);
         if (!realm_name) {
@@ -189,6 +192,8 @@ static krb5_error_code ldap_child_get_tgt_sync(TALLOC_CTX *memctx,
             goto done;
         }
     }
+
+    DEBUG(SSSDBG_TRACE_INTERNAL, ("got realm_name: [%s]\n", realm_name));
 
     if (princ_str) {
         if (!strchr(princ_str, '@')) {
@@ -206,6 +211,8 @@ static krb5_error_code ldap_child_get_tgt_sync(TALLOC_CTX *memctx,
             goto done;
         }
         hostname[511] = '\0';
+
+        DEBUG(SSSDBG_TRACE_LIBS, ("got hostname: [%s]\n", hostname));
 
         ret = select_principal_from_keytab(memctx, hostname, realm_name,
                                            keytab_name, &full_princ, NULL, NULL);
@@ -229,6 +236,7 @@ static krb5_error_code ldap_child_get_tgt_sync(TALLOC_CTX *memctx,
     } else {
         krberr = krb5_kt_default(context, &keytab);
     }
+    DEBUG(SSSDBG_CONF_SETTINGS, ("Using keytab [%s]\n", KEYTAB_CLEAN_NAME));
     if (krberr) {
         DEBUG(SSSDBG_FATAL_FAILURE,
               ("Failed to read keytab file [%s]: %s\n",
@@ -250,6 +258,7 @@ static krb5_error_code ldap_child_get_tgt_sync(TALLOC_CTX *memctx,
         krberr = KRB5KRB_ERR_GENERIC;
         goto done;
     }
+    DEBUG(SSSDBG_TRACE_INTERNAL, ("keytab ccname: [%s]\n", ccname));
 
     krberr = krb5_cc_resolve(context, ccname, &ccache);
     if (krberr) {
@@ -268,22 +277,10 @@ static krb5_error_code ldap_child_get_tgt_sync(TALLOC_CTX *memctx,
 
     tmp_str = getenv("KRB5_CANONICALIZE");
     if (tmp_str != NULL && strcasecmp(tmp_str, "true") == 0) {
+        DEBUG(SSSDBG_CONF_SETTINGS, ("Will canonicalize principals\n"));
         canonicalize = 1;
     }
     sss_krb5_get_init_creds_opt_set_canonicalize(&options, canonicalize);
-
-    krberr = sss_krb5_read_etypes_for_keytab(memctx, context, keytab, kprinc,
-                                             &etype_list, &n_etype_list);
-    if (krberr) {
-        DEBUG(SSSDBG_MINOR_FAILURE, ("Failed to load etypes from keytab: %s\n",
-                                     sss_krb5_get_error_message(context,
-                                                                krberr)));
-    } else if (n_etype_list > 0) {
-        krb5_get_init_creds_opt_set_etype_list(&options, etype_list,
-                                               n_etype_list);
-        DEBUG(SSSDBG_FUNC_DATA, ("Loaded %d enctypes from keytab for %s\n",
-                                 n_etype_list, full_princ));
-    }
 
     krberr = krb5_get_init_creds_keytab(context, &my_creds, kprinc,
                                         keytab, 0, NULL, &options);
@@ -507,11 +504,13 @@ int main(int argc, const char *argv[])
         goto fail;
     }
 
+    DEBUG(SSSDBG_TRACE_FUNC, ("ldap_child completed successfully\n"));
     close(STDOUT_FILENO);
     talloc_free(main_ctx);
     _exit(0);
 
 fail:
+    DEBUG(SSSDBG_CRIT_FAILURE, ("ldap_child failed!\n"));
     close(STDOUT_FILENO);
     talloc_free(main_ctx);
     _exit(-1);

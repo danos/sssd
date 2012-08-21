@@ -3,9 +3,10 @@
 %{!?python_sitearch: %global python_sitearch %(%{__python} -c "from distutils.sysconfig import get_python_lib; print(get_python_lib(1))")}
 %endif
 
-%if (0%{?rhel} == 5)
-%{!?is_rhel57: %global is_rhel57 %(%{__grep} -c "5\.[^0-6]" /etc/redhat-release)}
-%global with_unicode_lib --with-unicode-lib=glib2
+%global is_rhel5 %(%{__grep} -c "release 5" /etc/redhat-release)
+%global rhel5_minor %(%{__grep} -o "5.[0-9]*" /etc/redhat-release |%{__sed} -s 's/5.//')
+
+%if 0%{?is_rhel5} > 0
 # we don't want to provide private python extension libs
 %{?filter_setup:
 %filter_provides_in %{python_sitearch}/.*\.so$
@@ -15,6 +16,10 @@
 # Fedora and RHEL 6+
 # we don't want to provide private python extension libs
 %define __provides_exclude_from %{python_sitearch}/.*\.so$
+%endif
+
+%if (0%{?fedora} >= 17)
+    %global with_ccache --with-default-ccache-dir='/run/user/%U' --with-default-ccname-template="DIR:%d/ccdir"
 %endif
 
 %global enable_experimental 1
@@ -47,9 +52,9 @@ Requires: libipa_hbac = %{version}-%{release}
 Requires: libsss_idmap = %{version}-%{release}
 Requires: cyrus-sasl-gssapi
 Requires: keyutils-libs
-Requires(post): initscripts chkconfig /sbin/ldconfig
+Requires(post): initscripts chkconfig
 Requires(preun):  initscripts chkconfig
-Requires(postun): initscripts chkconfig /sbin/ldconfig
+Requires(postun): initscripts chkconfig
 
 %global servicename sssd
 %global sssdstatedir %{_localstatedir}/lib/sss
@@ -65,7 +70,7 @@ BuildRequires: automake
 BuildRequires: libtool
 BuildRequires: m4
 %{?fedora:BuildRequires: popt-devel}
-%if 0%{?rhel} <= 5
+%if 0%{?is_rhel5} > 0
 BuildRequires: popt
 %endif
 %if 0%{?rhel} >= 6
@@ -80,7 +85,7 @@ BuildRequires: libcollection-devel
 BuildRequires: libini_config-devel
 BuildRequires: dbus-devel
 BuildRequires: dbus-libs
-%if 0%{?is_rhel57} > 0
+%if 0%{?rhel5_minor} >= 7
 BuildRequires: openldap24-libs-devel
 %else
 BuildRequires: openldap-devel
@@ -105,11 +110,13 @@ BuildRequires: libnl-devel
 BuildRequires: gettext-devel
 BuildRequires: pkgconfig
 BuildRequires: findutils
-
-%if 0%{?rhel} == 5
 BuildRequires: glib2-devel
-%else
-BuildRequires: libunistring-devel
+
+%if (0%{?enable_experimental} == 1)
+# RHEL 5 is too old to support samba4 and the PAC responder
+%if !0%{?is_rhel5}
+BuildRequires: samba4-devel
+%endif
 %endif
 
 %description
@@ -123,6 +130,8 @@ services for projects like FreeIPA.
 Summary: SSSD Client libraries for NSS and PAM
 Group: Applications/System
 License: LGPLv3+
+Requires(post): /sbin/ldconfig
+Requires(postun): /sbin/ldconfig
 
 %description client
 Provides the libraries needed by the PAM and NSS stacks to connect to the SSSD
@@ -145,6 +154,8 @@ use with ldap_default_authtok_type = obfuscated_password.
 Summary: FreeIPA Idmap library
 Group: Development/Libraries
 License: LGPLv3+
+Requires(post): /sbin/ldconfig
+Requires(postun): /sbin/ldconfig
 
 %description -n libsss_idmap
 Utility library to SIDs to Unix uids and gids
@@ -162,6 +173,8 @@ Utility library to SIDs to Unix uids and gids
 Summary: FreeIPA HBAC Evaluator library
 Group: Development/Libraries
 License: LGPLv3+
+Requires(post): /sbin/ldconfig
+Requires(postun): /sbin/ldconfig
 
 %description -n libipa_hbac
 Utility library to validate FreeIPA HBAC rules for authorization requests
@@ -190,6 +203,8 @@ used by Python applications.
 Summary: A library to allow communication between SUDO and SSSD
 Group: Development/Libraries
 License: LGPLv3+
+Requires(post): /sbin/ldconfig
+Requires(postun): /sbin/ldconfig
 
 %description -n libsss_sudo
 A utility library to allow communication between SUDO and SSSD
@@ -230,7 +245,7 @@ autoreconf -ivf
     --enable-pammoddir=/%{_lib}/security \
     --disable-static \
     --disable-rpath \
-    %{with_unicode_lib} \
+    %{with_ccache} \
     %{experimental}
 
 make %{?_smp_mflags} all
@@ -308,6 +323,7 @@ rm -rf $RPM_BUILD_ROOT
 %{_initrddir}/%{name}
 %{_sbindir}/sssd
 
+%dir %{_libexecdir}/%{servicename}
 %{_libexecdir}/%{servicename}/krb5_child
 %{_libexecdir}/%{servicename}/ldap_child
 %{_libexecdir}/%{servicename}/proxy_child
@@ -319,8 +335,16 @@ rm -rf $RPM_BUILD_ROOT
 %{_libexecdir}/%{servicename}/sssd_autofs
 %{_libexecdir}/%{servicename}/sssd_ssh
 %{_libexecdir}/%{servicename}/sssd_sudo
+
+# RHEL 5 is too old to support the PAC responder
+%if !0%{?is_rhel5}
+%{_libexecdir}/%{servicename}/sssd_pac
 %endif
 
+%endif
+
+%dir %{_libdir}/%{name}
+%{_libdir}/%{name}/libsss_ad.so
 %{_libdir}/%{name}/libsss_ipa.so
 %{_libdir}/%{name}/libsss_krb5.so
 %{_libdir}/%{name}/libsss_ldap.so
@@ -338,26 +362,31 @@ rm -rf $RPM_BUILD_ROOT
 %attr(755,root,root) %dir %{mcpath}
 %attr(755,root,root) %dir %{pipepath}
 %attr(755,root,root) %dir %{pubconfpath}
+%attr(755,root,root) %dir %{pubconfpath}/krb5.include.d
 %attr(700,root,root) %dir %{pipepath}/private
 %attr(750,root,root) %dir %{_var}/log/%{name}
 %attr(711,root,root) %dir %{_sysconfdir}/sssd
 %ghost %attr(0600,root,root) %config(noreplace) %{_sysconfdir}/sssd/sssd.conf
 %config(noreplace) %{_sysconfdir}/logrotate.d/sssd
 %config(noreplace) %{_sysconfdir}/rwtab.d/sssd
+%dir %{_datadir}/sssd
 %{_datadir}/sssd/sssd.api.conf
 %{_datadir}/sssd/sssd.api.d
 %{_mandir}/man5/sssd.conf.5*
 %{_mandir}/man5/sssd-ipa.5*
+%{_mandir}/man5/sssd-ad.5*
 %{_mandir}/man5/sssd-krb5.5*
 %{_mandir}/man5/sssd-ldap.5*
 %{_mandir}/man5/sssd-simple.5*
+%{_mandir}/man5/sssd-sudo.5*
 %{_mandir}/man8/sssd.8*
 %if (0%{?enable_experimental} == 1)
 %{_mandir}/man1/sss_ssh_authorizedkeys.1*
 %{_mandir}/man1/sss_ssh_knownhostsproxy.1*
 %endif
 %{python_sitearch}/pysss.so
-%{python_sitelib}/*.py*
+%dir %{python_sitelib}/SSSDConfig
+%{python_sitelib}/SSSDConfig/*.py*
 
 %files client
 %defattr(-,root,root,-)
@@ -365,6 +394,11 @@ rm -rf $RPM_BUILD_ROOT
 /%{_lib}/libnss_sss.so.2
 /%{_lib}/security/pam_sss.so
 %{_libdir}/krb5/plugins/libkrb5/sssd_krb5_locator_plugin.so
+%if (0%{?enable_experimental} == 1)
+%if !0%{?is_rhel5}
+%{_libdir}/krb5/plugins/authdata/sssd_pac_plugin.so
+%endif
+%endif
 %{_mandir}/man8/pam_sss.8*
 %{_mandir}/man8/sssd_krb5_locator_plugin.8*
 
@@ -381,6 +415,7 @@ rm -rf $RPM_BUILD_ROOT
 %{_sbindir}/sss_obfuscate
 %{_sbindir}/sss_cache
 %{_sbindir}/sss_debuglevel
+%{_sbindir}/sss_seed
 %{_mandir}/man8/sss_groupadd.8*
 %{_mandir}/man8/sss_groupdel.8*
 %{_mandir}/man8/sss_groupmod.8*
@@ -391,6 +426,7 @@ rm -rf $RPM_BUILD_ROOT
 %{_mandir}/man8/sss_obfuscate.8*
 %{_mandir}/man8/sss_cache.8*
 %{_mandir}/man8/sss_debuglevel.8*
+%{_mandir}/man8/sss_seed.8*
 
 %files -n libsss_idmap
 %defattr(-,root,root,-)
@@ -462,7 +498,6 @@ A utility library to allow communication between Autofs and SSSD
 %endif
 
 %post
-/sbin/ldconfig
 /sbin/chkconfig --add %{servicename}
 
 if [ $1 -ge 1 ] ; then
@@ -475,11 +510,21 @@ if [ $1 = 0 ]; then
     /sbin/chkconfig --del %{servicename}
 fi
 
-%postun -p /sbin/ldconfig
-
 %post client -p /sbin/ldconfig
 
 %postun client -p /sbin/ldconfig
+
+%post -n libipa_hbac -p /sbin/ldconfig
+
+%postun -n libipa_hbac -p /sbin/ldconfig
+
+%post -n libsss_idmap -p /sbin/ldconfig
+
+%postun -n libsss_idmap -p /sbin/ldconfig
+
+%post -n libsss_sudo -p /sbin/ldconfig
+
+%postun -n libsss_sudo -p /sbin/ldconfig
 
 %changelog
 * Mon Mar 15 2010 Stephen Gallagher <sgallagh@redhat.com> - @PACKAGE_VERSION@-0@PRERELEASE_VERSION@

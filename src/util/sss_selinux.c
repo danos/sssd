@@ -49,7 +49,8 @@ static bool match_entity(struct ldb_message_element *values,
 
 bool sss_selinux_match(struct sysdb_attrs *usermap,
                        struct sysdb_attrs *user,
-                       struct sysdb_attrs *host)
+                       struct sysdb_attrs *host,
+                       uint32_t *_priority)
 {
     struct ldb_message_element *users_el = NULL;
     struct ldb_message_element *usercat = NULL;
@@ -58,6 +59,10 @@ bool sss_selinux_match(struct sysdb_attrs *usermap,
     struct ldb_message_element *dn;
     struct ldb_message_element *memberof;
     int i;
+    uint32_t priority = 0;
+    bool matched_name;
+    bool matched_group;
+    bool matched_category;
     errno_t ret;
 
     if (usermap == NULL) {
@@ -80,40 +85,103 @@ bool sss_selinux_match(struct sysdb_attrs *usermap,
 
     if (user) {
         ret = sysdb_attrs_get_el(user, SYSDB_ORIG_DN, &dn);
-        if (ret != EOK) return false;
+        if (ret != EOK) {
+            DEBUG(SSSDBG_MINOR_FAILURE, ("User does not have origDN\n"));
+            return false;
+        }
         ret = sysdb_attrs_get_el(user, SYSDB_ORIG_MEMBEROF, &memberof);
-        if (ret != EOK) return false;
+        if (ret != EOK) {
+            DEBUG(SSSDBG_TRACE_ALL,
+                  ("User does not have orig memberof, "
+                   "therefore it can't match to any rule\n"));
+            return false;
+        }
 
         /**
          * The rule won't match if user category != "all" and user map doesn't
          * contain neither user nor any of his groups in memberUser attribute
          */
-        if (usercat == NULL || usercat->num_values == 0 ||
-            strcasecmp((char *)usercat->values[0].data, "all") != 0) {
-            if (users_el == NULL || (!match_entity(users_el, dn) &&
-                !match_entity(users_el, memberof))) {
-                return false;
+        matched_category = false;
+        if (usercat != NULL) {
+            for (i = 0; i < usercat->num_values; i++) {
+                if (strcasecmp((char *)usercat->values[i].data, "all") == 0) {
+                    matched_category = true;
+                    break;
+                }
             }
+        }
+
+        if (!matched_category) {
+            if (users_el == NULL) {
+                DEBUG(SSSDBG_TRACE_ALL, ("No users specified in the rule!\n"));
+                return false;
+            } else {
+                matched_name = match_entity(users_el, dn);
+                matched_group = match_entity(users_el, memberof);
+                if (matched_name) {
+                    priority |= SELINUX_PRIORITY_USER_NAME;
+                } else if (matched_group) {
+                    priority |= SELINUX_PRIORITY_USER_GROUP;
+                } else {
+                    DEBUG(SSSDBG_TRACE_ALL, ("User did not match\n"));
+                    return false;
+                }
+            }
+        } else {
+            priority |= SELINUX_PRIORITY_USER_CAT;
         }
     }
 
     if (host) {
         ret = sysdb_attrs_get_el(host, SYSDB_ORIG_DN, &dn);
-        if (ret != EOK) return false;
+        if (ret != EOK) {
+            DEBUG(SSSDBG_MINOR_FAILURE, ("Host does not have origDN\n"));
+            return false;
+        }
         ret = sysdb_attrs_get_el(host, SYSDB_ORIG_MEMBEROF, &memberof);
-        if (ret != EOK) return false;
+        if (ret != EOK) {
+            DEBUG(SSSDBG_TRACE_ALL,
+                  ("Host does not have orig memberof, "
+                   "therefore it can't match to any rule\n"));
+            return false;
+        }
 
         /**
          * The rule won't match if host category != "all" and user map doesn't
          * contain neither host nor any of its groups in memberHost attribute
          */
-        if (hostcat == NULL || hostcat->num_values == 0 ||
-            strcasecmp((char *)hostcat->values[0].data, "all") != 0) {
-            if (hosts_el == NULL || (!match_entity(hosts_el, dn) &&
-                !match_entity(hosts_el, memberof))) {
-                return false;
+        matched_category = false;
+        if (hostcat != NULL) {
+            for (i = 0; i < hostcat->num_values; i++) {
+                if (strcasecmp((char *)hostcat->values[i].data, "all") == 0) {
+                    matched_category = true;
+                    break;
+                }
             }
         }
+        if (!matched_category) {
+            if (hosts_el == NULL) {
+                DEBUG(SSSDBG_TRACE_ALL, ("No users specified in the rule!\n"));
+                return false;
+            } else {
+                matched_name = match_entity(hosts_el, dn);
+                matched_group = match_entity(hosts_el, memberof);
+                if (matched_name) {
+                    priority |= SELINUX_PRIORITY_HOST_NAME;
+                } else if (matched_group) {
+                    priority |= SELINUX_PRIORITY_HOST_GROUP;
+                } else {
+                    DEBUG(SSSDBG_TRACE_ALL, ("Host did not match\n"));
+                    return false;
+                }
+            }
+        } else {
+            priority |= SELINUX_PRIORITY_HOST_CAT;
+        }
+    }
+
+    if (_priority != NULL) {
+        *_priority = priority;
     }
 
     return true;

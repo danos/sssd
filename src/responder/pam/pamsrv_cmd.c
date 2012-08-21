@@ -33,6 +33,7 @@
 #include "responder/pam/pam_helpers.h"
 #include "db/sysdb.h"
 #include "db/sysdb_selinux.h"
+#include <selinux/selinux.h>
 
 enum pam_verbosity {
     PAM_VERBOSITY_NO_MESSAGES = 0,
@@ -115,7 +116,7 @@ static int pd_set_primary_name(const struct ldb_message *msg,struct pam_data *pd
     return EOK;
 }
 
-static int pam_parse_in_data_v2(struct sss_names_ctx *snctx,
+static int pam_parse_in_data_v2(struct sss_domain_info *domains,
                              struct pam_data *pd,
                              uint8_t *body, size_t blen)
 {
@@ -153,8 +154,8 @@ static int pam_parse_in_data_v2(struct sss_names_ctx *snctx,
                     ret = extract_string(&pam_user, size, body, blen, &c);
                     if (ret != EOK) return ret;
 
-                    ret = sss_parse_name(pd, snctx, pam_user,
-                                         &pd->domain, &pd->user);
+                    ret = sss_parse_name_for_domains(pd, domains, pam_user,
+                                                     &pd->domain, &pd->user);
                     if (ret != EOK) return ret;
                     break;
                 case SSS_PAM_ITEM_SERVICE:
@@ -205,13 +206,13 @@ static int pam_parse_in_data_v2(struct sss_names_ctx *snctx,
 
 }
 
-static int pam_parse_in_data_v3(struct sss_names_ctx *snctx,
+static int pam_parse_in_data_v3(struct sss_domain_info *domains,
                              struct pam_data *pd,
                              uint8_t *body, size_t blen)
 {
     int ret;
 
-    ret = pam_parse_in_data_v2(snctx, pd, body, blen);
+    ret = pam_parse_in_data_v2(domains, pd, body, blen);
     if (ret != EOK) {
         DEBUG(1, ("pam_parse_in_data_v2 failed.\n"));
         return ret;
@@ -225,7 +226,7 @@ static int pam_parse_in_data_v3(struct sss_names_ctx *snctx,
     return EOK;
 }
 
-static int pam_parse_in_data(struct sss_names_ctx *snctx,
+static int pam_parse_in_data(struct sss_domain_info *domains,
                              struct pam_data *pd,
                              uint8_t *body, size_t blen)
 {
@@ -241,7 +242,7 @@ static int pam_parse_in_data(struct sss_names_ctx *snctx,
     for (start = end; end < last; end++) if (body[end] == '\0') break;
     if (body[end++] != '\0') return EINVAL;
 
-    ret = sss_parse_name(pd, snctx, (char *)&body[start], &pd->domain, &pd->user);
+    ret = sss_parse_name_for_domains(pd, domains, (char *)&body[start], &pd->domain, &pd->user);
     if (ret != EOK) return ret;
 
     for (start = end; end < last; end++) if (body[end] == '\0') break;
@@ -353,6 +354,99 @@ fail:
     return ret;
 }
 
+#define ALL_SERVICES "*"
+
+static errno_t write_selinux_string(const char *username, char *string)
+{
+    char *path = NULL;
+    char *tmp_path = NULL;
+    ssize_t written;
+    int len;
+    int fd = 0;
+    mode_t oldmask;
+    TALLOC_CTX *tmp_ctx;
+    char *full_string = NULL;
+    errno_t ret = EOK;
+
+    len = strlen(string);
+    if (len == 0) {
+        return EINVAL;
+    }
+
+    tmp_ctx = talloc_new(NULL);
+    if (tmp_ctx == NULL) {
+        DEBUG(SSSDBG_CRIT_FAILURE, ("talloc_new() failed\n"));
+        return ENOMEM;
+    }
+
+    path = talloc_asprintf(tmp_ctx, "%s/logins/%s", selinux_policy_root(),
+                           username);
+    if (path == NULL) {
+        ret = ENOMEM;
+        goto done;
+    }
+
+    tmp_path = talloc_asprintf(tmp_ctx, "%sXXXXXX", path);
+    if (tmp_path == NULL) {
+        ret = ENOMEM;
+        goto done;
+    }
+
+    oldmask = umask(022);
+    fd = mkstemp(tmp_path);
+    umask(oldmask);
+    if (fd < 0) {
+        DEBUG(SSSDBG_OP_FAILURE, ("creating the temp file for SELinux "
+                                  "data failed. %s", tmp_path));
+        ret = EIO;
+        goto done;
+    }
+
+    full_string = talloc_asprintf(tmp_ctx, "%s:%s", ALL_SERVICES, string);
+    if (full_string == NULL) {
+        ret = ENOMEM;
+        goto done;
+    }
+
+    len = strlen(full_string);
+
+    errno = 0;
+    written = sss_atomic_write_s(fd, full_string, len);
+    if (written == -1) {
+        ret = errno;
+        DEBUG(SSSDBG_OP_FAILURE, ("writing to SELinux data file %s"
+                                  "failed [%d]: %s", tmp_path, ret,
+                                  strerror(ret)));
+        goto done;
+    }
+
+    if (written != len) {
+        DEBUG(SSSDBG_OP_FAILURE, ("Expected to write %d bytes, wrote %d",
+                                  written, len));
+        ret = EIO;
+        goto done;
+    }
+
+    errno = 0;
+    if (rename(tmp_path, path) < 0) {
+        ret = errno;
+    } else {
+        ret = EOK;
+    }
+
+done:
+    if (fd > 0) {
+        close(fd);
+        if (unlink(tmp_path) < 0) {
+            DEBUG(SSSDBG_MINOR_FAILURE, ("Could not remove file [%s]",
+                                         tmp_path));
+        }
+    }
+
+    talloc_free(tmp_ctx);
+    return ret;
+}
+
 static errno_t get_selinux_string(struct pam_auth_req *preq)
 {
     struct sysdb_ctx *sysdb;
@@ -368,7 +462,7 @@ static errno_t get_selinux_string(struct pam_auth_req *preq)
     errno_t ret;
     int i, j;
     size_t order_count;
-    size_t len;
+    size_t len = 0;
 
     tmp_ctx = talloc_new(NULL);
     if (tmp_ctx == NULL) {
@@ -461,12 +555,6 @@ static errno_t get_selinux_string(struct pam_auth_req *preq)
             goto done;
         }
     } else {
-        file_content = talloc_strdup(tmp_ctx, "");
-        if (file_content == NULL) {
-            ret = ENOMEM;
-            goto done;
-        }
-
         /* Iterate through the order array and try to find SELinux users
          * in fetched maps. The order array contains all SELinux users
          * allowed in the domain in the same order they should appear
@@ -484,8 +572,11 @@ static errno_t get_selinux_string(struct pam_auth_req *preq)
                 tmp_str = sss_selinux_map_get_seuser(usermaps[j]);
 
                 if (tmp_str && !strcasecmp(tmp_str, order_array[i])) {
-                    file_content = talloc_asprintf_append(file_content, "%s\n",
-                                                          tmp_str);
+                    /* If file_content contained something, overwrite it.
+                     * This record has higher priority.
+                     */
+                    talloc_zfree(file_content);
+                    file_content = talloc_strdup(tmp_ctx, tmp_str);
                     if (file_content == NULL) {
                         ret = ENOMEM;
                         goto done;
@@ -496,10 +587,8 @@ static errno_t get_selinux_string(struct pam_auth_req *preq)
         }
     }
 
-    len = strlen(file_content);
-    if (len > 0) {
-        ret = pam_add_response(pd, SSS_PAM_SELINUX_MAP, len,
-                               (uint8_t *)file_content);
+    if (file_content) {
+        ret = write_selinux_string(pd->user, file_content);
     }
 
 done:
@@ -583,6 +672,7 @@ static void pam_reply_delay(struct tevent_context *ev, struct tevent_timer *te,
     pam_reply(preq);
 }
 
+static int pam_forwarder(struct cli_ctx *cctx, int pam_cmd);
 static void pam_cache_auth_done(struct pam_auth_req *preq, int ret,
                                 time_t expire_date, time_t delayed_until);
 
@@ -610,7 +700,8 @@ static void pam_reply(struct pam_auth_req *preq)
     pctx = talloc_get_type(preq->cctx->rctx->pvt_ctx, struct pam_ctx);
 
 
-    DEBUG(4, ("pam_reply get called.\n"));
+    DEBUG(SSSDBG_FUNC_DATA,
+          ("pam_reply called with result [%d].\n", pd->pam_status));
 
     if (pd->pam_status == PAM_AUTHINFO_UNAVAIL) {
         switch(pd->cmd) {
@@ -700,7 +791,7 @@ static void pam_reply(struct pam_auth_req *preq)
         return;
     }
 
-    if (pd->cmd == SSS_PAM_OPEN_SESSION &&
+    if (pd->cmd == SSS_PAM_ACCT_MGMT &&
         pd->pam_status == PAM_SUCCESS) {
         /* Try to fetch data from sysdb
          * (auth already passed -> we should have them) */
@@ -850,18 +941,50 @@ static void pam_dom_forwarder(struct pam_auth_req *preq);
  * PAM_ENVIRONMENT, so that we can save performing some calls and cache
  * data. */
 
+errno_t pam_forwarder_parse_data(struct cli_ctx *cctx, struct pam_data *pd)
+{
+    uint8_t *body;
+    size_t blen;
+    errno_t ret;
+    uint32_t terminator = SSS_END_OF_PAM_REQUEST;
+
+    sss_packet_get_body(cctx->creq->in, &body, &blen);
+    if (blen >= sizeof(uint32_t) &&
+        memcmp(&body[blen - sizeof(uint32_t)], &terminator, sizeof(uint32_t)) != 0) {
+        DEBUG(1, ("Received data not terminated.\n"));
+        ret = EINVAL;
+        goto done;
+    }
+
+    switch (cctx->cli_protocol_version->version) {
+        case 1:
+            ret = pam_parse_in_data(cctx->rctx->domains, pd, body, blen);
+            break;
+        case 2:
+            ret = pam_parse_in_data_v2(cctx->rctx->domains, pd, body, blen);
+            break;
+        case 3:
+            ret = pam_parse_in_data_v3(cctx->rctx->domains, pd, body, blen);
+            break;
+        default:
+            DEBUG(1, ("Illegal protocol version [%d].\n",
+                      cctx->cli_protocol_version->version));
+            ret = EINVAL;
+    }
+
+done:
+    return ret;
+}
+
 static int pam_forwarder(struct cli_ctx *cctx, int pam_cmd)
 {
     struct sss_domain_info *dom;
     struct pam_auth_req *preq;
     struct pam_data *pd;
-    uint8_t *body;
-    size_t blen;
     int ret;
     errno_t ncret;
     struct pam_ctx *pctx =
             talloc_get_type(cctx->rctx->pvt_ctx, struct pam_ctx);
-    uint32_t terminator = SSS_END_OF_PAM_REQUEST;
     struct tevent_req *req;
 
     preq = talloc_zero(cctx, struct pam_auth_req);
@@ -877,33 +1000,20 @@ static int pam_forwarder(struct cli_ctx *cctx, int pam_cmd)
     }
     pd = preq->pd;
 
-    sss_packet_get_body(cctx->creq->in, &body, &blen);
-    if (blen >= sizeof(uint32_t) &&
-        memcmp(&body[blen - sizeof(uint32_t)], &terminator, sizeof(uint32_t)) != 0) {
-        DEBUG(1, ("Received data not terminated.\n"));
-        ret = EINVAL;
-        goto done;
-    }
-
     pd->cmd = pam_cmd;
     pd->priv = cctx->priv;
 
-    switch (cctx->cli_protocol_version->version) {
-        case 1:
-            ret = pam_parse_in_data(cctx->rctx->names, pd, body, blen);
-            break;
-        case 2:
-            ret = pam_parse_in_data_v2(cctx->rctx->names, pd, body, blen);
-            break;
-        case 3:
-            ret = pam_parse_in_data_v3(cctx->rctx->names, pd, body, blen);
-            break;
-        default:
-            DEBUG(1, ("Illegal protocol version [%d].\n",
-                      cctx->cli_protocol_version->version));
-            ret = EINVAL;
-    }
-    if (ret != EOK) {
+    ret = pam_forwarder_parse_data(cctx, pd);
+    if (ret == EAGAIN) {
+        req = sss_dp_get_domains_send(cctx->rctx, cctx->rctx, true, pd->domain);
+        if (req == NULL) {
+            ret = ENOMEM;
+        } else {
+            tevent_req_set_callback(req, pam_forwarder_cb, preq);
+            ret = EAGAIN;
+        }
+        goto done;
+    } else if (ret != EOK) {
         ret = EINVAL;
         goto done;
     }
@@ -912,13 +1022,7 @@ static int pam_forwarder(struct cli_ctx *cctx, int pam_cmd)
     if (pd->domain) {
         preq->domain = responder_get_domain(preq, cctx->rctx, pd->domain);
         if (!preq->domain) {
-            req = sss_dp_get_domains_send(cctx->rctx, cctx->rctx, true, pd->domain);
-            if (req == NULL) {
-                ret = ENOMEM;
-            } else {
-                tevent_req_set_callback(req, pam_forwarder_cb, preq);
-                ret = EAGAIN;
-            }
+            ret = ENOENT;
             goto done;
         }
     } else {
@@ -968,11 +1072,20 @@ static void pam_forwarder_cb(struct tevent_req *req)
     struct pam_auth_req *preq = tevent_req_callback_data(req,
                                                          struct pam_auth_req);
     struct cli_ctx *cctx = preq->cctx;
+    struct pam_data *pd;
     errno_t ret = EOK;
 
     ret = sss_dp_get_domains_recv(req);
     talloc_free(req);
     if (ret != EOK) {
+        goto done;
+    }
+
+    pd = preq->pd;
+
+    ret = pam_forwarder_parse_data(cctx, pd);
+    if (ret != EOK) {
+        ret = EINVAL;
         goto done;
     }
 

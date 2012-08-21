@@ -604,6 +604,30 @@ int sysdb_attrs_add_time_t(struct sysdb_attrs *attrs,
     return ret;
 }
 
+int sysdb_attrs_copy_values(struct sysdb_attrs *src,
+                            struct sysdb_attrs *dst,
+                            const char *name)
+{
+    int ret = EOK;
+    int i;
+    struct ldb_message_element *src_el;
+
+    ret = sysdb_attrs_get_el(src, name, &src_el);
+    if (ret != EOK) {
+        goto done;
+    }
+
+    for (i = 0; i < src_el->num_values; i++) {
+        ret = sysdb_attrs_add_val(dst, name, &src_el->values[i]);
+        if (ret != EOK) {
+            goto done;
+        }
+    }
+
+done:
+    return ret;
+}
+
 int sysdb_attrs_users_from_str_list(struct sysdb_attrs *attrs,
                                     const char *attr_name,
                                     const char *domain,
@@ -713,6 +737,9 @@ int sysdb_error_to_errno(int ldberr)
     case LDB_ERR_ENTRY_ALREADY_EXISTS:
         return EEXIST;
     default:
+        DEBUG(SSSDBG_CRIT_FAILURE,
+              ("LDB returned unexpected error: [%s]\n",
+               ldb_strerror(ldberr)));
         return EFAULT;
     }
 }
@@ -1056,6 +1083,13 @@ int sysdb_domain_init_internal(TALLOC_CTX *mem_ctx,
 
             if (strcmp(version, SYSDB_VERSION_0_9) == 0) {
                 ret = sysdb_upgrade_09(sysdb, &version);
+                if (ret != EOK) {
+                    goto done;
+                }
+            }
+
+            if (strcmp(version, SYSDB_VERSION_0_10) == 0) {
+                ret = sysdb_upgrade_10(sysdb, &version);
                 if (ret != EOK) {
                     goto done;
                 }

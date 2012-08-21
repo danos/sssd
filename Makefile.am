@@ -23,6 +23,9 @@ ldblibdir = @ldblibdir@
 if BUILD_KRB5_LOCATOR_PLUGIN
 krb5plugindir = @krb5pluginpath@
 endif
+if BUILD_PAC_RESPONDER
+krb5authdata_plugindir = @krb5authdatapluginpath@
+endif
 sssdconfdir = $(sysconfdir)/sssd
 sssddatadir = $(datadir)/sssd
 sssdapiplugindir = $(sssddatadir)/sssd.api.d
@@ -78,7 +81,8 @@ sbin_PROGRAMS = \
     sss_groupmod \
     sss_groupshow \
     sss_cache \
-    sss_debuglevel
+    sss_debuglevel \
+    sss_seed
 
 sssdlibexec_PROGRAMS = \
     sssd_nss \
@@ -97,9 +101,14 @@ if BUILD_SSH
 sssdlibexec_PROGRAMS += sssd_ssh
 endif
 
+if BUILD_PAC_RESPONDER
+    sssdlibexec_PROGRAMS += sssd_pac
+endif
+
 if HAVE_CHECK
     non_interactive_check_based_tests = \
         sysdb-tests \
+        sysdb_ssh-tests\
         strtonum-tests \
         resolv-tests \
         krb5-utils-tests \
@@ -110,16 +119,24 @@ if HAVE_CHECK
         find_uid-tests \
         auth-tests \
         ipa_ldap_opt-tests \
+        ad_ldap_opt-tests \
         simple_access-tests \
         crypto-tests \
         util-tests \
         debug-tests \
         ipa_hbac-tests \
-        sss_idmap-tests
+        sss_idmap-tests \
+        responder_socket_access-tests
+
+if BUILD_PAC_RESPONDER
+        non_interactive_check_based_tests += pac_responder-tests
+endif
+
 endif
 
 check_PROGRAMS = \
     stress-tests \
+    krb5-child-test \
     $(non_interactive_check_based_tests)
 
 PYTHON_TESTS =
@@ -138,6 +155,7 @@ sssdlib_LTLIBRARIES = \
     libsss_krb5.la \
     libsss_proxy.la \
     libsss_ipa.la \
+    libsss_ad.la \
     libsss_simple.la
 
 ldblib_LTLIBRARIES = \
@@ -146,6 +164,11 @@ ldblib_LTLIBRARIES = \
 if BUILD_KRB5_LOCATOR_PLUGIN
 krb5plugin_LTLIBRARIES = \
     sssd_krb5_locator_plugin.la
+endif
+
+if BUILD_PAC_RESPONDER
+krb5authdata_plugin_LTLIBRARIES = \
+    sssd_pac_plugin.la
 endif
 
 noinst_LTLIBRARIES = \
@@ -185,10 +208,10 @@ endif
 dist_noinst_SCRIPTS = \
     $(EXTRA_SCRIPTS) \
     src/config/setup.py \
-    src/config/ipachangeconf.py \
-    src/config/SSSDConfig.py \
+    src/config/SSSDConfig/ipachangeconf.py \
+    src/config/SSSDConfig/__init__.py \
     src/config/SSSDConfigTest.py \
-    src/config/sssd_upgrade_config.py \
+    src/config/SSSDConfig/sssd_upgrade_config.py \
     contrib/rhel/update_debug_levels.py \
     src/tests/pyhbac-test.py
 
@@ -235,6 +258,7 @@ AM_CPPFLAGS = \
     -DSSS_NSS_MCACHE_DIR=\"$(mcpath)\" \
     -DSSS_NSS_SOCKET_NAME=\"$(pipepath)/nss\" \
     -DSSS_PAM_SOCKET_NAME=\"$(pipepath)/pam\" \
+    -DSSS_PAC_SOCKET_NAME=\"$(pipepath)/pac\" \
     -DSSS_PAM_PRIV_SOCKET_NAME=\"$(pipepath)/private/pam\" \
     -DSSS_SUDO_SOCKET_NAME=\"$(pipepath)/sudo\" \
     -DSSS_AUTOFS_SOCKET_NAME=\"$(pipepath)/autofs\" \
@@ -348,6 +372,7 @@ dist_noinst_HEADERS = \
     src/responder/nss/nsssrv_netgroup.h \
     src/responder/nss/nsssrv_services.h \
     src/responder/nss/nsssrv_mmap_cache.h \
+    src/responder/pac/pacsrv.h \
     src/responder/common/negcache.h \
     src/responder/sudo/sudosrv_private.h \
     src/responder/autofs/autofs_private.h \
@@ -374,6 +399,7 @@ dist_noinst_HEADERS = \
     src/providers/krb5/krb5_auth.h \
     src/providers/krb5/krb5_common.h \
     src/providers/krb5/krb5_utils.h \
+    src/providers/krb5/krb5_init_shared.h \
     src/providers/krb5/krb5_opts.h \
     src/providers/ldap/ldap_common.h \
     src/providers/ldap/sdap.h \
@@ -381,7 +407,6 @@ dist_noinst_HEADERS = \
     src/providers/ldap/sdap_async.h \
     src/providers/ldap/sdap_async_private.h \
     src/providers/ldap/sdap_sudo_cache.h \
-    src/providers/ldap/sdap_sudo_timer.h \
     src/providers/ldap/sdap_sudo.h \
     src/providers/ldap/sdap_autofs.h \
     src/providers/ldap/sdap_id_op.h \
@@ -390,7 +415,7 @@ dist_noinst_HEADERS = \
     src/providers/ipa/ipa_common.h \
     src/providers/ipa/ipa_config.h \
     src/providers/ipa/ipa_access.h \
-    src/providers/ipa/ipa_session.h \
+    src/providers/ipa/ipa_selinux.h \
     src/providers/ipa/ipa_hosts.h \
     src/providers/ipa/ipa_selinux_common.h \
     src/providers/ipa/ipa_selinux_maps.h \
@@ -446,6 +471,7 @@ libsss_util_la_SOURCES = \
     src/db/sysdb_services.c \
     src/db/sysdb_autofs.c \
     src/db/sysdb_subdomains.c \
+    src/db/sysdb_ranges.c \
     src/db/sysdb_idmap.c \
     src/monitor/monitor_sbus.c \
     src/providers/dp_auth_util.c \
@@ -492,7 +518,7 @@ libipa_hbac_la_SOURCES = \
     src/providers/ipa/hbac_evaluator.c \
     src/util/sss_utf8.c
 libipa_hbac_la_LDFLAGS = \
-    -version 1:0:1 \
+    -version-info 0:1:0 \
     $(UNICODE_LIBS)
 
 dist_pkgconfig_DATA += src/lib/idmap/sss_idmap.pc
@@ -500,7 +526,7 @@ libsss_idmap_la_SOURCES = \
     src/lib/idmap/sss_idmap.c \
     src/lib/idmap/sss_idmap_conv.c
 libsss_idmap_la_LDFLAGS = \
-    -version 1:0:1
+    -version-info 0:1:0
 
 
 include_HEADERS = \
@@ -542,6 +568,7 @@ sssd_pam_SOURCES = \
 sssd_pam_LDADD = \
     $(TDB_LIBS) \
     $(SSSD_LIBS) \
+    $(SELINUX_LIBS) \
     libsss_util.la
 
 if BUILD_SUDO
@@ -551,7 +578,6 @@ sssd_sudo_SOURCES = \
     src/responder/sudo/sudosrv_get_sudorules.c \
     src/responder/sudo/sudosrv_query.c \
     src/responder/sudo/sudosrv_dp.c \
-    src/responder/sudo/sudosrv_cache.c \
     $(SSSD_RESPONDER_OBJ)
 sssd_sudo_LDADD = \
     $(SSSD_LIBS) \
@@ -579,6 +605,22 @@ sssd_ssh_LDADD = \
     $(SSSD_LIBS) \
     libsss_util.la
 endif
+
+sssd_pac_SOURCES = \
+    src/responder/pac/pacsrv.c \
+    src/responder/pac/pacsrv_cmd.c \
+    src/responder/pac/pacsrv_utils.c \
+    $(SSSD_UTIL_OBJ) \
+    $(SSSD_RESPONDER_OBJ)
+sssd_pac_CFLAGS = \
+    $(AM_CFLAGS) \
+    $(NDR_KRB5PAC_CFLAGS)
+sssd_pac_LDADD = \
+    $(NDR_KRB5PAC_LIBS) \
+    $(TDB_LIBS) \
+    $(SSSD_LIBS) \
+    libsss_idmap.la \
+    libsss_util.la
 
 sssd_be_SOURCES = \
     src/providers/data_provider_be.c \
@@ -681,6 +723,13 @@ sss_debuglevel_LDADD = \
     libsss_util.la \
     $(TOOLS_LIBS)
 
+sss_seed_SOURCES = \
+    src/tools/sss_seed.c \
+    $(SSSD_TOOLS_OBJ)
+sss_seed_LDADD = \
+    libsss_util.la \
+    $(TOOLS_LIBS)
+
 if BUILD_SUDO
 sss_sudo_cli_SOURCES = \
     src/sss_client/common.c \
@@ -740,6 +789,19 @@ sysdb_tests_LDADD = \
     libsss_util.la \
     libsss_test_common.la
 
+sysdb_ssh_tests_DEPENDENCIES = \
+    $(ldblib_LTLIBRARIES)
+sysdb_ssh_tests_SOURCES = \
+    src/tests/sysdb_ssh-tests.c
+sysdb_ssh_tests_CFLAGS = \
+    $(AM_CFLAGS)\
+    $(CHECK_CFLAGS)
+sysdb_ssh_tests_LDADD = \
+    $(SSSD_LIBS) \
+    $(CHECK_LIBS) \
+    libsss_util.la \
+    libsss_test_common.la
+
 strtonum_tests_SOURCES = \
     src/tests/strtonum-tests.c \
     src/util/strtonum.c
@@ -757,6 +819,7 @@ krb5_utils_tests_SOURCES = \
     src/providers/krb5/krb5_utils.c \
     src/providers/krb5/krb5_common.c \
     src/util/sss_krb5.c \
+    src/util/find_uid.c \
     src/providers/data_provider_fo.c \
     src/providers/data_provider_opts.c \
     src/providers/data_provider_callbacks.c \
@@ -819,6 +882,7 @@ endif
 
 resolv_tests_SOURCES = \
     src/tests/resolv-tests.c \
+    src/tests/common.c \
     $(SSSD_RESOLV_TESTS_OBJ)
 resolv_tests_CFLAGS = \
     $(AM_CFLAGS) \
@@ -894,8 +958,19 @@ ipa_ldap_opt_tests_LDADD = \
     $(TALLOC_LIBS) \
     libsss_test_common.la
 
+ad_ldap_opt_tests_SOURCES = \
+    src/tests/ad_ldap_opt-tests.c
+ad_ldap_opt_tests_CFLAGS = \
+    $(AM_CFLAGS) \
+    $(CHECK_CFLAGS)
+ad_ldap_opt_tests_LDADD = \
+    $(CHECK_LIBS) \
+    $(TALLOC_LIBS) \
+    libsss_test_common.la
+
 simple_access_tests_SOURCES = \
     src/tests/simple_access-tests.c \
+    src/tests/common.c \
     src/providers/simple/simple_access.c
 simple_access_tests_CFLAGS = \
     $(AM_CFLAGS) \
@@ -917,7 +992,8 @@ util_tests_LDADD = \
     libsss_test_common.la
 
 debug_tests_SOURCES = \
-    src/tests/debug-tests.c
+    src/tests/debug-tests.c \
+    src/tests/common.c
 debug_tests_CFLAGS = \
     $(AM_CFLAGS) \
     $(CHECK_CFLAGS)
@@ -963,12 +1039,66 @@ sss_idmap_tests_LDADD = \
     libsss_test_common.la \
     libsss_idmap.la
 
+pac_responder_tests_SOURCES = \
+    src/tests/pac_responder-tests.c \
+    src/responder/pac/pacsrv_utils.c
+pac_responder_tests_CFLAGS = \
+    $(AM_CFLAGS) \
+    $(NDR_KRB5PAC_CFLAGS) \
+    $(CHECK_CFLAGS)
+pac_responder_tests_LDADD = \
+    $(CHECK_LIBS) \
+    $(TALLOC_LIBS) \
+    $(NDR_KRB5PAC_LIBS) \
+    $(SSSD_LIBS) \
+    libsss_idmap.la \
+    libsss_debug.la \
+    libsss_util.la \
+    libsss_test_common.la
+
+responder_socket_access_tests_SOURCES = \
+    src/tests/responder_socket_access-tests.c \
+    src/responder/common/responder_common.c \
+    src/responder/common/responder_packet.c \
+    src/responder/common/responder_cmd.c
+responder_socket_access_tests_CFLAGS = \
+    $(AM_CFLAGS) \
+    $(CHECK_CFLAGS)
+responder_socket_access_tests_LDADD = \
+    $(CHECK_LIBS) \
+    $(TALLOC_LIBS) \
+    libsss_test_common.la \
+    libsss_util.la
 endif
 
 stress_tests_SOURCES = \
     src/tests/stress-tests.c
 stress_tests_LDADD = \
     $(SSSD_LIBS) \
+    libsss_util.la \
+    libsss_test_common.la
+
+krb5_child_test_SOURCES = \
+    src/tests/krb5_child-test.c \
+    src/providers/krb5/krb5_utils.c \
+    src/providers/krb5/krb5_child_handler.c \
+    src/providers/krb5/krb5_become_user.c \
+    src/providers/krb5/krb5_common.c \
+    src/util/sss_krb5.c \
+    src/util/find_uid.c \
+    src/providers/data_provider_fo.c \
+    src/providers/data_provider_opts.c \
+    src/providers/data_provider_callbacks.c \
+    $(SSSD_FAILOVER_OBJ)
+krb5_child_test_CFLAGS = \
+    $(AM_CFLAGS) \
+    -DKRB5_CHILD_DIR=\"$(builddir)\" \
+    $(CHECK_CFLAGS)
+krb5_child_test_LDADD = \
+    $(SSSD_LIBS)\
+    $(CARES_LIBS) \
+    $(KRB5_LIBS) \
+    $(CHECK_LIBS) \
     libsss_util.la \
     libsss_test_common.la
 
@@ -1024,7 +1154,6 @@ pam_sss_la_SOURCES = \
 
 pam_sss_la_LDFLAGS = \
     -lpam \
-    $(SELINUX_LIBS) \
     -module \
     -avoid-version \
     -Wl,--version-script,$(srcdir)/src/sss_client/sss_pam.exports
@@ -1040,7 +1169,7 @@ libsss_sudo_la_SOURCES = \
     src/sss_client/sudo/sss_sudo_private.h
 libsss_sudo_la_LDFLAGS = \
     -Wl,--version-script,$(srcdir)/src/sss_client/sss_sudo.exports \
-    -version 1:0:0
+    -version-info 2:0:1
 
 sudolib_LTLIBRARIES = libsss_sudo.la
 dist_pkgconfig_DATA += src/sss_client/sudo/libsss_sudo.pc
@@ -1091,7 +1220,9 @@ libsss_ldap_common_la_SOURCES = \
     src/providers/ldap/sdap_async.c \
     src/providers/ldap/sdap_async_users.c \
     src/providers/ldap/sdap_async_groups.c \
+    src/providers/ldap/sdap_async_groups_ad.c \
     src/providers/ldap/sdap_async_initgroups.c \
+    src/providers/ldap/sdap_async_initgroups_ad.c \
     src/providers/ldap/sdap_async_connection.c \
     src/providers/ldap/sdap_async_netgroups.c \
     src/providers/ldap/sdap_async_services.c \
@@ -1106,7 +1237,9 @@ libsss_ldap_common_la_SOURCES = \
 if BUILD_SUDO
 libsss_ldap_common_la_SOURCES += \
     src/providers/ldap/sdap_sudo_cache.c \
-    src/providers/ldap/sdap_sudo_timer.c \
+    src/providers/ldap/sdap_async_sudo.c \
+    src/providers/ldap/sdap_async_sudo_timer.c \
+    src/providers/ldap/sdap_async_sudo_hostinfo.c \
     src/providers/ldap/sdap_sudo.c
 endif
 
@@ -1127,12 +1260,14 @@ libsss_krb5_common_la_SOURCES = \
     src/providers/krb5/krb5_common.c \
     src/providers/krb5/krb5_auth.c \
     src/providers/krb5/krb5_access.c \
-    src/providers/krb5/krb5_child_handler.c
+    src/providers/krb5/krb5_child_handler.c \
+    src/providers/krb5/krb5_init_shared.c
 
 libsss_ldap_la_SOURCES = \
     src/util/find_uid.c \
     src/providers/ldap/ldap_init.c \
     src/providers/krb5/krb5_common.c \
+    src/providers/krb5/krb5_utils.c \
     src/util/user_info_msg.c \
     src/util/sss_ldap.c \
     src/util/sss_krb5.c
@@ -1217,7 +1352,7 @@ libsss_ipa_la_SOURCES = \
     src/providers/ipa/ipa_hbac_services.c \
     src/providers/ipa/ipa_hbac_users.c \
     src/providers/ipa/ipa_hbac_common.c \
-    src/providers/ipa/ipa_session.c \
+    src/providers/ipa/ipa_selinux.c \
     src/providers/ipa/ipa_selinux_maps.c \
     src/providers/ipa/ipa_selinux_common.c \
     src/util/user_info_msg.c \
@@ -1251,6 +1386,38 @@ if BUILD_SSH
 libsss_ipa_la_SOURCES += src/providers/ipa/ipa_hostid.c
 endif
 
+
+libsss_ad_la_SOURCES = \
+    src/providers/ad/ad_common.c \
+    src/providers/ad/ad_common.h \
+    src/providers/ad/ad_init.c \
+    src/providers/ad/ad_id.c \
+    src/providers/ad/ad_id.h \
+    src/providers/ad/ad_access.c \
+    src/providers/ad/ad_access.h \
+    src/providers/ad/ad_opts.h \
+    src/util/find_uid.c \
+    src/util/user_info_msg.c \
+    src/util/sss_krb5.c \
+    src/util/sss_ldap.c
+
+libsss_ad_la_CFLAGS = \
+    $(AM_CFLAGS) \
+    $(LDAP_CFLAGS) \
+    $(DHASH_CFLAGS) \
+    $(KRB5_CFLAGS)
+libsss_ad_la_LIBADD = \
+    $(OPENLDAP_LIBS) \
+    $(DHASH_LIBS) \
+    $(KEYUTILS_LIBS) \
+    $(KRB5_LIBS) \
+    libsss_util.la \
+    libsss_ldap_common.la \
+    libsss_krb5_common.la \
+    libsss_idmap.la
+libsss_ad_la_LDFLAGS = \
+    -avoid-version \
+    -module
 
 krb5_child_SOURCES = \
     src/providers/krb5/krb5_become_user.c \
@@ -1329,6 +1496,19 @@ sssd_krb5_locator_plugin_la_LDFLAGS = \
     -module
 endif
 
+sssd_pac_plugin_la_SOURCES = \
+    src/sss_client/sssd_pac.c \
+    src/sss_client/common.c \
+    src/sss_client/sss_cli.h \
+    src/sss_client/krb5_authdata_int.h
+sssd_pac_plugin_la_CFLAGS = \
+    $(AM_CFLAGS) \
+    $(KRB5_CFLAGS)
+sssd_pac_plugin_la_LDFLAGS = \
+    -lkrb5 \
+    -avoid-version \
+    -module
+
 if BUILD_PYTHON_BINDINGS
 pysss_la_SOURCES = \
     $(SSSD_TOOLS_OBJ) \
@@ -1396,6 +1576,7 @@ dist_sssddata_DATA = \
     src/config/etc/sssd.api.conf
 dist_sssdapiplugin_DATA = \
     src/config/etc/sssd.api.d/sssd-ipa.conf \
+    src/config/etc/sssd.api.d/sssd-ad.conf \
     src/config/etc/sssd.api.d/sssd-krb5.conf \
     src/config/etc/sssd.api.d/sssd-ldap.conf \
     src/config/etc/sssd.api.d/sssd-local.conf \
@@ -1421,6 +1602,7 @@ installsssddirs::
     $(DESTDIR)$(pidpath) \
     $(DESTDIR)$(logpath) \
     $(DESTDIR)$(pubconfpath) \
+    $(DESTDIR)$(pubconfpath)/krb5.include.d \
     $(DESTDIR)$(sudolibdir) \
     $(DESTDIR)$(autofslibdir)
 
@@ -1438,17 +1620,31 @@ docs:
 	@exit 1
 endif !HAVE_DOXYGEN
 
-all-local: ldb_mod_test_dir
 if BUILD_PYTHON_BINDINGS
-	cd $(srcdir)/src/config; $(PYTHON) setup.py build --build-base $(abs_builddir)/src/config
+$(abs_builddir)/src/config/SSSDConfig/ipachangeconf.py:
+	-cp $(srcdir)/src/config/SSSDConfig/ipachangeconf.py $(builddir)/src/config/SSSDConfig/
+
+$(abs_builddir)/src/config/SSSDConfig/sssd_upgrade_config.py:
+	-cp $(srcdir)/src/config/SSSDConfig/sssd_upgrade_config.py $(builddir)/src/config/SSSDConfig/
+
+SSSDCONFIG_MODULES = \
+    $(abs_builddir)/src/config/SSSDConfig/ipachangeconf.py \
+    $(abs_builddir)/src/config/SSSDConfig/sssd_upgrade_config.py
+else
+SSSSCONFIG_MODULES =
+endif
+
+all-local: ldb_mod_test_dir $(SSSDCONFIG_MODULES)
+if BUILD_PYTHON_BINDINGS
+	cd $(builddir)/src/config; $(PYTHON) setup.py build --build-base $(abs_builddir)/src/config
 endif
 
 install-exec-hook: installsssddirs
 if BUILD_PYTHON_BINDINGS
 	if [ "$(DESTDIR)" = "" ]; then \
-		cd $(srcdir)/src/config; $(PYTHON) setup.py build --build-base $(abs_builddir)/src/config install $(DISTSETUPOPTS) --prefix=$(PYTHON_PREFIX) --record=$(abs_builddir)/src/config/.files; \
+		cd $(builddir)/src/config; $(PYTHON) setup.py build --build-base $(abs_builddir)/src/config install $(DISTSETUPOPTS) --prefix=$(PYTHON_PREFIX) --record=$(abs_builddir)/src/config/.files; \
 	else \
-		cd $(srcdir)/src/config; $(PYTHON) setup.py build --build-base $(abs_builddir)/src/config install $(DISTSETUPOPTS) --prefix=$(PYTHON_PREFIX) --root=$(DESTDIR) --record=$(abs_builddir)/src/config/.files; \
+		cd $(builddir)/src/config; $(PYTHON) setup.py build --build-base $(abs_builddir)/src/config install $(DISTSETUPOPTS) --prefix=$(PYTHON_PREFIX) --root=$(DESTDIR) --record=$(abs_builddir)/src/config/.files; \
 	fi
 endif
 	for doc in $(SSSD_DOCS); do \
@@ -1481,7 +1677,15 @@ uninstall-hook:
 
 clean-local:
 if BUILD_PYTHON_BINDINGS
-	cd $(srcdir)/src/config; $(PYTHON) setup.py build --build-base $(abs_builddir)/src/config clean --all
+	if [ ! $(srcdir)/src/config/SSSDConfig/ipachangeconf.py -ef $(builddir)/src/config/SSSDConfig/ipachangeconf.py ]; then \
+		rm -f $(builddir)/src/config/SSSDConfig/ipachangeconf.py ; \
+	fi
+
+	if [ ! $(srcdir)/src/config/SSSDConfig/ipachangeconf.py -ef $(builddir)/src/config/SSSDConfig/ipachangeconf.py ]; then \
+		rm -f $(builddir)/src/config/SSSDConfig/sssd_upgrade_config.py ; \
+	fi
+
+	cd $(builddir)/src/config; $(PYTHON) setup.py build --build-base $(abs_builddir)/src/config clean --all
 endif
 	for doc in $(SSSD_DOCS); do \
 		rm -Rf $$doc; \

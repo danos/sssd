@@ -237,8 +237,8 @@ int ldap_get_options(TALLOC_CTX *memctx,
     if (strcasecmp(schema, "AD") == 0) {
         opts->schema_type = SDAP_SCHEMA_AD;
         default_attr_map = gen_ad_attr_map;
-        default_user_map = ad2008r2_user_map;
-        default_group_map = ad2008r2_group_map;
+        default_user_map = gen_ad2008r2_user_map;
+        default_group_map = gen_ad2008r2_group_map;
         default_netgroup_map = netgroup_map;
         default_service_map = service_map;
     } else {
@@ -289,7 +289,7 @@ int ldap_get_options(TALLOC_CTX *memctx,
 
     /* If there is no KDC, try the deprecated krb5_kdcip option, too */
     /* FIXME - this can be removed in a future version */
-    ret = krb5_try_kdcip(memctx, cdb, conf_path, opts->basic, SDAP_KRB5_KDC);
+    ret = krb5_try_kdcip(cdb, conf_path, opts->basic, SDAP_KRB5_KDC);
     if (ret != EOK) {
         DEBUG(1, ("sss_krb5_try_kdcip failed.\n"));
         goto done;
@@ -345,7 +345,10 @@ done:
 int ldap_get_sudo_options(TALLOC_CTX *memctx,
                           struct confdb_ctx *cdb,
                           const char *conf_path,
-                          struct sdap_options *opts)
+                          struct sdap_options *opts,
+                          bool *use_host_filter,
+                          bool *include_regexp,
+                          bool *include_netgroups)
 {
     const char *search_base;
     int ret;
@@ -389,6 +392,11 @@ int ldap_get_sudo_options(TALLOC_CTX *memctx,
         DEBUG(SSSDBG_OP_FAILURE, ("Could not get SUDO attribute map\n"));
         return ret;
     }
+
+    /* host filter */
+    *use_host_filter = dp_opt_get_bool(opts->basic, SDAP_SUDO_USE_HOST_FILTER);
+    *include_netgroups = dp_opt_get_bool(opts->basic, SDAP_SUDO_INCLUDE_NETGROUPS);
+    *include_regexp = dp_opt_get_bool(opts->basic, SDAP_SUDO_INCLUDE_REGEXP);
 
     return EOK;
 }
@@ -1033,6 +1041,7 @@ int sdap_gssapi_init(TALLOC_CTX *mem_ctx,
 {
     int ret;
     const char *krb5_servers;
+    const char *krb5_backup_servers;
     const char *krb5_realm;
     const char *krb5_opt_realm;
     struct krb5_service *service = NULL;
@@ -1042,9 +1051,7 @@ int sdap_gssapi_init(TALLOC_CTX *mem_ctx,
     if (tmp_ctx == NULL) return ENOMEM;
 
     krb5_servers = dp_opt_get_string(opts, SDAP_KRB5_KDC);
-    if (krb5_servers == NULL) {
-        DEBUG(1, ("Missing krb5_server option, using service discovery!\n"));
-    }
+    krb5_backup_servers = dp_opt_get_string(opts, SDAP_KRB5_BACKUP_KDC);
 
     krb5_opt_realm = dp_opt_get_string(opts, SDAP_KRB5_REALM);
     if (krb5_opt_realm == NULL) {
@@ -1064,7 +1071,7 @@ int sdap_gssapi_init(TALLOC_CTX *mem_ctx,
     }
 
     ret = krb5_service_init(mem_ctx, bectx, SSS_KRB5KDC_FO_SRV, krb5_servers,
-                            krb5_realm, &service);
+                            krb5_backup_servers, krb5_realm, &service);
     if (ret != EOK) {
         DEBUG(0, ("Failed to init KRB5 failover service!\n"));
         goto done;
@@ -1098,44 +1105,25 @@ done:
     return ret;
 }
 
-int sdap_service_init(TALLOC_CTX *memctx, struct be_ctx *ctx,
-                      const char *service_name, const char *dns_service_name,
-                      const char *urls, struct sdap_service **_service)
+errno_t sdap_urls_init(struct be_ctx *ctx,
+                       struct sdap_service *service,
+                       const char *service_name,
+                       const char *dns_service_name,
+                       const char *urls,
+                       bool primary)
 {
     TALLOC_CTX *tmp_ctx;
-    struct sdap_service *service;
-    LDAPURLDesc *lud;
-    char **list = NULL;
     char *srv_user_data;
-    int ret;
+    char **list = NULL;
+    LDAPURLDesc *lud;
+    errno_t ret;
     int i;
 
-    tmp_ctx = talloc_new(memctx);
+    tmp_ctx = talloc_new(NULL);
     if (!tmp_ctx) {
         return ENOMEM;
     }
 
-    service = talloc_zero(tmp_ctx, struct sdap_service);
-    if (!service) {
-        ret = ENOMEM;
-        goto done;
-    }
-
-    ret = be_fo_add_service(ctx, service_name);
-    if (ret != EOK) {
-        DEBUG(1, ("Failed to create failover service!\n"));
-        goto done;
-    }
-
-    service->name = talloc_strdup(service, service_name);
-    if (!service->name) {
-        ret = ENOMEM;
-        goto done;
-    }
-
-    if (!urls) {
-        urls = BE_SRV_IDENTIFIER;
-    }
 
     /* split server parm into a list */
     ret = split_on_separator(tmp_ctx, urls, ',', true, &list, NULL);
@@ -1189,10 +1177,76 @@ int sdap_service_init(TALLOC_CTX *memctx, struct be_ctx *ctx,
 
         talloc_steal(service, list[i]);
 
-        ret = be_fo_add_server(ctx, service->name,
-                               lud->lud_host, lud->lud_port, list[i]);
+        ret = be_fo_add_server(ctx, service->name, lud->lud_host,
+                               lud->lud_port, list[i], primary);
         ldap_free_urldesc(lud);
         if (ret) {
+            goto done;
+        }
+    }
+
+done:
+    talloc_free(tmp_ctx);
+    return ret;
+}
+
+int sdap_service_init(TALLOC_CTX *memctx, struct be_ctx *ctx,
+                      const char *service_name, const char *dns_service_name,
+                      const char *urls, const char *backup_urls,
+                      struct sdap_service **_service)
+{
+    TALLOC_CTX *tmp_ctx;
+    struct sdap_service *service;
+    int ret;
+
+    tmp_ctx = talloc_new(NULL);
+    if (!tmp_ctx) {
+        return ENOMEM;
+    }
+
+    service = talloc_zero(tmp_ctx, struct sdap_service);
+    if (!service) {
+        ret = ENOMEM;
+        goto done;
+    }
+
+    ret = be_fo_add_service(ctx, service_name);
+    if (ret != EOK) {
+        DEBUG(SSSDBG_CRIT_FAILURE, ("Failed to create failover service!\n"));
+        goto done;
+    }
+
+    service->name = talloc_strdup(service, service_name);
+    if (!service->name) {
+        ret = ENOMEM;
+        goto done;
+    }
+
+    if (!urls) {
+        if (backup_urls) {
+            DEBUG(SSSDBG_CONF_SETTINGS, ("Missing primary LDAP URL but "
+                                         "backup URL given - using it "
+                                         "as primary!\n"));
+            urls = backup_urls;
+            backup_urls = NULL;
+        }
+        else {
+            DEBUG(SSSDBG_CONF_SETTINGS, ("Missing primary and backup LDAP "
+                                         "URLs - using service discovery!\n"));
+            urls = BE_SRV_IDENTIFIER;
+        }
+    }
+
+    ret = sdap_urls_init(ctx, service, service_name, dns_service_name,
+                         urls, true);
+    if (ret != EOK) {
+        goto done;
+    }
+
+    if (backup_urls) {
+        ret = sdap_urls_init(ctx, service, service_name, dns_service_name,
+                             backup_urls, false);
+        if (ret != EOK) {
             goto done;
         }
     }
@@ -1200,7 +1254,7 @@ int sdap_service_init(TALLOC_CTX *memctx, struct be_ctx *ctx,
     ret = be_fo_service_add_callback(memctx, ctx, service->name,
                                      sdap_uri_callback, service);
     if (ret != EOK) {
-        DEBUG(1, ("Failed to add failover callback!\n"));
+        DEBUG(SSSDBG_CRIT_FAILURE, ("Failed to add failover callback!\n"));
         goto done;
     }
 
@@ -1303,7 +1357,8 @@ errno_t list_missing_attrs(TALLOC_CTX *mem_ctx,
         return ENOMEM;
     }
 
-    ret = build_attrs_from_map(tmp_ctx, map, map_size, &expected_attrs, &attr_count);
+    ret = build_attrs_from_map(tmp_ctx, map, map_size, NULL,
+                               &expected_attrs, &attr_count);
     if (ret != EOK) {
         goto done;
     }

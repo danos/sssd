@@ -30,6 +30,7 @@
 /* attribute of SUDORULE_SUBDIR
  * should be true if we have downloaded all rules atleast once */
 #define SYSDB_SUDO_AT_REFRESHED      "refreshed"
+#define SYSDB_SUDO_AT_LAST_FULL_REFRESH "sudoLastFullRefreshTime"
 
 /* sysdb attributes */
 #define SYSDB_SUDO_CACHE_AT_OC         "sudoRule"
@@ -52,6 +53,7 @@
 #define SYSDB_SUDO_FILTER_UID            0x02       /* uid                  */
 #define SYSDB_SUDO_FILTER_GROUPS         0x04       /* groups               */
 #define SYSDB_SUDO_FILTER_NGRS           0x08       /* netgroups            */
+#define SYSDB_SUDO_FILTER_ONLY_EXPIRED   0x10       /* only expired         */
 #define SYSDB_SUDO_FILTER_INCLUDE_ALL    0x20       /* ALL                  */
 #define SYSDB_SUDO_FILTER_INCLUDE_DFL    0x40       /* include cn=default   */
 #define SYSDB_SUDO_FILTER_USERINFO       SYSDB_SUDO_FILTER_USERNAME \
@@ -81,14 +83,8 @@ sysdb_save_sudorule(struct sysdb_ctx *sysdb_ctx,
                    const char *rule_name,
                    struct sysdb_attrs *attrs);
 
-errno_t sysdb_sudo_set_refreshed(struct sysdb_ctx *sysdb,
-                                 bool refreshed);
-
-errno_t sysdb_sudo_get_refreshed(struct sysdb_ctx *sysdb,
-                                 bool *refreshed);
-
-char **sysdb_sudo_build_sudouser(TALLOC_CTX *mem_ctx, const char *username,
-                                 uid_t uid, char **groupnames, bool include_all);
+errno_t sysdb_sudo_set_last_full_refresh(struct sysdb_ctx *sysdb, time_t value);
+errno_t sysdb_sudo_get_last_full_refresh(struct sysdb_ctx *sysdb, time_t *value);
 
 errno_t sysdb_sudo_purge_all(struct sysdb_ctx *sysdb);
 
@@ -97,8 +93,5 @@ errno_t sysdb_sudo_purge_byname(struct sysdb_ctx *sysdb,
 
 errno_t sysdb_sudo_purge_byfilter(struct sysdb_ctx *sysdb,
                                   const char *filter);
-
-errno_t sysdb_sudo_purge_bysudouser(struct sysdb_ctx *sysdb,
-                                    char **sudoUser);
 
 #endif /* _SYSDB_SUDO_H_ */

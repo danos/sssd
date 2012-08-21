@@ -41,10 +41,22 @@
 #define KERBEROS_PWEXPIRE_WARNING_TIME (7 * 24 * 60 * 60)
 #define KEYTAB_CLEAN_NAME keytab_name ? keytab_name : "default"
 
+#if defined HAVE_KRB5_CC_CACHE_MATCH && defined HAVE_KRB5_CC_GET_FULL_NAME
+#define HAVE_KRB5_DIRCACHE 1
+#endif
+
 const char * KRB5_CALLCONV sss_krb5_get_error_message (krb5_context,
                                                    krb5_error_code);
 
 void KRB5_CALLCONV sss_krb5_free_error_message(krb5_context, const char *);
+
+#define KRB5_DEBUG(level, errctx, krb5_error) do { \
+    const char *__krb5_error_msg; \
+    __krb5_error_msg = sss_krb5_get_error_message(errctx, krb5_error); \
+    DEBUG(level, ("%d: [%d][%s]\n", __LINE__, krb5_error, __krb5_error_msg)); \
+    sss_log(SSS_LOG_ERR, "%s", __krb5_error_msg); \
+    sss_krb5_free_error_message(errctx, __krb5_error_msg); \
+} while(0)
 
 krb5_error_code KRB5_CALLCONV sss_krb5_get_init_creds_opt_alloc(
                                                  krb5_context context,
@@ -55,7 +67,8 @@ void KRB5_CALLCONV sss_krb5_get_init_creds_opt_free (krb5_context context,
 
 void KRB5_CALLCONV sss_krb5_free_unparsed_name(krb5_context context, char *name);
 
-krb5_error_code check_for_valid_tgt(const char *ccname, const char *realm,
+krb5_error_code check_for_valid_tgt(krb5_context context,
+                                    krb5_ccache ccache, const char *realm,
                                     const char *client_princ_str, bool *result);
 
 int sss_krb5_verify_keytab(const char *principal,
@@ -122,6 +135,24 @@ sss_krb5_unparse_name_flags(krb5_context context, krb5_const_principal principal
 void sss_krb5_get_init_creds_opt_set_canonicalize(krb5_get_init_creds_opt *opts,
                                                   int canonicalize);
 
+enum sss_krb5_cc_type {
+    SSS_KRB5_TYPE_FILE,
+#ifdef HAVE_KRB5_DIRCACHE
+    SSS_KRB5_TYPE_DIR,
+#endif /* HAVE_KRB5_DIRCACHE */
+    SSS_KRB5_TYPE_UNKNOWN
+};
+
+enum sss_krb5_cc_type
+sss_krb5_get_type(const char *full_location);
+const char *
+sss_krb5_residual_by_type(const char *full_location, enum sss_krb5_cc_type type);
+const char *
+sss_krb5_cc_file_path(const char *full_location);
+const char *
+sss_krb5_residual_check_type(const char *full_location,
+                             enum sss_krb5_cc_type expected_type);
+
 /* === Compatibility routines for the Heimdal Kerberos implementation === */
 
 void sss_krb5_princ_realm(krb5_context context, krb5_const_principal princ,
@@ -136,13 +167,5 @@ typedef krb5_ticket_times sss_krb5_ticket_times;
 #elif HAVE_KRB5_TIMES
 typedef krb5_times sss_krb5_ticket_times;
 #endif
-
-krb5_error_code
-sss_krb5_read_etypes_for_keytab(TALLOC_CTX *mem_ctx,
-                                krb5_context context,
-                                krb5_keytab keytab,
-                                krb5_principal princ,
-                                krb5_enctype **etype_list,
-                                int *n_etype_list);
 
 #endif /* __SSS_KRB5_H__ */

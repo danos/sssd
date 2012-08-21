@@ -31,6 +31,7 @@
 
 struct dp_option default_basic_opts[] = {
     { "ldap_uri", DP_OPT_STRING, NULL_STRING, NULL_STRING },
+    { "ldap_backup_uri", DP_OPT_STRING, NULL_STRING, NULL_STRING },
     { "ldap_search_base", DP_OPT_STRING, NULL_STRING, NULL_STRING },
     { "ldap_default_bind_dn", DP_OPT_STRING, NULL_STRING, NULL_STRING },
     { "ldap_default_authtok_type", DP_OPT_STRING, { "password" }, NULL_STRING},
@@ -47,8 +48,13 @@ struct dp_option default_basic_opts[] = {
     { "ldap_group_search_filter", DP_OPT_STRING, NULL_STRING, NULL_STRING },
     { "ldap_service_search_base", DP_OPT_STRING, NULL_STRING, NULL_STRING },
     { "ldap_sudo_search_base", DP_OPT_STRING, NULL_STRING, NULL_STRING },
-    { "ldap_sudo_refresh_enabled", DP_OPT_BOOL, BOOL_FALSE, BOOL_FALSE },
-    { "ldap_sudo_refresh_timeout", DP_OPT_NUMBER, { .number = 300 }, NULL_NUMBER },
+    { "ldap_sudo_full_refresh_interval", DP_OPT_NUMBER, { .number = 21600 }, NULL_NUMBER }, /* 360 mins */
+    { "ldap_sudo_smart_refresh_interval", DP_OPT_NUMBER, { .number = 900 }, NULL_NUMBER }, /* 15 mins */
+    { "ldap_sudo_use_host_filter", DP_OPT_BOOL, BOOL_TRUE, BOOL_TRUE },
+    { "ldap_sudo_hostnames", DP_OPT_STRING, NULL_STRING, NULL_STRING },
+    { "ldap_sudo_ip", DP_OPT_STRING, NULL_STRING, NULL_STRING },
+    { "ldap_sudo_include_netgroups", DP_OPT_BOOL, BOOL_TRUE, BOOL_TRUE },
+    { "ldap_sudo_include_regexp", DP_OPT_BOOL, BOOL_TRUE, BOOL_TRUE },
     { "ldap_autofs_search_base", DP_OPT_STRING, NULL_STRING, NULL_STRING },
     { "ldap_schema", DP_OPT_STRING, { "rfc2307" }, NULL_STRING },
     { "ldap_offline_timeout", DP_OPT_NUMBER, { .number = 60 }, NULL_NUMBER },
@@ -70,6 +76,7 @@ struct dp_option default_basic_opts[] = {
     { "ldap_krb5_init_creds", DP_OPT_BOOL, BOOL_TRUE, BOOL_TRUE },
     /* use the same parm name as the krb5 module so we set it only once */
     { "krb5_server", DP_OPT_STRING, NULL_STRING, NULL_STRING },
+    { "krb5_backup_server", DP_OPT_STRING, NULL_STRING, NULL_STRING },
     { "krb5_realm", DP_OPT_STRING, NULL_STRING, NULL_STRING },
     { "krb5_canonicalize", DP_OPT_BOOL, BOOL_TRUE, BOOL_TRUE },
     { "ldap_pwd_policy", DP_OPT_STRING, { "none" }, NULL_STRING },
@@ -84,6 +91,7 @@ struct dp_option default_basic_opts[] = {
     { "ldap_account_expire_policy", DP_OPT_STRING, NULL_STRING, NULL_STRING },
     { "ldap_access_order", DP_OPT_STRING, { "filter" }, NULL_STRING },
     { "ldap_chpass_uri", DP_OPT_STRING, NULL_STRING, NULL_STRING },
+    { "ldap_chpass_backup_uri", DP_OPT_STRING, NULL_STRING, NULL_STRING },
     { "ldap_chpass_dns_service_name", DP_OPT_STRING, NULL_STRING, NULL_STRING },
     { "ldap_chpass_update_last_change", DP_OPT_BOOL, BOOL_FALSE, BOOL_FALSE },
     { "ldap_enumeration_search_timeout", DP_OPT_NUMBER, { .number = 60 }, NULL_NUMBER },
@@ -102,6 +110,8 @@ struct dp_option default_basic_opts[] = {
     { "ldap_idmap_autorid_compat", DP_OPT_BOOL, BOOL_FALSE, BOOL_FALSE },
     { "ldap_idmap_default_domain", DP_OPT_STRING, NULL_STRING, NULL_STRING },
     { "ldap_idmap_default_domain_sid", DP_OPT_STRING, NULL_STRING, NULL_STRING },
+    { "ldap_groups_use_matching_rule_in_chain", DP_OPT_BOOL, BOOL_FALSE, BOOL_FALSE },
+    { "ldap_initgroups_use_matching_rule_in_chain", DP_OPT_BOOL, BOOL_TRUE, BOOL_FALSE },
     DP_OPTION_TERMINATOR
 };
 
@@ -229,7 +239,7 @@ struct sdap_attr_map rfc2307bis_group_map[] = {
     SDAP_ATTR_MAP_TERMINATOR
 };
 
-struct sdap_attr_map ad2008r2_user_map[] = {
+struct sdap_attr_map gen_ad2008r2_user_map[] = {
     { "ldap_user_object_class", "user", SYSDB_USER_CLASS, NULL },
     { "ldap_user_name", "sAMAccountName", SYSDB_NAME, NULL },
     { "ldap_user_pwd", "unixUserPassword", SYSDB_PWD, NULL },
@@ -268,7 +278,7 @@ struct sdap_attr_map ad2008r2_user_map[] = {
     SDAP_ATTR_MAP_TERMINATOR
 };
 
-struct sdap_attr_map ad2008r2_group_map[] = {
+struct sdap_attr_map gen_ad2008r2_group_map[] = {
     { "ldap_group_object_class", "group", SYSDB_GROUP_CLASS, NULL },
     { "ldap_group_name", "name", SYSDB_NAME, NULL },
     { "ldap_group_pwd", NULL, SYSDB_PWD, NULL },
@@ -304,6 +314,7 @@ struct sdap_attr_map native_sudorule_map[] = {
     { "ldap_sudorule_notbefore", "sudoNotBefore", SYSDB_SUDO_CACHE_AT_NOTBEFORE, NULL },
     { "ldap_sudorule_notafter", "sudoNotAfter", SYSDB_SUDO_CACHE_AT_NOTAFTER, NULL },
     { "ldap_sudorule_order", "sudoOrder", SYSDB_SUDO_CACHE_AT_ORDER, NULL },
+    { "ldap_sudorule_entry_usn", NULL, SYSDB_USN, NULL },
     SDAP_ATTR_MAP_TERMINATOR
 };
 

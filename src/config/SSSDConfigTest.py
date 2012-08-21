@@ -8,7 +8,16 @@ import unittest
 import os
 from stat import *
 
+import sys
+
+srcdir = os.getenv('srcdir')
+if srcdir:
+    sys.path.append("./src/config")
+    srcdir = srcdir + "/src/config"
+else:
+    srcdir = "."
 import SSSDConfig
+
 
 class SSSDConfigTestValid(unittest.TestCase):
     def setUp(self):
@@ -274,7 +283,8 @@ class SSSDConfigTestSSSDService(unittest.TestCase):
             'debug_to_files',
             'command',
             'reconnection_retries',
-            'fd_limit']
+            'fd_limit',
+            'client_idle_timeout']
 
         self.assertTrue(type(options) == dict,
                         "Options should be a dictionary")
@@ -486,6 +496,7 @@ class SSSDConfigTestSSSDDomain(unittest.TestCase):
             'entry_cache_netgroup_timeout',
             'entry_cache_service_timeout',
             'entry_cache_autofs_timeout',
+            'entry_cache_sudo_timeout',
             'lookup_family_order',
             'account_cache_expiration',
             'dns_resolver_timeout',
@@ -494,6 +505,7 @@ class SSSDConfigTestSSSDDomain(unittest.TestCase):
             'case_sensitive',
             'override_homedir',
             'fallback_homedir',
+            'override_shell',
             'pwd_expiration_warning',
             'id_provider',
             'auth_provider',
@@ -569,8 +581,10 @@ class SSSDConfigTestSSSDDomain(unittest.TestCase):
         backup_list = control_list[:]
         control_list.extend(
             ['krb5_server',
+             'krb5_backup_server',
              'krb5_realm',
              'krb5_kpasswd',
+             'krb5_backup_kpasswd',
              'krb5_ccachedir',
              'krb5_ccname_template',
              'krb5_keytab',
@@ -693,7 +707,9 @@ class SSSDConfigTestSSSDDomain(unittest.TestCase):
         domain = SSSDConfig.SSSDDomain('sssd', self.schema)
 
         control_provider_dict = {
-            'ipa': ['id', 'auth', 'access', 'chpass', 'autofs', 'session' ],
+            'ipa': ['id', 'auth', 'access', 'chpass', 'autofs', 'session',
+                    'hostid', 'subdomains'],
+            'ad': ['id', 'auth', 'access', 'chpass'],
             'local': ['id', 'auth', 'chpass'],
             'ldap': ['id', 'auth', 'access', 'chpass', 'sudo', 'autofs'],
             'krb5': ['auth', 'access', 'chpass'],
@@ -722,9 +738,11 @@ class SSSDConfigTestSSSDDomain(unittest.TestCase):
         options = domain.list_provider_options('krb5', 'auth')
         control_list = [
             'krb5_server',
+            'krb5_backup_server',
             'krb5_kdcip',
             'krb5_realm',
             'krb5_kpasswd',
+            'krb5_backup_kpasswd',
             'krb5_ccachedir',
             'krb5_ccname_template',
             'krb5_keytab',
@@ -816,6 +834,7 @@ class SSSDConfigTestSSSDDomain(unittest.TestCase):
             'entry_cache_netgroup_timeout',
             'entry_cache_service_timeout',
             'entry_cache_autofs_timeout',
+            'entry_cache_sudo_timeout',
             'account_cache_expiration',
             'lookup_family_order',
             'dns_resolver_timeout',
@@ -824,6 +843,7 @@ class SSSDConfigTestSSSDDomain(unittest.TestCase):
             'case_sensitive',
             'override_homedir',
             'fallback_homedir',
+            'override_shell',
             'pwd_expiration_warning',
             'id_provider',
             'auth_provider',
@@ -899,9 +919,11 @@ class SSSDConfigTestSSSDDomain(unittest.TestCase):
         backup_list = control_list[:]
         control_list.extend(
             ['krb5_server',
+             'krb5_backup_server',
              'krb5_kdcip',
              'krb5_realm',
              'krb5_kpasswd',
+             'krb5_backup_kpasswd',
              'krb5_ccachedir',
              'krb5_ccname_template',
              'krb5_keytab',
@@ -1165,7 +1187,8 @@ class SSSDConfigTestSSSDConfig(unittest.TestCase):
             'pam',
             'sudo',
             'autofs',
-            'ssh']
+            'ssh',
+            'pac']
         for section in control_list:
             self.assertTrue(sssdconfig.has_section(section),
                             "Section [%s] missing" %
@@ -1257,7 +1280,8 @@ class SSSDConfigTestSSSDConfig(unittest.TestCase):
             'nss',
             'sudo',
             'autofs',
-            'ssh']
+            'ssh',
+            'pac']
         service_list = sssdconfig.list_services()
         for service in control_list:
             self.assertTrue(service in service_list,
@@ -1776,14 +1800,6 @@ class SSSDConfigTestSSSDConfig(unittest.TestCase):
 
 if __name__ == "__main__":
     error = 0
-
-    import os
-    import sys
-    srcdir = os.getenv('srcdir')
-    if srcdir:
-        srcdir = srcdir + "/src/config"
-    else:
-        srcdir = "."
 
     suite = unittest.TestLoader().loadTestsFromTestCase(SSSDConfigTestSSSDService)
     res = unittest.TextTestRunner().run(suite)

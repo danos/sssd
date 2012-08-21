@@ -51,7 +51,7 @@ enum bet_type {
     BET_CHPASS,
     BET_SUDO,
     BET_AUTOFS,
-    BET_SESSION,
+    BET_SELINUX,
     BET_HOSTID,
     BET_SUBDOMAINS,
     BET_MAX
@@ -107,6 +107,7 @@ struct be_ctx {
     struct be_cb *online_cb_list;
     bool run_online_cb;
     struct be_cb *offline_cb_list;
+    struct be_cb *reconnect_cb_list;
 
     struct be_offline_status offstat;
 
@@ -131,7 +132,8 @@ struct bet_ops {
     be_req_fn_t finalize;
 };
 
-#define MAX_BE_REQ_RESTARTS 2
+#define REQ_PHASE_ACCESS 0
+#define REQ_PHASE_SELINUX 1
 
 struct be_req {
     struct be_client *becli;
@@ -141,7 +143,11 @@ struct be_req {
     be_async_callback_t fn;
     void *pvt;
 
-    int restarts;
+    /* This is utilized in access provider
+     * request handling to indicate if access or
+     * selinux provider is calling the callback.
+     */
+    int phase;
 
     struct sss_domain_info *domain;
     struct sysdb_ctx *sysdb;
@@ -158,19 +164,16 @@ struct be_acct_req {
 
 struct be_sudo_req {
     uint32_t type;
-    char *username;
-    uid_t uid;
-    char **groups;
+    char **rules;
 };
 
 struct be_autofs_req {
     char *mapname;
 };
 
-struct be_get_subdomains_req {
+struct be_subdom_req {
     bool force;
     char *domain_hint;
-    struct subdomain_info **domain_list;
 };
 
 struct be_host_req {
@@ -182,6 +185,13 @@ struct be_host_req {
 
 bool be_is_offline(struct be_ctx *ctx);
 void be_mark_offline(struct be_ctx *ctx);
+
+int be_add_reconnect_cb(TALLOC_CTX *mem_ctx,
+                        struct be_ctx *ctx,
+                        be_callback_t cb,
+                        void *pvt,
+                        struct be_cb **reconnect_cb);
+void be_run_reconnect_cb(struct be_ctx *be);
 
 int be_add_online_cb(TALLOC_CTX *mem_ctx,
                      struct be_ctx *ctx,
@@ -220,7 +230,8 @@ int be_fo_add_srv_server(struct be_ctx *ctx,
                          enum be_fo_protocol proto,
                          bool proto_fallback, void *user_data);
 int be_fo_add_server(struct be_ctx *ctx, const char *service_name,
-                     const char *server, int port, void *user_data);
+                     const char *server, int port, void *user_data,
+                     bool primary);
 
 struct tevent_req *be_resolve_server_send(TALLOC_CTX *memctx,
                                           struct tevent_context *ev,

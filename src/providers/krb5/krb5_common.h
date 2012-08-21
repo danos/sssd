@@ -49,6 +49,7 @@
 
 enum krb5_opts {
     KRB5_KDC = 0,
+    KRB5_BACKUP_KDC,
     KRB5_REALM,
     KRB5_CCACHEDIR,
     KRB5_CCNAME_TMPL,
@@ -56,6 +57,7 @@ enum krb5_opts {
     KRB5_KEYTAB,
     KRB5_VALIDATE,
     KRB5_KPASSWD,
+    KRB5_BACKUP_KPASSWD,
     KRB5_STORE_PASSWORD_IF_OFFLINE,
     KRB5_RENEWABLE_LIFETIME,
     KRB5_LIFETIME,
@@ -84,6 +86,7 @@ struct krb5_service {
 struct fo_service;
 struct deferred_auth_ctx;
 struct renew_tgt_ctx;
+struct sss_krb5_cc_be;
 
 struct krb5_ctx {
     /* opts taken from kinit */
@@ -115,6 +118,7 @@ struct krb5_ctx {
     struct krb5_service *kpasswd_service;
     int child_debug_fd;
 
+    struct sss_krb5_cc_be *cc_be;
     pcre *illegal_path_re;
 
     struct deferred_auth_ctx *deferred_auth_ctx;
@@ -135,9 +139,8 @@ errno_t check_and_export_options(struct dp_option *opts,
                                  struct sss_domain_info *dom,
                                  struct krb5_ctx *krb5_ctx);
 
-errno_t krb5_try_kdcip(TALLOC_CTX *memctx, struct confdb_ctx *cdb,
-                       const char *conf_path, struct dp_option *opts,
-                       int opt_id);
+errno_t krb5_try_kdcip(struct confdb_ctx *cdb, const char *conf_path,
+                       struct dp_option *opts, int opt_id);
 
 errno_t krb5_get_options(TALLOC_CTX *memctx, struct confdb_ctx *cdb,
                          const char *conf_path, struct dp_option **_opts);
@@ -146,7 +149,9 @@ errno_t write_krb5info_file(const char *realm, const char *kdc,
                             const char *service);
 
 int krb5_service_init(TALLOC_CTX *memctx, struct be_ctx *ctx,
-                      const char *service_name, const char *servers,
+                      const char *service_name,
+                      const char *primary_servers,
+                      const char *backup_servers,
                       const char *realm, struct krb5_service **_service);
 
 void remove_krb5_info_files_callback(void *pvt);
@@ -171,4 +176,9 @@ errno_t remove_krb5_info_files(TALLOC_CTX *mem_ctx, const char *realm);
 
 errno_t krb5_get_simple_upn(TALLOC_CTX *mem_ctx, struct krb5_ctx *krb5_ctx,
                             const char *username, const char **_upn);
+
+int sssm_krb5_auth_init(struct be_ctx *bectx,
+                        struct bet_ops **ops,
+                        void **pvt_auth_data);
+
 #endif /* __KRB5_COMMON_H__ */

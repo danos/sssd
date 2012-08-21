@@ -35,6 +35,7 @@ struct ipa_service {
 enum ipa_basic_opt {
     IPA_DOMAIN = 0,
     IPA_SERVER,
+    IPA_BACKUP_SERVER,
     IPA_HOSTNAME,
     IPA_DYNDNS_UPDATE,
     IPA_DYNDNS_IFACE,
@@ -42,11 +43,13 @@ enum ipa_basic_opt {
     IPA_HOST_SEARCH_BASE,
     IPA_SELINUX_SEARCH_BASE,
     IPA_SUBDOMAINS_SEARCH_BASE,
+    IPA_MASTER_DOMAIN_SEARCH_BASE,
     IPA_KRB5_REALM,
     IPA_HBAC_REFRESH,
     IPA_HBAC_DENY_METHOD,
     IPA_HBAC_SUPPORT_SRCHOST,
     IPA_AUTOMOUNT_LOCATION,
+    IPA_RANGES_SEARCH_BASE,
 
     IPA_OPTS_BASIC /* opts counter */
 };
@@ -125,6 +128,8 @@ struct ipa_options {
     struct sdap_search_base **hbac_search_bases;
     struct sdap_search_base **selinux_search_bases;
     struct sdap_search_base **subdomains_search_bases;
+    struct sdap_search_base **master_domain_search_bases;
+    struct sdap_search_base **ranges_search_bases;
     struct ipa_service *service;
 
     /* id provider */
@@ -167,7 +172,8 @@ int ipa_autofs_init(struct be_ctx *be_ctx,
                     void **pvt_data);
 
 int ipa_service_init(TALLOC_CTX *memctx, struct be_ctx *ctx,
-                     const char *servers,
+                     const char *primary_servers,
+                     const char *backup_servers,
                      struct ipa_options *options,
                      struct ipa_service **_service);
 

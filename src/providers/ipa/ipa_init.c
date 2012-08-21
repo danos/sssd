@@ -30,12 +30,13 @@
 #include "util/child_common.h"
 #include "providers/ipa/ipa_common.h"
 #include "providers/krb5/krb5_auth.h"
+#include "providers/krb5/krb5_init_shared.h"
 #include "providers/ipa/ipa_id.h"
 #include "providers/ipa/ipa_auth.h"
 #include "providers/ipa/ipa_access.h"
 #include "providers/ipa/ipa_hostid.h"
 #include "providers/ipa/ipa_dyndns.h"
-#include "providers/ipa/ipa_session.h"
+#include "providers/ipa/ipa_selinux.h"
 #include "providers/ldap/sdap_access.h"
 #include "providers/ipa/ipa_subdomains.h"
 
@@ -63,8 +64,8 @@ struct bet_ops ipa_access_ops = {
     .finalize = NULL
 };
 
-struct bet_ops ipa_session_ops = {
-    .handler = ipa_session_handler,
+struct bet_ops ipa_selinux_ops = {
+    .handler = ipa_selinux_handler,
     .finalize = NULL
 };
 
@@ -75,14 +76,10 @@ struct bet_ops ipa_hostid_ops = {
 };
 #endif
 
-struct bet_ops ipa_subdomains_ops = {
-    .handler = ipa_subdomains_handler,
-    .finalize = NULL
-};
-
 int common_ipa_init(struct be_ctx *bectx)
 {
     const char *ipa_servers;
+    const char *ipa_backup_servers;
     int ret;
 
     ret = ipa_get_options(bectx, bectx->cdb,
@@ -93,11 +90,10 @@ int common_ipa_init(struct be_ctx *bectx)
     }
 
     ipa_servers = dp_opt_get_string(ipa_options->basic, IPA_SERVER);
-    if (!ipa_servers) {
-        DEBUG(1, ("Missing ipa_server option - using service discovery!\n"));
-    }
+    ipa_backup_servers = dp_opt_get_string(ipa_options->basic, IPA_BACKUP_SERVER);
 
-    ret = ipa_service_init(ipa_options, bectx, ipa_servers, ipa_options,
+    ret = ipa_service_init(ipa_options, bectx, ipa_servers,
+                           ipa_backup_servers, ipa_options,
                            &ipa_options->service);
     if (ret != EOK) {
         DEBUG(0, ("Failed to init IPA failover service!\n"));
@@ -231,8 +227,6 @@ int sssm_ipa_auth_init(struct be_ctx *bectx,
     struct krb5_ctx *krb5_auth_ctx;
     struct sdap_auth_ctx *sdap_auth_ctx;
     struct bet_ops *id_ops;
-    FILE *debug_filep;
-    unsigned v;
     int ret;
 
     if (!ipa_options) {
@@ -305,51 +299,13 @@ int sssm_ipa_auth_init(struct be_ctx *bectx,
         goto done;
     }
 
-    if (dp_opt_get_bool(krb5_auth_ctx->opts, KRB5_STORE_PASSWORD_IF_OFFLINE)) {
-        ret = init_delayed_online_authentication(krb5_auth_ctx, bectx,
-                                                 bectx->ev);
-        if (ret != EOK) {
-            DEBUG(1, ("init_delayed_online_authentication failed.\n"));
-            goto done;
-        }
-    }
-
-    ret = check_and_export_options(krb5_auth_ctx->opts, bectx->domain,
-                                   krb5_auth_ctx);
+    /* Initialize features needed by the krb5_child */
+    ret = krb5_child_init(krb5_auth_ctx, bectx);
     if (ret != EOK) {
-        DEBUG(1, ("check_and_export_opts failed.\n"));
+        DEBUG(SSSDBG_FATAL_FAILURE,
+              ("Could not initialize krb5_child settings: [%s]\n",
+               strerror(ret)));
         goto done;
-    }
-
-    ret = krb5_install_offline_callback(bectx, krb5_auth_ctx);
-    if (ret != EOK) {
-        DEBUG(1, ("krb5_install_offline_callback failed.\n"));
-        goto done;
-    }
-
-    ret = krb5_install_sigterm_handler(bectx->ev, krb5_auth_ctx);
-    if (ret != EOK) {
-        DEBUG(1, ("krb5_install_sigterm_handler failed.\n"));
-        goto done;
-    }
-
-    if (debug_to_file != 0) {
-        ret = open_debug_file_ex("krb5_child", &debug_filep);
-        if (ret != EOK) {
-            DEBUG(0, ("Error setting up logging (%d) [%s]\n",
-                    ret, strerror(ret)));
-            goto done;
-        }
-
-        krb5_auth_ctx->child_debug_fd = fileno(debug_filep);
-        if (krb5_auth_ctx->child_debug_fd == -1) {
-            DEBUG(0, ("fileno failed [%d][%s]\n", errno, strerror(errno)));
-            ret = errno;
-            goto done;
-        }
-
-        v = fcntl(krb5_auth_ctx->child_debug_fd, F_GETFD, 0);
-        fcntl(krb5_auth_ctx->child_debug_fd, F_SETFD, v & ~FD_CLOEXEC);
     }
 
     *ops = &ipa_auth_ops;
@@ -425,38 +381,38 @@ done:
     return ret;
 }
 
-int sssm_ipa_session_init(struct be_ctx *bectx,
+int sssm_ipa_selinux_init(struct be_ctx *bectx,
                           struct bet_ops **ops,
                           void **pvt_data)
 {
     int ret;
-    struct ipa_session_ctx *session_ctx;
+    struct ipa_selinux_ctx *selinux_ctx;
     struct ipa_options *opts;
 
-    session_ctx = talloc_zero(bectx, struct ipa_session_ctx);
-    if (session_ctx == NULL) {
+    selinux_ctx = talloc_zero(bectx, struct ipa_selinux_ctx);
+    if (selinux_ctx == NULL) {
         DEBUG(SSSDBG_CRIT_FAILURE, ("talloc_zero failed.\n"));
         return ENOMEM;
     }
 
-    ret = sssm_ipa_id_init(bectx, ops, (void **) &session_ctx->id_ctx);
+    ret = sssm_ipa_id_init(bectx, ops, (void **) &selinux_ctx->id_ctx);
     if (ret != EOK) {
         DEBUG(SSSDBG_CRIT_FAILURE, ("sssm_ipa_id_init failed.\n"));
         goto done;
     }
 
-    opts = session_ctx->id_ctx->ipa_options;
+    opts = selinux_ctx->id_ctx->ipa_options;
 
-    session_ctx->hbac_search_bases = opts->hbac_search_bases;
-    session_ctx->host_search_bases = opts->host_search_bases;
-    session_ctx->selinux_search_bases = opts->selinux_search_bases;
+    selinux_ctx->hbac_search_bases = opts->hbac_search_bases;
+    selinux_ctx->host_search_bases = opts->host_search_bases;
+    selinux_ctx->selinux_search_bases = opts->selinux_search_bases;
 
-    *ops = &ipa_session_ops;
-    *pvt_data = session_ctx;
+    *ops = &ipa_selinux_ops;
+    *pvt_data = selinux_ctx;
 
 done:
     if (ret != EOK) {
-        talloc_free(session_ctx);
+        talloc_free(selinux_ctx);
     }
     return ret;
 }
@@ -522,32 +478,22 @@ int sssm_ipa_autofs_init(struct be_ctx *bectx,
 
 int sssm_ipa_subdomains_init(struct be_ctx *bectx,
                              struct bet_ops **ops,
-                         void **pvt_data)
+                             void **pvt_data)
 {
     int ret;
-    struct ipa_subdomains_ctx *subdomains_ctx;
     struct ipa_id_ctx *id_ctx;
-
-    subdomains_ctx = talloc_zero(bectx, struct ipa_subdomains_ctx);
-    if (subdomains_ctx == NULL) {
-        DEBUG(SSSDBG_CRIT_FAILURE, ("talloc_zero failed.\n"));
-        return ENOMEM;
-    }
 
     ret = sssm_ipa_id_init(bectx, ops, (void **) &id_ctx);
     if (ret != EOK) {
         DEBUG(SSSDBG_CRIT_FAILURE, ("sssm_ipa_id_init failed.\n"));
-        goto done;
+        return ret;
     }
-    subdomains_ctx->sdap_id_ctx = id_ctx->sdap_id_ctx;
-    subdomains_ctx->search_bases = id_ctx->ipa_options->subdomains_search_bases;
 
-    *ops = &ipa_subdomains_ops;
-    *pvt_data = subdomains_ctx;
-
-done:
+    ret = ipa_subdom_init(bectx, id_ctx, ops, pvt_data);
     if (ret != EOK) {
-        talloc_free(subdomains_ctx);
+        DEBUG(SSSDBG_CRIT_FAILURE, ("ipa_subdom_init failed.\n"));
+        return ret;
     }
-    return ret;
+
+    return EOK;
 }

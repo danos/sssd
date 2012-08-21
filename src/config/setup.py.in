@@ -25,12 +25,8 @@ from distutils.core import setup
 
 setup(
     name='SSSDConfig',
-    version='1',
+    version='@VERSION@',
     license='GPLv3+',
     url='http://fedorahosted.org/sssd',
-    py_modules=[
-    'SSSDConfig',
-    'ipachangeconf',
-    'sssd_upgrade_config',
-    ],
+    packages=['SSSDConfig'],
 )

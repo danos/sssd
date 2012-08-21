@@ -196,13 +196,13 @@ fail:
     return ret;
 }
 
-static int sdap_initgr_common_store(struct sysdb_ctx *sysdb,
-                                    struct sdap_options *opts,
-                                    const char *name,
-                                    enum sysdb_member_type type,
-                                    char **sysdb_grouplist,
-                                    struct sysdb_attrs **ldap_groups,
-                                    int ldap_groups_count)
+int sdap_initgr_common_store(struct sysdb_ctx *sysdb,
+                             struct sdap_options *opts,
+                             const char *name,
+                             enum sysdb_member_type type,
+                             char **sysdb_grouplist,
+                             struct sysdb_attrs **ldap_groups,
+                             int ldap_groups_count)
 {
     TALLOC_CTX *tmp_ctx;
     char **ldap_grouplist = NULL;
@@ -323,6 +323,7 @@ struct tevent_req *sdap_initgr_rfc2307_send(TALLOC_CTX *memctx,
 {
     struct tevent_req *req;
     struct sdap_initgr_rfc2307_state *state;
+    const char **attr_filter;
     char *clean_name;
     errno_t ret;
 
@@ -353,8 +354,17 @@ struct tevent_req *sdap_initgr_rfc2307_send(TALLOC_CTX *memctx,
         return NULL;
     }
 
-    ret = build_attrs_from_map(state, opts->group_map,
-                               SDAP_OPTS_GROUP, &state->attrs, NULL);
+    attr_filter = talloc_array(state, const char *, 2);
+    if (!attr_filter) {
+        talloc_free(req);
+        return NULL;
+    }
+
+    attr_filter[0] = opts->group_map[SDAP_AT_GROUP_MEMBER].name;
+    attr_filter[1] = NULL;
+
+    ret = build_attrs_from_map(state, opts->group_map, SDAP_OPTS_GROUP,
+                               attr_filter, &state->attrs, NULL);
     if (ret != EOK) {
         talloc_free(req);
         return NULL;
@@ -434,10 +444,7 @@ static void sdap_initgr_rfc2307_process(struct tevent_req *subreq)
     struct sdap_initgr_rfc2307_state *state;
     struct sysdb_attrs **ldap_groups;
     char **sysdb_grouplist = NULL;
-    struct ldb_message *msg;
-    struct ldb_message_element *groups;
     size_t count;
-    const char *attrs[2];
     int ret;
     int i;
 
@@ -489,39 +496,11 @@ static void sdap_initgr_rfc2307_process(struct tevent_req *subreq)
     }
 
     /* Search for all groups for which this user is a member */
-    attrs[0] = SYSDB_MEMBEROF;
-    attrs[1] = NULL;
-
-    ret = sysdb_search_user_by_name(state, state->sysdb, state->name,
-                                    attrs, &msg);
+    ret = get_sysdb_grouplist(state, state->sysdb, state->name,
+                              &sysdb_grouplist);
     if (ret != EOK) {
         tevent_req_error(req, ret);
         return;
-    }
-
-    groups = ldb_msg_find_element(msg, SYSDB_MEMBEROF);
-    if (!groups || groups->num_values == 0) {
-        /* No groups for this user in sysdb currently */
-        sysdb_grouplist = NULL;
-    } else {
-        sysdb_grouplist = talloc_array(state, char *, groups->num_values+1);
-        if (!sysdb_grouplist) {
-            tevent_req_error(req, ENOMEM);
-            return;
-        }
-
-        /* Get a list of the groups by groupname only */
-        for (i=0; i < groups->num_values; i++) {
-            ret = sysdb_group_dn_name(state->sysdb,
-                                      sysdb_grouplist,
-                                      (const char *)groups->values[i].data,
-                                      &sysdb_grouplist[i]);
-            if (ret != EOK) {
-                tevent_req_error(req, ret);
-                return;
-            }
-        }
-        sysdb_grouplist[groups->num_values] = NULL;
     }
 
     /* There are no nested groups here so we can just update the
@@ -843,8 +822,8 @@ static errno_t sdap_initgr_nested_deref_search(struct tevent_req *req)
     maps[0].num_attrs = SDAP_OPTS_GROUP;
     maps[1].map = NULL;
 
-    ret = build_attrs_from_map(state, state->opts->group_map,
-                               SDAP_OPTS_GROUP, &sdap_attrs, NULL);
+    ret = build_attrs_from_map(state, state->opts->group_map, SDAP_OPTS_GROUP,
+                               NULL, &sdap_attrs, NULL);
     if (ret != EOK) goto fail;
 
     timeout = dp_opt_get_int(state->opts->basic, SDAP_SEARCH_TIMEOUT);
@@ -1463,6 +1442,7 @@ static struct tevent_req *sdap_initgr_rfc2307bis_send(
     errno_t ret;
     struct tevent_req *req;
     struct sdap_initgr_rfc2307bis_state *state;
+    const char **attr_filter;
     char *clean_orig_dn;
 
     req = tevent_req_create(memctx, &state, struct sdap_initgr_rfc2307bis_state);
@@ -1495,8 +1475,17 @@ static struct tevent_req *sdap_initgr_rfc2307bis_send(
         return NULL;
     }
 
-    ret = build_attrs_from_map(state, opts->group_map,
-                               SDAP_OPTS_GROUP, &state->attrs, NULL);
+    attr_filter = talloc_array(state, const char *, 2);
+    if (!attr_filter) {
+        ret = ENOMEM;
+        goto done;
+    }
+
+    attr_filter[0] = opts->group_map[SDAP_AT_GROUP_MEMBER].name;
+    attr_filter[1] = NULL;
+
+    ret = build_attrs_from_map(state, opts->group_map, SDAP_OPTS_GROUP,
+                               attr_filter, &state->attrs, NULL);
     if (ret != EOK) goto done;
 
     ret = sss_filter_sanitize(state, orig_dn, &clean_orig_dn);
@@ -2105,6 +2094,7 @@ static errno_t rfc2307bis_nested_groups_step(struct tevent_req *req)
 {
     errno_t ret;
     TALLOC_CTX *tmp_ctx = NULL;
+    const char **attr_filter;
     char *clean_orig_dn;
     hash_key_t key;
     hash_value_t value;
@@ -2168,8 +2158,17 @@ static errno_t rfc2307bis_nested_groups_step(struct tevent_req *req)
         goto done;
     }
 
-    ret = build_attrs_from_map(state, state->opts->group_map,
-                               SDAP_OPTS_GROUP, &state->attrs, NULL);
+    attr_filter = talloc_array(state, const char *, 2);
+    if (!attr_filter) {
+        ret = ENOMEM;
+        goto done;
+    }
+
+    attr_filter[0] = state->opts->group_map[SDAP_AT_GROUP_MEMBER].name;
+    attr_filter[1] = NULL;
+
+    ret = build_attrs_from_map(state, state->opts->group_map, SDAP_OPTS_GROUP,
+                               attr_filter, &state->attrs, NULL);
     if (ret != EOK) {
         goto done;
     }
@@ -2504,8 +2503,8 @@ struct tevent_req *sdap_get_initgr_send(TALLOC_CTX *memctx,
         return NULL;
     }
 
-    ret = build_attrs_from_map(state, state->opts->user_map,
-                               SDAP_OPTS_USER, &state->user_attrs, NULL);
+    ret = build_attrs_from_map(state, state->opts->user_map, SDAP_OPTS_USER,
+                               NULL, &state->user_attrs, NULL);
     if (ret) {
         talloc_zfree(req);
         return NULL;
@@ -2646,13 +2645,6 @@ static void sdap_get_initgr_user(struct tevent_req *subreq)
 
     switch (state->opts->schema_type) {
     case SDAP_SCHEMA_RFC2307:
-        ret = sdap_check_aliases(state->sysdb, state->orig_user, state->dom,
-                                 state->opts, false);
-        if (ret != EOK) {
-            tevent_req_error(req, ret);
-            return;
-        }
-
         subreq = sdap_initgr_rfc2307_send(state, state->ev, state->opts,
                                           state->sysdb, state->sh,
                                           cname);
@@ -2665,10 +2657,6 @@ static void sdap_get_initgr_user(struct tevent_req *subreq)
 
     case SDAP_SCHEMA_RFC2307BIS:
     case SDAP_SCHEMA_AD:
-        /* TODO: AD uses a different member/memberof schema
-         *       We need an AD specific call that is able to unroll
-         *       nested groups by doing extensive recursive searches */
-
         ret = sysdb_attrs_get_string(state->orig_user,
                                      SYSDB_ORIG_DN,
                                      &orig_dn);
@@ -2677,17 +2665,30 @@ static void sdap_get_initgr_user(struct tevent_req *subreq)
             return;
         }
 
-        subreq = sdap_initgr_rfc2307bis_send(
-                state, state->ev, state->opts, state->sysdb,
-                state->dom, state->sh,
-                cname, orig_dn);
+        if (state->opts->support_matching_rule
+                && dp_opt_get_bool(state->opts->basic,
+                                   SDAP_AD_MATCHING_RULE_INITGROUPS)) {
+            /* Take advantage of AD's extensibleMatch filter to look up
+             * all parent groups in a single request.
+             */
+            subreq = sdap_get_ad_match_rule_initgroups_send(
+                    state, state->ev, state->opts, state->sysdb,
+                    state->sh, cname, orig_dn, state->timeout);
+        } else {
+            subreq = sdap_initgr_rfc2307bis_send(
+                    state, state->ev, state->opts, state->sysdb,
+                    state->dom, state->sh,
+                    cname, orig_dn);
+        }
         if (!subreq) {
             tevent_req_error(req, ENOMEM);
             return;
         }
+
         talloc_steal(subreq, orig_dn);
         tevent_req_set_callback(subreq, sdap_get_initgr_done, req);
         break;
+
     case SDAP_SCHEMA_IPA_V1:
         subreq = sdap_initgr_nested_send(state, state->ev, state->opts,
                                          state->sysdb, state->dom, state->sh,
@@ -2737,11 +2738,15 @@ static void sdap_get_initgr_done(struct tevent_req *subreq)
         break;
 
     case SDAP_SCHEMA_RFC2307BIS:
-        ret = sdap_initgr_rfc2307bis_recv(subreq);
+    case SDAP_SCHEMA_AD:
+        if (dp_opt_get_bool(state->opts->basic, SDAP_AD_MATCHING_RULE_INITGROUPS)) {
+            ret = sdap_get_ad_match_rule_initgroups_recv(subreq);
+        } else {
+            ret = sdap_initgr_rfc2307bis_recv(subreq);
+        }
         break;
 
     case SDAP_SCHEMA_IPA_V1:
-    case SDAP_SCHEMA_AD:
         ret = sdap_initgr_nested_recv(subreq);
         break;
 
@@ -2866,5 +2871,67 @@ int sdap_get_initgr_recv(struct tevent_req *req)
     TEVENT_REQ_RETURN_ON_ERROR(req);
 
     return EOK;
+}
+
+errno_t get_sysdb_grouplist(TALLOC_CTX *mem_ctx,
+                            struct sysdb_ctx *sysdb,
+                            const char *name,
+                            char ***grouplist)
+{
+    errno_t ret;
+    const char *attrs[2];
+    struct ldb_message *msg;
+    TALLOC_CTX *tmp_ctx;
+    struct ldb_message_element *groups;
+    char **sysdb_grouplist = NULL;
+    unsigned int i;
+
+    attrs[0] = SYSDB_MEMBEROF;
+    attrs[1] = NULL;
+
+    tmp_ctx = talloc_new(NULL);
+    if (!tmp_ctx) return ENOMEM;
+
+    ret = sysdb_search_user_by_name(tmp_ctx, sysdb, name,
+                                    attrs, &msg);
+    if (ret != EOK) {
+        DEBUG(SSSDBG_MINOR_FAILURE,
+              ("Error searching user [%s] by name: [%s]\n",
+               name, strerror(ret)));
+        goto done;
+    }
+
+    groups = ldb_msg_find_element(msg, SYSDB_MEMBEROF);
+    if (!groups || groups->num_values == 0) {
+        /* No groups for this user in sysdb currently */
+        sysdb_grouplist = NULL;
+    } else {
+        sysdb_grouplist = talloc_array(tmp_ctx, char *, groups->num_values+1);
+        if (!sysdb_grouplist) {
+            ret = ENOMEM;
+            goto done;
+        }
+
+        /* Get a list of the groups by groupname only */
+        for (i=0; i < groups->num_values; i++) {
+            ret = sysdb_group_dn_name(sysdb,
+                                      sysdb_grouplist,
+                                      (const char *)groups->values[i].data,
+                                      &sysdb_grouplist[i]);
+            if (ret != EOK) {
+                DEBUG(SSSDBG_MINOR_FAILURE,
+                      ("Could not determine group name from [%s]: [%s]\n",
+                       (const char *)groups->values[i].data, strerror(ret)));
+                goto done;
+            }
+        }
+        sysdb_grouplist[groups->num_values] = NULL;
+    }
+
+    *grouplist = talloc_steal(mem_ctx, sysdb_grouplist);
+
+done:
+    talloc_free(tmp_ctx);
+    return ret;
 }
 

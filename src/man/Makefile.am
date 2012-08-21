@@ -18,7 +18,10 @@ endif
 if BUILD_SSH
 SSH_CONDS = ;with_ssh
 endif
-CONDS = with_false$(SUDO_CONDS)$(AUTOFS_CONDS)$(SSH_CONDS)
+if BUILD_PAC_RESPONDER
+PAC_RESPONDER_CONDS = ;with_pac_responder
+endif
+CONDS = with_false$(SUDO_CONDS)$(AUTOFS_CONDS)$(SSH_CONDS)$(PAC_RESPONDER_CONDS)
 
 
 #Special Rules:
@@ -37,12 +40,16 @@ man_MANS = \
     sss_useradd.8 sss_userdel.8 sss_usermod.8 \
     sss_groupadd.8 sss_groupdel.8 sss_groupmod.8 \
     sssd.8 sssd.conf.5 sssd-ldap.5 \
-    sssd-krb5.5 sssd-ipa.5 sssd-simple.5 \
+    sssd-krb5.5 sssd-ipa.5 sssd-simple.5 sssd-ad.5 \
     sssd_krb5_locator_plugin.8 sss_groupshow.8 \
-    pam_sss.8 sss_obfuscate.8 sss_cache.8 sss_debuglevel.8
+    pam_sss.8 sss_obfuscate.8 sss_cache.8 sss_debuglevel.8 sss_seed.8
 
 if BUILD_SSH
 man_MANS += sss_ssh_authorizedkeys.1 sss_ssh_knownhostsproxy.1
+endif
+
+if BUILD_SUDO
+man_MANS += sssd-sudo.5
 endif
 
 SUFFIXES = .1.xml .1 .3.xml .3 .5.xml .5 .8.xml .8

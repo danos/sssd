@@ -48,7 +48,7 @@ errno_t sudosrv_get_sudorules(struct sudo_dom_ctx *dctx)
     }
 
     /* OK, got the user from cache. Try to get the rules. */
-    ret = sudosrv_get_rules(dctx);
+    ret = sudosrv_get_rules(dctx->cmd_ctx);
     if (ret == EAGAIN) {
         DEBUG(SSSDBG_TRACE_INTERNAL,
               ("Looking up the sudo rules from Data Provider\n"));
@@ -79,6 +79,7 @@ static errno_t sudosrv_get_user(struct sudo_dom_ctx *dctx)
     struct dp_callback_ctx *cb_ctx;
     const char *original_name = NULL;
     char *name = NULL;
+    uid_t uid = 0;
     errno_t ret;
 
     tmp_ctx = talloc_new(NULL);
@@ -186,6 +187,21 @@ static errno_t sudosrv_get_user(struct sudo_dom_ctx *dctx)
             goto done;
         }
 
+        /* check uid */
+        uid = ldb_msg_find_attr_as_int(user->msgs[0], SYSDB_UIDNUM, 0);
+        if (uid != cmd_ctx->uid) {
+            /* if a multidomain search, try with next */
+            if (cmd_ctx->check_next) {
+                dctx->check_provider = true;
+                dom = dom->next;
+                if (dom) continue;
+            }
+
+            DEBUG(SSSDBG_MINOR_FAILURE, ("UID does not match\n"));
+            ret = ENOENT;
+            goto done;
+        }
+
         /* user is stored in cache, remember cased and original name */
         original_name = ldb_msg_find_attr_as_string(user->msgs[0],
                                                     SYSDB_NAME, NULL);
@@ -195,13 +211,16 @@ static errno_t sudosrv_get_user(struct sudo_dom_ctx *dctx)
             goto done;
         }
 
-        dctx->cased_username = talloc_move(dctx, &name);
-        dctx->orig_username = talloc_strdup(dctx, original_name);
-        if (dctx->orig_username== NULL) {
+        cmd_ctx->cased_username = talloc_move(cmd_ctx, &name);
+        cmd_ctx->orig_username = talloc_strdup(cmd_ctx, original_name);
+        if (cmd_ctx->orig_username == NULL) {
             DEBUG(SSSDBG_CRIT_FAILURE, ("Out of memory\n"));
             ret = ENOMEM;
             goto done;
         }
+
+        /* and set domain */
+        cmd_ctx->domain = dom;
 
         DEBUG(SSSDBG_TRACE_FUNC, ("Returning info for user [%s@%s]\n",
               cmd_ctx->username, dctx->domain->name));
@@ -262,66 +281,166 @@ static void sudosrv_check_user_dp_callback(uint16_t err_maj, uint32_t err_min,
         DEBUG(SSSDBG_OP_FAILURE,
               ("Could not look up the user [%d]: %s\n",
               ret, strerror(ret)));
-        sudosrv_cmd_done(dctx, EIO);
+        sudosrv_cmd_done(dctx->cmd_ctx, ret);
         return;
     }
 
     DEBUG(SSSDBG_TRACE_INTERNAL, ("Looking up sudo rules..\n"));
-    ret = sudosrv_get_rules(dctx);
+    ret = sudosrv_get_rules(dctx->cmd_ctx);
     if (ret == EAGAIN) {
         goto done;
     } else if (ret != EOK) {
         DEBUG(SSSDBG_OP_FAILURE,
               ("Error getting sudo rules [%d]: %s\n",
               ret, strerror(ret)));
-        sudosrv_cmd_done(dctx, EIO);
+        sudosrv_cmd_done(dctx->cmd_ctx, EIO);
         return;
     }
 
 done:
-    sudosrv_cmd_done(dctx, ret);
+    sudosrv_cmd_done(dctx->cmd_ctx, ret);
 }
 
-static errno_t sudosrv_get_sudorules_from_cache(struct sudo_dom_ctx *dctx);
+static errno_t sudosrv_get_sudorules_from_cache(struct sudo_cmd_ctx *cmd_ctx,
+                                                size_t *_num_rules);
 static void
 sudosrv_get_sudorules_dp_callback(uint16_t err_maj, uint32_t err_min,
                                   const char *err_msg, void *ptr);
 static void
 sudosrv_dp_req_done(struct tevent_req *req);
 
-errno_t sudosrv_get_rules(struct sudo_dom_ctx *dctx)
+static errno_t sudosrv_get_sudorules_query_cache(TALLOC_CTX *mem_ctx,
+                                                 struct sysdb_ctx *sysdb,
+                                                 enum sss_dp_sudo_type type,
+                                                 const char **attrs,
+                                                 unsigned int flags,
+                                                 const char *username,
+                                                 uid_t uid,
+                                                 char **groupnames,
+                                                 struct sysdb_attrs ***_rules,
+                                                 size_t *_count);
+
+errno_t sudosrv_get_rules(struct sudo_cmd_ctx *cmd_ctx)
 {
-    struct tevent_req *dpreq;
-    struct sudo_cmd_ctx *cmd_ctx = dctx->cmd_ctx;
+    TALLOC_CTX *tmp_ctx = NULL;
+    struct tevent_req *dpreq = NULL;
     struct dp_callback_ctx *cb_ctx = NULL;
+    struct sysdb_ctx *sysdb;
+    char **groupnames = NULL;
+    size_t expired_rules_num = 0;
+    struct sysdb_attrs **expired_rules = NULL;
+    errno_t ret;
+    unsigned int flags = SYSDB_SUDO_FILTER_NONE;
+    const char *attrs[] = { SYSDB_NAME,
+                            NULL };
 
-    DEBUG(SSSDBG_TRACE_FUNC, ("getting rules for %s\n",
-          cmd_ctx->username ? cmd_ctx->username : "default options"));
-
-    dpreq = sss_dp_get_sudoers_send(cmd_ctx->cli_ctx,
-                                    cmd_ctx->cli_ctx->rctx,
-                                    dctx->domain, false,
-                                    cmd_ctx->type,
-                                    dctx->orig_username);
-    if (dpreq == NULL) {
-        DEBUG(SSSDBG_CRIT_FAILURE,
-              ("Cannot issue DP request.\n"));
-        return EIO;
+    if (cmd_ctx->domain == NULL) {
+        DEBUG(SSSDBG_CRIT_FAILURE, ("Domain is not set!\n"));
+        return EFAULT;
     }
 
-    cb_ctx = talloc_zero(dctx, struct dp_callback_ctx);
-    if (!cb_ctx) {
-        talloc_zfree(dpreq);
+    sysdb = cmd_ctx->domain->sysdb;
+
+    tmp_ctx = talloc_new(NULL);
+    if (tmp_ctx == NULL) {
+        DEBUG(SSSDBG_CRIT_FAILURE, ("talloc_new() failed\n"));
         return ENOMEM;
     }
 
-    cb_ctx->callback = sudosrv_get_sudorules_dp_callback;
-    cb_ctx->ptr = dctx;
-    cb_ctx->cctx = dctx->cmd_ctx->cli_ctx;
-    cb_ctx->mem_ctx = dctx;
+    switch (cmd_ctx->type) {
+        case SSS_SUDO_DEFAULTS:
+            DEBUG(SSSDBG_TRACE_FUNC, ("Retrieving default options "
+                  "for [%s] from [%s]\n", cmd_ctx->orig_username,
+                  cmd_ctx->domain->name));
+            break;
+        case SSS_SUDO_USER:
+            DEBUG(SSSDBG_TRACE_FUNC, ("Retrieving rules "
+                  "for [%s] from [%s]\n", cmd_ctx->orig_username,
+                  cmd_ctx->domain->name));
+            break;
+    }
 
-    tevent_req_set_callback(dpreq, sudosrv_dp_req_done, cb_ctx);
-    return EAGAIN;
+    /* Fetch all expired rules:
+     * sudo asks sssd twice - for defaults and for rules. If we refresh all
+     * expired rules for this user and defaults at once we will save one
+     * provider call
+     */
+    ret = sysdb_get_sudo_user_info(tmp_ctx, cmd_ctx->orig_username, sysdb,
+                                   NULL, &groupnames);
+    if (ret != EOK) {
+        DEBUG(SSSDBG_CRIT_FAILURE,
+             ("Unable to retrieve user info [%d]: %s\n", strerror(ret)));
+        goto done;
+    }
+
+    flags =   SYSDB_SUDO_FILTER_INCLUDE_ALL
+            | SYSDB_SUDO_FILTER_INCLUDE_DFL
+            | SYSDB_SUDO_FILTER_ONLY_EXPIRED
+            | SYSDB_SUDO_FILTER_USERINFO;
+    ret = sudosrv_get_sudorules_query_cache(tmp_ctx, sysdb, cmd_ctx->type,
+                                            attrs, flags, cmd_ctx->orig_username,
+                                            cmd_ctx->uid, groupnames,
+                                            &expired_rules, &expired_rules_num);
+    if (ret != EOK) {
+        DEBUG(SSSDBG_CRIT_FAILURE,
+             ("Unable to retrieve expired sudo rules [%d]: %s\n", strerror(ret)));
+        goto done;
+    }
+
+    cmd_ctx->expired_rules_num = expired_rules_num;
+    if (expired_rules_num > 0) {
+        /* refresh expired rules then continue */
+        DEBUG(SSSDBG_TRACE_INTERNAL, ("Refreshing expired rules\n"));
+        dpreq = sss_dp_get_sudoers_send(tmp_ctx, cmd_ctx->cli_ctx->rctx,
+                                        cmd_ctx->domain, false,
+                                        SSS_DP_SUDO_REFRESH_RULES,
+                                        cmd_ctx->orig_username,
+                                        expired_rules_num, expired_rules);
+        if (dpreq == NULL) {
+            DEBUG(SSSDBG_CRIT_FAILURE,
+                  ("Cannot issue DP request.\n"));
+            ret = EIO;
+            goto done;
+        }
+
+        cb_ctx = talloc_zero(tmp_ctx, struct dp_callback_ctx);
+        if (!cb_ctx) {
+            talloc_zfree(dpreq);
+            ret = ENOMEM;
+            goto done;
+        }
+
+        cb_ctx->callback = sudosrv_get_sudorules_dp_callback;
+        cb_ctx->ptr = cmd_ctx;
+        cb_ctx->cctx = cmd_ctx->cli_ctx;
+        cb_ctx->mem_ctx = cmd_ctx;
+
+        tevent_req_set_callback(dpreq, sudosrv_dp_req_done, cb_ctx);
+        ret = EAGAIN;
+
+    } else {
+        /* nothing is expired return what we have in the cache */
+        DEBUG(SSSDBG_TRACE_INTERNAL, ("About to get sudo rules from cache\n"));
+        ret = sudosrv_get_sudorules_from_cache(cmd_ctx, NULL);
+        if (ret != EOK) {
+            DEBUG(SSSDBG_OP_FAILURE,
+                  ("Failed to make a request to our cache [%d]: %s\n",
+                   ret, strerror(ret)));
+            goto done;
+        }
+    }
+
+    if (dpreq != NULL) {
+        talloc_steal(cmd_ctx->cli_ctx, dpreq);
+    }
+
+    if (cb_ctx != NULL) {
+        talloc_steal(cmd_ctx, cb_ctx);
+    }
+
+done:
+    talloc_free(tmp_ctx);
+    return ret;
 }
 
 static void
@@ -329,13 +448,19 @@ sudosrv_dp_req_done(struct tevent_req *req)
 {
     struct dp_callback_ctx *cb_ctx =
         tevent_req_callback_data(req, struct dp_callback_ctx);
-    struct sudo_dom_ctx *dctx =
-        talloc_get_type(cb_ctx->ptr, struct sudo_dom_ctx);
+    struct cli_ctx *cli_ctx;
 
     errno_t ret;
     dbus_uint16_t err_maj;
     dbus_uint32_t err_min;
     char *err_msg;
+
+    if (cb_ctx == NULL) {
+        /* we are not interested in returned values */
+        talloc_free(req);
+        return;
+    }
+    cli_ctx = talloc_get_type(cb_ctx->cctx, struct cli_ctx);
 
     ret = sss_dp_get_sudoers_recv(cb_ctx->mem_ctx, req,
                                   &err_maj, &err_min,
@@ -343,7 +468,7 @@ sudosrv_dp_req_done(struct tevent_req *req)
     talloc_free(req);
     if (ret != EOK) {
         DEBUG(SSSDBG_CRIT_FAILURE, ("Fatal error, killing connection!\n"));
-        talloc_free(dctx->cmd_ctx->cli_ctx);
+        talloc_free(cli_ctx);
         return;
     }
 
@@ -354,9 +479,10 @@ static void
 sudosrv_get_sudorules_dp_callback(uint16_t err_maj, uint32_t err_min,
                                   const char *err_msg, void *ptr)
 {
-    struct sudo_dom_ctx *dctx =
-        talloc_get_type(ptr, struct sudo_dom_ctx);
+    struct sudo_cmd_ctx *cmd_ctx = talloc_get_type(ptr, struct sudo_cmd_ctx);
+    struct tevent_req *dpreq = NULL;
     errno_t ret;
+    size_t num_rules;
 
     if (err_maj) {
         DEBUG(SSSDBG_CRIT_FAILURE,
@@ -364,121 +490,48 @@ sudosrv_get_sudorules_dp_callback(uint16_t err_maj, uint32_t err_min,
                "Error: %u, %u, %s\n"
                "Will try to return what we have in cache\n",
                (unsigned int)err_maj, (unsigned int)err_min, err_msg));
-
-        /* Loop to the next domain if possible */
-        if (dctx->domain->next && dctx->cmd_ctx->check_next) {
-            dctx->domain = dctx->domain->next;
-            dctx->check_provider = NEED_CHECK_PROVIDER(dctx->domain->provider);
-        }
     }
 
     DEBUG(SSSDBG_TRACE_INTERNAL, ("About to get sudo rules from cache\n"));
-    ret = sudosrv_get_sudorules_from_cache(dctx);
+    ret = sudosrv_get_sudorules_from_cache(cmd_ctx, &num_rules);
     if (ret != EOK) {
         DEBUG(SSSDBG_OP_FAILURE,
               ("Failed to make a request to our cache [%d]: %s\n",
               ret, strerror(ret)));
-        sudosrv_cmd_done(dctx, EIO);
+        sudosrv_cmd_done(cmd_ctx, EIO);
         return;
     }
 
-    sudosrv_cmd_done(dctx, ret);
+    if (cmd_ctx->expired_rules_num > 0
+        && err_min == ENOENT) {
+        DEBUG(SSSDBG_TRACE_INTERNAL,
+              ("Some expired rules were removed from the server, "
+               "scheduling full refresh out of band\n"));
+        dpreq = sss_dp_get_sudoers_send(cmd_ctx->cli_ctx->rctx,
+                                        cmd_ctx->cli_ctx->rctx,
+                                        cmd_ctx->domain, false,
+                                        SSS_DP_SUDO_FULL_REFRESH,
+                                        cmd_ctx->orig_username,
+                                        0, NULL);
+        if (dpreq == NULL) {
+            DEBUG(SSSDBG_CRIT_FAILURE,
+                  ("Cannot issue DP request.\n"));
+        } else {
+            tevent_req_set_callback(dpreq, sudosrv_dp_req_done, NULL);
+        }
+    }
+
+    sudosrv_cmd_done(cmd_ctx, ret);
 }
 
-static errno_t sudosrv_get_sudorules_query_cache(TALLOC_CTX *mem_ctx,
-                                                 struct sysdb_ctx *sysdb,
-                                                 enum sss_dp_sudo_type type,
-                                                 const char *username,
-                                                 uid_t uid,
-                                                 char **groupnames,
-                                                 struct sysdb_attrs ***_rules,
-                                                 size_t *_count);
-
-static errno_t sudosrv_get_sudorules_from_cache(struct sudo_dom_ctx *dctx)
+static errno_t sudosrv_get_sudorules_from_cache(struct sudo_cmd_ctx *cmd_ctx,
+                                                size_t *_num_rules)
 {
     TALLOC_CTX *tmp_ctx;
     errno_t ret;
     struct sysdb_ctx *sysdb;
-    struct sudo_ctx *sudo_ctx = dctx->cmd_ctx->sudo_ctx;
-    uid_t uid;
-    char **groupnames;
-    const char *safe_name = dctx->cmd_ctx->username ?
-                            dctx->cmd_ctx->username : "default rules";
-
-    tmp_ctx = talloc_new(NULL);
-    if (tmp_ctx == NULL) return ENOMEM;
-
-    sysdb = dctx->domain->sysdb;
-    if (sysdb == NULL) {
-        DEBUG(SSSDBG_CRIT_FAILURE,
-              ("sysdb context not found for this domain!\n"));
-        ret = EIO;
-        goto done;
-    }
-
-    if (dctx->cmd_ctx->type == SSS_DP_SUDO_USER) {
-        ret = sysdb_get_sudo_user_info(tmp_ctx, dctx->orig_username,
-                                       sysdb, &uid, &groupnames);
-        if (ret != EOK) {
-            DEBUG(SSSDBG_CRIT_FAILURE,
-                 ("Unable to retrieve user info [%d]: %s\n", strerror(ret)));
-            goto done;
-        }
-    } else {
-        uid = 0;
-        groupnames = NULL;
-    }
-
-    ret = sudosrv_get_sudorules_query_cache(dctx, sysdb, dctx->cmd_ctx->type,
-                                            dctx->orig_username,
-                                            uid, groupnames,
-                                            &dctx->res, &dctx->res_count);
-    if (ret != EOK) {
-        DEBUG(SSSDBG_CRIT_FAILURE,
-             ("Unable to retrieve sudo rules [%d]: %s\n", strerror(ret)));
-        goto done;
-    }
-
-    /* Store result in in-memory cache */
-    ret = sudosrv_cache_set_entry(sudo_ctx->rctx->ev, sudo_ctx,
-                                  sudo_ctx->cache, dctx->domain,
-                                  dctx->cased_username, dctx->res_count,
-                                  dctx->res, sudo_ctx->cache_timeout);
-    if (ret != EOK) {
-        DEBUG(SSSDBG_MINOR_FAILURE, ("Unable to store rules in cache for "
-              "[%s@%s]\n", safe_name, dctx->domain->name));
-    } else {
-        DEBUG(SSSDBG_FUNC_DATA, ("Rules for [%s@%s] stored in in-memory cache\n",
-                                 safe_name, dctx->domain->name));
-    }
-
-    DEBUG(SSSDBG_TRACE_FUNC, ("Returning rules for [%s@%s]\n",
-          safe_name, dctx->domain->name));
-
-    ret = EOK;
-done:
-    talloc_free(tmp_ctx);
-    return ret;
-}
-
-static errno_t
-sort_sudo_rules(struct sysdb_attrs **rules, size_t count);
-
-static errno_t sudosrv_get_sudorules_query_cache(TALLOC_CTX *mem_ctx,
-                                                 struct sysdb_ctx *sysdb,
-                                                 enum sss_dp_sudo_type type,
-                                                 const char *username,
-                                                 uid_t uid,
-                                                 char **groupnames,
-                                                 struct sysdb_attrs ***_rules,
-                                                 size_t *_count)
-{
-    TALLOC_CTX *tmp_ctx;
-    char *filter;
-    errno_t ret;
-    size_t count;
-    struct sysdb_attrs **rules;
-    struct ldb_message **msgs;
+    char **groupnames = NULL;
+    const char *debug_name = NULL;
     unsigned int flags = SYSDB_SUDO_FILTER_NONE;
     const char *attrs[] = { SYSDB_OBJECTCLASS
                             SYSDB_SUDO_CACHE_AT_OC,
@@ -494,17 +547,90 @@ static errno_t sudosrv_get_sudorules_query_cache(TALLOC_CTX *mem_ctx,
                             SYSDB_SUDO_CACHE_AT_ORDER,
                             NULL };
 
+    if (cmd_ctx->domain == NULL) {
+        DEBUG(SSSDBG_CRIT_FAILURE, ("Domain is not set!\n"));
+        return EFAULT;
+    }
+
+    tmp_ctx = talloc_new(NULL);
+    if (tmp_ctx == NULL) {
+        DEBUG(SSSDBG_CRIT_FAILURE, ("talloc_new() failed\n"));
+        return ENOMEM;
+    }
+
+    sysdb = cmd_ctx->domain->sysdb;
+    if (sysdb == NULL) {
+        DEBUG(SSSDBG_CRIT_FAILURE,
+              ("sysdb context not found for this domain!\n"));
+        ret = EIO;
+        goto done;
+    }
+
+    switch (cmd_ctx->type) {
+    case SSS_SUDO_USER:
+        debug_name = cmd_ctx->cased_username;
+        ret = sysdb_get_sudo_user_info(tmp_ctx, cmd_ctx->orig_username, sysdb,
+                                       NULL, &groupnames);
+        if (ret != EOK) {
+            DEBUG(SSSDBG_CRIT_FAILURE,
+                 ("Unable to retrieve user info [%d]: %s\n", strerror(ret)));
+            goto done;
+        }
+        flags = SYSDB_SUDO_FILTER_USERINFO | SYSDB_SUDO_FILTER_INCLUDE_ALL;
+        break;
+    case SSS_SUDO_DEFAULTS:
+        debug_name = "<default options>";
+        flags = SYSDB_SUDO_FILTER_INCLUDE_DFL;
+        break;
+    }
+
+    ret = sudosrv_get_sudorules_query_cache(cmd_ctx, sysdb, cmd_ctx->type,
+                                            attrs, flags, cmd_ctx->orig_username,
+                                            cmd_ctx->uid, groupnames,
+                                            &cmd_ctx->rules, &cmd_ctx->num_rules);
+    if (ret != EOK) {
+        DEBUG(SSSDBG_CRIT_FAILURE,
+             ("Unable to retrieve sudo rules [%d]: %s\n", strerror(ret)));
+        goto done;
+    }
+
+    DEBUG(SSSDBG_TRACE_FUNC, ("Returning rules for [%s@%s]\n",
+          debug_name, cmd_ctx->domain->name));
+
+    if (_num_rules != NULL) {
+        *_num_rules = cmd_ctx->num_rules;
+    }
+
+    ret = EOK;
+done:
+    talloc_free(tmp_ctx);
+    return ret;
+}
+
+static errno_t
+sort_sudo_rules(struct sysdb_attrs **rules, size_t count);
+
+static errno_t sudosrv_get_sudorules_query_cache(TALLOC_CTX *mem_ctx,
+                                                 struct sysdb_ctx *sysdb,
+                                                 enum sss_dp_sudo_type type,
+                                                 const char **attrs,
+                                                 unsigned int flags,
+                                                 const char *username,
+                                                 uid_t uid,
+                                                 char **groupnames,
+                                                 struct sysdb_attrs ***_rules,
+                                                 size_t *_count)
+{
+    TALLOC_CTX *tmp_ctx;
+    char *filter;
+    errno_t ret;
+    size_t count;
+    struct sysdb_attrs **rules;
+    struct ldb_message **msgs;
+
     tmp_ctx = talloc_new(NULL);
     if (tmp_ctx == NULL) return ENOMEM;
 
-    switch (type) {
-    case SSS_DP_SUDO_DEFAULTS:
-        flags = SYSDB_SUDO_FILTER_INCLUDE_DFL;
-        break;
-    case SSS_DP_SUDO_USER:
-        flags =   SYSDB_SUDO_FILTER_USERINFO | SYSDB_SUDO_FILTER_INCLUDE_ALL;
-        break;
-    }
     ret = sysdb_get_sudo_filter(tmp_ctx, username, uid, groupnames,
                                 flags, &filter);
     if (ret != EOK) {
@@ -601,82 +727,4 @@ sort_sudo_rules(struct sysdb_attrs **rules, size_t count)
     qsort(rules, count, sizeof(struct sysdb_attrs *),
           sudo_order_cmp_fn);
     return EOK;
-}
-
-char * sudosrv_get_sudorules_parse_query(TALLOC_CTX *mem_ctx,
-                                         const char *query_body,
-                                         int query_len)
-{
-    /* empty string or not NULL terminated */
-    if (query_len < 2 || strnlen(query_body, query_len) == query_len) {
-        DEBUG(SSSDBG_CRIT_FAILURE, ("Invalid query.\n"));
-        return NULL;
-    }
-
-    return talloc_strdup(mem_ctx, query_body);
-}
-
-/*
- * Response format:
- * <error_code(uint32_t)><num_entries(uint32_t)><rule1><rule2>...
- * <ruleN> = <num_attrs(uint32_t)><attr1><attr2>...
- * <attrN>  = <name(char*)>\0<num_values(uint32_t)><value1(char*)>\0<value2(char*)>\0...
- *
- * if <error_code> is not SSS_SUDO_ERROR_OK, the rest of the data is skipped.
- */
-int sudosrv_get_sudorules_build_response(TALLOC_CTX *mem_ctx,
-                                         uint32_t error,
-                                         int rules_num,
-                                         struct sysdb_attrs **rules,
-                                         uint8_t **_response_body,
-                                         size_t *_response_len)
-{
-    uint8_t *response_body = NULL;
-    size_t response_len = 0;
-    TALLOC_CTX *tmp_ctx = NULL;
-    int i = 0;
-    int ret = EOK;
-
-    tmp_ctx = talloc_new(NULL);
-    if (tmp_ctx == NULL) {
-        DEBUG(SSSDBG_CRIT_FAILURE, ("talloc_new() failed\n"));
-        return ENOMEM;
-    }
-
-    /* error code */
-    ret = sudosrv_response_append_uint32(tmp_ctx, error,
-                                         &response_body, &response_len);
-    if (ret != EOK) {
-        goto fail;
-    }
-
-    if (error != SSS_SUDO_ERROR_OK) {
-        goto done;
-    }
-
-    /* rules count */
-    ret = sudosrv_response_append_uint32(tmp_ctx, (uint32_t)rules_num,
-                                         &response_body, &response_len);
-    if (ret != EOK) {
-        goto fail;
-    }
-
-    /* rules */
-    for (i = 0; i < rules_num; i++) {
-        ret = sudosrv_response_append_rule(tmp_ctx, rules[i]->num, rules[i]->a,
-                                           &response_body, &response_len);
-        if (ret != EOK) {
-            goto fail;
-        }
-    }
-
-done:
-    *_response_body = talloc_steal(mem_ctx, response_body);
-    *_response_len = response_len;
-
-    ret = EOK;
-
-fail:
-    talloc_free(tmp_ctx);
-    return ret;
 }

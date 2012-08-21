@@ -32,6 +32,7 @@
 struct dp_option ipa_basic_opts[] = {
     { "ipa_domain", DP_OPT_STRING, NULL_STRING, NULL_STRING },
     { "ipa_server", DP_OPT_STRING, NULL_STRING, NULL_STRING },
+    { "ipa_backup_server", DP_OPT_STRING, NULL_STRING, NULL_STRING },
     { "ipa_hostname", DP_OPT_STRING, NULL_STRING, NULL_STRING },
     { "ipa_dyndns_update", DP_OPT_BOOL, BOOL_FALSE, BOOL_FALSE },
     { "ipa_dyndns_iface", DP_OPT_STRING, NULL_STRING, NULL_STRING},
@@ -39,16 +40,19 @@ struct dp_option ipa_basic_opts[] = {
     { "ipa_host_search_base", DP_OPT_STRING, NULL_STRING, NULL_STRING },
     { "ipa_selinux_search_base", DP_OPT_STRING, NULL_STRING, NULL_STRING },
     { "ipa_subdomains_search_base", DP_OPT_STRING, NULL_STRING, NULL_STRING },
+    { "ipa_master_domain_search_base", DP_OPT_STRING, NULL_STRING, NULL_STRING },
     { "krb5_realm", DP_OPT_STRING, NULL_STRING, NULL_STRING},
     { "ipa_hbac_refresh", DP_OPT_NUMBER, { .number = 5 }, NULL_NUMBER },
     { "ipa_hbac_treat_deny_as", DP_OPT_STRING, { "DENY_ALL" }, NULL_STRING },
     { "ipa_hbac_support_srchost", DP_OPT_BOOL, BOOL_FALSE, BOOL_FALSE },
     { "ipa_automount_location", DP_OPT_STRING, { "default" }, NULL_STRING },
+    { "ipa_ranges_search_base", DP_OPT_STRING, NULL_STRING, NULL_STRING },
     DP_OPTION_TERMINATOR
 };
 
 struct dp_option ipa_def_ldap_opts[] = {
     { "ldap_uri", DP_OPT_STRING, NULL_STRING, NULL_STRING },
+    { "ldap_backup_uri", DP_OPT_STRING, NULL_STRING, NULL_STRING },
     { "ldap_search_base", DP_OPT_STRING, NULL_STRING, NULL_STRING },
     { "ldap_default_bind_dn", DP_OPT_STRING, NULL_STRING, NULL_STRING },
     { "ldap_default_authtok_type", DP_OPT_STRING, NULL_STRING, NULL_STRING},
@@ -65,8 +69,13 @@ struct dp_option ipa_def_ldap_opts[] = {
     { "ldap_group_search_filter", DP_OPT_STRING, NULL_STRING, NULL_STRING },
     { "ldap_service_search_base", DP_OPT_STRING, NULL_STRING, NULL_STRING },
     { "ldap_sudo_search_base", DP_OPT_STRING, NULL_STRING, NULL_STRING },
-    { "ldap_sudo_refresh_enabled", DP_OPT_BOOL, BOOL_FALSE, BOOL_FALSE },
-    { "ldap_sudo_refresh_timeout", DP_OPT_NUMBER, { .number = 300 }, NULL_NUMBER },
+    { "ldap_sudo_full_refresh_interval", DP_OPT_NUMBER, { .number = 21600 }, NULL_NUMBER },
+    { "ldap_sudo_smart_refresh_interval", DP_OPT_NUMBER, { .number = 900 }, NULL_NUMBER }, /* 15 mins */
+    { "ldap_sudo_use_host_filter", DP_OPT_BOOL, BOOL_TRUE, BOOL_TRUE },
+    { "ldap_sudo_hostnames", DP_OPT_STRING, NULL_STRING, NULL_STRING },
+    { "ldap_sudo_ip", DP_OPT_STRING, NULL_STRING, NULL_STRING },
+    { "ldap_sudo_include_netgroups", DP_OPT_BOOL, BOOL_TRUE, BOOL_TRUE },
+    { "ldap_sudo_include_regexp", DP_OPT_BOOL, BOOL_TRUE, BOOL_TRUE },
     { "ldap_autofs_search_base", DP_OPT_STRING, NULL_STRING, NULL_STRING },
     { "ldap_schema", DP_OPT_STRING, { "ipa_v1" }, NULL_STRING },
     { "ldap_offline_timeout", DP_OPT_NUMBER, { .number = 60 }, NULL_NUMBER },
@@ -88,6 +97,7 @@ struct dp_option ipa_def_ldap_opts[] = {
     { "ldap_krb5_init_creds", DP_OPT_BOOL, BOOL_TRUE, BOOL_TRUE },
     /* use the same parm name as the krb5 module so we set it only once */
     { "krb5_server", DP_OPT_STRING, NULL_STRING, NULL_STRING },
+    { "krb5_backup_server", DP_OPT_STRING, NULL_STRING, NULL_STRING },
     { "krb5_realm", DP_OPT_STRING, NULL_STRING, NULL_STRING },
     { "krb5_canonicalize", DP_OPT_BOOL, BOOL_TRUE, BOOL_TRUE },
     { "ldap_pwd_policy", DP_OPT_STRING, { "none" } , NULL_STRING },
@@ -102,6 +112,7 @@ struct dp_option ipa_def_ldap_opts[] = {
     { "ldap_account_expire_policy", DP_OPT_STRING, { "ipa" }, NULL_STRING },
     { "ldap_access_order", DP_OPT_STRING, NULL_STRING, NULL_STRING },
     { "ldap_chpass_uri", DP_OPT_STRING, NULL_STRING, NULL_STRING },
+    { "ldap_chpass_backup_uri", DP_OPT_STRING, NULL_STRING, NULL_STRING },
     { "ldap_chpass_dns_service_name", DP_OPT_STRING, NULL_STRING, NULL_STRING },
     { "ldap_chpass_update_last_change", DP_OPT_BOOL, BOOL_FALSE, BOOL_FALSE },
     { "ldap_enumeration_search_timeout", DP_OPT_NUMBER, { .number = 60 }, NULL_NUMBER },
@@ -120,6 +131,8 @@ struct dp_option ipa_def_ldap_opts[] = {
     { "ldap_idmap_autorid_compat", DP_OPT_BOOL, BOOL_FALSE, BOOL_FALSE },
     { "ldap_idmap_default_domain", DP_OPT_STRING, NULL_STRING, NULL_STRING },
     { "ldap_idmap_default_domain_sid", DP_OPT_STRING, NULL_STRING, NULL_STRING },
+    { "ldap_groups_use_matching_rule_in_chain", DP_OPT_BOOL, BOOL_FALSE, BOOL_FALSE },
+    { "ldap_initgroups_use_matching_rule_in_chain", DP_OPT_BOOL, BOOL_FALSE, BOOL_FALSE },
     DP_OPTION_TERMINATOR
 };
 
@@ -230,13 +243,15 @@ struct sdap_attr_map ipa_selinux_user_map[] = {
 
 struct dp_option ipa_def_krb5_opts[] = {
     { "krb5_server", DP_OPT_STRING, NULL_STRING, NULL_STRING },
+    { "krb5_backup_server", DP_OPT_STRING, NULL_STRING, NULL_STRING },
     { "krb5_realm", DP_OPT_STRING, NULL_STRING, NULL_STRING },
-    { "krb5_ccachedir", DP_OPT_STRING, { "/tmp" }, NULL_STRING },
-    { "krb5_ccname_template", DP_OPT_STRING, { "FILE:%d/krb5cc_%U_XXXXXX" }, NULL_STRING},
+    { "krb5_ccachedir", DP_OPT_STRING, { DEFAULT_CCACHE_DIR }, NULL_STRING },
+    { "krb5_ccname_template", DP_OPT_STRING, { DEFAULT_CCNAME_TEMPLATE }, NULL_STRING},
     { "krb5_auth_timeout", DP_OPT_NUMBER, { .number = 15 }, NULL_NUMBER },
     { "krb5_keytab", DP_OPT_STRING, { "/etc/krb5.keytab" }, NULL_STRING },
     { "krb5_validate", DP_OPT_BOOL, BOOL_TRUE, BOOL_TRUE },
     { "krb5_kpasswd", DP_OPT_STRING, NULL_STRING, NULL_STRING },
+    { "krb5_backup_kpasswd", DP_OPT_STRING, NULL_STRING, NULL_STRING },
     { "krb5_store_password_if_offline", DP_OPT_BOOL, BOOL_FALSE, BOOL_FALSE },
     { "krb5_renewable_lifetime", DP_OPT_STRING, NULL_STRING, NULL_STRING },
     { "krb5_lifetime", DP_OPT_STRING, NULL_STRING, NULL_STRING },

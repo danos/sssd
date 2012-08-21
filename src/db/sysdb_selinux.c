@@ -126,10 +126,10 @@ static errno_t sysdb_store_selinux_entity(struct sysdb_ctx *sysdb,
     struct ldb_message *msg;
     struct ldb_message *rm_msg;
     bool in_transaction = false;
-    const char *objectclass;
+    const char *objectclass = NULL;
     const char *name;
     char *clean_name;
-    struct ldb_dn *dn;
+    struct ldb_dn *dn = NULL;
     errno_t sret = EOK;
     errno_t ret;
     time_t now;
@@ -271,7 +271,24 @@ done:
     return ret;
 }
 
+errno_t sysdb_delete_usermaps(struct sysdb_ctx *sysdb)
+{
+    struct ldb_dn *dn = NULL;
+    errno_t ret;
 
+    dn = ldb_dn_new_fmt(sysdb, sysdb->ldb,
+                        SYSDB_TMPL_SELINUX_BASE, sysdb->domain->name);
+    if (!dn) return ENOMEM;
+
+    ret = sysdb_delete_recursive(sysdb, dn, true);
+    talloc_free(dn);
+    if (ret != EOK) {
+        DEBUG(SSSDBG_CRIT_FAILURE, ("sysdb_delete_recursive failed.\n"));
+        return ret;
+    }
+
+    return EOK;
+}
 
 /* --- SYSDB SELinux search routines --- */
 errno_t sysdb_search_selinux_usermap_by_mapname(TALLOC_CTX *mem_ctx,
@@ -341,6 +358,7 @@ errno_t sysdb_search_selinux_usermap_by_username(TALLOC_CTX *mem_ctx,
                             SYSDB_HOST_CATEGORY,
                             SYSDB_ORIG_MEMBER_USER,
                             SYSDB_ORIG_MEMBER_HOST,
+                            SYSDB_SELINUX_HOST_PRIORITY,
                             SYSDB_SELINUX_USER,
                             NULL };
     struct ldb_message **msgs = NULL;
@@ -351,6 +369,9 @@ errno_t sysdb_search_selinux_usermap_by_username(TALLOC_CTX *mem_ctx,
     struct ldb_dn *basedn;
     size_t msgs_count = 0;
     size_t usermaps_cnt;
+    uint32_t priority = 0;
+    uint32_t host_priority = 0;
+    uint32_t top_priority = 0;
     char *filter;
     errno_t ret;
     int i;
@@ -405,7 +426,35 @@ errno_t sysdb_search_selinux_usermap_by_username(TALLOC_CTX *mem_ctx,
         tmp_attrs->a = msgs[i]->elements;
         tmp_attrs->num = msgs[i]->num_elements;
 
-        if (sss_selinux_match(tmp_attrs, user, NULL)) {
+        if (sss_selinux_match(tmp_attrs, user, NULL, &priority)) {
+            priority &= ~(SELINUX_PRIORITY_HOST_NAME |
+                          SELINUX_PRIORITY_HOST_GROUP |
+                          SELINUX_PRIORITY_HOST_CAT);
+
+            /* Now figure out host priority */
+            ret = sysdb_attrs_get_uint32_t(tmp_attrs,
+                                           SYSDB_SELINUX_HOST_PRIORITY,
+                                           &host_priority);
+            if (ret != EOK) {
+                continue;
+            }
+
+            priority += host_priority;
+            if (priority < top_priority) {
+                /* This rule has lower priority than what we already have,
+                 * skip it */
+                continue;
+            } else if (priority > top_priority) {
+                /* If the rule has higher priority, drop what we already
+                 * have */
+                while (usermaps_cnt > 0) {
+                    usermaps_cnt--;
+                    talloc_zfree(usermaps[usermaps_cnt]);
+                }
+                top_priority = priority;
+            }
+
+
             usermaps[usermaps_cnt] = talloc_steal(usermaps, msgs[i]);
             usermaps_cnt++;
         } else {
@@ -420,6 +469,7 @@ errno_t sysdb_search_selinux_usermap_by_username(TALLOC_CTX *mem_ctx,
 
     *_usermaps = talloc_steal(mem_ctx, usermaps);
 
+    ret = EOK;
 done:
     talloc_zfree(tmp_ctx);
     return ret;

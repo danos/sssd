@@ -288,6 +288,81 @@ done:
     return ret;
 }
 
+int confdb_set_bool(struct confdb_ctx *cdb,
+                     const char *section,
+                     const char *attribute,
+                     bool val)
+{
+    TALLOC_CTX *tmp_ctx;
+    struct ldb_dn *dn;
+    char *secdn;
+    struct ldb_message *msg;
+    int ret, lret;
+
+    tmp_ctx = talloc_new(NULL);
+    if (!tmp_ctx)
+        return ENOMEM;
+
+    ret = parse_section(tmp_ctx, section, &secdn, NULL);
+    if (ret != EOK) {
+        goto done;
+    }
+
+    dn = ldb_dn_new(tmp_ctx, cdb->ldb, secdn);
+    if (!dn) {
+        ret = EIO;
+        goto done;
+    }
+
+    msg = ldb_msg_new(tmp_ctx);
+    if (!msg) {
+        ret = ENOMEM;
+        goto done;
+    }
+
+    msg->dn = dn;
+
+    lret = ldb_msg_add_empty(msg, attribute, LDB_FLAG_MOD_REPLACE, NULL);
+    if (lret != LDB_SUCCESS) {
+        DEBUG(SSSDBG_MINOR_FAILURE,
+              ("ldb_msg_add_empty failed: [%s]\n", ldb_strerror(lret)));
+        ret = EIO;
+        goto done;
+    }
+
+    if (val) {
+        lret = ldb_msg_add_string(msg, attribute, "True");
+    } else {
+        lret = ldb_msg_add_string(msg, attribute, "False");
+    }
+    if (lret != LDB_SUCCESS) {
+        DEBUG(SSSDBG_MINOR_FAILURE,
+              ("ldb_msg_add_string failed: [%s]\n", ldb_strerror(lret)));
+        ret = EIO;
+        goto done;
+    }
+
+
+    lret = ldb_modify(cdb->ldb, msg);
+    if (lret != LDB_SUCCESS) {
+        DEBUG(SSSDBG_MINOR_FAILURE,
+              ("ldb_modify failed: [%s]\n", ldb_strerror(lret)));
+        ret = EIO;
+        goto done;
+    }
+
+    ret = EOK;
+
+done:
+    talloc_free(tmp_ctx);
+    if (ret != EOK) {
+        DEBUG(SSSDBG_CRIT_FAILURE,
+              ("Failed to set [%s] from [%s], error [%d] (%s)\n",
+               attribute, section, ret, strerror(ret)));
+    }
+    return ret;
+}
+
 int confdb_get_string(struct confdb_ctx *cdb, TALLOC_CTX *ctx,
                       const char *section, const char *attribute,
                       const char *defstr, char **result)
@@ -808,7 +883,7 @@ static int confdb_get_domain_internal(struct confdb_ctx *cdb,
         }
     }
     if (!domain->enumerate) {
-        DEBUG(1, ("No enumeration for [%s]!\n", domain->name));
+        DEBUG(SSSDBG_TRACE_FUNC, ("No enumeration for [%s]!\n", domain->name));
     }
 
     /* Determine if user/group names will be Fully Qualified
@@ -922,6 +997,17 @@ static int confdb_get_domain_internal(struct confdb_ctx *cdb,
         goto done;
     }
 
+    /* Override the sudo cache timeout, if specified */
+    ret = get_entry_as_uint32(res->msgs[0], &domain->sudo_timeout,
+                              CONFDB_DOMAIN_SUDO_CACHE_TIMEOUT,
+                              entry_cache_timeout);
+    if (ret != EOK) {
+        DEBUG(SSSDBG_FATAL_FAILURE,
+              ("Invalid value for [%s]\n",
+               CONFDB_DOMAIN_SUDO_CACHE_TIMEOUT));
+        goto done;
+    }
+
     /* Set the PAM warning time, if specified */
     val = ldb_msg_find_attr_as_int(res->msgs[0],
                                    CONFDB_DOMAIN_PWD_EXPIRATION_WARNING,
@@ -968,10 +1054,21 @@ static int confdb_get_domain_internal(struct confdb_ctx *cdb,
     }
 
     tmp = ldb_msg_find_attr_as_string(res->msgs[0],
-                                      CONFDB_DOMAIN_SUBDOMAIN_HOMEDIR, NULL);
+                                      CONFDB_DOMAIN_SUBDOMAIN_HOMEDIR,
+                                      CONFDB_DOMAIN_DEFAULT_SUBDOMAIN_HOMEDIR);
     if (tmp != NULL) {
         domain->subdomain_homedir = talloc_strdup(domain, tmp);
         if (!domain->subdomain_homedir) {
+            ret = ENOMEM;
+            goto done;
+        }
+    }
+
+    tmp = ldb_msg_find_attr_as_string(res->msgs[0],
+                                      CONFDB_NSS_OVERRIDE_SHELL, NULL);
+    if (tmp != NULL) {
+        domain->override_shell = talloc_strdup(domain, tmp);
+        if (!domain->override_shell) {
             ret = ENOMEM;
             goto done;
         }

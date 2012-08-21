@@ -247,6 +247,50 @@ AC_DEFUN([WITH_KRB5_RCACHE_DIR],
     AC_DEFINE_UNQUOTED(KRB5_RCACHE_DIR, "$krb5rcachedir", [Directory used for storing Kerberos replay caches])
   ])
 
+AC_DEFUN([WITH_DEFAULT_CCACHE_DIR],
+  [ AC_ARG_WITH([default-ccache-dir],
+                [AC_HELP_STRING([--with-default-ccache-dir=CCACHEDIR],
+                                [The default value of krb5_ccachedir [/tmp]]
+                               )
+                ]
+               )
+    config_def_ccache_dir="/tmp"
+    if test x"$with_default_ccache_dir" != x; then
+        config_def_ccache_dir=$with_default_ccache_dir
+    fi
+    AC_SUBST(config_def_ccache_dir)
+    AC_DEFINE_UNQUOTED(DEFAULT_CCACHE_DIR, "$config_def_ccache_dir", [The default value of krb5_ccachedir])
+  ])
+
+AC_DEFUN([WITH_DEFAULT_CCNAME_TEMPLATE],
+  [ AC_ARG_WITH([default-ccname-template],
+                [AC_HELP_STRING([--with-default-ccname-template=CCACHE],
+                                [The default value of krb5_ccname_template [FILE:%d/krb5cc_%U_XXXXXX]]
+                               )
+                ]
+               )
+    config_def_ccname_template="FILE:%d/krb5cc_%U_XXXXXX"
+    if test x"$with_default_ccname_template" != x; then
+        config_def_ccname_template=$with_default_ccname_template
+    fi
+    AC_SUBST(config_def_ccname_template)
+    AC_DEFINE_UNQUOTED(DEFAULT_CCNAME_TEMPLATE, "$config_def_ccname_template", [The default value of krb5_ccname_template])
+  ])
+
+AC_DEFUN([WITH_KRB5AUTHDATA_PLUGIN_PATH],
+  [ AC_ARG_WITH([krb5authdata-plugin-path],
+                [AC_HELP_STRING([--with-krb5authdata-plugin-path=PATH],
+                                [Path to kerberos authdata plugin store [/usr/lib/krb5/plugins/authdata]]
+                               )
+                ]
+               )
+    krb5authdatapluginpath="${libdir}/krb5/plugins/authdata"
+    if test x"$with_krb5authdata_plugin_path" != x; then
+        krb5authdatapluginpath=$with_krb5authdata_plugin_path
+    fi
+    AC_SUBST(krb5authdatapluginpath)
+  ])
+
 AC_DEFUN([WITH_PYTHON_BINDINGS],
   [ AC_ARG_WITH([python-bindings],
                 [AC_HELP_STRING([--with-python-bindings],
@@ -386,11 +430,11 @@ AC_ARG_ENABLE([all-experimental-features],
 AC_DEFUN([WITH_UNICODE_LIB],
   [ AC_ARG_WITH([unicode-lib],
                 [AC_HELP_STRING([--with-unicode-lib=<library>],
-                                [Which library to use for unicode processing (libunistring, glib2) [libunistring]]
+                                [Which library to use for unicode processing (libunistring, glib2) [glib2]]
                                )
                 ]
                )
-    unicode_lib="libunistring"
+    unicode_lib="glib2"
     if test x"$with_unicode_lib" != x; then
         unicode_lib=$with_unicode_lib
     fi

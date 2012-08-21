@@ -33,6 +33,7 @@
 #include <errno.h>
 #include <popt.h>
 #include "util/util.h"
+#include "util/strtonum.h"
 #include "db/sysdb.h"
 #include "confdb/confdb.h"
 #include "dbus/dbus.h"
@@ -87,20 +88,31 @@ static errno_t set_close_on_exec(int fd)
 
 static int client_destructor(struct cli_ctx *ctx)
 {
-    if (ctx->cfd > 0) close(ctx->cfd);
+    errno_t ret;
+
+    if ((ctx->cfd > 0) && close(ctx->cfd) < 0) {
+        ret = errno;
+        DEBUG(SSSDBG_CRIT_FAILURE,
+              ("Failed to close fd [%d]: [%s]\n",
+               ctx->cfd, strerror(ret)));
+    }
+
+    DEBUG(SSSDBG_TRACE_INTERNAL,
+          ("Terminated client [%p][%d]\n",
+           ctx, ctx->cfd));
     return 0;
 }
 
 static errno_t get_client_cred(struct cli_ctx *cctx)
 {
+    cctx->client_euid = -1;
+    cctx->client_egid = -1;
+    cctx->client_pid = -1;
+
 #ifdef HAVE_UCRED
     int ret;
     struct ucred client_cred;
     socklen_t client_cred_len = sizeof(client_cred);
-
-    cctx->client_euid = -1;
-    cctx->client_egid = -1;
-    cctx->client_pid = -1;
 
     ret = getsockopt(cctx->cfd, SOL_SOCKET, SO_PEERCRED, &client_cred,
                      &client_cred_len);
@@ -124,6 +136,107 @@ static errno_t get_client_cred(struct cli_ctx *cctx)
 
     return EOK;
 }
+
+errno_t check_allowed_uids(uid_t uid, size_t allowed_uids_count,
+                           uid_t *allowed_uids)
+{
+    size_t c;
+
+    if (allowed_uids == NULL) {
+        return EINVAL;
+    }
+
+    for (c = 0; c < allowed_uids_count; c++) {
+        if (uid == allowed_uids[c]) {
+            return EOK;
+        }
+    }
+
+    return EACCES;
+}
+
+errno_t csv_string_to_uid_array(TALLOC_CTX *mem_ctx, const char *cvs_string,
+                                bool allow_sss_loop,
+                                size_t *_uid_count, uid_t **_uids)
+{
+    int ret;
+    size_t c;
+    char **list = NULL;
+    int list_size;
+    uid_t *uids = NULL;
+    char *endptr;
+    struct passwd *pwd;
+
+    ret = split_on_separator(mem_ctx, cvs_string, ',', true, &list, &list_size);
+    if (ret != EOK) {
+        DEBUG(SSSDBG_OP_FAILURE, ("split_on_separator failed [%d][%s].\n",
+                                  ret, strerror(ret)));
+        goto done;
+    }
+
+    uids = talloc_array(mem_ctx, uint32_t, list_size);
+    if (uids == NULL) {
+        DEBUG(SSSDBG_OP_FAILURE, ("talloc_array failed.\n"));
+        ret = ENOMEM;
+        goto done;
+    }
+
+    if (allow_sss_loop) {
+        ret = unsetenv("_SSS_LOOPS");
+        if (ret != EOK) {
+            DEBUG(SSSDBG_OP_FAILURE, ("Failed to unset _SSS_LOOPS, getpwnam "
+                                      "might not find sssd users.\n"));
+        }
+    }
+
+    for (c = 0; c < list_size; c++) {
+        errno = 0;
+        if (*list[c] == '\0') {
+            DEBUG(SSSDBG_OP_FAILURE, ("Empty list item.\n"));
+            ret = EINVAL;
+            goto done;
+        }
+
+        uids[c] = strtouint32(list[c], &endptr, 10);
+        if (errno != 0 || *endptr != '\0') {
+            ret = errno;
+            if (ret == ERANGE) {
+                DEBUG(SSSDBG_OP_FAILURE, ("List item [%s] is out of range.\n",
+                                          list[c]));
+                goto done;
+            }
+
+            errno = 0;
+            pwd = getpwnam(list[c]);
+            if (pwd == NULL) {
+                DEBUG(SSSDBG_OP_FAILURE, ("List item [%s] is neither a valid "
+                                          "UID nor a user name which cloud be "
+                                          "resolved by getpwnam().\n", list[c]));
+                ret = EINVAL;
+                goto done;
+            }
+
+            uids[c] = pwd->pw_uid;
+        }
+    }
+
+    *_uid_count = list_size;
+    *_uids = uids;
+
+    ret = EOK;
+
+done:
+    if(setenv("_SSS_LOOPS", "NO", 0) != 0) {
+        DEBUG(SSSDBG_OP_FAILURE, ("Failed to set _SSS_LOOPS.\n"));
+    }
+    talloc_free(list);
+    if (ret != EOK) {
+        talloc_free(uids);
+    }
+
+    return ret;
+}
+
 
 static void client_send(struct cli_ctx *cctx)
 {
@@ -208,11 +321,23 @@ static void client_recv(struct cli_ctx *cctx)
     return;
 }
 
+static errno_t reset_idle_timer(struct cli_ctx *cctx);
+
 static void client_fd_handler(struct tevent_context *ev,
                               struct tevent_fd *fde,
                               uint16_t flags, void *ptr)
 {
+    errno_t ret;
     struct cli_ctx *cctx = talloc_get_type(ptr, struct cli_ctx);
+
+    /* Always reset the idle timer on any activity */
+    ret = reset_idle_timer(cctx);
+    if (ret != EOK) {
+        DEBUG(SSSDBG_CRIT_FAILURE,
+              ("Could not create idle timer for client. "
+               "This connection may not auto-terminate\n"));
+        /* Non-fatal, continue */
+    }
 
     if (flags & TEVENT_FD_READ) {
         client_recv(cctx);
@@ -228,6 +353,11 @@ struct accept_fd_ctx {
     struct resp_ctx *rctx;
     bool is_private;
 };
+
+static void idle_handler(struct tevent_context *ev,
+                         struct tevent_timer *te,
+                         struct timeval current_time,
+                         void *data);
 
 static void accept_fd_handler(struct tevent_context *ev,
                               struct tevent_fd *fde,
@@ -292,6 +422,32 @@ static void accept_fd_handler(struct tevent_context *ev,
                   "client cred may not be available.\n"));
     }
 
+    if (rctx->allowed_uids_count != 0) {
+        if (cctx->client_euid == -1) {
+            DEBUG(SSSDBG_CRIT_FAILURE, ("allowed_uids configured, " \
+                                        "but platform does not support " \
+                                        "reading peer credential from the " \
+                                        "socket. Access denied.\n"));
+            close(cctx->cfd);
+            talloc_free(cctx);
+            return;
+        }
+
+        ret = check_allowed_uids(cctx->client_euid, rctx->allowed_uids_count,
+                                 rctx->allowed_uids);
+        if (ret != EOK) {
+            if (ret == EACCES) {
+                DEBUG(SSSDBG_CRIT_FAILURE, ("Access denied for uid [%d].\n",
+                                            cctx->client_euid));
+            } else {
+                DEBUG(SSSDBG_OP_FAILURE, ("check_allowed_uids failed.\n"));
+            }
+            close(cctx->cfd);
+            talloc_free(cctx);
+            return;
+        }
+    }
+
     cctx->cfde = tevent_add_fd(ev, cctx, cctx->cfd,
                                TEVENT_FD_READ, client_fd_handler, cctx);
     if (!cctx->cfde) {
@@ -306,10 +462,54 @@ static void accept_fd_handler(struct tevent_context *ev,
 
     talloc_set_destructor(cctx, client_destructor);
 
-    DEBUG(4, ("Client connected%s!\n",
-              accept_ctx->is_private ? " to privileged pipe" : ""));
+    /* Set up the idle timer */
+    ret = reset_idle_timer(cctx);
+    if (ret != EOK) {
+        DEBUG(SSSDBG_CRIT_FAILURE,
+              ("Could not create idle timer for client. "
+               "This connection may not auto-terminate\n"));
+        /* Non-fatal, continue */
+    }
+
+    DEBUG(SSSDBG_TRACE_FUNC,
+          ("Client connected%s!\n",
+           accept_ctx->is_private ? " to privileged pipe" : ""));
 
     return;
+}
+
+static errno_t reset_idle_timer(struct cli_ctx *cctx)
+{
+    struct timeval tv =
+            tevent_timeval_current_ofs(cctx->rctx->client_idle_timeout, 0);
+
+    talloc_zfree(cctx->idle);
+
+    cctx->idle = tevent_add_timer(cctx->ev, cctx, tv, idle_handler, cctx);
+    if (!cctx->idle) return ENOMEM;
+
+    DEBUG(SSSDBG_TRACE_ALL,
+          ("Idle timer re-set for client [%p][%d]\n",
+           cctx, cctx->cfd));
+
+    return EOK;
+}
+
+static void idle_handler(struct tevent_context *ev,
+                         struct tevent_timer *te,
+                         struct timeval current_time,
+                         void *data)
+{
+    /* This connection is idle. Terminate it */
+    struct cli_ctx *cctx =
+            talloc_get_type(data, struct cli_ctx);
+
+    DEBUG(SSSDBG_TRACE_INTERNAL,
+          ("Terminating idle client [%p][%d]\n",
+           cctx, cctx->cfd));
+
+    /* The cli_ctx destructor will handle the rest */
+    talloc_free(cctx);
 }
 
 static int sss_dp_init(struct resp_ctx *rctx,
@@ -546,6 +746,22 @@ int sss_process_init(TALLOC_CTX *mem_ctx,
     rctx->confdb_service_path = confdb_service_path;
 
     ret = confdb_get_int(rctx->cdb, rctx->confdb_service_path,
+                         CONFDB_RESPONDER_CLI_IDLE_TIMEOUT,
+                         CONFDB_RESPONDER_CLI_IDLE_DEFAULT_TIMEOUT,
+                         &rctx->client_idle_timeout);
+    if (ret != EOK) {
+        DEBUG(SSSDBG_OP_FAILURE,
+              ("Cannot get the client idle timeout [%d]: %s\n",
+               ret, strerror(ret)));
+        return ret;
+    }
+
+    /* Ensure that the client timeout is at least ten seconds */
+    if (rctx->client_idle_timeout < 10) {
+        rctx->client_idle_timeout = 10;
+    }
+
+    ret = confdb_get_int(rctx->cdb, rctx->confdb_service_path,
                          CONFDB_RESPONDER_GET_DOMAINS_TIMEOUT,
                          GET_DOMAINS_DEFAULT_TIMEOUT, &rctx->domains_timeout);
     if (ret != EOK) {
@@ -575,6 +791,13 @@ int sss_process_init(TALLOC_CTX *mem_ctx,
     }
 
     for (dom = rctx->domains; dom; dom = dom->next) {
+        ret = sss_names_init(rctx->cdb, rctx->cdb, dom->name, &dom->names);
+        if (ret != EOK) {
+            DEBUG(SSSDBG_FATAL_FAILURE,
+                  ("fatal error initializing regex data for domain: %s\n",
+                   dom->name));
+            return ret;
+        }
 
         /* skip local domain, it doesn't have a backend */
         if (strcasecmp(dom->provider, "local") == 0) {
@@ -594,12 +817,6 @@ int sss_process_init(TALLOC_CTX *mem_ctx,
         return ret;
     }
 
-    ret = sss_names_init(rctx, rctx->cdb, &rctx->names);
-    if (ret != EOK) {
-        DEBUG(0, ("fatal error initializing regex data\n"));
-        return ret;
-    }
-
     /* after all initializations we are ready to listen on our socket */
     ret = set_unix_socket(rctx);
     if (ret != EOK) {
@@ -615,7 +832,7 @@ int sss_process_init(TALLOC_CTX *mem_ctx,
         return ret;
     }
 
-    DEBUG(1, ("Responder Initialization complete\n"));
+    DEBUG(SSSDBG_TRACE_FUNC, ("Responder Initialization complete\n"));
 
     *responder_ctx = rctx;
     return EOK;

@@ -80,7 +80,7 @@
                 </varlistentry>
 
                 <varlistentry>
-                    <term>ipa_server (string)</term>
+                    <term>ipa_server, ipa_backup_server (string)</term>
                     <listitem>
                         <para>
                             The comma-separated list of IP addresses or hostnames of the
@@ -210,6 +210,25 @@
                         <para>
                             Default: the value of
                             <emphasis>cn=trusts,%basedn</emphasis>
+                        </para>
+                    </listitem>
+                </varlistentry>
+
+                <varlistentry>
+                    <term>ipa_master_domain_search_base (string)</term>
+                    <listitem>
+                        <para>
+                            Optional. Use the given string as search base for
+                            master domain object.
+                        </para>
+                        <para>
+                            See <quote>ldap_search_base</quote> for
+                            information about configuring multiple search
+                            bases.
+                        </para>
+                        <para>
+                            Default: the value of
+                            <emphasis>cn=ad,cn=etc,%basedn</emphasis>
                         </para>
                     </listitem>
                 </varlistentry>
@@ -577,22 +596,7 @@
         </para>
     </refsect1>
 
-    <refsect1 id='see_also'>
-        <title>SEE ALSO</title>
-        <para>
-            <citerefentry>
-                <refentrytitle>sssd.conf</refentrytitle><manvolnum>5</manvolnum>
-            </citerefentry>,
-            <citerefentry>
-                <refentrytitle>sssd-ldap</refentrytitle><manvolnum>5</manvolnum>
-            </citerefentry>,
-            <citerefentry>
-                <refentrytitle>sssd-krb5</refentrytitle><manvolnum>5</manvolnum>
-            </citerefentry>,
-            <citerefentry>
-                <refentrytitle>sssd</refentrytitle><manvolnum>8</manvolnum>
-            </citerefentry>
-        </para>
-    </refsect1>
+	<xi:include xmlns:xi="http://www.w3.org/2001/XInclude" href="include/seealso.xml" />
+
 </refentry>
 </reference>

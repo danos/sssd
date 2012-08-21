@@ -123,7 +123,10 @@ int sdap_parse_entry(TALLOC_CTX *memctx,
     }
 
     attrs = sysdb_new_attrs(tmp_ctx);
-    if (!attrs) return ENOMEM;
+    if (!attrs) {
+        ret = ENOMEM;
+        goto done;
+    }
 
     str = ldap_get_dn(sh->ldap, sm->msg);
     if (!str) {
@@ -176,8 +179,11 @@ int sdap_parse_entry(TALLOC_CTX *memctx,
     str = ldap_first_attribute(sh->ldap, sm->msg, &ber);
     if (!str) {
         ldap_get_option(sh->ldap, LDAP_OPT_RESULT_CODE, &lerrno);
-        DEBUG(1, ("Entry has no attributes [%d(%s)]!?\n",
-                  lerrno, sss_ldap_err2string(lerrno)));
+        DEBUG(lerrno == LDAP_SUCCESS
+              ? SSSDBG_TRACE_INTERNAL
+              : SSSDBG_MINOR_FAILURE,
+              ("Entry has no attributes [%d(%s)]!?\n",
+               lerrno, sss_ldap_err2string(lerrno)));
         if (map) {
             ret = EINVAL;
             goto done;
@@ -988,6 +994,12 @@ int sdap_get_server_opts_from_rootdse(TALLOC_CTX *memctx,
                     talloc_strdup(opts->service_map,
                                   opts->gen_map[SDAP_AT_ENTRY_USN].name);
     }
+    if (opts->sudorule_map &&
+        !opts->sudorule_map[SDAP_AT_SUDO_USN].name) {
+        opts->sudorule_map[SDAP_AT_SUDO_USN].name =
+                    talloc_strdup(opts->sudorule_map,
+                                  opts->gen_map[SDAP_AT_ENTRY_USN].name);
+    }
 
     *srv_opts = so;
     return EOK;
@@ -1016,10 +1028,28 @@ void sdap_steal_server_opts(struct sdap_id_ctx *id_ctx,
     id_ctx->srv_opts = talloc_move(id_ctx, srv_opts);
 }
 
+static bool attr_is_filtered(const char *attr, const char **filter)
+{
+    int i;
+
+    if (filter) {
+        i = 0;
+        while (filter[i]) {
+            if (filter[i] == attr ||
+                strcasecmp(filter[i], attr) == 0) {
+                return true;
+            }
+            i++;
+        }
+    }
+
+    return false;
+}
 
 int build_attrs_from_map(TALLOC_CTX *memctx,
                          struct sdap_attr_map *map,
                          size_t size,
+                         const char **filter,
                          const char ***_attrs,
                          size_t *attr_count)
 {
@@ -1042,7 +1072,7 @@ int build_attrs_from_map(TALLOC_CTX *memctx,
 
     /* add the others */
     for (i = j = 1; i < size; i++) {
-        if (map[i].name) {
+        if (map[i].name && !attr_is_filtered(map[i].name, filter)) {
             attrs[j] = map[i].name;
             j++;
         }

@@ -150,6 +150,7 @@ enum sdap_result {
 
 enum sdap_basic_opt {
     SDAP_URI = 0,
+    SDAP_BACKUP_URI,
     SDAP_SEARCH_BASE,
     SDAP_DEFAULT_BIND_DN,
     SDAP_DEFAULT_AUTHTOK_TYPE,
@@ -166,8 +167,13 @@ enum sdap_basic_opt {
     SDAP_GROUP_SEARCH_FILTER,
     SDAP_SERVICE_SEARCH_BASE,
     SDAP_SUDO_SEARCH_BASE,
-    SDAP_SUDO_REFRESH_ENABLED,
-    SDAP_SUDO_REFRESH_TIMEOUT,
+    SDAP_SUDO_FULL_REFRESH_INTERVAL,
+    SDAP_SUDO_SMART_REFRESH_INTERVAL,
+    SDAP_SUDO_USE_HOST_FILTER,
+    SDAP_SUDO_HOSTNAMES,
+    SDAP_SUDO_IP,
+    SDAP_SUDO_INCLUDE_NETGROUPS,
+    SDAP_SUDO_INCLUDE_REGEXP,
     SDAP_AUTOFS_SEARCH_BASE,
     SDAP_SCHEMA,
     SDAP_OFFLINE_TIMEOUT,
@@ -188,6 +194,7 @@ enum sdap_basic_opt {
     SDAP_KRB5_KEYTAB,
     SDAP_KRB5_KINIT,
     SDAP_KRB5_KDC,
+    SDAP_KRB5_BACKUP_KDC,
     SDAP_KRB5_REALM,
     SDAP_KRB5_CANONICALIZE,
     SDAP_PWD_POLICY,
@@ -202,6 +209,7 @@ enum sdap_basic_opt {
     SDAP_ACCOUNT_EXPIRE_POLICY,
     SDAP_ACCESS_ORDER,
     SDAP_CHPASS_URI,
+    SDAP_CHPASS_BACKUP_URI,
     SDAP_CHPASS_DNS_SERVICE_NAME,
     SDAP_CHPASS_UPDATE_LAST_CHANGE,
     SDAP_ENUM_SEARCH_TIMEOUT,
@@ -217,6 +225,8 @@ enum sdap_basic_opt {
     SDAP_IDMAP_AUTORID_COMPAT,
     SDAP_IDMAP_DEFAULT_DOMAIN,
     SDAP_IDMAP_DEFAULT_DOMAIN_SID,
+    SDAP_AD_MATCHING_RULE_GROUPS,
+    SDAP_AD_MATCHING_RULE_INITGROUPS,
 
     SDAP_OPTS_BASIC /* opts counter */
 };
@@ -311,6 +321,7 @@ enum sdap_sudorule_attrs {
     SDAP_AT_SUDO_NOTBEFORE,
     SDAP_AT_SUDO_NOTAFTER,
     SDAP_AT_SUDO_ORDER,
+    SDAP_AT_SUDO_USN,
 
     SDAP_OPTS_SUDO  /* attrs counter */
 };
@@ -384,6 +395,8 @@ struct sdap_options {
     struct sdap_search_base **sudo_search_bases;
     struct sdap_search_base **service_search_bases;
     struct sdap_search_base **autofs_search_bases;
+
+    bool support_matching_rule;
 };
 
 struct sdap_server_opts {
@@ -393,6 +406,7 @@ struct sdap_server_opts {
     char *max_user_value;
     char *max_group_value;
     char *max_service_value;
+    char *max_sudo_value;
 };
 
 struct sdap_id_ctx;
@@ -454,6 +468,7 @@ bool sdap_check_sup_list(struct sup_list *l, const char *val);
 int build_attrs_from_map(TALLOC_CTX *memctx,
                          struct sdap_attr_map *map,
                          size_t size,
+                         const char **filter,
                          const char ***_attrs,
                          size_t *attr_count);
 

@@ -36,12 +36,15 @@
 #define SYSDB_GROUPS_CONTAINER "cn=groups"
 #define SYSDB_CUSTOM_CONTAINER "cn=custom"
 #define SYSDB_NETGROUP_CONTAINER "cn=Netgroups"
+#define SYSDB_RANGE_CONTAINER "cn=ranges"
 #define SYSDB_TMPL_USER_BASE SYSDB_USERS_CONTAINER",cn=%s,"SYSDB_BASE
 #define SYSDB_TMPL_GROUP_BASE SYSDB_GROUPS_CONTAINER",cn=%s,"SYSDB_BASE
 #define SYSDB_TMPL_CUSTOM_BASE SYSDB_CUSTOM_CONTAINER",cn=%s,"SYSDB_BASE
 #define SYSDB_TMPL_NETGROUP_BASE SYSDB_NETGROUP_CONTAINER",cn=%s,"SYSDB_BASE
+#define SYSDB_TMPL_RANGE_BASE SYSDB_RANGE_CONTAINER",cn=%s,"SYSDB_BASE
 
 #define SYSDB_SUBDOMAIN_CLASS "subdomain"
+#define SYSDB_RANGE_CLASS "idrange"
 #define SYSDB_USER_CLASS "user"
 #define SYSDB_GROUP_CLASS "group"
 #define SYSDB_NETGROUP_CLASS "netgroup"
@@ -49,6 +52,19 @@
 #define SYSDB_HOSTGROUP_CLASS "hostgroup"
 #define SYSDB_SELINUX_USERMAP_CLASS "selinuxusermap"
 #define SYSDB_SELINUX_CLASS "selinux"
+#define SYSDB_ID_RANGE_CLASS "idRange"
+#define SYSDB_DOMAIN_ID_RANGE_CLASS "domainIDRange"
+#define SYSDB_TRUSTED_AD_DOMAIN_RANGE_CLASS "TrustedADDomainRange"
+
+#define SYSDB_NAME "name"
+#define SYSDB_NAME_ALIAS "nameAlias"
+#define SYSDB_OBJECTCLASS "objectClass"
+
+#define SYSDB_NEXTID "nextID"
+#define SYSDB_UIDNUM "uidNumber"
+#define SYSDB_GIDNUM "gidNumber"
+#define SYSDB_CREATE_TIME "createTimestamp"
+
 
 #define SYSDB_NAME "name"
 #define SYSDB_NAME_ALIAS "nameAlias"
@@ -68,6 +84,7 @@
 
 #define SYSDB_MEMBER "member"
 #define SYSDB_MEMBERUID "memberUid"
+#define SYSDB_GHOST "ghost"
 #define SYSDB_POSIX "isPosix"
 #define SYSDB_USER_CATEGORY "userCategory"
 #define SYSDB_HOST_CATEGORY "hostCategory"
@@ -103,6 +120,7 @@
 #define SYSDB_SELINUX_SEEALSO "seeAlso"
 #define SYSDB_SELINUX_USER "selinuxUser"
 #define SYSDB_SELINUX_ENABLED "enabled"
+#define SYSDB_SELINUX_HOST_PRIORITY "hostPriority"
 
 #define SYSDB_CACHEDPWD "cachedPassword"
 
@@ -124,8 +142,15 @@
 
 #define SYSDB_SSH_PUBKEY "sshPublicKey"
 
+#define SYSDB_SUBDOMAIN_REALM "realmName"
 #define SYSDB_SUBDOMAIN_FLAT "flatName"
 #define SYSDB_SUBDOMAIN_ID "domainID"
+
+#define SYSDB_BASE_ID "baseID"
+#define SYSDB_ID_RANGE_SIZE "idRangeSize"
+#define SYSDB_BASE_RID "baseRID"
+#define SYSDB_SECONDARY_BASE_RID "secondaryBaseRID"
+#define SYSDB_DOMAIN_ID "domainID"
 
 #define SYSDB_NEXTID_FILTER "("SYSDB_NEXTID"=*)"
 
@@ -167,6 +192,7 @@
                         NULL}
 #define SYSDB_GRSRC_ATTRS {SYSDB_NAME, SYSDB_GIDNUM, \
                            SYSDB_MEMBERUID, \
+                           SYSDB_GHOST, \
                            SYSDB_DEFAULT_ATTRS, \
                            NULL}
 #define SYSDB_GRPW_ATTRS {SYSDB_NAME, SYSDB_UIDNUM, \
@@ -191,6 +217,7 @@
 #define SYSDB_TMPL_NETGROUP SYSDB_NAME"=%s,"SYSDB_TMPL_NETGROUP_BASE
 #define SYSDB_TMPL_CUSTOM_SUBTREE "cn=%s,"SYSDB_TMPL_CUSTOM_BASE
 #define SYSDB_TMPL_CUSTOM SYSDB_NAME"=%s,cn=%s,"SYSDB_TMPL_CUSTOM_BASE
+#define SYSDB_TMPL_RANGE SYSDB_NAME"=%s,"SYSDB_TMPL_RANGE_BASE
 
 #define SYSDB_MOD_ADD LDB_FLAG_MOD_ADD
 #define SYSDB_MOD_DEL LDB_FLAG_MOD_DELETE
@@ -214,10 +241,20 @@ struct sysdb_attrs {
 /* sysdb_attrs helper functions */
 struct sysdb_attrs *sysdb_new_attrs(TALLOC_CTX *mem_ctx);
 
-struct subdomain_info {
+struct sysdb_subdom {
+    const char *realm;
+    const char *name;
+    const char *flat_name;
+    const char *id;
+};
+
+struct range_info {
     char *name;
-    char *flat_name;
-    char *id;
+    uint32_t base_id;
+    uint32_t id_range_size;
+    uint32_t base_rid;
+    uint32_t secondary_base_rid;
+    char *trusted_dom_sid;
 };
 
 
@@ -234,6 +271,9 @@ int sysdb_attrs_add_uint32(struct sysdb_attrs *attrs,
                            const char *name, uint32_t value);
 int sysdb_attrs_add_time_t(struct sysdb_attrs *attrs,
                            const char *name, time_t value);
+int sysdb_attrs_copy_values(struct sysdb_attrs *src,
+                            struct sysdb_attrs *dst,
+                            const char *name);
 int sysdb_attrs_get_el(struct sysdb_attrs *attrs, const char *name,
                        struct ldb_message_element **el);
 int sysdb_attrs_steal_string(struct sysdb_attrs *attrs,
@@ -326,17 +366,25 @@ int sysdb_transaction_cancel(struct sysdb_ctx *sysdb);
 errno_t sysdb_get_subdomains(TALLOC_CTX *mem_ctx,
                              struct sysdb_ctx *sysdb,
                              size_t *subdomain_count,
-                             struct subdomain_info ***subdomain_list);
+                             struct sysdb_subdom ***subdomain_list);
 
 errno_t sysdb_domain_create(struct sysdb_ctx *sysdb, const char *domain_name);
 
 errno_t sysdb_update_subdomains(struct sysdb_ctx *sysdb,
-                                struct subdomain_info **subdomains);
+                                int num_subdoms,
+                                struct sysdb_subdom *subdoms);
 
 errno_t sysdb_get_subdomain_context(TALLOC_CTX *mem_ctx,
                                     struct sysdb_ctx *sysdb,
                                     struct sss_domain_info *subdomain,
                                     struct sysdb_ctx **subdomain_ctx);
+
+errno_t sysdb_master_domain_get_info(TALLOC_CTX *mem_ctx,
+                                     struct sysdb_ctx *sysdb,
+                                     struct sysdb_subdom **info);
+
+errno_t sysdb_master_domain_add_info(struct sysdb_ctx *sysdb,
+                                     struct sysdb_subdom *domain_info);
 
 
 errno_t sysdb_search_domuser_by_name(TALLOC_CTX *mem_ctx,
@@ -382,6 +430,13 @@ errno_t sysdb_store_domgroup(struct sss_domain_info *domain,
                              time_t now);
 errno_t sysdb_delete_domgroup(struct sss_domain_info *domain,
                               const char *name, gid_t gid);
+
+errno_t sysdb_get_ranges(TALLOC_CTX *mem_ctx, struct sysdb_ctx *sysdb,
+                             size_t *range_count,
+                             struct range_info ***range_list);
+errno_t sysdb_range_create(struct sysdb_ctx *sysdb, struct range_info *range);
+errno_t sysdb_update_ranges(struct sysdb_ctx *sysdb,
+                            struct range_info **ranges);
 
 /* Sysdb initialization.
  * call this function *only* once to initialize the database and get
@@ -580,11 +635,6 @@ int sysdb_add_user(struct sysdb_ctx *sysdb,
                    struct sysdb_attrs *attrs,
                    int cache_timeout,
                    time_t now);
-
-int sysdb_add_fake_user(struct sysdb_ctx *sysdb,
-                        const char *name,
-                        const char *original_dn,
-                        time_t now);
 
 /* Add group (only basic attrs and w/o checks) */
 int sysdb_add_basic_group(struct sysdb_ctx *sysdb,

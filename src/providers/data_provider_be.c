@@ -113,7 +113,7 @@ static struct bet_data bet_data[] = {
     {BET_CHPASS, CONFDB_DOMAIN_CHPASS_PROVIDER, "sssm_%s_chpass_init"},
     {BET_SUDO, CONFDB_DOMAIN_SUDO_PROVIDER, "sssm_%s_sudo_init"},
     {BET_AUTOFS, CONFDB_DOMAIN_AUTOFS_PROVIDER, "sssm_%s_autofs_init"},
-    {BET_SESSION, CONFDB_DOMAIN_SESSION_PROVIDER, "sssm_%s_session_init"},
+    {BET_SELINUX, CONFDB_DOMAIN_SELINUX_PROVIDER, "sssm_%s_selinux_init"},
     {BET_HOSTID, CONFDB_DOMAIN_HOSTID_PROVIDER, "sssm_%s_hostid_init"},
     {BET_SUBDOMAINS, CONFDB_DOMAIN_SUBDOMAINS_PROVIDER, "sssm_%s_subdomains_init"},
     {BET_MAX, NULL, NULL}
@@ -344,7 +344,7 @@ static void get_subdomains_callback(struct be_req *req,
 
 static int be_get_subdomains(DBusMessage *message, struct sbus_connection *conn)
 {
-    struct be_get_subdomains_req *req;
+    struct be_subdom_req *req;
     struct be_req *be_req = NULL;
     struct be_client *becli;
     DBusMessage *reply;
@@ -405,7 +405,7 @@ static int be_get_subdomains(DBusMessage *message, struct sbus_connection *conn)
     be_req->fn = get_subdomains_callback;
     be_req->pvt = reply;
 
-    req = talloc(be_req, struct be_get_subdomains_req);
+    req = talloc(be_req, struct be_subdom_req);
     if (!req) {
         err_maj = DP_ERR_FATAL;
         err_min = ENOMEM;
@@ -414,7 +414,6 @@ static int be_get_subdomains(DBusMessage *message, struct sbus_connection *conn)
     }
     req->force = force;
     req->domain_hint = talloc_strdup(req, domain_hint);
-    req->domain_list = NULL;
     if (!req->domain_hint) {
         err_maj = DP_ERR_FATAL;
         err_min = ENOMEM;
@@ -753,10 +752,12 @@ static void be_pam_handler_callback(struct be_req *req,
                                     int errnum,
                                     const char *errstr)
 {
+    struct be_client *becli = req->becli;
     struct pam_data *pd;
     DBusMessage *reply;
     DBusConnection *dbus_conn;
     dbus_bool_t dbret;
+    errno_t ret;
 
     DEBUG(4, ("Backend returned: (%d, %d, %s) [%s]\n",
               dp_err_type, errnum, errstr?errstr:"<NULL>",
@@ -764,19 +765,41 @@ static void be_pam_handler_callback(struct be_req *req,
 
     pd = talloc_get_type(req->req_data, struct pam_data);
 
+    if (pd->cmd == SSS_PAM_ACCT_MGMT &&
+        req->phase == REQ_PHASE_ACCESS &&
+        dp_err_type == DP_ERR_OK) {
+        if (!becli->bectx->bet_info[BET_SELINUX].bet_ops) {
+            DEBUG(SSSDBG_TRACE_FUNC,
+                  ("SELinux provider doesn't exist, "
+                   "not sending the request to it.\n"));
+        } else {
+            req->phase = REQ_PHASE_SELINUX;
+
+            /* Now is the time to call SELinux provider */
+            ret = be_file_request(becli->bectx->bet_info[BET_SELINUX].pvt_bet_data,
+                                  req,
+                                  becli->bectx->bet_info[BET_SELINUX].bet_ops->handler);
+            if (ret != EOK) {
+                DEBUG(SSSDBG_OP_FAILURE, ("be_file_request failed.\n"));
+                goto done;
+            }
+            return;
+        }
+    }
+
     DEBUG(4, ("Sending result [%d][%s]\n", pd->pam_status, pd->domain));
     reply = (DBusMessage *)req->pvt;
     dbret = dp_pack_pam_response(reply, pd);
     if (!dbret) {
         DEBUG(1, ("Failed to generate dbus reply\n"));
         dbus_message_unref(reply);
-        return;
+        goto done;
     }
 
     dbus_conn = sbus_get_connection(req->becli->conn);
     if (!dbus_conn) {
         DEBUG(SSSDBG_CRIT_FAILURE, ("D-BUS not connected\n"));
-        return;
+        goto done;
     }
 
     dbus_connection_send(dbus_conn, reply, NULL);
@@ -784,6 +807,7 @@ static void be_pam_handler_callback(struct be_req *req,
 
     DEBUG(4, ("Sent result [%d][%s]\n", pd->pam_status, pd->domain));
 
+done:
     talloc_free(req);
 }
 
@@ -851,14 +875,13 @@ static int be_pam_handler(DBusMessage *message, struct sbus_connection *conn)
             break;
         case SSS_PAM_ACCT_MGMT:
             target = BET_ACCESS;
+            be_req->phase = REQ_PHASE_ACCESS;
             break;
         case SSS_PAM_CHAUTHTOK:
         case SSS_PAM_CHAUTHTOK_PRELIM:
             target = BET_CHPASS;
             break;
         case SSS_PAM_OPEN_SESSION:
-            target = BET_SESSION;
-            break;
         case SSS_PAM_SETCRED:
         case SSS_PAM_CLOSE_SESSION:
             pd->pam_status = PAM_SUCCESS;
@@ -968,14 +991,18 @@ static int be_sudo_handler(DBusMessage *message, struct sbus_connection *conn)
 {
     DBusError dbus_error;
     DBusMessage *reply = NULL;
+    DBusMessageIter iter;
+    dbus_bool_t iter_next = FALSE;
     struct be_client *be_cli = NULL;
     struct be_req *be_req = NULL;
     struct be_sudo_req *sudo_req = NULL;
     void *user_data = NULL;
     int ret = 0;
     uint32_t type;
-    char *filter;
+    uint32_t rules_num = 0;
+    const char *rule = NULL;
     const char *err_msg = NULL;
+    int i;
 
     DEBUG(SSSDBG_TRACE_FUNC, ("Entering be_sudo_handler()\n"));
 
@@ -1009,21 +1036,18 @@ static int be_sudo_handler(DBusMessage *message, struct sbus_connection *conn)
     be_req->pvt = reply;
     be_req->fn = be_sudo_handler_callback;
 
-    /* get arguments */
     dbus_error_init(&dbus_error);
+    dbus_message_iter_init(message, &iter);
 
-    ret = dbus_message_get_args(message, &dbus_error,
-                                DBUS_TYPE_UINT32, &type,
-                                DBUS_TYPE_STRING, &filter,
-                                DBUS_TYPE_INVALID);
-    if (!ret) {
-        DEBUG(SSSDBG_CRIT_FAILURE, ("Failed, to parse message!\n"));
-        if (dbus_error_is_set(&dbus_error)) dbus_error_free(&dbus_error);
+    /* get type of the request */
+    if (dbus_message_iter_get_arg_type(&iter) != DBUS_TYPE_UINT32) {
+        DEBUG(SSSDBG_CRIT_FAILURE, ("Failed, to parse the message!\n"));
         ret = EIO;
-        err_msg = "dbus_message_get_args failed";
+        err_msg = "Invalid D-Bus message format";
         goto fail;
     }
-
+    dbus_message_iter_get_basic(&iter, &type);
+    dbus_message_iter_next(&iter); /* step behind the request type */
 
     /* If we are offline and fast reply was requested
      * return offline immediately
@@ -1048,32 +1072,61 @@ static int be_sudo_handler(DBusMessage *message, struct sbus_connection *conn)
     }
 
     sudo_req->type = (~BE_REQ_FAST) & type;
-    sudo_req->uid = 0;
-    sudo_req->groups = NULL;
 
+    /* get additional arguments according to the request type */
     switch (sudo_req->type) {
-    case BE_REQ_SUDO_ALL:
-    case BE_REQ_SUDO_DEFAULTS:
-        sudo_req->username = NULL;
+    case BE_REQ_SUDO_FULL:
+        /* no arguments required */
         break;
-    case BE_REQ_SUDO_USER:
-        if (filter) {
-            if (strncmp(filter, "name=", 5) == 0) {
-                sudo_req->username = talloc_strdup(sudo_req, &filter[5]);
-                if (sudo_req->username == NULL) {
-                    ret = ENOMEM;
-                    goto fail;
-                }
-            } else {
-                ret = EINVAL;
-                err_msg = "Invalid Filter";
-                goto fail;
-            }
-        } else {
-            ret = EINVAL;
-            err_msg = "Missing Filter Parameter";
+    case BE_REQ_SUDO_RULES:
+        /* additional arguments:
+         * rules_num
+         * rules[rules_num]
+         */
+        /* read rules_num */
+        if (dbus_message_iter_get_arg_type(&iter) != DBUS_TYPE_UINT32) {
+            DEBUG(SSSDBG_CRIT_FAILURE, ("Failed, to parse the message!\n"));
+            ret = EIO;
+            err_msg = "Invalid D-Bus message format";
             goto fail;
         }
+
+        dbus_message_iter_get_basic(&iter, &rules_num);
+
+        sudo_req->rules = talloc_array(sudo_req, char*, rules_num + 1);
+        if (sudo_req->rules == NULL) {
+            DEBUG(SSSDBG_CRIT_FAILURE, ("talloc_array failed.\n"));
+            ret = ENOMEM;
+            goto fail;
+        }
+
+        /* read the rules */
+        for (i = 0; i < rules_num; i++) {
+            iter_next = dbus_message_iter_next(&iter);
+            if (iter_next == FALSE) {
+                DEBUG(SSSDBG_CRIT_FAILURE, ("Failed, to parse the message!\n"));
+                ret = EIO;
+                err_msg = "Invalid D-Bus message format";
+                goto fail;
+            }
+            if (dbus_message_iter_get_arg_type(&iter) != DBUS_TYPE_STRING) {
+                DEBUG(SSSDBG_CRIT_FAILURE, ("Failed, to parse the message!\n"));
+                ret = EIO;
+                err_msg = "Invalid D-Bus message format";
+                goto fail;
+            }
+
+            dbus_message_iter_get_basic(&iter, &rule);
+            sudo_req->rules[i] = talloc_strdup(sudo_req->rules, rule);
+            if (sudo_req->rules[i] == NULL) {
+                DEBUG(SSSDBG_CRIT_FAILURE, ("talloc_strdup failed.\n"));
+                ret = ENOMEM;
+                goto fail;
+            }
+        }
+
+        sudo_req->rules[rules_num] = NULL;
+
         break;
     default:
         DEBUG(SSSDBG_CRIT_FAILURE, ("Invalid request type %d\n", sudo_req->type));
@@ -2139,19 +2192,19 @@ int be_process_init(TALLOC_CTX *mem_ctx,
                "from provider [%s].\n", ctx->bet_info[BET_AUTOFS].mod_name));
     }
 
-    ret = load_backend_module(ctx, BET_SESSION,
-                              &ctx->bet_info[BET_SESSION],
+    ret = load_backend_module(ctx, BET_SELINUX,
+                              &ctx->bet_info[BET_SELINUX],
                               ctx->bet_info[BET_ID].mod_name);
     if (ret != EOK) {
         if (ret != ENOENT) {
             DEBUG(SSSDBG_FATAL_FAILURE, ("fatal error initializing data providers\n"));
             return ret;
         }
-        DEBUG(SSSDBG_CRIT_FAILURE, ("No Session module provided for [%s] !!\n",
+        DEBUG(SSSDBG_CRIT_FAILURE, ("No selinux module provided for [%s] !!\n",
                   be_domain));
     } else {
-        DEBUG(SSSDBG_TRACE_ALL, ("Session backend target successfully loaded "
-                  "from provider [%s].\n", ctx->bet_info[BET_SESSION].mod_name));
+        DEBUG(SSSDBG_TRACE_ALL, ("selinux backend target successfully loaded "
+                  "from provider [%s].\n", ctx->bet_info[BET_SELINUX].mod_name));
     }
 
     ret = load_backend_module(ctx, BET_HOSTID,
@@ -2274,7 +2327,7 @@ int main(int argc, const char *argv[])
         return 3;
     }
 
-    DEBUG(1, ("Backend provider (%s) started!\n", be_domain));
+    DEBUG(SSSDBG_TRACE_FUNC, ("Backend provider (%s) started!\n", be_domain));
 
     /* loop on main */
     server_loop(main_ctx);
