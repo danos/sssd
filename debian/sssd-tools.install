@@ -5,6 +5,7 @@ usr/sbin/sss_groupdel
 usr/sbin/sss_groupmod
 usr/sbin/sss_groupshow
 usr/sbin/sss_obfuscate
+usr/sbin/sss_seed
 usr/sbin/sss_useradd
 usr/sbin/sss_userdel
 usr/sbin/sss_usermod
@@ -15,6 +16,7 @@ usr/share/man/man8/sss_groupdel.8*
 usr/share/man/man8/sss_groupmod.8*
 usr/share/man/man8/sss_groupshow.8*
 usr/share/man/man8/sss_obfuscate.8*
+usr/share/man/man8/sss_seed.8*
 usr/share/man/man8/sss_useradd.8*
 usr/share/man/man8/sss_userdel.8*
 usr/share/man/man8/sss_usermod.8*
