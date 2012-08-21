@@ -156,7 +156,7 @@ Description: ID mapping library for SSSD -- development files
  This package contains header files and symlinks to develop programs which will
  use the libsss-idmap library.
 
-Package: libsss-sudo0
+Package: libsss-sudo1
 Section: libs
 Architecture: any
 Depends: ${shlibs:Depends}, ${misc:Depends},
@@ -169,7 +169,7 @@ Description: Communicator library for sudo
 Package: libsss-sudo-dev
 Section: libdevel
 Architecture: any
-Depends: ${misc:Depends}, libsss-sudo0 (= ${binary:Version})
+Depends: ${misc:Depends}, libsss-sudo1 (= ${binary:Version})
 Description: Communicator library for sudo -- development files
  Utility library to allow communication between sudo and SSSD for caching
  sudo rules by SSSD.
