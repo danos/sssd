@@ -39,7 +39,8 @@ sssd (1.9.0~beta6-1) UNRELEASED; urgency=low
       from FreeIPA. Most notably, the SELinux mappings can now link to HBAC
       rules as the source of users and hosts they apply to.
     - Fixed a regression introduced in beta 5 that prevented LDAP SASL binds
-      from working unless the value of ldap_sasl_minssf was explicitly specified.
+      from working unless the value of ldap_sasl_minssf was explicitly
+      specified.
     - The SSSD supports the concept of a Primary Server and a Back Up
       Server. Certain servers in the fail over list can be marked as back up
       only. If the SSSD switches to a back up server because a primary server
