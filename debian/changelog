@@ -1,6 +1,6 @@
-sssd (1.9.0~beta1-1) UNRELEASED; urgency=low
+sssd (1.9.0~beta6-1) UNRELEASED; urgency=low
 
-  * New upstream prerelease 1.9.0beta1. Highlights:
+  * New upstream prerelease 1.9.0beta6. Highlights:
     - Add native support for autofs to the IPA provider
     - Support for ID-mapping when connecting to Active Directory
     - Support for handling very large (> 1500 users) groups in Active
@@ -9,6 +9,51 @@ sssd (1.9.0~beta1-1) UNRELEASED; urgency=low
       relationships)
     - Add a new fast in-memory cache to speed up lookups of cached data
       on repeated requests
+    - Add support for the Kerberos DIR cache for storing multiple TGTs
+      automatically
+    - Major performance enhancement when storing large groups in the cache
+    - Major performance enhancement when performing initgroups() against
+      Active Directory
+    - SSSDConfig data file default locations can now be set during
+      configure for easier packaging
+    - Add a new PAC responder for dealing with cross-realm Kerberos trusts
+    - Terminate idle connections to the NSS and PAM responders
+    - Switch from libunistring to glib2 for unicode support
+    - Add a new AD provider to improve integration with Active Directory
+      2008 R2 or later servers
+    - SUDO integration was completely rewritten. The new implementation
+      works with multiple domains and uses an improved refresh mechanism to
+      download only the necessary rules
+    - The IPA authentication provider now supports subdomains
+    - Fixed regression for setups that were setting default_tkt_enctypes
+      manually by reverting a previous workaround.
+    - Many fixes for the support for setting default SELinux user context
+      from FreeIPA, most notably fixed the specificity evaluation
+    - Fixed an incorrect default in the krb5_canonicalize option of the AD
+      provider which was preventing password change operation
+    - The shadowLastChange attribute value is now correctly updated with the
+      number of days since the Epoch, not seconds
+    - A new option, override_shell was added. If this option is set, all
+      users managed by SSSD will have their shell set to its value.
+    - Many fixes for the support for setting default SELinux user context
+      from FreeIPA. Most notably, the SELinux mappings can now link to HBAC
+      rules as the source of users and hosts they apply to.
+    - Fixed a regression introduced in beta 5 that prevented LDAP SASL binds
+      from working unless the value of ldap_sasl_minssf was explicitly specified.
+    - The SSSD supports the concept of a Primary Server and a Back Up
+      Server. Certain servers in the fail over list can be marked as back up
+      only. If the SSSD switches to a back up server because a primary server
+      is not available, it would later try to re-establish a connection to the
+      primary server. This feature would mainly benefit users who configure
+      fail over servers from different data centers or geographies.
+    - A new command-line tool sss_seed is available. This tool is able to
+      prime the internal cache with a user record and a cached password to
+      support the scenario when a user needs to log in to the client before
+      the network connection to the centralized identity source is established,
+      such as the first log in to a new machine.
+    - In scenarios, where the SSSD is acting as an IPA client, it is able to
+      discover and save the DNS domain-Kerberos realm mappings between an IPA
+      server and a trusted Active Directory server.
   * Update the packaging for the new version, thanks Esko Järnfors!
     - Add libsss-idmap0, libsss-idmap-dev packages
     - Add sssd Depends on libsss-idmap0
