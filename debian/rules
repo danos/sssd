@@ -2,6 +2,9 @@
 %:
 	dh $@ --with quilt,autoreconf,python2 --builddirectory=build
 
+DPKG_EXPORT_BUILDFLAGS = 1
+include /usr/share/dpkg/buildflags.mk
+
 APIDOCDIR = /usr/share/sssd
 DISTRIBUTION = $(shell lsb_release -i | sed 's/.*:\t//')
 INIT = init

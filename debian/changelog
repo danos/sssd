@@ -65,6 +65,8 @@ sssd (1.9.0~beta6-1) UNRELEASED; urgency=low
   * sssd.install, sssd-tools.install: Add sssd-ad.5*, sssd-sudo.5* to
     sssd.install, and sss_seed{,.8*) to sssd-tools.
   * python-sss.install: py-files got moved under SSSDConfig.
+  * control, rules: Use default build flags, bump dpkg-dev build-dep to
+    1.16.1~.
   * Bump libsss-sudo soname.
   * rules: Install the apparmor profile with -m644.
 
