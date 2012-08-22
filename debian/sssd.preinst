@@ -52,7 +52,7 @@ upgrade)
     if dpkg --compare-versions "$2" lt "1.8.4-2"; then
 	    inst_complain_profile
         if [ -e "$APP_DISABLE" ]; then
-            rm_conffile sssd "$APP_DISABLE"
+            rm -f "$APP_DISABLE"
         fi
     fi
     ;;
