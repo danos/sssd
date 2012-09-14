@@ -70,6 +70,7 @@ sssd (1.9.0~rc1-1) UNRELEASED; urgency=low
     1.16.1~.
   * Bump libsss-sudo soname.
   * rules: Install the apparmor profile with -m644.
+  * python-sss: Add pysss_murmur.so.
 
  -- Timo Aaltonen <tjaalton@ubuntu.com>  Thu, 24 May 2012 14:46:39 +0300
 
