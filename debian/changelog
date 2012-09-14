@@ -61,7 +61,6 @@ sssd (1.9.0~rc1-1) UNRELEASED; urgency=low
     - Add libsss-idmap0, libsss-idmap-dev packages
     - Add sssd Depends on libsss-idmap0
     - Add /var/lib/sss/mc directory for the new mmap cache
-  * Added fix-CVE-2012-3462.diff from upstream git.
   * control: Drop libunistring-dev from build-depends and add libglib2.0-dev
     for unicode support.
   * sssd.install, sssd-tools.install: Add sssd-ad.5*, sssd-sudo.5* to
