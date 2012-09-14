@@ -19,7 +19,7 @@
 %endif
 
 %if (0%{?fedora} >= 17)
-    %global with_ccache --with-default-ccache-dir='/run/user/%U' --with-default-ccname-template="DIR:%d/ccdir"
+    %global with_ccache --with-default-ccache-dir='/run/user/%U' --with-default-ccname-template="DIR:%d/krb5cc"
 %endif
 
 %global enable_experimental 1
@@ -42,6 +42,7 @@ Source0: %{name}-%{version}.tar.gz
 BuildRoot: %(mktemp -ud %{_tmppath}/%{name}-%{version}-%{release}-XXXXXX)
 
 ### Patches ###
+Patch0001:  sssd-1.9-man-change-default-ccache.patch
 
 ### Dependencies ###
 
@@ -111,6 +112,7 @@ BuildRequires: gettext-devel
 BuildRequires: pkgconfig
 BuildRequires: findutils
 BuildRequires: glib2-devel
+BuildRequires: selinux-policy-targeted
 
 %if (0%{?enable_experimental} == 1)
 # RHEL 5 is too old to support samba4 and the PAC responder
@@ -203,6 +205,7 @@ used by Python applications.
 Summary: A library to allow communication between SUDO and SSSD
 Group: Development/Libraries
 License: LGPLv3+
+Requires: sssd = %{version}-%{release}
 Requires(post): /sbin/ldconfig
 Requires(postun): /sbin/ldconfig
 
@@ -221,6 +224,9 @@ A utility library to allow communication between SUDO and SSSD
 
 %prep
 %setup -q
+%if (0%{?fedora} >= 17)
+%patch0001 -p1
+%endif
 
 %build
 
@@ -385,6 +391,7 @@ rm -rf $RPM_BUILD_ROOT
 %{_mandir}/man1/sss_ssh_knownhostsproxy.1*
 %endif
 %{python_sitearch}/pysss.so
+%{python_sitearch}/pysss_murmur.so
 %dir %{python_sitelib}/SSSDConfig
 %{python_sitelib}/SSSDConfig/*.py*
 

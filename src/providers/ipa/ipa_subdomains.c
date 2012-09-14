@@ -178,22 +178,6 @@ done:
     return ret;
 }
 
-static char *name_to_realm(TALLOC_CTX *memctx, const char *name)
-{
-    char *realm;
-    char *p;
-
-    realm = talloc_strdup(memctx, name);
-    if (!realm) {
-        return NULL;
-    }
-    for (p = realm; *p; p++) {
-        *p = toupper(*p);
-    }
-
-    return realm;
-}
-
 static errno_t ipa_subdom_parse(TALLOC_CTX *memctx,
                                 struct sysdb_attrs *attrs,
                                 struct sysdb_subdom *subdom)
@@ -219,7 +203,7 @@ static errno_t ipa_subdom_parse(TALLOC_CTX *memctx,
     if (subdom->realm == NULL) {
         /* Add Realm as upper(domain name), this is generally always correct
          * with AD domains */
-        subdom->realm = name_to_realm(memctx, subdom->name);
+        subdom->realm = get_uppercase_realm(memctx, subdom->name);
         if (!subdom->realm) {
             return ENOMEM;
         }
@@ -285,6 +269,7 @@ ipa_subdomains_write_mappings(struct sss_domain_info *domain,
     const char *mapping_file;
     char *tmp_file = NULL;
     int fd = -1;
+    mode_t old_mode;
     FILE *fstream = NULL;
     size_t i;
 
@@ -304,7 +289,9 @@ ipa_subdomains_write_mappings(struct sss_domain_info *domain,
         goto done;
     }
 
+    old_mode = umask(077);
     fd = mkstemp(tmp_file);
+    umask(old_mode);
     if (fd < 0) {
         DEBUG(SSSDBG_OP_FAILURE, ("creating the temp file [%s] for domain-realm "
                                   "mappings failed.", tmp_file));
@@ -347,13 +334,13 @@ ipa_subdomains_write_mappings(struct sss_domain_info *domain,
     }
 
     ret = fclose(fstream);
+    fstream = NULL;
     if (ret != 0) {
         ret = errno;
         DEBUG(SSSDBG_CRIT_FAILURE,
               ("fclose failed [%d][%s].\n", ret, strerror(ret)));
         goto done;
     }
-    fstream = NULL;
 
     ret = rename(tmp_file, mapping_file);
     if (ret == -1) {

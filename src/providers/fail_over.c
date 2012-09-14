@@ -66,6 +66,12 @@ struct fo_service {
     struct fo_server *active_server;
     struct fo_server *last_tried_server;
     struct fo_server *server_list;
+
+    /* Function pointed by user_data_cmp returns 0 if user_data is equal
+     * or nonzero value if not. Set to NULL if no user data comparison
+     * is needed in fail over duplicate servers detection.
+     */
+    datacmp_fn user_data_cmp;
 };
 
 struct fo_server {
@@ -75,7 +81,7 @@ struct fo_server {
     bool primary;
     void *user_data;
     int port;
-    int port_status;
+    enum port_status port_status;
     struct srv_data *srv_data;
     struct fo_service *service;
     struct timeval last_status_change;
@@ -93,7 +99,7 @@ struct server_common {
     char *name;
     struct resolv_hostent *rhostent;
     struct resolve_service_request *request_list;
-    int server_status;
+    enum server_status server_status;
     struct timeval last_status_change;
 };
 
@@ -393,6 +399,7 @@ service_destructor(struct fo_service *service)
 
 int
 fo_new_service(struct fo_ctx *ctx, const char *name,
+               datacmp_fn user_data_cmp,
                struct fo_service **_service)
 {
     struct fo_service *service;
@@ -419,6 +426,8 @@ fo_new_service(struct fo_ctx *ctx, const char *name,
         talloc_free(service);
         return ENOMEM;
     }
+
+    service->user_data_cmp = user_data_cmp;
 
     service->ctx = ctx;
     DLIST_ADD(ctx->service_list, service);
@@ -520,8 +529,14 @@ fo_add_srv_server(struct fo_service *service, const char *srv,
                               service->name, proto));
 
     DLIST_FOR_EACH(server, service->server_list) {
-        if (server->user_data != user_data)
-            continue;
+        /* Compare user data only if user_data_cmp and both arguments
+         * are not NULL.
+         */
+        if (server->service->user_data_cmp && user_data && server->user_data) {
+            if (server->service->user_data_cmp(server->user_data, user_data)) {
+                continue;
+            }
+        }
 
         if (fo_is_srv_lookup(server)) {
             if (((discovery_domain == NULL &&
@@ -542,6 +557,7 @@ fo_add_srv_server(struct fo_service *service, const char *srv,
     server->user_data = user_data;
     server->service = service;
     server->port_status = DEFAULT_PORT_STATUS;
+    server->primary = true; /* SRV servers are never back up */
 
     /* add the SRV-specific data */
     server->srv_data = talloc_zero(service, struct srv_data);
@@ -628,8 +644,17 @@ static bool fo_server_match(struct fo_server *server,
                            int port,
                            void *user_data)
 {
-    if (server->port != port || server->user_data != user_data) {
+    if (server->port != port) {
         return false;
+    }
+
+    /* Compare user data only if user_data_cmp and both arguments
+     * are not NULL.
+     */
+    if (server->service->user_data_cmp && server->user_data && user_data) {
+        if (server->service->user_data_cmp(server->user_data, user_data)) {
+            return false;
+        }
     }
 
     if (name == NULL && server->common == NULL) {
@@ -686,12 +711,17 @@ get_first_server_entity(struct fo_service *service, struct fo_server **_server)
      * Otherwise iterate through the server list.
      */
 
-
     /* First, try primary servers after the last one we tried.
      * (only if the last one was primary as well)
      */
     if (service->last_tried_server != NULL &&
         service->last_tried_server->primary) {
+        if (service->last_tried_server->port_status == PORT_NEUTRAL &&
+            server_works(service->last_tried_server)) {
+            server = service->last_tried_server;
+            goto done;
+        }
+
         DLIST_FOR_EACH(server, service->last_tried_server->next) {
             /* Go only through primary servers */
             if (!server->primary) continue;
@@ -976,6 +1006,15 @@ fo_resolve_service_done(struct tevent_req *subreq)
         DEBUG(1, ("Failed to resolve server '%s': %s\n",
                   common->name,
                   resolv_strerror(resolv_status)));
+        /* If the resolver failed to resolve a hostname but did not
+         * encounter an error, tell the caller to retry another server.
+         *
+         * If there are no more servers to try, the next request would
+         * just shortcut with ENOENT.
+         */
+        if (ret == ENOENT) {
+            ret = EAGAIN;
+        }
         set_server_common_status(common, SERVER_NOT_WORKING);
     } else {
         set_server_common_status(common, SERVER_NAME_RESOLVED);
@@ -1056,17 +1095,20 @@ resolve_srv_send(TALLOC_CTX *mem_ctx, struct tevent_context *ev,
     state->ev = ev;
     state->resolv = resolv;
     state->fo_ctx = ctx;
-    state->meta = server;
+    state->meta = server->srv_data->meta;
 
     status = get_srv_data_status(server->srv_data);
-    DEBUG(6, ("The status of SRV lookup is %s\n",
-              str_srv_data_status(status)));
+    DEBUG(SSSDBG_FUNC_DATA, ("The status of SRV lookup is %s\n",
+          str_srv_data_status(status)));
     switch(status) {
     case SRV_EXPIRED: /* Need a refresh */
         state->meta = collapse_srv_lookup(server);
-        /* FALLTHROUGH */
+        /* FALLTHROUGH.
+         * "server" might be invalid now if the SRV
+         * query collapsed
+         * */
     case SRV_NEUTRAL: /* Request SRV lookup */
-        if (server->srv_data->dns_domain == NULL) {
+        if (state->meta->srv_data->dns_domain == NULL) {
             /* we need to look up our DNS domain first */
             subreq = resolve_get_domain_send(state, ev, ctx, resolv);
             if (subreq == NULL) {
@@ -1512,19 +1554,23 @@ void fo_reset_services(struct fo_ctx *fo_ctx)
 
     DLIST_FOR_EACH(service, fo_ctx->service_list) {
         DLIST_FOR_EACH(server, service->server_list) {
-            fo_set_server_status(server, SERVER_NAME_NOT_RESOLVED);
-            fo_set_port_status(server, PORT_NEUTRAL);
             if (server->srv_data != NULL) {
                 set_srv_data_status(server->srv_data, SRV_NEUTRAL);
+            } else {
+                fo_set_server_status(server, SERVER_NAME_NOT_RESOLVED);
+                fo_set_port_status(server, PORT_NEUTRAL);
             }
         }
     }
 }
 
-struct fo_service *
-fo_get_server_service(struct fo_server *server)
+bool fo_svc_has_server(struct fo_service *service, struct fo_server *server)
 {
-    if (!server) return NULL;
-    return server->service;
-}
+    struct fo_server *srv;
 
+    DLIST_FOR_EACH(srv, service->server_list) {
+        if (srv == server) return true;
+    }
+
+    return false;
+}

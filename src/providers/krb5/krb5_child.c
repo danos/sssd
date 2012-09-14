@@ -695,37 +695,49 @@ static krb5_error_code validate_tgt(struct krb5_req *kr)
     krb5_kt_cursor cursor;
     krb5_keytab_entry entry;
     krb5_verify_init_creds_opt opt;
+    krb5_principal validation_princ = NULL;
 
     memset(&keytab, 0, sizeof(keytab));
     kerr = krb5_kt_resolve(kr->ctx, kr->keytab, &keytab);
     if (kerr != 0) {
-        DEBUG(1, ("error resolving keytab [%s], not verifying TGT.\n",
-                  kr->keytab));
+        DEBUG(SSSDBG_CRIT_FAILURE, ("error resolving keytab [%s], " \
+                                    "not verifying TGT.\n", kr->keytab));
         return kerr;
     }
 
     memset(&cursor, 0, sizeof(cursor));
     kerr = krb5_kt_start_seq_get(kr->ctx, keytab, &cursor);
     if (kerr != 0) {
-        DEBUG(1, ("error reading keytab [%s], not verifying TGT.\n",
-                  kr->keytab));
+        DEBUG(SSSDBG_CRIT_FAILURE, ("error reading keytab [%s], " \
+                                    "not verifying TGT.\n", kr->keytab));
         return kerr;
     }
 
     /* We look for the first entry from our realm or take the last one */
     memset(&entry, 0, sizeof(entry));
     while ((kt_err = krb5_kt_next_entry(kr->ctx, keytab, &entry, &cursor)) == 0) {
-        if (krb5_realm_compare(kr->ctx, entry.principal, kr->princ)) {
-            DEBUG(SSSDBG_TRACE_INTERNAL,
-                  ("Found keytab entry with the realm of the credential.\n"));
-            break;
+        if (validation_princ != NULL) {
+            krb5_free_principal(kr->ctx, validation_princ);
+            validation_princ = NULL;
+        }
+        kerr = krb5_copy_principal(kr->ctx, entry.principal,
+                                   &validation_princ);
+        if (kerr != 0) {
+            DEBUG(SSSDBG_CRIT_FAILURE, ("krb5_copy_principal failed.\n"));
+            goto done;
         }
 
         kerr = sss_krb5_free_keytab_entry_contents(kr->ctx, &entry);
         if (kerr != 0) {
-            DEBUG(1, ("Failed to free keytab entry.\n"));
+            DEBUG(SSSDBG_MINOR_FAILURE, ("Failed to free keytab entry.\n"));
         }
         memset(&entry, 0, sizeof(entry));
+
+        if (krb5_realm_compare(kr->ctx, validation_princ, kr->princ)) {
+            DEBUG(SSSDBG_TRACE_INTERNAL,
+                  ("Found keytab entry with the realm of the credential.\n"));
+            break;
+        }
     }
 
     /* Close the keytab here.  Even though we're using cursors, the file
@@ -734,44 +746,47 @@ static krb5_error_code validate_tgt(struct krb5_req *kr)
      * cursor, creating a leak. */
     kerr = krb5_kt_end_seq_get(kr->ctx, keytab, &cursor);
     if (kerr != 0) {
-        DEBUG(1, ("krb5_kt_end_seq_get failed, not verifying TGT.\n"));
+        DEBUG(SSSDBG_CRIT_FAILURE, ("krb5_kt_end_seq_get failed, " \
+                                    "not verifying TGT.\n"));
         goto done;
     }
 
     /* check if we got any errors from krb5_kt_next_entry */
     if (kt_err != 0 && kt_err != KRB5_KT_END) {
-        DEBUG(1, ("error reading keytab [%s], not verifying TGT.\n",
-                  kr->keytab));
+        DEBUG(SSSDBG_CRIT_FAILURE, ("error reading keytab [%s], " \
+                                    "not verifying TGT.\n", kr->keytab));
         goto done;
     }
 
     /* Get the principal to which the key belongs, for logging purposes. */
     principal = NULL;
-    kerr = krb5_unparse_name(kr->ctx, entry.principal, &principal);
+    kerr = krb5_unparse_name(kr->ctx, validation_princ, &principal);
     if (kerr != 0) {
-        DEBUG(1, ("internal error parsing principal name, "
-                  "not verifying TGT.\n"));
+        DEBUG(SSSDBG_CRIT_FAILURE, ("internal error parsing principal name, "
+                                    "not verifying TGT.\n"));
         KRB5_CHILD_DEBUG(SSSDBG_CRIT_FAILURE, kerr);
         goto done;
     }
 
 
     krb5_verify_init_creds_opt_init(&opt);
-    kerr = krb5_verify_init_creds(kr->ctx, kr->creds, entry.principal, keytab,
+    kerr = krb5_verify_init_creds(kr->ctx, kr->creds, validation_princ, keytab,
                                   NULL, &opt);
 
     if (kerr == 0) {
-        DEBUG(5, ("TGT verified using key for [%s].\n", principal));
+        DEBUG(SSSDBG_TRACE_FUNC, ("TGT verified using key for [%s].\n",
+                                  principal));
     } else {
-        DEBUG(1 ,("TGT failed verification using key for [%s].\n", principal));
+        DEBUG(SSSDBG_CRIT_FAILURE ,("TGT failed verification using key " \
+                                    "for [%s].\n", principal));
     }
 
 done:
     if (krb5_kt_close(kr->ctx, keytab) != 0) {
-        DEBUG(1, ("krb5_kt_close failed"));
+        DEBUG(SSSDBG_MINOR_FAILURE, ("krb5_kt_close failed"));
     }
-    if (sss_krb5_free_keytab_entry_contents(kr->ctx, &entry) != 0) {
-        DEBUG(1, ("Failed to free keytab entry.\n"));
+    if (validation_princ != NULL) {
+        krb5_free_principal(kr->ctx, validation_princ);
     }
     if (principal != NULL) {
         sss_krb5_free_unparsed_name(kr->ctx, principal);
@@ -908,6 +923,36 @@ done:
 
 }
 
+static int kerr_to_status(krb5_error_code kerr)
+{
+    int pam_status = PAM_SYSTEM_ERR;
+
+    if (kerr == 0) {
+        return PAM_SUCCESS;
+    }
+
+    KRB5_CHILD_DEBUG(SSSDBG_CRIT_FAILURE, kerr);
+    switch (kerr) {
+        case KRB5_KDC_UNREACH:
+                pam_status = PAM_AUTHINFO_UNAVAIL;
+                break;
+        case KRB5KDC_ERR_KEY_EXP:
+                pam_status = PAM_NEW_AUTHTOK_REQD;
+                break;
+        case KRB5KRB_AP_ERR_BAD_INTEGRITY:
+                pam_status = PAM_AUTH_ERR;
+                break;
+        case KRB5KDC_ERR_PREAUTH_FAILED:
+                pam_status = PAM_CRED_ERR;
+                break;
+        default:
+                pam_status = PAM_SYSTEM_ERR;
+                break;
+    }
+
+    return pam_status;
+}
+
 static errno_t changepw_child(int fd, struct krb5_req *kr)
 {
     int ret;
@@ -967,9 +1012,7 @@ static errno_t changepw_child(int fd, struct krb5_req *kr)
                                         kr->options);
     if (kerr != 0) {
         KRB5_CHILD_DEBUG(SSSDBG_CRIT_FAILURE, kerr);
-        if (kerr == KRB5_KDC_UNREACH) {
-            pam_status = PAM_AUTHINFO_UNAVAIL;
-        }
+        pam_status = kerr_to_status(kerr);
         goto sendresponse;
     }
 
@@ -1137,22 +1180,7 @@ static errno_t tgt_req_child(int fd, struct krb5_req *kr)
     talloc_zfree(pass_str);
     memset(kr->pd->authtok, 0, kr->pd->authtok_size);
 
-    if (kerr != 0) {
-        KRB5_CHILD_DEBUG(SSSDBG_CRIT_FAILURE, kerr);
-        switch (kerr) {
-            case KRB5_KDC_UNREACH:
-                    pam_status = PAM_AUTHINFO_UNAVAIL;
-                    break;
-            case KRB5KDC_ERR_KEY_EXP:
-                    pam_status = PAM_NEW_AUTHTOK_REQD;
-                    break;
-            case KRB5KDC_ERR_PREAUTH_FAILED:
-                    pam_status = PAM_CRED_ERR;
-                    break;
-            default:
-                    pam_status = PAM_SYSTEM_ERR;
-        }
-    }
+    pam_status = kerr_to_status(kerr);
 
 sendresponse:
     ret = sendresponse(fd, kerr, pam_status, kr);

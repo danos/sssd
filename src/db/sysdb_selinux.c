@@ -24,48 +24,6 @@
 #include "db/sysdb_private.h"
 
 /* Some generic routines */
-static errno_t get_rm_msg(TALLOC_CTX *mem_ctx,
-                          struct ldb_message *old_msg,
-                          struct sysdb_attrs *new_attrs,
-                          struct ldb_message **_msg)
-{
-    struct ldb_message *rm_msg;
-    const char *tmp_str;
-    errno_t ret;
-    int i;
-
-    rm_msg = ldb_msg_new(mem_ctx);
-    if (rm_msg == NULL) {
-        ret = ENOMEM;
-        goto done;
-    }
-
-    rm_msg->dn = old_msg->dn;
-    rm_msg->elements = talloc_zero_array(rm_msg, struct ldb_message_element,
-                                         old_msg->num_elements);
-    rm_msg->num_elements = 0;
-
-    for (i = 0; i < old_msg->num_elements; i++) {
-        ret = sysdb_attrs_get_string(new_attrs, old_msg->elements[i].name, &tmp_str);
-        if (ret != ENOENT) {
-            continue;
-        }
-
-        rm_msg->elements[rm_msg->num_elements] = old_msg->elements[i];
-        rm_msg->elements[rm_msg->num_elements].flags = LDB_FLAG_MOD_DELETE;
-        rm_msg->num_elements++;
-    }
-
-    ret = EOK;
-done:
-    if (ret != EOK) {
-        talloc_free(rm_msg);
-    } else {
-        *_msg = rm_msg;
-    }
-
-    return ret;
-}
 
 static errno_t
 sysdb_add_selinux_entity(struct sysdb_ctx *sysdb,
@@ -123,8 +81,6 @@ static errno_t sysdb_store_selinux_entity(struct sysdb_ctx *sysdb,
                                           enum selinux_entity_type type)
 {
     TALLOC_CTX *tmp_ctx;
-    struct ldb_message *msg;
-    struct ldb_message *rm_msg;
     bool in_transaction = false;
     const char *objectclass = NULL;
     const char *name;
@@ -174,7 +130,10 @@ static errno_t sysdb_store_selinux_entity(struct sysdb_ctx *sysdb,
     }
 
     ret = sysdb_transaction_start(sysdb);
-    if (ret != EOK) goto done;
+    if (ret != EOK) {
+        DEBUG(SSSDBG_CRIT_FAILURE, ("Failed to start transaction\n"));
+        goto done;
+    }
 
     in_transaction = true;
 
@@ -182,18 +141,8 @@ static errno_t sysdb_store_selinux_entity(struct sysdb_ctx *sysdb,
     ret = sysdb_attrs_add_time_t(attrs, SYSDB_LAST_UPDATE, now);
     if (ret) goto done;
 
-    if (type == SELINUX_CONFIG) {
-        ret = sysdb_search_selinux_config(tmp_ctx, sysdb, NULL, &msg);
-    } else if (type == SELINUX_USER_MAP) {
-        ret = sysdb_search_selinux_usermap_by_mapname(tmp_ctx, sysdb, name,
-                                                      NULL, &msg);
-    }
-
-    if (ret && ret != ENOENT) {
-        goto done;
-    }
-    if (ret == ENOENT) {
-        ret = sysdb_add_selinux_entity(sysdb, dn, objectclass, attrs, now);
+    ret = sysdb_add_selinux_entity(sysdb, dn, objectclass, attrs, now);
+    if (ret != EOK) {
         goto done;
     }
 
@@ -202,32 +151,21 @@ static errno_t sysdb_store_selinux_entity(struct sysdb_ctx *sysdb,
         goto done;
     }
 
-    /* Now delete attributes which are no longer present */
-    ret = get_rm_msg(tmp_ctx, msg, attrs, &rm_msg);
+    ret = sysdb_transaction_commit(sysdb);
     if (ret != EOK) {
+        DEBUG(SSSDBG_CRIT_FAILURE, ("Failed to commit transaction\n"));
         goto done;
     }
-
-    if (rm_msg->num_elements > 0) {
-        ret = ldb_modify(sysdb->ldb, rm_msg);
-    }
+    in_transaction = false;
 
 done:
     if (in_transaction) {
-        if (ret == EOK) {
-            sret = sysdb_transaction_commit(sysdb);
-            if (sret != EOK) {
-                DEBUG(SSSDBG_OP_FAILURE, ("Could not commit transaction\n"));
-            }
-        }
-
-        if (ret != EOK || sret != EOK){
-            sret = sysdb_transaction_cancel(sysdb);
-            if (sret != EOK) {
-                DEBUG(SSSDBG_OP_FAILURE, ("Could not cancel transaction\n"));
-            }
+        sret = sysdb_transaction_cancel(sysdb);
+        if (sret != EOK) {
+            DEBUG(SSSDBG_CRIT_FAILURE, ("Could not cancel transaction\n"));
         }
     }
+
     if (ret) {
         DEBUG(SSSDBG_MINOR_FAILURE, ("Error: %d (%s)\n", ret, strerror(ret)));
     }
@@ -253,10 +191,17 @@ errno_t sysdb_store_selinux_config(struct sysdb_ctx *sysdb,
         return ENOMEM;
     }
 
-    ret = sysdb_attrs_add_string(attrs, SYSDB_SELINUX_DEFAULT_USER,
-                                 default_user);
-    if (ret != EOK) {
-        goto done;
+    if (!order) {
+        DEBUG(SSSDBG_CRIT_FAILURE, ("The SELinux order is missing\n"));
+        return EINVAL;
+    }
+
+    if (default_user) {
+        ret = sysdb_attrs_add_string(attrs, SYSDB_SELINUX_DEFAULT_USER,
+                                    default_user);
+        if (ret != EOK) {
+            goto done;
+        }
     }
 
     ret = sysdb_attrs_add_string(attrs, SYSDB_SELINUX_DEFAULT_ORDER,
@@ -265,7 +210,7 @@ errno_t sysdb_store_selinux_config(struct sysdb_ctx *sysdb,
         goto done;
     }
 
-    ret =  sysdb_store_selinux_entity(sysdb, attrs, SELINUX_CONFIG);
+    ret = sysdb_store_selinux_entity(sysdb, attrs, SELINUX_CONFIG);
 done:
     talloc_free(attrs);
     return ret;
@@ -364,7 +309,7 @@ errno_t sysdb_search_selinux_usermap_by_username(TALLOC_CTX *mem_ctx,
     struct ldb_message **msgs = NULL;
     struct sysdb_attrs *user;
     struct sysdb_attrs *tmp_attrs;
-    struct ldb_message **usermaps;
+    struct ldb_message **usermaps = NULL;
     struct sss_domain_info *domain;
     struct ldb_dn *basedn;
     size_t msgs_count = 0;
@@ -404,7 +349,9 @@ errno_t sysdb_search_selinux_usermap_by_username(TALLOC_CTX *mem_ctx,
 
     ret = sysdb_search_entry(tmp_ctx, sysdb, basedn, LDB_SCOPE_SUBTREE, filter,
                              attrs, &msgs_count, &msgs);
-    if (ret) {
+    if (ret == ENOENT) {
+        msgs_count = 0;
+    } else if (ret) {
         goto done;
     }
 
@@ -460,11 +407,6 @@ errno_t sysdb_search_selinux_usermap_by_username(TALLOC_CTX *mem_ctx,
         } else {
             talloc_zfree(msgs[i]);
         }
-    }
-
-    if (usermaps[0] == NULL) {
-        ret = ENOENT;
-        goto done;
     }
 
     *_usermaps = talloc_steal(mem_ctx, usermaps);

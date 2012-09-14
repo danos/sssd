@@ -104,7 +104,7 @@ struct dp_option default_basic_opts[] = {
     { "ldap_sasl_canonicalize", DP_OPT_BOOL, BOOL_FALSE, BOOL_FALSE },
     { "ldap_connection_expire_timeout", DP_OPT_NUMBER, { .number = 900 }, NULL_NUMBER },
     { "ldap_disable_paging", DP_OPT_BOOL, BOOL_FALSE, BOOL_FALSE },
-    { "ldap_idmap_range_min", DP_OPT_NUMBER, { .number = 100001 }, NULL_NUMBER },
+    { "ldap_idmap_range_min", DP_OPT_NUMBER, { .number = 200000 }, NULL_NUMBER },
     { "ldap_idmap_range_max", DP_OPT_NUMBER, { .number = 2000100000LL }, NULL_NUMBER },
     { "ldap_idmap_range_size", DP_OPT_NUMBER, { .number = 200000 }, NULL_NUMBER },
     { "ldap_idmap_autorid_compat", DP_OPT_BOOL, BOOL_FALSE, BOOL_FALSE },
@@ -303,7 +303,7 @@ struct sdap_attr_map netgroup_map[] = {
 };
 
 struct sdap_attr_map native_sudorule_map[] = {
-    { "ldap_sudorule_object_class", "sudoRole", SYSDB_SUDO_CACHE_AT_OC, NULL },
+    { "ldap_sudorule_object_class", "sudoRole", SYSDB_SUDO_CACHE_OC, NULL },
     { "ldap_sudorule_name", "cn", SYSDB_SUDO_CACHE_AT_CN, NULL },
     { "ldap_sudorule_command", "sudoCommand", SYSDB_SUDO_CACHE_AT_COMMAND, NULL },
     { "ldap_sudorule_host", "sudoHost", SYSDB_SUDO_CACHE_AT_HOST, NULL },

@@ -1116,7 +1116,7 @@ errno_t sdap_urls_init(struct be_ctx *ctx,
     char *srv_user_data;
     char **list = NULL;
     LDAPURLDesc *lud;
-    errno_t ret;
+    errno_t ret = 0;
     int i;
 
     tmp_ctx = talloc_new(NULL);
@@ -1135,6 +1135,14 @@ errno_t sdap_urls_init(struct be_ctx *ctx,
     /* now for each URI add a new server to the failover service */
     for (i = 0; list[i]; i++) {
         if (be_fo_is_srv_identifier(list[i])) {
+            if (!primary) {
+                DEBUG(SSSDBG_MINOR_FAILURE,
+                      ("Failed to add server [%s] to failover service: "
+                       "SRV resolution only allowed for primary servers!\n",
+                       list[i]));
+                continue;
+            }
+
             if (!dns_service_name) {
                 DEBUG(0, ("Missing DNS service name for service [%s].\n",
                           service_name));
@@ -1177,6 +1185,13 @@ errno_t sdap_urls_init(struct be_ctx *ctx,
 
         talloc_steal(service, list[i]);
 
+        /* It could be ipv6 address in square brackets. Remove
+         * the brackets if needed. */
+        ret = remove_ipv6_brackets(lud->lud_host);
+        if (ret != EOK) {
+            goto done;
+        }
+
         ret = be_fo_add_server(ctx, service->name, lud->lud_host,
                                lud->lud_port, list[i], primary);
         ldap_free_urldesc(lud);
@@ -1188,6 +1203,11 @@ errno_t sdap_urls_init(struct be_ctx *ctx,
 done:
     talloc_free(tmp_ctx);
     return ret;
+}
+
+static int ldap_user_data_cmp(void *ud1, void *ud2)
+{
+    return strcasecmp((char*) ud1, (char*) ud2);
 }
 
 int sdap_service_init(TALLOC_CTX *memctx, struct be_ctx *ctx,
@@ -1210,7 +1230,7 @@ int sdap_service_init(TALLOC_CTX *memctx, struct be_ctx *ctx,
         goto done;
     }
 
-    ret = be_fo_add_service(ctx, service_name);
+    ret = be_fo_add_service(ctx, service_name, ldap_user_data_cmp);
     if (ret != EOK) {
         DEBUG(SSSDBG_CRIT_FAILURE, ("Failed to create failover service!\n"));
         goto done;
@@ -1290,7 +1310,7 @@ errno_t string_to_shadowpw_days(const char *s, long *d)
         return EINVAL;
     }
 
-    if (l < 0) {
+    if (l < -1) {
         DEBUG(1, ("Input string contains not allowed negative value [%d].\n",
                   l));
         return EINVAL;

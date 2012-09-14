@@ -1,20 +1,23 @@
-# Basque translations for sssd-docs package
-# Copyright (C) 2012 Red Hat
+# SOME DESCRIPTIVE TITLE
+# Copyright (C) YEAR Red Hat
 # This file is distributed under the same license as the sssd-docs package.
-# Automatically generated, 2012.
 #
+# Translators:
+# Fulup  <fulup.jakez@gmail.com>, 2012.
 msgid ""
 msgstr ""
-"Project-Id-Version: sssd-docs 1.8.95\n"
+"Project-Id-Version: SSSD\n"
 "Report-Msgid-Bugs-To: sssd-devel@redhat.com\n"
-"POT-Creation-Date: 2012-09-05 16:36+0300\n"
-"PO-Revision-Date: 2012-07-18 21:31+0300\n"
-"Last-Translator: Automatically generated\n"
-"Language-Team: none\n"
-"Language: eu\n"
+"POT-Creation-Date: 2012-09-13 18:47+0300\n"
+"PO-Revision-Date: 2012-08-28 17:08+0000\n"
+"Last-Translator: Fulup <fulup.jakez@gmail.com>\n"
+"Language-Team: Breton (http://www.transifex.com/projects/p/fedora/language/"
+"br/)\n"
+"Language: br\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=2; plural=(n > 1);\n"
 
 #. type: Content of: <reference><title>
 #: sss_groupmod.8.xml:5 sssd.conf.5.xml:5 sssd-ldap.5.xml:5 pam_sss.8.xml:5
@@ -26,12 +29,12 @@ msgstr ""
 #: sss_seed.8.xml:5 sss_ssh_authorizedkeys.1.xml:5
 #: sss_ssh_knownhostsproxy.1.xml:5
 msgid "SSSD Manual pages"
-msgstr ""
+msgstr "Dornlevr SSSD"
 
 #. type: Content of: <reference><refentry><refnamediv><refname>
 #: sss_groupmod.8.xml:10 sss_groupmod.8.xml:15
 msgid "sss_groupmod"
-msgstr ""
+msgstr "sss_groupmod"
 
 #. type: Content of: <reference><refentry><refmeta><manvolnum>
 #: sss_groupmod.8.xml:11 pam_sss.8.xml:14 sssd_krb5_locator_plugin.8.xml:11
@@ -40,12 +43,12 @@ msgstr ""
 #: sss_groupshow.8.xml:11 sss_usermod.8.xml:11 sss_cache.8.xml:11
 #: sss_debuglevel.8.xml:11 sss_seed.8.xml:11
 msgid "8"
-msgstr ""
+msgstr "8"
 
 #. type: Content of: <reference><refentry><refnamediv><refpurpose>
 #: sss_groupmod.8.xml:16
 msgid "modify a group"
-msgstr ""
+msgstr "Kemmañur strollad"
 
 #. type: Content of: <reference><refentry><refsynopsisdiv><cmdsynopsis>
 #: sss_groupmod.8.xml:21
@@ -54,6 +57,9 @@ msgid ""
 "replaceable> </arg> <arg choice='plain'><replaceable>GROUP</replaceable></"
 "arg>"
 msgstr ""
+"<command>sss_groupmod</command> <arg choice='opt'> <replaceable>options</"
+"replaceable> </arg> <arg choice='plain'><replaceable>GROUP</replaceable></"
+"arg>"
 
 #. type: Content of: <reference><refentry><refsect1><title>
 #: sss_groupmod.8.xml:30 sssd-ldap.5.xml:21 pam_sss.8.xml:44
@@ -65,7 +71,7 @@ msgstr ""
 #: sss_seed.8.xml:31 sss_ssh_authorizedkeys.1.xml:30
 #: sss_ssh_knownhostsproxy.1.xml:31
 msgid "DESCRIPTION"
-msgstr ""
+msgstr "DESKRIVADUR"
 
 #. type: Content of: <reference><refentry><refsect1><para>
 #: sss_groupmod.8.xml:32
@@ -81,7 +87,7 @@ msgstr ""
 #: sss_cache.8.xml:38 sss_debuglevel.8.xml:38 sss_seed.8.xml:42
 #: sss_ssh_authorizedkeys.1.xml:78 sss_ssh_knownhostsproxy.1.xml:65
 msgid "OPTIONS"
-msgstr ""
+msgstr "DIBARZHIOÙ"
 
 #. type: Content of: <reference><refentry><refsect1><variablelist><varlistentry><term>
 #: sss_groupmod.8.xml:43 sss_usermod.8.xml:77
@@ -89,6 +95,8 @@ msgid ""
 "<option>-a</option>,<option>--append-group</option> <replaceable>GROUPS</"
 "replaceable>"
 msgstr ""
+"<option>-a</option>,<option>--append-group</option> <replaceable>GROUPS</"
+"replaceable>"
 
 #. type: Content of: <reference><refentry><refsect1><variablelist><varlistentry><listitem><para>
 #: sss_groupmod.8.xml:48
@@ -115,13 +123,13 @@ msgstr ""
 #. type: Content of: <reference><refentry><refnamediv><refname>
 #: sssd.conf.5.xml:10 sssd.conf.5.xml:16
 msgid "sssd.conf"
-msgstr ""
+msgstr "sssd.conf"
 
 #. type: Content of: <reference><refentry><refmeta><manvolnum>
 #: sssd.conf.5.xml:11 sssd-ldap.5.xml:11 sssd-simple.5.xml:11
 #: sssd-ipa.5.xml:11 sssd-ad.5.xml:11 sssd-sudo.5.xml:11 sssd-krb5.5.xml:11
 msgid "5"
-msgstr ""
+msgstr "5"
 
 #. type: Content of: <reference><refentry><refmeta><refmiscinfo>
 #: sssd.conf.5.xml:12 sssd-ldap.5.xml:12 sssd-simple.5.xml:12
@@ -133,12 +141,12 @@ msgstr ""
 #: sssd.conf.5.xml:17 sssd-ldap.5.xml:17 sssd_krb5_locator_plugin.8.xml:16
 #: sssd-ipa.5.xml:17 sssd-ad.5.xml:17 sssd-sudo.5.xml:17 sssd-krb5.5.xml:17
 msgid "the configuration file for SSSD"
-msgstr ""
+msgstr "Ar restr gefluniañ evit SSSD"
 
 #. type: Content of: <reference><refentry><refsect1><title>
 #: sssd.conf.5.xml:21
 msgid "FILE FORMAT"
-msgstr ""
+msgstr "FURMAD RESTR"
 
 #. type: Content of: <reference><refentry><refsect1><para><programlisting>
 #: sssd.conf.5.xml:29
@@ -190,17 +198,17 @@ msgstr ""
 #. type: Content of: <reference><refentry><refsect1><title>
 #: sssd.conf.5.xml:59
 msgid "SPECIAL SECTIONS"
-msgstr ""
+msgstr "RANNOÙ DIBAR"
 
 #. type: Content of: <reference><refentry><refsect1><refsect2><title>
 #: sssd.conf.5.xml:62
 msgid "The [sssd] section"
-msgstr ""
+msgstr "Ar rann [sssd]"
 
 #. type: Content of: <reference><refentry><refsect1><refsect2><variablelist><title>
 #: sssd.conf.5.xml:71 sssd.conf.5.xml:1655
 msgid "Section parameters"
-msgstr ""
+msgstr "Arventennoù ar rann"
 
 #. type: Content of: <reference><refentry><refsect1><refsect2><para><variablelist><varlistentry><term>
 #: sssd.conf.5.xml:73
@@ -249,12 +257,12 @@ msgstr ""
 #. type: Content of: <reference><refentry><refsect1><refsect2><variablelist><varlistentry><listitem><para>
 #: sssd.conf.5.xml:106 sssd.conf.5.xml:286
 msgid "Default: 3"
-msgstr ""
+msgstr "Dre ziouer : 3"
 
 #. type: Content of: <reference><refentry><refsect1><refsect2><para><variablelist><varlistentry><term>
 #: sssd.conf.5.xml:111
 msgid "domains"
-msgstr ""
+msgstr "domanioù"
 
 #. type: Content of: <reference><refentry><refsect1><refsect2><para><variablelist><varlistentry><listitem><para>
 #: sssd.conf.5.xml:114
@@ -268,7 +276,7 @@ msgstr ""
 #. type: Content of: <reference><refentry><refsect1><para><variablelist><varlistentry><term>
 #: sssd.conf.5.xml:124 sssd.conf.5.xml:1456
 msgid "re_expression (string)"
-msgstr ""
+msgstr "re_expression (neudennad)"
 
 #. type: Content of: <reference><refentry><refsect1><refsect2><para><variablelist><varlistentry><listitem><para>
 #: sssd.conf.5.xml:127
@@ -287,7 +295,7 @@ msgstr ""
 #. type: Content of: <reference><refentry><refsect1><para><variablelist><varlistentry><term>
 #: sssd.conf.5.xml:137 sssd.conf.5.xml:1482
 msgid "full_name_format (string)"
-msgstr ""
+msgstr "full_name_format (neudennad)"
 
 #. type: Content of: <reference><refentry><refsect1><refsect2><para><variablelist><varlistentry><listitem><para>
 #: sssd.conf.5.xml:140
@@ -401,7 +409,7 @@ msgstr ""
 #. type: Content of: <reference><refentry><refsect1><title>
 #: sssd.conf.5.xml:224
 msgid "SERVICES SECTIONS"
-msgstr ""
+msgstr "RANNOÙ SERVIJOÙ"
 
 #. type: Content of: <reference><refentry><refsect1><para>
 #: sssd.conf.5.xml:226
@@ -443,7 +451,7 @@ msgstr ""
 #: sssd-ldap.5.xml:2023 sssd-ldap.5.xml:2041 sssd-ipa.5.xml:244
 #: sssd-ipa.5.xml:279
 msgid "Default: true"
-msgstr ""
+msgstr "Dre ziouer : true"
 
 #. type: Content of: <reference><refentry><refsect1><refsect2><variablelist><varlistentry><term>
 #: sssd.conf.5.xml:254
@@ -539,7 +547,7 @@ msgstr ""
 #. type: Content of: <reference><refentry><refsect1><refsect2><variablelist><varlistentry><listitem><para>
 #: sssd.conf.5.xml:340
 msgid "Default: 120"
-msgstr ""
+msgstr "Dre ziouer : 120"
 
 #. type: Content of: <reference><refentry><refsect1><refsect2><variablelist><varlistentry><term>
 #: sssd.conf.5.xml:345
@@ -594,12 +602,12 @@ msgstr ""
 #. type: Content of: <reference><refentry><refsect1><para><variablelist><varlistentry><listitem><para>
 #: sssd.conf.5.xml:386 sssd.conf.5.xml:790 sssd-krb5.5.xml:225
 msgid "Default: 15"
-msgstr ""
+msgstr "Dre ziouer : 15"
 
 #. type: Content of: <reference><refentry><refsect1><refsect2><variablelist><varlistentry><term>
 #: sssd.conf.5.xml:391
 msgid "filter_users, filter_groups (string)"
-msgstr ""
+msgstr "filter_users, filter_groups (neudennad)"
 
 #. type: Content of: <reference><refentry><refsect1><refsect2><variablelist><varlistentry><listitem><para>
 #: sssd.conf.5.xml:394
@@ -613,7 +621,7 @@ msgstr ""
 #. type: Content of: <reference><refentry><refsect1><refsect2><variablelist><varlistentry><listitem><para>
 #: sssd.conf.5.xml:401
 msgid "Default: root"
-msgstr ""
+msgstr "Dre zoiuer : root"
 
 #. type: Content of: <reference><refentry><refsect1><refsect2><variablelist><varlistentry><term>
 #: sssd.conf.5.xml:406
@@ -937,7 +945,7 @@ msgstr ""
 #. type: Content of: <reference><refentry><refsect1><para><variablelist><varlistentry><listitem><para>
 #: sssd.conf.5.xml:644 sssd.conf.5.xml:697 sssd.conf.5.xml:1536
 msgid "Default: 5"
-msgstr ""
+msgstr "Dre zoiuer : 5"
 
 #. type: Content of: <reference><refentry><refsect1><refsect2><variablelist><varlistentry><term>
 #: sssd.conf.5.xml:650
@@ -1038,7 +1046,7 @@ msgstr ""
 #. type: Content of: <reference><refentry><refsect1><variablelist><varlistentry><listitem><para>
 #: sssd.conf.5.xml:725 sssd.8.xml:79
 msgid "Default: 0"
-msgstr ""
+msgstr "Dre ziouer : 0"
 
 #. type: Content of: <reference><refentry><refsect1><refsect2><title>
 #: sssd.conf.5.xml:745
@@ -1177,7 +1185,7 @@ msgstr ""
 #. type: Content of: <reference><refentry><refsect1><title>
 #: sssd.conf.5.xml:883
 msgid "DOMAIN SECTIONS"
-msgstr ""
+msgstr "RANNOÙ DOMANI"
 
 #. type: Content of: <reference><refentry><refsect1><para><variablelist><varlistentry><term>
 #: sssd.conf.5.xml:890
@@ -7941,7 +7949,7 @@ msgstr ""
 #. type: Content of: <refsect1><title>
 #: include/seealso.xml:2
 msgid "SEE ALSO"
-msgstr ""
+msgstr "GWELET IVEZ"
 
 #. type: Content of: <refsect1><para>
 #: include/seealso.xml:4

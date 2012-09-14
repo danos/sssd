@@ -42,6 +42,7 @@ static errno_t sdap_add_incomplete_groups(struct sysdb_ctx *sysdb,
     char **missing;
     gid_t gid;
     int ret;
+    errno_t sret;
     bool in_transaction = false;
     bool posix;
     time_t now;
@@ -57,17 +58,9 @@ static errno_t sdap_add_incomplete_groups(struct sysdb_ctx *sysdb,
     missing = talloc_array(tmp_ctx, char *, ldap_groups_count+1);
     if (!missing) {
         ret = ENOMEM;
-        goto fail;
+        goto done;
     }
     mi = 0;
-
-    ret = sysdb_transaction_start(sysdb);
-    if (ret != EOK) {
-        DEBUG(1, ("Cannot start sysdb transaction [%d]: %s\n",
-                   ret, strerror(ret)));
-        goto fail;
-    }
-    in_transaction = true;
 
     for (i=0; groupnames[i]; i++) {
         ret = sysdb_search_group_by_name(tmp_ctx, sysdb, groupnames[i], NULL, &msg);
@@ -82,7 +75,7 @@ static errno_t sdap_add_incomplete_groups(struct sysdb_ctx *sysdb,
         } else if (ret != ENOENT) {
             DEBUG(1, ("search for group failed [%d]: %s\n",
                       ret, strerror(ret)));
-            goto fail;
+            goto done;
         }
     }
     missing[mi] = NULL;
@@ -93,6 +86,16 @@ static errno_t sdap_add_incomplete_groups(struct sysdb_ctx *sysdb,
         goto done;
     }
 
+    ret = sysdb_transaction_start(sysdb);
+    if (ret != EOK) {
+        DEBUG(SSSDBG_CRIT_FAILURE,
+              ("Cannot start sysdb transaction [%d]: %s\n",
+               ret, strerror(ret)));
+        goto done;
+    }
+    in_transaction = true;
+
+
     now = time(NULL);
     for (i=0; missing[i]; i++) {
         /* The group is not in sysdb, need to add a fake entry */
@@ -102,7 +105,7 @@ static errno_t sdap_add_incomplete_groups(struct sysdb_ctx *sysdb,
                                            &name);
             if (ret != EOK) {
                 DEBUG(1, ("The group has no name attribute\n"));
-                goto fail;
+                goto done;
             }
 
             if (strcmp(name, missing[i]) == 0) {
@@ -116,7 +119,7 @@ static errno_t sdap_add_incomplete_groups(struct sysdb_ctx *sysdb,
                             tmp_ctx, opts->idmap_ctx, ldap_groups[ai],
                             opts->group_map[SDAP_AT_GROUP_OBJECTSID].sys_name,
                             &sid_str);
-                    if (ret != EOK) goto fail;
+                    if (ret != EOK) goto done;
 
                     DEBUG(SSSDBG_TRACE_INTERNAL,
                           ("Group [%s] has objectSID [%s]\n",
@@ -151,7 +154,7 @@ static errno_t sdap_add_incomplete_groups(struct sysdb_ctx *sysdb,
                         posix = false;
                     } else if (ret) {
                         DEBUG(1, ("The GID attribute is malformed\n"));
-                        goto fail;
+                        goto done;
                     }
                 }
 
@@ -167,7 +170,7 @@ static errno_t sdap_add_incomplete_groups(struct sysdb_ctx *sysdb,
                 ret = sysdb_add_incomplete_group(sysdb, name, gid, original_dn,
                                                  posix, now);
                 if (ret != EOK) {
-                    goto fail;
+                    goto done;
                 }
                 break;
             }
@@ -176,21 +179,24 @@ static errno_t sdap_add_incomplete_groups(struct sysdb_ctx *sysdb,
         if (ai == ldap_groups_count) {
             DEBUG(2, ("Group %s not present in LDAP\n", missing[i]));
             ret = EINVAL;
-            goto fail;
+            goto done;
         }
     }
 
-done:
     ret = sysdb_transaction_commit(sysdb);
     if (ret != EOK) {
-        DEBUG(1, ("sysdb_transaction_commit failed.\n"));
-        goto fail;
+        DEBUG(SSSDBG_CRIT_FAILURE, ("sysdb_transaction_commit failed.\n"));
+        goto done;
     }
     in_transaction = false;
     ret = EOK;
-fail:
+
+done:
     if (in_transaction) {
-        sysdb_transaction_cancel(sysdb);
+        sret = sysdb_transaction_cancel(sysdb);
+        if (sret != EOK) {
+            DEBUG(SSSDBG_CRIT_FAILURE, ("Failed to cancel transaction\n"));
+        }
     }
     talloc_free(tmp_ctx);
     return ret;
@@ -1781,7 +1787,14 @@ save_rfc2307bis_group_memberships(struct sdap_initgr_rfc2307bis_state *state)
     TALLOC_CTX *tmp_ctx;
     struct rfc2307bis_group_memberships_state *membership_state;
     struct membership_diff *iter;
+    struct membership_diff *iter_start;
+    struct membership_diff *iter_tmp;
     bool in_transaction = false;
+    int num_added;
+    int i;
+    int grp_count;
+    int grp_count_old = 0;
+    char **add = NULL;
 
     tmp_ctx = talloc_new(NULL);
     if (!tmp_ctx) return ENOMEM;
@@ -1813,10 +1826,47 @@ save_rfc2307bis_group_memberships(struct sdap_initgr_rfc2307bis_state *state)
     }
     in_transaction = true;
 
+    iter_tmp = membership_state->memberships;
+    iter_start = membership_state->memberships;
+
     DLIST_FOR_EACH(iter, membership_state->memberships) {
+        /* Create a copy of iter->add array but do not include groups outside
+         * nesting limit. This array must be NULL terminated.
+         */
+        for (grp_count = 0; iter->add[grp_count]; grp_count++);
+        if (grp_count > grp_count_old) {
+            add = talloc_realloc(tmp_ctx, add, char*, grp_count + 1);
+            if (add == NULL) {
+                ret = ENOMEM;
+                goto done;
+            }
+        }
+
+        num_added = 0;
+        for (i = 0; i < grp_count; i++) {
+            DLIST_FOR_EACH(iter_tmp, iter_start) {
+                if (!strcmp(iter_tmp->name,iter->add[i])) {
+                    add[num_added] = iter->add[i];
+                    num_added++;
+                    break;
+                }
+            }
+        }
+
+        /* Swap old and new group counter. */
+        grp_count ^= grp_count_old;
+        grp_count_old ^= grp_count;
+        grp_count ^= grp_count_old;
+
+        if (num_added == 0) {
+            /* Nothing to add. Skip. */
+            continue;
+        } else {
+            add[num_added] = NULL;
+        }
         ret = sysdb_update_members(state->sysdb, iter->name,
                                    SYSDB_MEMBER_GROUP,
-                                  (const char *const *) iter->add,
+                                  (const char *const *) add,
                                   (const char *const *) iter->del);
         if (ret != EOK) {
             DEBUG(3, ("Failed to update memberships\n"));
@@ -1920,6 +1970,7 @@ errno_t save_rfc2307bis_user_memberships(
     DEBUG(7, ("Save parent groups to sysdb\n"));
     ret = sysdb_transaction_start(state->sysdb);
     if (ret != EOK) {
+        DEBUG(SSSDBG_CRIT_FAILURE, ("Failed to start transaction\n"));
         goto error;
     }
     in_transaction = true;
@@ -1968,6 +2019,7 @@ errno_t save_rfc2307bis_user_memberships(
 
     ret = sysdb_transaction_commit(state->sysdb);
     if (ret != EOK) {
+        DEBUG(SSSDBG_CRIT_FAILURE, ("Failed to commit transaction\n"));
         goto error;
     }
     in_transaction = false;
@@ -2036,9 +2088,8 @@ struct tevent_req *rfc2307bis_nested_groups_send(
     if ((num_groups == 0) ||
         (nesting > dp_opt_get_int(opts->basic, SDAP_NESTING_LEVEL))) {
         /* No parent groups to process or too deep*/
-        tevent_req_done(req);
-        tevent_req_post(req, ev);
-        return req;
+        ret = EOK;
+        goto done;
     }
 
     state->ev = ev;
@@ -2072,7 +2123,20 @@ struct tevent_req *rfc2307bis_nested_groups_send(
         goto done;
     }
 
-    ret = rfc2307bis_nested_groups_step(req);
+    while (state->group_iter < state->num_groups) {
+        ret = rfc2307bis_nested_groups_step(req);
+        if (ret == EOK) {
+            /* This group had already been looked up. Continue to
+             * another group in the same level
+             */
+            state->group_iter++;
+            continue;
+        } else {
+            goto done;
+        }
+    }
+
+    ret = EOK;
 
 done:
     if (ret == EOK) {
@@ -2574,8 +2638,10 @@ static void sdap_get_initgr_user(struct tevent_req *subreq)
     struct sysdb_attrs **usr_attrs;
     size_t count;
     int ret;
+    errno_t sret;
     const char *orig_dn;
     const char *cname;
+    bool in_transaction = false;
 
     DEBUG(9, ("Receiving info for the user\n"));
 
@@ -2610,9 +2676,10 @@ static void sdap_get_initgr_user(struct tevent_req *subreq)
 
     ret = sysdb_transaction_start(state->sysdb);
     if (ret) {
-        tevent_req_error(req, ret);
-        return;
+        DEBUG(SSSDBG_CRIT_FAILURE, ("Failed to start transaction\n"));
+        goto fail;
     }
+    in_transaction = true;
 
     DEBUG(9, ("Storing the user\n"));
 
@@ -2621,18 +2688,17 @@ static void sdap_get_initgr_user(struct tevent_req *subreq)
                          state->orig_user,
                          true, NULL, 0);
     if (ret) {
-        sysdb_transaction_cancel(state->sysdb);
-        tevent_req_error(req, ret);
-        return;
+        goto fail;
     }
 
     DEBUG(9, ("Commit change\n"));
 
     ret = sysdb_transaction_commit(state->sysdb);
     if (ret) {
-        tevent_req_error(req, ret);
-        return;
+        DEBUG(SSSDBG_CRIT_FAILURE, ("Failed to commit transaction\n"));
+        goto fail;
     }
+    in_transaction = false;
 
     ret = sysdb_get_real_name(state, state->sysdb, state->name, &cname);
     if (ret != EOK) {
@@ -2704,6 +2770,16 @@ static void sdap_get_initgr_user(struct tevent_req *subreq)
         tevent_req_error(req, EINVAL);
         return;
     }
+
+    return;
+fail:
+    if (in_transaction) {
+        sret = sysdb_transaction_cancel(state->sysdb);
+        if (sret != EOK) {
+            DEBUG(SSSDBG_CRIT_FAILURE, ("Failed to cancel transaction\n"));
+        }
+    }
+    tevent_req_error(req, ret);
 }
 
 static int sdap_initgr_rfc2307bis_recv(struct tevent_req *req);

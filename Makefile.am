@@ -58,7 +58,8 @@ if HAVE_GCC
     AM_CFLAGS += -Wall -Wshadow -Wstrict-prototypes -Wpointer-arith \
                  -Wcast-qual -Wcast-align -Wwrite-strings \
                  -Werror-implicit-function-declaration \
-                 -fno-strict-aliasing
+                 -fno-strict-aliasing \
+                 -std=gnu99
 endif
 
 dist_pkgconfig_DATA =
@@ -108,7 +109,6 @@ endif
 if HAVE_CHECK
     non_interactive_check_based_tests = \
         sysdb-tests \
-        sysdb_ssh-tests\
         strtonum-tests \
         resolv-tests \
         krb5-utils-tests \
@@ -132,6 +132,10 @@ if BUILD_PAC_RESPONDER
         non_interactive_check_based_tests += pac_responder-tests
 endif
 
+if BUILD_SSH
+        non_interactive_check_based_tests += sysdb_ssh-tests
+endif
+
 endif
 
 check_PROGRAMS = \
@@ -143,7 +147,8 @@ PYTHON_TESTS =
 
 if BUILD_PYTHON_BINDINGS
 PYTHON_TESTS += $(srcdir)/src/config/SSSDConfigTest.py \
-                $(srcdir)/src/tests/pyhbac-test.py
+                $(srcdir)/src/tests/pyhbac-test.py \
+                $(srcdir)/src/tests/pysss_murmur-test.py
 endif
 
 TESTS = \
@@ -202,7 +207,8 @@ libsss_crypt_la_LIBADD = \
 if BUILD_PYTHON_BINDINGS
 pyexec_LTLIBRARIES = \
     pysss.la \
-    pyhbac.la
+    pyhbac.la \
+    pysss_murmur.la
 endif
 
 dist_noinst_SCRIPTS = \
@@ -213,7 +219,8 @@ dist_noinst_SCRIPTS = \
     src/config/SSSDConfigTest.py \
     src/config/SSSDConfig/sssd_upgrade_config.py \
     contrib/rhel/update_debug_levels.py \
-    src/tests/pyhbac-test.py
+    src/tests/pyhbac-test.py \
+    src/tests/pysss_murmur-test.py
 
 dist_noinst_DATA = \
     src/config/testconfigs/sssd-valid.conf \
@@ -447,6 +454,10 @@ SSSD_DOCS = \
 	idmap_doc
 if BUILD_SUDO
 	SSSD_DOCS += libsss_sudo_doc
+endif
+
+if HAVE_PTHREAD
+CLIENT_LIBS = -lpthread
 endif
 
 #####################
@@ -735,6 +746,7 @@ sss_sudo_cli_SOURCES = \
     src/sss_client/common.c \
     src/sss_client/sudo_testcli/sudo_testcli.c
 sss_sudo_cli_CFLAGS = $(AM_CFLAGS)
+sss_sudo_cli_LDFLAGS = $(CLIENT_LIBS)
 sss_sudo_cli_LDADD = \
     libsss_sudo.la
 endif
@@ -1118,7 +1130,7 @@ autofs_test_client_SOURCES = src/sss_client/autofs/autofs_test_client.c \
 			     src/sss_client/autofs/sss_autofs.c \
 			     src/sss_client/common.c
 autofs_test_client_CFLAGS = $(AM_CFLAGS)
-autofs_test_client_LDFLAGS = -lpopt
+autofs_test_client_LDFLAGS = -lpopt $(CLIENT_LIBS)
 endif
 
 ####################
@@ -1140,6 +1152,7 @@ libnss_sss_la_SOURCES = \
     src/sss_client/nss_mc_group.c \
     src/sss_client/nss_mc.h
 libnss_sss_la_LDFLAGS = \
+    $(CLIENT_LIBS) \
     -module \
     -version-info 2:0:0 \
     -Wl,--version-script,$(srcdir)/src/sss_client/sss_nss.exports
@@ -1153,6 +1166,7 @@ pam_sss_la_SOURCES = \
     src/sss_client/sss_pam_macros.h
 
 pam_sss_la_LDFLAGS = \
+    $(CLIENT_LIBS) \
     -lpam \
     -module \
     -avoid-version \
@@ -1168,6 +1182,7 @@ libsss_sudo_la_SOURCES = \
     src/sss_client/sudo/sss_sudo.h \
     src/sss_client/sudo/sss_sudo_private.h
 libsss_sudo_la_LDFLAGS = \
+    $(CLIENT_LIBS) \
     -Wl,--version-script,$(srcdir)/src/sss_client/sss_sudo.exports \
     -version-info 2:0:1
 
@@ -1187,6 +1202,7 @@ libsss_autofs_la_SOURCES = \
     src/sss_client/autofs/sss_autofs_private.h
 
 libsss_autofs_la_LDFLAGS = \
+    $(CLIENT_LIBS) \
     -module \
     -avoid-version \
     -Wl,--version-script,$(srcdir)/src/sss_client/autofs/sss_autofs.exports
@@ -1232,6 +1248,7 @@ libsss_ldap_common_la_SOURCES = \
     src/providers/ldap/sdap_idmap.c \
     src/providers/ldap/sdap_idmap.h \
     src/providers/ldap/sdap_range.c \
+    src/providers/ldap/sdap_reinit.c \
     src/providers/ldap/sdap.c
 
 if BUILD_SUDO
@@ -1505,6 +1522,7 @@ sssd_pac_plugin_la_CFLAGS = \
     $(AM_CFLAGS) \
     $(KRB5_CFLAGS)
 sssd_pac_plugin_la_LDFLAGS = \
+    $(CLIENT_LIBS) \
     -lkrb5 \
     -avoid-version \
     -module
@@ -1534,6 +1552,18 @@ pyhbac_la_LIBADD = \
     $(PYTHON_LIBS) \
     libipa_hbac.la
 pyhbac_la_LDFLAGS = \
+    -avoid-version \
+    -module
+
+pysss_murmur_la_SOURCES = \
+    src/python/pysss_murmur.c \
+    src/util/murmurhash3.c
+pysss_murmur_la_CFLAGS = \
+    $(AM_CFLAGS)  \
+    $(PYTHON_CFLAGS)
+pysss_murmur_la_LIBADD = \
+    $(PYTHON_LIBS)
+pysss_murmur_la_LDFLAGS = \
     -avoid-version \
     -module
 endif
@@ -1717,6 +1747,7 @@ rpmroot:
 rpmbrprep: dist-gzip rpmroot
 	cp $(builddir)/contrib/sssd.spec $(RPMBUILD)/SPECS
 	cp $(distdir).tar.gz $(RPMBUILD)/SOURCES
+	cp $(srcdir)/contrib/*.patch $(RPMBUILD)/SOURCES
 
 rpms: rpmbrprep
 	cd $(RPMBUILD); \

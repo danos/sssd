@@ -65,16 +65,6 @@
 #define SYSDB_GIDNUM "gidNumber"
 #define SYSDB_CREATE_TIME "createTimestamp"
 
-
-#define SYSDB_NAME "name"
-#define SYSDB_NAME_ALIAS "nameAlias"
-#define SYSDB_OBJECTCLASS "objectClass"
-
-#define SYSDB_NEXTID "nextID"
-#define SYSDB_UIDNUM "uidNumber"
-#define SYSDB_GIDNUM "gidNumber"
-#define SYSDB_CREATE_TIME "createTimestamp"
-
 #define SYSDB_PWD "userPassword"
 #define SYSDB_FULLNAME "fullName"
 #define SYSDB_HOMEDIR "homeDirectory"
@@ -276,6 +266,8 @@ int sysdb_attrs_copy_values(struct sysdb_attrs *src,
                             const char *name);
 int sysdb_attrs_get_el(struct sysdb_attrs *attrs, const char *name,
                        struct ldb_message_element **el);
+int sysdb_attrs_get_el_ext(struct sysdb_attrs *attrs, const char *name,
+                           bool alloc, struct ldb_message_element **el);
 int sysdb_attrs_steal_string(struct sysdb_attrs *attrs,
                              const char *name, char *str);
 int sysdb_attrs_get_string(struct sysdb_attrs *attrs, const char *name,

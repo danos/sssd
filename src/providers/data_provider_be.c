@@ -316,29 +316,56 @@ static void get_subdomains_callback(struct be_req *req,
     DBusMessage *reply;
     DBusConnection *dbus_conn;
     dbus_bool_t dbret;
+    dbus_uint16_t err_maj = 0;
+    dbus_uint32_t err_min = 0;
+    const char *err_msg = NULL;
 
     DEBUG(SSSDBG_TRACE_FUNC, ("Backend returned: (%d, %d, %s) [%s]\n",
               dp_err_type, errnum, errstr?errstr:"<NULL>",
               dp_pam_err_to_string(req, dp_err_type, errnum)));
 
     reply = (DBusMessage *)req->pvt;
-    dbret = dbus_message_append_args(reply,
-                                     DBUS_TYPE_UINT32, &errnum,
-                                     DBUS_TYPE_INVALID);
-    if (!dbret) {
-        DEBUG(SSSDBG_CRIT_FAILURE, ("Failed to generate dbus reply\n"));
+
+    if (reply) {
+        /* Return a reply if one was requested
+         * There may not be one if this request began
+         * while we were offline
+         */
+        err_maj = dp_err_type;
+        err_min = errnum;
+        if (errstr) {
+            err_msg = errstr;
+        } else {
+            err_msg = dp_pam_err_to_string(req, dp_err_type, errnum);
+        }
+        if (!err_msg) {
+            DEBUG(SSSDBG_CRIT_FAILURE,
+                  ("Failed to set err_msg, Out of memory?\n"));
+            err_msg = "OOM";
+        }
+
+        dbret = dbus_message_append_args(reply,
+                                         DBUS_TYPE_UINT16, &err_maj,
+                                         DBUS_TYPE_UINT32, &err_min,
+                                         DBUS_TYPE_STRING, &err_msg,
+                                         DBUS_TYPE_INVALID);
+
+        if (!dbret) {
+            DEBUG(SSSDBG_CRIT_FAILURE, ("Failed to generate dbus reply\n"));
+            dbus_message_unref(reply);
+            goto done;
+        }
+
+        dbus_conn = sbus_get_connection(req->becli->conn);
+        if (dbus_conn == NULL) {
+            DEBUG(SSSDBG_CRIT_FAILURE, ("D-BUS not connected\n"));
+            goto done;
+        }
+        dbus_connection_send(dbus_conn, reply, NULL);
         dbus_message_unref(reply);
-        return;
     }
 
-    dbus_conn = sbus_get_connection(req->becli->conn);
-    if (dbus_conn == NULL) {
-        DEBUG(SSSDBG_CRIT_FAILURE, ("D-BUS not connected\n"));
-        return;
-    }
-    dbus_connection_send(dbus_conn, reply, NULL);
-    dbus_message_unref(reply);
-
+done:
     talloc_free(req);
 }
 
@@ -766,6 +793,7 @@ static void be_pam_handler_callback(struct be_req *req,
     pd = talloc_get_type(req->req_data, struct pam_data);
 
     if (pd->cmd == SSS_PAM_ACCT_MGMT &&
+        pd->pam_status == PAM_SUCCESS &&
         req->phase == REQ_PHASE_ACCESS &&
         dp_err_type == DP_ERR_OK) {
         if (!becli->bectx->bet_info[BET_SELINUX].bet_ops) {
@@ -2048,6 +2076,68 @@ static void signal_be_offline(struct tevent_context *ev,
     be_mark_offline(ctx);
 }
 
+int be_process_init_sudo(struct be_ctx *be_ctx)
+{
+    TALLOC_CTX *tmp_ctx = NULL;
+    char **services = NULL;
+    char *provider = NULL;
+    bool responder_enabled = false;
+    int i;
+    int ret;
+
+    tmp_ctx = talloc_new(NULL);
+    if (tmp_ctx == NULL) {
+        DEBUG(SSSDBG_CRIT_FAILURE, ("talloc_new() failed\n"));
+        return ENOMEM;
+    }
+
+    ret = confdb_get_string_as_list(be_ctx->cdb, tmp_ctx,
+                                    CONFDB_MONITOR_CONF_ENTRY,
+                                    CONFDB_MONITOR_ACTIVE_SERVICES, &services);
+    if (ret != EOK) {
+        DEBUG(SSSDBG_FATAL_FAILURE, ("Unable to read from confdb [%d]: %s\n",
+                                     ret, strerror(ret)));
+        goto done;
+    }
+
+    for (i = 0; services[i] != NULL; i++) {
+        if (strcmp(services[i], "sudo") == 0) {
+            responder_enabled = true;
+            break;
+        }
+    }
+
+    ret = confdb_get_string(be_ctx->cdb, tmp_ctx, be_ctx->conf_path,
+                            CONFDB_DOMAIN_SUDO_PROVIDER, NULL, &provider);
+    if (ret != EOK) {
+        DEBUG(SSSDBG_FATAL_FAILURE, ("Unable to read from confdb [%d]: %s\n",
+                                     ret, strerror(ret)));
+        goto done;
+    }
+
+    if (!responder_enabled && provider == NULL) {
+        /* provider is not set explicitly */
+        DEBUG(SSSDBG_TRACE_FUNC,
+              ("SUDO is not listed in services, disabling SUDO module.\n"));
+        ret = ENOENT;
+        goto done;
+    }
+
+    if (!responder_enabled && provider != NULL
+            && strcmp(provider, NO_PROVIDER) != 0) {
+        /* provider is set but responder is disabled */
+        DEBUG(SSSDBG_MINOR_FAILURE, ("SUDO provider is set, but it is not "
+              "listed in active services. SUDO support will not work!\n"));
+    }
+
+    ret = load_backend_module(be_ctx, BET_SUDO, &be_ctx->bet_info[BET_SUDO],
+                              be_ctx->bet_info[BET_ID].mod_name);
+
+done:
+    talloc_free(tmp_ctx);
+    return ret;
+}
+
 int be_process_init(TALLOC_CTX *mem_ctx,
                     const char *be_domain,
                     struct tevent_context *ev,
@@ -2068,21 +2158,22 @@ int be_process_init(TALLOC_CTX *mem_ctx,
     ctx->conf_path = talloc_asprintf(ctx, CONFDB_DOMAIN_PATH_TMPL, be_domain);
     if (!ctx->identity || !ctx->conf_path) {
         DEBUG(0, ("Out of memory!?\n"));
-        return ENOMEM;
+        ret = ENOMEM;
+        goto fail;
     }
 
     ret = be_init_failover(ctx);
     if (ret != EOK) {
         DEBUG(SSSDBG_FATAL_FAILURE,
               ("fatal error initializing failover context\n"));
-        return ret;
+        goto fail;
     }
 
     ret = sysdb_init_domain_and_sysdb(ctx, cdb, be_domain, DB_PATH,
                                       &ctx->domain, &ctx->sysdb);
     if (ret != EOK) {
         DEBUG(SSSDBG_FATAL_FAILURE, ("fatal error opening cache database\n"));
-        return ret;
+        goto fail;
     }
 
     ret = sss_monitor_init(ctx, ctx->ev, &monitor_be_interface,
@@ -2091,13 +2182,13 @@ int be_process_init(TALLOC_CTX *mem_ctx,
     if (ret != EOK) {
         DEBUG(SSSDBG_FATAL_FAILURE,
               ("fatal error setting up monitor bus\n"));
-        return ret;
+        goto fail;
     }
 
     ret = be_srv_init(ctx);
     if (ret != EOK) {
         DEBUG(SSSDBG_FATAL_FAILURE, ("fatal error setting up server bus\n"));
-        return ret;
+        goto fail;
     }
 
     ret = load_backend_module(ctx, BET_ID,
@@ -2105,7 +2196,7 @@ int be_process_init(TALLOC_CTX *mem_ctx,
     if (ret != EOK) {
         DEBUG(SSSDBG_FATAL_FAILURE,
               ("fatal error initializing data providers\n"));
-        return ret;
+        goto fail;
     }
     DEBUG(SSSDBG_TRACE_INTERNAL,
           ("ID backend target successfully loaded from provider [%s].\n",
@@ -2118,7 +2209,7 @@ int be_process_init(TALLOC_CTX *mem_ctx,
         if (ret != ENOENT) {
             DEBUG(SSSDBG_FATAL_FAILURE,
                   ("fatal error initializing data providers\n"));
-            return ret;
+            goto fail;
         }
         DEBUG(SSSDBG_MINOR_FAILURE,
               ("No authentication module provided for [%s] !!\n",
@@ -2134,7 +2225,7 @@ int be_process_init(TALLOC_CTX *mem_ctx,
     if (ret != EOK) {
         DEBUG(SSSDBG_FATAL_FAILURE,
               ("Failed to setup ACCESS backend.\n"));
-        return ret;
+        goto fail;
     }
     DEBUG(SSSDBG_TRACE_INTERNAL,
           ("ACCESS backend target successfully loaded "
@@ -2147,7 +2238,7 @@ int be_process_init(TALLOC_CTX *mem_ctx,
         if (ret != ENOENT) {
             DEBUG(SSSDBG_FATAL_FAILURE,
                   ("fatal error initializing data providers\n"));
-            return ret;
+            goto fail;
         }
         DEBUG(SSSDBG_MINOR_FAILURE,
               ("No change password module provided for [%s] !!\n",
@@ -2158,14 +2249,12 @@ int be_process_init(TALLOC_CTX *mem_ctx,
                "from provider [%s].\n", ctx->bet_info[BET_CHPASS].mod_name));
     }
 
-    ret = load_backend_module(ctx, BET_SUDO,
-                              &ctx->bet_info[BET_SUDO],
-                              ctx->bet_info[BET_ID].mod_name);
+    ret = be_process_init_sudo(ctx);
     if (ret != EOK) {
         if (ret != ENOENT) {
             DEBUG(SSSDBG_FATAL_FAILURE,
                   ("fatal error initializing data providers\n"));
-            return ret;
+            goto fail;
         }
         DEBUG(SSSDBG_MINOR_FAILURE,
               ("No SUDO module provided for [%s] !!\n", be_domain));
@@ -2182,7 +2271,7 @@ int be_process_init(TALLOC_CTX *mem_ctx,
         if (ret != ENOENT) {
             DEBUG(SSSDBG_FATAL_FAILURE,
                   ("fatal error initializing data providers\n"));
-            return ret;
+            goto fail;
         }
         DEBUG(SSSDBG_MINOR_FAILURE,
               ("No autofs module provided for [%s] !!\n", be_domain));
@@ -2198,7 +2287,7 @@ int be_process_init(TALLOC_CTX *mem_ctx,
     if (ret != EOK) {
         if (ret != ENOENT) {
             DEBUG(SSSDBG_FATAL_FAILURE, ("fatal error initializing data providers\n"));
-            return ret;
+            goto fail;
         }
         DEBUG(SSSDBG_CRIT_FAILURE, ("No selinux module provided for [%s] !!\n",
                   be_domain));
@@ -2214,7 +2303,7 @@ int be_process_init(TALLOC_CTX *mem_ctx,
         if (ret != ENOENT) {
             DEBUG(SSSDBG_FATAL_FAILURE,
                   ("fatal error initializing data providers\n"));
-            return ret;
+            goto fail;
         }
         DEBUG(SSSDBG_CRIT_FAILURE,
               ("No host info module provided for [%s] !!\n", be_domain));
@@ -2239,7 +2328,8 @@ int be_process_init(TALLOC_CTX *mem_ctx,
     tes = tevent_add_signal(ctx->ev, ctx, SIGUSR1, 0,
                             signal_be_offline, ctx);
     if (tes == NULL) {
-        return EIO;
+        ret = EIO;
+        goto fail;
     }
 
     ret = sss_sigchld_init(ctx, ctx->ev, &ctx->sigchld_ctx);
@@ -2247,10 +2337,14 @@ int be_process_init(TALLOC_CTX *mem_ctx,
         DEBUG(SSSDBG_FATAL_FAILURE,
               ("Could not initialize sigchld context: [%s]\n",
                strerror(ret)));
-        return ret;
+        goto fail;
     }
 
     return EOK;
+
+fail:
+    talloc_free(ctx);
+    return ret;
 }
 
 int main(int argc, const char *argv[])

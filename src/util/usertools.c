@@ -45,6 +45,27 @@ char *get_username_from_uid(TALLOC_CTX *mem_ctx, uid_t uid)
     return username;
 }
 
+/* Function returns given realm name as new uppercase string */
+char *get_uppercase_realm(TALLOC_CTX *memctx, const char *name)
+{
+    char *realm;
+    char *c;
+
+    realm = talloc_strdup(memctx, name);
+    if (!realm) {
+        return NULL;
+    }
+
+    c = realm;
+    while(*c != '\0') {
+        *c = toupper(*c);
+        c++;
+    }
+
+    return realm;
+}
+
+
 static int sss_names_ctx_destructor(struct sss_names_ctx *snctx)
 {
     if (snctx->re) {
@@ -215,7 +236,9 @@ static struct sss_domain_info * match_any_domain_or_subdomain_name (
         return dom;
 
     for (i = 0; i < dom->subdomain_count; i++) {
-        if (strcasecmp(dom->subdomains[i]->name, dmatch) == 0) {
+        if (strcasecmp(dom->subdomains[i]->name, dmatch) == 0 ||
+            (dom->subdomains[i]->flat_name != NULL &&
+             strcasecmp(dom->subdomains[i]->flat_name, dmatch) == 0)) {
             return dom->subdomains[i];
         }
     }

@@ -28,6 +28,7 @@
 #include <unistd.h>
 #include <string.h>
 #include <strings.h>
+#include <ctype.h>
 #include <errno.h>
 #include <libintl.h>
 #include <limits.h>
@@ -388,6 +389,8 @@ int password_destructor(void *memctx);
 /* from usertools.c */
 char *get_username_from_uid(TALLOC_CTX *mem_ctx, uid_t uid);
 
+char *get_uppercase_realm(TALLOC_CTX *memctx, const char *name);
+
 struct sss_names_ctx {
     char *re_pattern;
     char *fq_fmt;
@@ -512,6 +515,15 @@ errno_t sss_filter_sanitize(TALLOC_CTX *mem_ctx,
 
 char *
 sss_escape_ip_address(TALLOC_CTX *mem_ctx, int family, const char *addr);
+
+/* This function only removes first and last
+ * character if the first character was '['.
+ *
+ * NOTE: This means, that ipv6addr must NOT be followed
+ * by port number.
+ */
+errno_t
+remove_ipv6_brackets(char *ipv6addr);
 
 /* from sss_tc_utf8.c */
 char *

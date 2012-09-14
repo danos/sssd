@@ -1307,6 +1307,20 @@ static void monitor_quit(struct tevent_context *ev,
     exit(0);
 }
 
+static void signal_res_init(struct mt_ctx *monitor)
+{
+    struct mt_svc *cur_svc;
+    int ret;
+    DEBUG(SSSDBG_OP_FAILURE, ("Reloading Resolv.conf.\n"));
+
+    ret = res_init();
+    if (ret == 0) {
+        for(cur_svc = monitor->svc_list; cur_svc; cur_svc = cur_svc->next) {
+            service_signal_dns_reload(cur_svc);
+        }
+    }
+}
+
 static void signal_offline(struct tevent_context *ev,
                            struct tevent_signal *se,
                            int signum,
@@ -1319,7 +1333,8 @@ static void signal_offline(struct tevent_context *ev,
 
     monitor = talloc_get_type(private_data, struct mt_ctx);
 
-    DEBUG(8, ("Signaling providers to go offline immediately.\n"));
+    DEBUG(SSSDBG_TRACE_INTERNAL,
+         ("Signaling providers to go offline immediately.\n"));
 
     /* Signal all providers to immediately go offline */
     for(cur_svc = monitor->svc_list; cur_svc; cur_svc = cur_svc->next) {
@@ -1342,13 +1357,15 @@ static void signal_offline_reset(struct tevent_context *ev,
 
     monitor = talloc_get_type(private_data, struct mt_ctx);
 
-    DEBUG(8, ("Signaling providers to reset offline immediately.\n"));
+    DEBUG(SSSDBG_TRACE_INTERNAL,
+         ("Signaling providers to reset offline immediately.\n"));
 
     for(cur_svc = monitor->svc_list; cur_svc; cur_svc = cur_svc->next) {
         if (cur_svc->provider) {
             service_signal_reset_offline(cur_svc);
         }
     }
+    signal_res_init(monitor);
 }
 
 static int monitor_ctx_destructor(void *mem)
@@ -2239,11 +2256,6 @@ static int start_service(struct mt_svc *svc)
 
     DEBUG(4,("Queueing service %s for startup\n", svc->name));
 
-    /* at startup we need to start the data providers before the responders
-     * to avoid races where a service starts before sbus pipes are ready
-     * to accept connections. So if startup is true delay by 2 seconds any
-     * process that is not a data provider */
-
     tv = tevent_timeval_current();
 
     /* Add a timed event to start up the service.
@@ -2516,14 +2528,20 @@ int main(int argc, const char *argv[])
     /* Parse config file, fail if cannot be done */
     ret = load_configuration(tmp_ctx, config_file, &monitor);
     if (ret != EOK) {
+        /* if debug level has not been set, set it manually to make these
+         * critical failures visible */
+        if (debug_level == SSSDBG_UNRESOLVED) {
+            debug_level = SSSDBG_MASK_ALL;
+        }
+
         if (ret == EPERM) {
             DEBUG(1, ("Cannot read configuration file %s\n", config_file));
             sss_log(SSS_LOG_ALERT,
                     "Cannot read config file %s, please check if permissions "
                     "are 0600 and the file is owned by root.root", config_file);
         } else {
-            DEBUG(1, ("Error loading configuration database: [%d]: %s",
-                      ret, strerror(ret)));
+            DEBUG(SSSDBG_CRIT_FAILURE, ("Error loading configuration database: "
+                                        "[%d]: %s\n", ret, strerror(ret)));
             sss_log(SSS_LOG_ALERT, "Cannot load configuration database");
         }
         return 4;

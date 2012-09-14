@@ -33,7 +33,6 @@ ad_get_common_options(TALLOC_CTX *mem_ctx,
 {
     errno_t ret;
     int gret;
-    size_t i;
     struct ad_options *opts = NULL;
     char *domain;
     char *server;
@@ -98,14 +97,10 @@ ad_get_common_options(TALLOC_CTX *mem_ctx,
 
 
     /* Always use the upper-case AD domain for the kerberos realm */
-    realm = talloc_strdup(opts, domain);
+    realm = get_uppercase_realm(opts, domain);
     if (!realm) {
         ret = ENOMEM;
         goto done;
-    }
-
-    for (i = 0; realm[i]; i++) {
-        realm[i] = toupper(realm[i]);
     }
 
     ret = dp_opt_set_string(opts->basic, AD_KRB5_REALM, realm);
@@ -152,7 +147,7 @@ ad_servers_init(TALLOC_CTX *mem_ctx,
                 bool primary)
 {
     size_t i;
-    errno_t ret;
+    errno_t ret = 0;
     char **list;
     char *ad_domain;
     TALLOC_CTX *tmp_ctx;
@@ -172,6 +167,14 @@ ad_servers_init(TALLOC_CTX *mem_ctx,
     /* Add each of these servers to the failover service */
     for (i = 0; list[i]; i++) {
         if (be_fo_is_srv_identifier(list[i])) {
+            if (!primary) {
+                DEBUG(SSSDBG_MINOR_FAILURE,
+                      ("Failed to add server [%s] to failover service: "
+                       "SRV resolution only allowed for primary servers!\n",
+                       list[i]));
+                continue;
+            }
+
             ret = be_fo_add_srv_server(bectx, AD_SERVICE_NAME, "ldap",
                                        ad_domain, BE_FO_PROTO_TCP,
                                        false, NULL);
@@ -186,6 +189,13 @@ ad_servers_init(TALLOC_CTX *mem_ctx,
             continue;
         }
 
+        /* It could be ipv6 address in square brackets. Remove
+         * the brackets if needed. */
+        ret = remove_ipv6_brackets(list[i]);
+        if (ret != EOK) {
+            goto done;
+        }
+
         ret = be_fo_add_server(bectx, AD_SERVICE_NAME, list[i], 0, NULL, primary);
         if (ret && ret != EEXIST) {
             DEBUG(SSSDBG_FATAL_FAILURE, ("Failed to add server\n"));
@@ -197,6 +207,11 @@ ad_servers_init(TALLOC_CTX *mem_ctx,
 done:
     talloc_free(tmp_ctx);
     return ret;
+}
+
+static int ad_user_data_cmp(void *ud1, void *ud2)
+{
+    return strcasecmp((char*) ud1, (char*) ud2);
 }
 
 errno_t
@@ -232,7 +247,7 @@ ad_failover_init(TALLOC_CTX *mem_ctx, struct be_ctx *bectx,
         goto done;
     }
 
-    ret = be_fo_add_service(bectx, AD_SERVICE_NAME);
+    ret = be_fo_add_service(bectx, AD_SERVICE_NAME, ad_user_data_cmp);
     if (ret != EOK) {
         DEBUG(SSSDBG_CRIT_FAILURE, ("Failed to create failover service!\n"));
         goto done;
@@ -627,7 +642,7 @@ ad_set_search_bases(struct sdap_options *id_opts)
         }
     } else {
         DEBUG(SSSDBG_CONF_SETTINGS,
-              ("Search base not set. SSSd will attempt to discover it later, "
+              ("Search base not set. SSSD will attempt to discover it later, "
                "when connecting to the LDAP server.\n"));
     }
 

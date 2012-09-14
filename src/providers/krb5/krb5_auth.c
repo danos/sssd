@@ -121,6 +121,8 @@ static int krb5_mod_ccname(TALLOC_CTX *mem_ctx,
     TALLOC_CTX *tmpctx;
     struct sysdb_attrs *attrs;
     int ret;
+    errno_t sret;
+    bool in_transaction = false;
 
     if (name == NULL || ccname == NULL) {
         DEBUG(1, ("Missing user or ccache name.\n"));
@@ -154,23 +156,32 @@ static int krb5_mod_ccname(TALLOC_CTX *mem_ctx,
 
     ret = sysdb_transaction_start(sysdb);
     if (ret != EOK) {
-        DEBUG(6, ("Error %d starting transaction (%s)\n", ret, strerror(ret)));
+        DEBUG(SSSDBG_CRIT_FAILURE,
+              ("Error %d starting transaction (%s)\n", ret, strerror(ret)));
         goto done;
     }
+    in_transaction = true;
 
     ret = sysdb_set_user_attr(sysdb, name, attrs, mod_op);
     if (ret != EOK) {
         DEBUG(6, ("Error: %d (%s)\n", ret, strerror(ret)));
-        sysdb_transaction_cancel(sysdb);
         goto done;
     }
 
     ret = sysdb_transaction_commit(sysdb);
     if (ret != EOK) {
-        DEBUG(1, ("Failed to commit transaction!\n"));
+        DEBUG(SSSDBG_CRIT_FAILURE, ("Failed to commit transaction!\n"));
+        goto done;
     }
+    in_transaction = false;
 
 done:
+    if (in_transaction) {
+        sret = sysdb_transaction_cancel(sysdb);
+        if (sret != EOK) {
+            DEBUG(SSSDBG_CRIT_FAILURE, ("Failed to cancel transaction\n"));
+        }
+    }
     talloc_zfree(tmpctx);
     return ret;
 }
@@ -546,10 +557,12 @@ static void krb5_resolve_kpasswd_done(struct tevent_req *subreq)
 
     ret = be_resolve_server_recv(subreq, &state->kr->kpasswd_srv);
     talloc_zfree(subreq);
-    if (ret) {
+    if (ret != EOK &&
+        (state->kr->pd->cmd == SSS_PAM_CHAUTHTOK ||
+         state->kr->pd->cmd == SSS_PAM_CHAUTHTOK_PRELIM)) {
         /* all kpasswd servers have been tried and none was found good, but the
          * kdc seems ok. Password changes are not possible but
-         * authentication. We return an PAM error here, but do not mark the
+         * authentication is. We return an PAM error here, but do not mark the
          * backend offline. */
         state->pam_status = PAM_AUTHTOK_LOCK_BUSY;
         state->dp_err = DP_ERR_OK;
@@ -626,7 +639,8 @@ static void krb5_find_ccache_step(struct tevent_req *req)
     } else {
         DEBUG(SSSDBG_MINOR_FAILURE,
               ("Saved ccache %s if of different type than ccache in "
-               "configuration file, reusing the old ccache\n"));
+               "configuration file, reusing the old ccache\n",
+               kr->old_ccname));
 
         kr->cc_be = get_cc_be_ops_ccache(kr->old_ccname);
         if (kr->cc_be == NULL) {
@@ -805,6 +819,7 @@ static void krb5_child_done(struct tevent_req *subreq)
         /* ..which is unreachable by now.. */
         if (res->msg_status == PAM_AUTHTOK_LOCK_BUSY) {
             be_fo_set_port_status(state->be_ctx,
+                                  state->krb5_ctx->service->name,
                                   kr->kpasswd_srv, PORT_NOT_WORKING);
             /* ..try to resolve next kpasswd server */
             if (krb5_next_kpasswd(req) == NULL) {
@@ -813,6 +828,7 @@ static void krb5_child_done(struct tevent_req *subreq)
             return;
         } else {
             be_fo_set_port_status(state->be_ctx,
+                                  state->krb5_ctx->service->name,
                                   kr->kpasswd_srv, PORT_WORKING);
         }
     }
@@ -823,7 +839,8 @@ static void krb5_child_done(struct tevent_req *subreq)
     if (res->msg_status == PAM_AUTHINFO_UNAVAIL ||
         (kr->kpasswd_srv == NULL && res->msg_status == PAM_AUTHTOK_LOCK_BUSY)) {
         if (kr->srv != NULL) {
-            be_fo_set_port_status(state->be_ctx, kr->srv, PORT_NOT_WORKING);
+            be_fo_set_port_status(state->be_ctx, state->krb5_ctx->service->name,
+                                  kr->srv, PORT_NOT_WORKING);
             /* ..try to resolve next KDC */
             if (krb5_next_kdc(req) == NULL) {
                 tevent_req_error(req, ENOMEM);
@@ -831,7 +848,8 @@ static void krb5_child_done(struct tevent_req *subreq)
             return;
         }
     } else if (kr->srv != NULL) {
-        be_fo_set_port_status(state->be_ctx, kr->srv, PORT_WORKING);
+        be_fo_set_port_status(state->be_ctx, state->krb5_ctx->service->name,
+                              kr->srv, PORT_WORKING);
     }
 
     /* Now only a successful authentication or password change is left.
@@ -903,19 +921,19 @@ static struct tevent_req *krb5_next_server(struct tevent_req *req)
     switch (pd->cmd) {
         case SSS_PAM_AUTHENTICATE:
         case SSS_CMD_RENEW:
-            be_fo_set_port_status(state->be_ctx,
+            be_fo_set_port_status(state->be_ctx, state->krb5_ctx->service->name,
                                   state->kr->srv, PORT_NOT_WORKING);
             next_req = krb5_next_kdc(req);
             break;
         case SSS_PAM_CHAUTHTOK:
         case SSS_PAM_CHAUTHTOK_PRELIM:
             if (state->kr->kpasswd_srv) {
-                be_fo_set_port_status(state->be_ctx,
+                be_fo_set_port_status(state->be_ctx, state->krb5_ctx->service->name,
                                       state->kr->kpasswd_srv, PORT_NOT_WORKING);
                 next_req = krb5_next_kpasswd(req);
                 break;
             } else {
-                be_fo_set_port_status(state->be_ctx,
+                be_fo_set_port_status(state->be_ctx, state->krb5_ctx->service->name,
                                       state->kr->srv, PORT_NOT_WORKING);
                 next_req = krb5_next_kdc(req);
                 break;

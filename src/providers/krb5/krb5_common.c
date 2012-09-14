@@ -473,7 +473,7 @@ errno_t krb5_servers_init(struct be_ctx *ctx,
 {
     TALLOC_CTX *tmp_ctx;
     char **list = NULL;
-    errno_t ret;
+    errno_t ret = 0;
     int i;
     char *port_str;
     long port;
@@ -493,7 +493,6 @@ errno_t krb5_servers_init(struct be_ctx *ctx,
     }
 
     for (i = 0; list[i]; i++) {
-
         talloc_steal(service, list[i]);
         server_spec = talloc_strdup(service, list[i]);
         if (!server_spec) {
@@ -502,6 +501,14 @@ errno_t krb5_servers_init(struct be_ctx *ctx,
         }
 
         if (be_fo_is_srv_identifier(server_spec)) {
+            if (!primary) {
+                DEBUG(SSSDBG_MINOR_FAILURE,
+                      ("Failed to add server [%s] to failover service: "
+                       "SRV resolution only allowed for primary servers!\n",
+                       list[i]));
+                continue;
+            }
+
             ret = be_fo_add_srv_server(ctx, service_name, service_name, NULL,
                                        BE_FO_PROTO_UDP, true, NULL);
             if (ret) {
@@ -513,7 +520,13 @@ errno_t krb5_servers_init(struct be_ctx *ctx,
             continue;
         }
 
-        port_str = strrchr(server_spec, ':');
+        /* Do not try to get port number if last character is ']' */
+        if (server_spec[strlen(server_spec) - 1] != ']') {
+            port_str = strrchr(server_spec, ':');
+        } else {
+            port_str = NULL;
+        }
+
         if (port_str == NULL) {
             port = 0;
         } else {
@@ -557,6 +570,13 @@ errno_t krb5_servers_init(struct be_ctx *ctx,
             }
         }
 
+        /* It could be ipv6 address in square brackets. Remove
+         * the brackets if needed. */
+        ret = remove_ipv6_brackets(server_spec);
+        if (ret != EOK) {
+            goto done;
+        }
+
         ret = be_fo_add_server(ctx, service_name, server_spec, (int) port,
                                list[i], primary);
         if (ret && ret != EEXIST) {
@@ -570,6 +590,11 @@ errno_t krb5_servers_init(struct be_ctx *ctx,
 done:
     talloc_free(tmp_ctx);
     return ret;
+}
+
+static int krb5_user_data_cmp(void *ud1, void *ud2)
+{
+    return strcasecmp((char*) ud1, (char*) ud2);
 }
 
 int krb5_service_init(TALLOC_CTX *memctx, struct be_ctx *ctx,
@@ -593,7 +618,7 @@ int krb5_service_init(TALLOC_CTX *memctx, struct be_ctx *ctx,
         goto done;
     }
 
-    ret = be_fo_add_service(ctx, service_name);
+    ret = be_fo_add_service(ctx, service_name, krb5_user_data_cmp);
     if (ret != EOK) {
         DEBUG(1, ("Failed to create failover service!\n"));
         goto done;

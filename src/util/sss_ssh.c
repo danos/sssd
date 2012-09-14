@@ -111,72 +111,99 @@ done:
     return ret;
 }
 
-char *
+static errno_t
 sss_ssh_get_pubkey_algorithm(TALLOC_CTX *mem_ctx,
-                             struct sss_ssh_pubkey *pubkey)
+                             struct sss_ssh_pubkey *pubkey,
+                             char **result)
 {
     size_t c = 0;
     uint32_t algo_len;
     char *algo;
 
+    if (pubkey->data_len < 5) {
+        return EINVAL;
+    }
+
     SAFEALIGN_COPY_UINT32(&algo_len, pubkey->data, &c);
     algo_len = ntohl(algo_len);
+    if (algo_len < 1 || algo_len > 64 || algo_len > pubkey->data_len - 4) {
+        /* the maximum length of 64 is defined in RFC 4250 */
+        return EINVAL;
+    }
 
     algo = talloc_zero_array(mem_ctx, char, algo_len+1);
     if (!algo) {
-        return NULL;
+        return ENOMEM;
     }
 
     memcpy(algo, pubkey->data+c, algo_len);
 
-    return algo;
+    *result = algo;
+    return EOK;
 }
 
-char *
+errno_t
 sss_ssh_format_pubkey(TALLOC_CTX *mem_ctx,
-                      struct sss_ssh_ent *ent,
                       struct sss_ssh_pubkey *pubkey,
-                      enum sss_ssh_pubkey_format format,
-                      const char *comment)
+                      char **result)
 {
     TALLOC_CTX *tmp_ctx;
+    errno_t ret;
     char *blob;
     char *algo;
-    char *result = NULL;
-
-    if (!comment) {
-        comment = ent->name;
-    }
+    char *out = NULL;
+    size_t i;
 
     tmp_ctx = talloc_new(NULL);
     if (!tmp_ctx) {
-        return NULL;
+        return ENOMEM;
     }
 
-    blob = sss_base64_encode(tmp_ctx, pubkey->data, pubkey->data_len);
-    if (!blob) {
-        goto done;
-    }
-
-    switch (format) {
-    case SSS_SSH_FORMAT_RAW:
-        /* base64-encoded key blob */
-        result = talloc_steal(mem_ctx, blob);
-        break;
-
-    case SSS_SSH_FORMAT_OPENSSH:
-        /* OpenSSH authorized_keys/known_hosts format */
-        algo = sss_ssh_get_pubkey_algorithm(tmp_ctx, pubkey);
-        if (!algo) {
+    if (pubkey->data_len > 4 && memcmp(pubkey->data, "\0\0\0", 3) == 0) {
+        /* All valid public key blobs start with 3 null bytes (see RFC 4253
+         * section 6.6, RFC 4251 section 5 and RFC 4250 section 4.6)
+         */
+        blob = sss_base64_encode(tmp_ctx, pubkey->data, pubkey->data_len);
+        if (!blob) {
+            ret = ENOMEM;
             goto done;
         }
 
-        result = talloc_asprintf(mem_ctx, "%s %s %s", algo, blob, comment);
-        break;
+        ret = sss_ssh_get_pubkey_algorithm(tmp_ctx, pubkey, &algo);
+        if (ret != EOK) {
+            goto done;
+        }
+
+        out = talloc_asprintf(mem_ctx, "%s %s", algo, blob);
+        if (!out) {
+            ret = ENOMEM;
+            goto done;
+        }
+    } else {
+        /* Not a valid public key blob, so this must be a textual public key */
+        for (i = 0; i < pubkey->data_len; i++) {
+            if (!pubkey->data[i] || pubkey->data[i] == '\n' ||
+                pubkey->data[i] == '\r') {
+                ret = EINVAL;
+                goto done;
+            }
+        }
+
+        out = talloc_array(mem_ctx, char, pubkey->data_len + 1);
+        if (!out) {
+            ret = ENOMEM;
+            goto done;
+        }
+
+        memcpy(out, pubkey->data, pubkey->data_len);
+        out[pubkey->data_len] = 0;
     }
+
+    *result = out;
+    ret = EOK;
 
 done:
     talloc_free(tmp_ctx);
 
-    return result;
+    return ret;
 }

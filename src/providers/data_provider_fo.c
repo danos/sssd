@@ -168,7 +168,8 @@ static struct be_svc_data *be_fo_find_svc_data(struct be_ctx *ctx,
     return 0;
 }
 
-int be_fo_add_service(struct be_ctx *ctx, const char *service_name)
+int be_fo_add_service(struct be_ctx *ctx, const char *service_name,
+                      datacmp_fn user_data_cmp)
 {
     struct fo_service *service;
     struct be_svc_data *svc;
@@ -185,7 +186,8 @@ int be_fo_add_service(struct be_ctx *ctx, const char *service_name)
 
     /* if not in the be service list, try to create new one */
 
-    ret = fo_new_service(ctx->be_fo->fo_ctx, service_name, &service);
+    ret = fo_new_service(ctx->be_fo->fo_ctx, service_name, user_data_cmp,
+                         &service);
     if (ret != EOK && ret != EEXIST) {
         DEBUG(1, ("Failed to create failover service!\n"));
         return ret;
@@ -705,32 +707,31 @@ void reset_fo(struct be_ctx *be_ctx)
 }
 
 void be_fo_set_port_status(struct be_ctx *ctx,
+                           const char *service_name,
                            struct fo_server *server,
                            enum port_status status)
 {
-    struct be_svc_data *svc;
-    struct fo_service *fsvc;
+    struct be_svc_data *be_svc;
 
+    be_svc = be_fo_find_svc_data(ctx, service_name);
+    if (be_svc == NULL) {
+        DEBUG(SSSDBG_OP_FAILURE,
+              ("No service associated with name %s\n", service_name));
+        return;
+    }
+
+    if (!fo_svc_has_server(be_svc->fo_service, server)) {
+        DEBUG(SSSDBG_OP_FAILURE,
+              ("The server %p is not valid anymore, cannot set its status\n"));
+        return;
+    }
+
+    /* Now we know that the server is valid */
     fo_set_port_status(server, status);
-
-    fsvc = fo_get_server_service(server);
-    if (!fsvc) {
-        DEBUG(SSSDBG_OP_FAILURE, ("BUG: No service associated with server\n"));
-        return;
-    }
-
-    DLIST_FOR_EACH(svc, ctx->be_fo->svcs) {
-        if (svc->fo_service == fsvc) break;
-    }
-
-    if (!svc) {
-        DEBUG(SSSDBG_OP_FAILURE, ("BUG: Unknown service\n"));
-        return;
-    }
 
     if (status == PORT_WORKING) {
         /* We were successful in connecting to the server. Cycle through all
          * available servers next time */
-        svc->first_resolved = NULL;
+        be_svc->first_resolved = NULL;
     }
 }

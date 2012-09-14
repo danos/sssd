@@ -202,7 +202,10 @@ sysdb_store_service(struct sysdb_ctx *sysdb,
     if (!tmp_ctx) return ENOMEM;
 
     ret = sysdb_transaction_start(sysdb);
-    if (ret != EOK) goto done;
+    if (ret != EOK) {
+        DEBUG(SSSDBG_CRIT_FAILURE, ("Failed to start transaction\n"));
+        goto done;
+    }
 
     in_transaction = true;
 
@@ -403,7 +406,11 @@ sysdb_store_service(struct sysdb_ctx *sysdb,
     }
 
     ret = sysdb_transaction_commit(sysdb);
-    if (ret == EOK) in_transaction = false;
+    if (ret != EOK) {
+        DEBUG(SSSDBG_CRIT_FAILURE, ("Failed to commit transaction\n"));
+        goto done;
+    }
+    in_transaction = false;
 
 done:
     if (in_transaction) {
@@ -574,7 +581,7 @@ sysdb_svc_update(struct sysdb_ctx *sysdb,
         }
 
         for (i = 0; aliases[i]; i++) {
-            lret = ldb_msg_add_fmt(msg, SYSDB_NAME_ALIAS, "%s", aliases[i]);
+            lret = ldb_msg_add_string(msg, SYSDB_NAME_ALIAS, aliases[i]);
             if (lret != LDB_SUCCESS) {
                 ret = EINVAL;
                 goto done;
@@ -590,7 +597,7 @@ sysdb_svc_update(struct sysdb_ctx *sysdb,
     }
 
     for (i = 0; protocols[i]; i++) {
-        lret = ldb_msg_add_fmt(msg, SYSDB_SVC_PROTO, "%s", protocols[i]);
+        lret = ldb_msg_add_string(msg, SYSDB_SVC_PROTO, protocols[i]);
         if (lret != LDB_SUCCESS) {
             ret = EINVAL;
             goto done;
@@ -660,7 +667,10 @@ sysdb_svc_delete(struct sysdb_ctx *sysdb,
     }
 
     ret = sysdb_transaction_start(sysdb);
-    if (ret != EOK) goto done;
+    if (ret != EOK) {
+        DEBUG(SSSDBG_CRIT_FAILURE, ("Failed to start transaction\n"));
+        goto done;
+    }
 
     in_transaction = true;
 
@@ -692,6 +702,10 @@ sysdb_svc_delete(struct sysdb_ctx *sysdb,
     }
 
     ret = sysdb_transaction_commit(sysdb);
+    if (ret != EOK) {
+        DEBUG(SSSDBG_CRIT_FAILURE, ("Failed to commit transaction\n"));
+        goto done;
+    }
     in_transaction = false;
 
 done:
@@ -702,6 +716,7 @@ done:
                   ("Could not cancel transaction\n"));
         }
     }
+
     if (ret != EOK && ret != ENOENT) {
         DEBUG(SSSDBG_TRACE_INTERNAL,
               ("Error: %d (%s)\n", ret, strerror(ret)));

@@ -47,7 +47,6 @@ int ipa_get_options(TALLOC_CTX *memctx,
     char *realm;
     char *ipa_hostname;
     int ret;
-    int i;
     char hostname[HOST_NAME_MAX + 1];
 
     opts = talloc_zero(memctx, struct ipa_options);
@@ -95,16 +94,11 @@ int ipa_get_options(TALLOC_CTX *memctx,
     /* First check whether the realm has been manually specified */
     realm = dp_opt_get_string(opts->basic, IPA_KRB5_REALM);
     if (!realm) {
-        /* No explicit krb5_realm, use the IPA domain */
-        realm = talloc_strdup(opts, domain);
+        /* No explicit krb5_realm, use the IPA domain, transform to upper-case */
+        realm = get_uppercase_realm(opts, domain);
         if (!realm) {
             ret = ENOMEM;
             goto done;
-        }
-
-        /* Use the upper-case IPA domain for the kerberos realm */
-        for (i = 0; realm[i]; i++) {
-            realm[i] = toupper(realm[i]);
         }
 
         ret = dp_opt_set_string(opts->basic, IPA_KRB5_REALM,
@@ -806,7 +800,7 @@ errno_t ipa_servers_init(struct be_ctx *ctx,
     TALLOC_CTX *tmp_ctx;
     char **list = NULL;
     char *ipa_domain;
-    int ret;
+    int ret = 0;
     int i;
 
     tmp_ctx = talloc_new(NULL);
@@ -827,6 +821,14 @@ errno_t ipa_servers_init(struct be_ctx *ctx,
         talloc_steal(service, list[i]);
 
         if (be_fo_is_srv_identifier(list[i])) {
+            if (!primary) {
+                DEBUG(SSSDBG_MINOR_FAILURE,
+                      ("Failed to add server [%s] to failover service: "
+                       "SRV resolution only allowed for primary servers!\n",
+                       list[i]));
+                continue;
+            }
+
             ipa_domain = dp_opt_get_string(options->basic, IPA_DOMAIN);
             ret = be_fo_add_srv_server(ctx, "IPA", "ldap", ipa_domain,
                                        BE_FO_PROTO_TCP, false, NULL);
@@ -837,6 +839,13 @@ errno_t ipa_servers_init(struct be_ctx *ctx,
 
             DEBUG(SSSDBG_TRACE_FUNC, ("Added service lookup for service IPA\n"));
             continue;
+        }
+
+        /* It could be ipv6 address in square brackets. Remove
+         * the brackets if needed. */
+        ret = remove_ipv6_brackets(list[i]);
+        if (ret != EOK) {
+            goto done;
         }
 
         ret = be_fo_add_server(ctx, "IPA", list[i], 0, NULL, primary);
@@ -851,6 +860,11 @@ errno_t ipa_servers_init(struct be_ctx *ctx,
 done:
     talloc_free(tmp_ctx);
     return ret;
+}
+
+static int ipa_user_data_cmp(void *ud1, void *ud2)
+{
+    return strcasecmp((char*) ud1, (char*) ud2);
 }
 
 int ipa_service_init(TALLOC_CTX *memctx, struct be_ctx *ctx,
@@ -885,7 +899,7 @@ int ipa_service_init(TALLOC_CTX *memctx, struct be_ctx *ctx,
         goto done;
     }
 
-    ret = be_fo_add_service(ctx, "IPA");
+    ret = be_fo_add_service(ctx, "IPA", ipa_user_data_cmp);
     if (ret != EOK) {
         DEBUG(1, ("Failed to create failover service!\n"));
         goto done;

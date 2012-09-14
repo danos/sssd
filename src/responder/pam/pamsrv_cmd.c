@@ -33,7 +33,9 @@
 #include "responder/pam/pam_helpers.h"
 #include "db/sysdb.h"
 #include "db/sysdb_selinux.h"
+#ifdef HAVE_SELINUX_LOGIN_DIR
 #include <selinux/selinux.h>
+#endif
 
 enum pam_verbosity {
     PAM_VERBOSITY_NO_MESSAGES = 0,
@@ -354,15 +356,19 @@ fail:
     return ret;
 }
 
-#define ALL_SERVICES "*"
+#ifdef HAVE_SELINUX_LOGIN_DIR
 
-static errno_t write_selinux_string(const char *username, char *string)
+#define ALL_SERVICES "*"
+#define selogin_path(mem_ctx, username) \
+    talloc_asprintf(mem_ctx, "%s/logins/%s", selinux_policy_root(), username)
+
+static errno_t write_selinux_login_file(const char *username, char *string)
 {
     char *path = NULL;
     char *tmp_path = NULL;
     ssize_t written;
     int len;
-    int fd = 0;
+    int fd = -1;
     mode_t oldmask;
     TALLOC_CTX *tmp_ctx;
     char *full_string = NULL;
@@ -379,8 +385,7 @@ static errno_t write_selinux_string(const char *username, char *string)
         return ENOMEM;
     }
 
-    path = talloc_asprintf(tmp_ctx, "%s/logins/%s", selinux_policy_root(),
-                           username);
+    path = selogin_path(tmp_ctx, username);
     if (path == NULL) {
         ret = ENOMEM;
         goto done;
@@ -433,9 +438,10 @@ static errno_t write_selinux_string(const char *username, char *string)
     } else {
         ret = EOK;
     }
+    fd = -1;
 
 done:
-    if (fd > 0) {
+    if (fd != -1) {
         close(fd);
         if (unlink(tmp_path) < 0) {
             DEBUG(SSSDBG_MINOR_FAILURE, ("Could not remove file [%s]",
@@ -447,7 +453,33 @@ done:
     return ret;
 }
 
-static errno_t get_selinux_string(struct pam_auth_req *preq)
+static errno_t remove_selinux_login_file(const char *username)
+{
+    char *path;
+    errno_t ret;
+
+    path = selogin_path(NULL, username);
+    if (!path) return ENOMEM;
+
+    errno = 0;
+    ret = unlink(path);
+    if (ret < 0) {
+        ret = errno;
+        if (ret == ENOENT) {
+            /* Just return success if the file was not there */
+            ret = EOK;
+        } else {
+            DEBUG(SSSDBG_OP_FAILURE,
+                  ("Could not remove login file %s [%d]: %s\n",
+                   path, ret, strerror(ret)));
+        }
+    }
+
+    talloc_free(path);
+    return ret;
+}
+
+static errno_t process_selinux_mappings(struct pam_auth_req *preq)
 {
     struct sysdb_ctx *sysdb;
     TALLOC_CTX *tmp_ctx;
@@ -459,7 +491,7 @@ static errno_t get_selinux_string(struct pam_auth_req *preq)
     const char *tmp_str;
     char *order = NULL;
     char **order_array;
-    errno_t ret;
+    errno_t ret, err;
     int i, j;
     size_t order_count;
     size_t len = 0;
@@ -487,29 +519,32 @@ static errno_t get_selinux_string(struct pam_auth_req *preq)
         goto done;
     }
 
-    /* We need two values from the config object:
-     * - default SELinux user in case no other is available
-     * - the order for fetched usermaps
-     */
-    for (i = 0; i < config->num_elements; i++) {
-        if (strcasecmp(config->elements[i].name, SYSDB_SELINUX_DEFAULT_USER) == 0) {
-            default_user = (const char *)config->elements[i].values[0].data;
-        } else if (strcasecmp(config->elements[i].name, SYSDB_SELINUX_DEFAULT_ORDER) == 0) {
-            tmp_str = (char *)config->elements[i].values[0].data;
-            len = config->elements[i].values[0].length;
-            order = talloc_strdup(tmp_ctx, tmp_str);
-            if (order == NULL) {
-                goto done;
-            }
-        }
+    default_user = ldb_msg_find_attr_as_string(config,
+                                               SYSDB_SELINUX_DEFAULT_USER,
+                                               NULL);
+    if (!default_user || default_user[0] == '\0') {
+        /* Skip creating the maps altogether if there is no default
+         * or empty default
+         */
+        ret = EOK;
+        goto done;
     }
 
-    if (default_user == NULL || order == NULL) {
-        DEBUG(SSSDBG_OP_FAILURE, ("No default SELinux user "
-                                  "or map order given!\n"));
+    tmp_str = ldb_msg_find_attr_as_string(config,
+                                          SYSDB_SELINUX_DEFAULT_ORDER,
+                                          NULL);
+    if (tmp_str == NULL) {
+        DEBUG(SSSDBG_OP_FAILURE, ("No map order given!\n"));
         ret = EINVAL;
         goto done;
     }
+
+    order = talloc_strdup(tmp_ctx, tmp_str);
+    if (order == NULL) {
+        ret = ENOMEM;
+        goto done;
+    }
+    len = strlen(order);
 
     /* The "order" string contains one or more SELinux user records
      * separated by $. Now we need to create an array of string from
@@ -547,54 +582,56 @@ static errno_t get_selinux_string(struct pam_auth_req *preq)
         goto done;
     }
 
-    if (ret == ENOENT) {
-        DEBUG(SSSDBG_TRACE_FUNC, ("No user maps found, using default!"));
-        file_content = talloc_strdup(tmp_ctx, default_user);
-        if (file_content == NULL) {
-            ret = ENOMEM;
-            goto done;
-        }
-    } else {
-        /* Iterate through the order array and try to find SELinux users
-         * in fetched maps. The order array contains all SELinux users
-         * allowed in the domain in the same order they should appear
-         * in the SELinux config file. If any user from the order array
-         * is not in fetched user maps, it means it should not be allowed
-         * for the user who is just logging in.
-         *
-         * Right now we have empty content of the SELinux config file,
-         * we shall add only those SELinux users that are present both in
-         * the order array and user maps applicable to the user who is
-         * logging in.
-         */
-        for (i = 0; i < order_count; i++) {
-            for (j = 0; usermaps[j] != NULL; j++) {
-                tmp_str = sss_selinux_map_get_seuser(usermaps[j]);
+    /* If no maps match, we'll use the default SELinux user from the
+     * config */
+    file_content = talloc_strdup(tmp_ctx, default_user);
+    if (file_content == NULL) {
+        ret = ENOMEM;
+        goto done;
+    }
 
-                if (tmp_str && !strcasecmp(tmp_str, order_array[i])) {
-                    /* If file_content contained something, overwrite it.
-                     * This record has higher priority.
-                     */
-                    talloc_zfree(file_content);
-                    file_content = talloc_strdup(tmp_ctx, tmp_str);
-                    if (file_content == NULL) {
-                        ret = ENOMEM;
-                        goto done;
-                    }
-                    break;
+    /* Iterate through the order array and try to find SELinux users
+     * in fetched maps. The order array contains all SELinux users
+     * allowed in the domain in the same order they should appear
+     * in the SELinux config file. If any user from the order array
+     * is not in fetched user maps, it means it should not be allowed
+     * for the user who is just logging in.
+     *
+     * Right now we have empty content of the SELinux config file,
+     * we shall add only those SELinux users that are present both in
+     * the order array and user maps applicable to the user who is
+     * logging in.
+     */
+    for (i = 0; i < order_count; i++) {
+        for (j = 0; usermaps[j] != NULL; j++) {
+            tmp_str = sss_selinux_map_get_seuser(usermaps[j]);
+
+            if (tmp_str && !strcasecmp(tmp_str, order_array[i])) {
+                /* If file_content contained something, overwrite it.
+                 * This record has higher priority.
+                 */
+                talloc_zfree(file_content);
+                file_content = talloc_strdup(tmp_ctx, tmp_str);
+                if (file_content == NULL) {
+                    ret = ENOMEM;
+                    goto done;
                 }
+                break;
             }
         }
     }
 
-    if (file_content) {
-        ret = write_selinux_string(pd->user, file_content);
-    }
-
+    ret = write_selinux_login_file(pd->user, file_content);
 done:
+    if (!file_content) {
+        err = remove_selinux_login_file(pd->user);
+        /* Don't overwrite original error condition if there was one */
+        if (ret == EOK) ret = err;
+    }
     talloc_free(tmp_ctx);
     return ret;
 }
+#endif
 
 static errno_t filter_responses(struct confdb_ctx *cdb,
                                 struct response_data *resp_list)
@@ -791,15 +828,17 @@ static void pam_reply(struct pam_auth_req *preq)
         return;
     }
 
+#ifdef HAVE_SELINUX_LOGIN_DIR
     if (pd->cmd == SSS_PAM_ACCT_MGMT &&
         pd->pam_status == PAM_SUCCESS) {
         /* Try to fetch data from sysdb
          * (auth already passed -> we should have them) */
-        ret = get_selinux_string(preq);
+        ret = process_selinux_mappings(preq);
         if (ret != EOK) {
             pd->pam_status = PAM_SYSTEM_ERR;
         }
     }
+#endif
 
     ret = sss_packet_new(cctx->creq, 0, sss_packet_get_cmd(cctx->creq->in),
                          &cctx->creq->out);

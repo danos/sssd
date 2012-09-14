@@ -983,6 +983,7 @@ int sysdb_add_user(struct sysdb_ctx *sysdb,
     if (ret) goto done;
 
     ret = sysdb_set_user_attr(sysdb, name, attrs, SYSDB_MOD_REP);
+    if (ret) goto done;
 
     /* remove all ghost users */
     filter = talloc_asprintf(tmp_ctx, "(|(%s=%s)", SYSDB_GHOST, name);
@@ -1050,7 +1051,7 @@ int sysdb_add_user(struct sysdb_ctx *sysdb,
             ERROR_OUT(ret, ENOMEM, done);
         }
 
-        ret = ldb_msg_add_fmt(msg, SYSDB_MEMBER, "%s", userdn);
+        ret = ldb_msg_add_string(msg, SYSDB_MEMBER, userdn);
         if (ret != LDB_SUCCESS) {
             ERROR_OUT(ret, EINVAL, done);
         }
@@ -1059,14 +1060,14 @@ int sysdb_add_user(struct sysdb_ctx *sysdb,
         if (ret != LDB_SUCCESS) {
             ERROR_OUT(ret, ENOMEM, done);
         }
-        ret = ldb_msg_add_fmt(msg, SYSDB_GHOST, "%s", name);
+        ret = ldb_msg_add_string(msg, SYSDB_GHOST, name);
         if (ret != LDB_SUCCESS) {
             ERROR_OUT(ret, EINVAL, done);
         }
         /* Delete aliases from the ghost attribute as well */
         for (j = 0; j < alias_el->num_values; j++) {
-            ret = ldb_msg_add_fmt(msg, SYSDB_GHOST, "%s",
-                                  (char *)alias_el->values[j].data);
+            ret = ldb_msg_add_string(msg, SYSDB_GHOST,
+                                     (char *) alias_el->values[j].data);
             if (ret != LDB_SUCCESS) {
                 ERROR_OUT(ret, EINVAL, done);
             }
@@ -1344,7 +1345,7 @@ int sysdb_mod_group_member(struct sysdb_ctx *sysdb,
         ERROR_OUT(ret, EINVAL, fail);
     }
 
-    ret = ldb_msg_add_fmt(msg, SYSDB_MEMBER, "%s", dn);
+    ret = ldb_msg_add_string(msg, SYSDB_MEMBER, dn);
     if (ret != LDB_SUCCESS) {
         ERROR_OUT(ret, EINVAL, fail);
     }
@@ -1515,24 +1516,27 @@ int sysdb_store_user(struct sysdb_ctx *sysdb,
         attrs = sysdb_new_attrs(tmp_ctx);
         if (!attrs) {
             ret = ENOMEM;
-            goto done;
+            goto fail;
         }
     }
 
     if (pwd && (sysdb->domain->legacy_passwords || !*pwd)) {
         ret = sysdb_attrs_add_string(attrs, SYSDB_PWD, pwd);
-        if (ret) goto done;
+        if (ret) goto fail;
     }
 
     ret = sysdb_transaction_start(sysdb);
-    if (ret != EOK) goto done;
+    if (ret != EOK) {
+        DEBUG(SSSDBG_CRIT_FAILURE, ("Failed to start transaction\n"));
+        goto fail;
+    }
 
     in_transaction = true;
 
     ret = sysdb_search_user_by_name(tmp_ctx, sysdb,
                                     name, NULL, &msg);
     if (ret && ret != ENOENT) {
-        goto done;
+        goto fail;
     }
 
     /* get transaction timestamp */
@@ -1553,9 +1557,10 @@ int sysdb_store_user(struct sysdb_ctx *sysdb,
                 /* Not found by UID, return the original EEXIST,
                  * this may be a conflict in MPG domain or something
                  * else */
-                return EEXIST;
+                ret = EEXIST;
+                goto fail;
             } else if (ret != EOK) {
-                goto done;
+                goto fail;
             }
             DEBUG(SSSDBG_MINOR_FAILURE,
                   ("A user with the same UID [%llu] was removed from the "
@@ -1569,44 +1574,44 @@ int sysdb_store_user(struct sysdb_ctx *sysdb,
     /* the user exists, let's just replace attributes when set */
     if (uid) {
         ret = sysdb_attrs_add_uint32(attrs, SYSDB_UIDNUM, uid);
-        if (ret) goto done;
+        if (ret) goto fail;
     }
 
     if (gid) {
         ret = sysdb_attrs_add_uint32(attrs, SYSDB_GIDNUM, gid);
-        if (ret) goto done;
+        if (ret) goto fail;
     }
 
     if (uid && !gid && sysdb->mpg) {
         ret = sysdb_attrs_add_uint32(attrs, SYSDB_GIDNUM, uid);
-        if (ret) goto done;
+        if (ret) goto fail;
     }
 
     if (gecos) {
         ret = sysdb_attrs_add_string(attrs, SYSDB_GECOS, gecos);
-        if (ret) goto done;
+        if (ret) goto fail;
     }
 
     if (homedir) {
         ret = sysdb_attrs_add_string(attrs, SYSDB_HOMEDIR, homedir);
-        if (ret) goto done;
+        if (ret) goto fail;
     }
 
     if (shell) {
         ret = sysdb_attrs_add_string(attrs, SYSDB_SHELL, shell);
-        if (ret) goto done;
+        if (ret) goto fail;
     }
 
     ret = sysdb_attrs_add_time_t(attrs, SYSDB_LAST_UPDATE, now);
-    if (ret) goto done;
+    if (ret) goto fail;
 
     ret = sysdb_attrs_add_time_t(attrs, SYSDB_CACHE_EXPIRE,
                                  ((cache_timeout) ?
                                   (now + cache_timeout) : 0));
-    if (ret) goto done;
+    if (ret) goto fail;
 
     ret = sysdb_set_user_attr(sysdb, name, attrs, SYSDB_MOD_REP);
-    if (ret != EOK) goto done;
+    if (ret != EOK) goto fail;
 
     if (remove_attrs) {
         ret = sysdb_remove_attrs(sysdb, name,
@@ -1618,21 +1623,22 @@ int sysdb_store_user(struct sysdb_ctx *sysdb,
     }
 
 done:
-    if (in_transaction) {
-        if (ret == EOK) {
-            sret = sysdb_transaction_commit(sysdb);
-            if (sret != EOK) {
-                DEBUG(2, ("Could not commit transaction\n"));
-            }
-        }
+    ret = sysdb_transaction_commit(sysdb);
+    if (ret != EOK) {
+        DEBUG(SSSDBG_CRIT_FAILURE, ("Failed to commit transaction\n"));
+        goto fail;
+    }
 
-        if (ret != EOK || sret != EOK){
-            sret = sysdb_transaction_cancel(sysdb);
-            if (sret != EOK) {
-                DEBUG(2, ("Could not cancel transaction\n"));
-            }
+    in_transaction = false;
+
+fail:
+    if (in_transaction) {
+        sret = sysdb_transaction_cancel(sysdb);
+        if (sret != EOK) {
+            DEBUG(SSSDBG_CRIT_FAILURE, ("Could not cancel transaction\n"));
         }
     }
+
     if (ret) {
         DEBUG(6, ("Error: %d (%s)\n", ret, strerror(ret)));
     }
@@ -2350,7 +2356,7 @@ int sysdb_delete_user(struct sysdb_ctx *sysdb,
             if (ret != LDB_SUCCESS) {
                 ERROR_OUT(ret, ENOMEM, fail);
             }
-            ret = ldb_msg_add_fmt(msg, SYSDB_GHOST, "%s", name);
+            ret = ldb_msg_add_string(msg, SYSDB_GHOST, name);
             if (ret != LDB_SUCCESS) {
                 ERROR_OUT(ret, EINVAL, fail);
             }
@@ -2888,7 +2894,9 @@ errno_t sysdb_update_members(struct sysdb_ctx *sysdb,
                              const char *const *del_groups)
 {
     errno_t ret;
+    errno_t sret;
     int i;
+    bool in_transaction = false;
 
     TALLOC_CTX *tmp_ctx = talloc_new(NULL);
     if(!tmp_ctx) {
@@ -2900,6 +2908,8 @@ errno_t sysdb_update_members(struct sysdb_ctx *sysdb,
         DEBUG(0, ("Failed to start update transaction\n"));
         goto done;
     }
+
+    in_transaction = true;
 
     if (add_groups) {
         /* Add the user to all add_groups */
@@ -2928,10 +2938,19 @@ errno_t sysdb_update_members(struct sysdb_ctx *sysdb,
     }
 
     ret = sysdb_transaction_commit(sysdb);
+    if (ret != EOK) {
+        DEBUG(SSSDBG_CRIT_FAILURE, ("Failed to commit transaction\n"));
+        goto done;
+    }
+
+    in_transaction = false;
 
 done:
-    if (ret != EOK) {
-        sysdb_transaction_cancel(sysdb);
+    if (in_transaction) {
+        sret = sysdb_transaction_cancel(sysdb);
+        if (sret != EOK) {
+            DEBUG(SSSDBG_CRIT_FAILURE, ("Could not cancel transaction\n"));
+        }
     }
     talloc_free(tmp_ctx);
     return ret;
@@ -3102,7 +3121,10 @@ errno_t sysdb_remove_attrs(struct sysdb_ctx *sysdb,
     }
 
     ret = sysdb_transaction_start(sysdb);
-    if (ret != EOK) goto done;
+    if (ret != EOK) {
+        DEBUG(SSSDBG_CRIT_FAILURE, ("Failed to start transaction\n"));
+        goto done;
+    }
 
     in_transaction = true;
 
@@ -3137,20 +3159,19 @@ errno_t sysdb_remove_attrs(struct sysdb_ctx *sysdb,
 
     ret = EOK;
 
+    ret = sysdb_transaction_commit(sysdb);
+    if (ret != EOK) {
+        DEBUG(SSSDBG_CRIT_FAILURE, ("Failed to commit transaction\n"));
+        goto done;
+    }
+
+    in_transaction = false;
+
 done:
     if (in_transaction) {
-        if (ret == EOK) {
-            sret = sysdb_transaction_commit(sysdb);
-            if (sret != EOK) {
-                DEBUG(2, ("Could not commit transaction\n"));
-            }
-        }
-
-        if (ret != EOK || sret != EOK){
-            sret = sysdb_transaction_cancel(sysdb);
-            if (sret != EOK) {
-                DEBUG(2, ("Could not cancel transaction\n"));
-            }
+        sret = sysdb_transaction_cancel(sysdb);
+        if (sret != EOK) {
+            DEBUG(SSSDBG_CRIT_FAILURE, ("Could not cancel transaction\n"));
         }
     }
     talloc_free(msg);

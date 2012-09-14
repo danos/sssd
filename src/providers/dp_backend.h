@@ -218,7 +218,8 @@ typedef void (be_svc_callback_fn_t)(void *, struct fo_server *);
 
 int be_init_failover(struct be_ctx *ctx);
 int be_fo_is_srv_identifier(const char *server);
-int be_fo_add_service(struct be_ctx *ctx, const char *service_name);
+int be_fo_add_service(struct be_ctx *ctx, const char *service_name,
+                      datacmp_fn user_data_cmp);
 int be_fo_service_add_callback(TALLOC_CTX *memctx,
                                struct be_ctx *ctx, const char *service_name,
                                be_svc_callback_fn_t *fn, void *private_data);
@@ -241,6 +242,7 @@ struct tevent_req *be_resolve_server_send(TALLOC_CTX *memctx,
 int be_resolve_server_recv(struct tevent_req *req, struct fo_server **srv);
 
 void be_fo_set_port_status(struct be_ctx *ctx,
+                           const char *service_name,
                            struct fo_server *server,
                            enum port_status status);
 
