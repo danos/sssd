@@ -1,6 +1,6 @@
-sssd (1.9.0~beta6-1) UNRELEASED; urgency=low
+sssd (1.9.0~rc1-1) UNRELEASED; urgency=low
 
-  * New upstream prerelease 1.9.0beta6. Highlights:
+  * New upstream prerelease 1.9.0rc1. Highlights:
     - Add native support for autofs to the IPA provider
     - Support for ID-mapping when connecting to Active Directory
     - Support for handling very large (> 1500 users) groups in Active
@@ -55,6 +55,8 @@ sssd (1.9.0~beta6-1) UNRELEASED; urgency=low
     - In scenarios, where the SSSD is acting as an IPA client, it is able to
       discover and save the DNS domain-Kerberos realm mappings between an IPA
       server and a trusted Active Directory server.
+    - When the SSSD is unable to resolve a host name, it tries the next
+      configured server now instead of going offline
   * Update the packaging for the new version, thanks Esko Järnfors!
     - Add libsss-idmap0, libsss-idmap-dev packages
     - Add sssd Depends on libsss-idmap0
