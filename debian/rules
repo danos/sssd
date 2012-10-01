@@ -5,6 +5,9 @@
 DPKG_EXPORT_BUILDFLAGS = 1
 include /usr/share/dpkg/buildflags.mk
 
+CFLAGS = $(shell dpkg-buildflags --get CFLAGS)
+CFLAGS += -I/usr/include/samba-4.0
+
 APIDOCDIR = /usr/share/sssd
 DISTRIBUTION = $(shell lsb_release -i | sed 's/.*:\t//')
 INIT = init

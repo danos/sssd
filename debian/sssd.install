@@ -3,6 +3,7 @@ usr/bin/sss_ssh_knownhostsproxy
 usr/lib/sssd/*
 usr/lib/*/ldb/modules/ldb/memberof.so
 usr/lib/*/krb5/plugins/libkrb5/*
+usr/lib/*/krb5/plugins/authdata/*
 usr/lib/*/sssd/lib*.so*
 usr/lib/*/sssd/modules/libsss_autofs.so
 usr/share/locale/*/LC_MESSAGES/*
