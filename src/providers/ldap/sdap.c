@@ -252,6 +252,12 @@ int sdap_parse_entry(TALLOC_CTX *memctx,
                     goto done;
                 }
                 for (i = 0; vals[i]; i++) {
+                    if (vals[i]->bv_len == 0) {
+                        DEBUG(SSSDBG_MINOR_FAILURE,
+                              ("Value of attribute [%s] is empty. "
+                               "Skipping this value.\n", str));
+                        continue;
+                    }
                     if (base64) {
                         v.data = (uint8_t *)sss_base64_encode(attrs,
                                 (uint8_t *)vals[i]->bv_val, vals[i]->bv_len);
@@ -897,6 +903,7 @@ int sdap_get_server_opts_from_rootdse(TALLOC_CTX *memctx,
     char *endptr = NULL;
     int ret;
     int i;
+    uint32_t dc_level;
 
     so = talloc_zero(memctx, struct sdap_server_opts);
     if (!so) {
@@ -967,6 +974,35 @@ int sdap_get_server_opts_from_rootdse(TALLOC_CTX *memctx,
                     break;
                 }
             }
+        }
+
+        /* Detect Active Directory version if available */
+        ret = sysdb_attrs_get_uint32_t(rootdse,
+                                       SDAP_ROOTDSE_ATTR_AD_VERSION,
+                                       &dc_level);
+        if (ret == EOK) {
+            /* Validate that the DC level matches an expected value */
+            switch(dc_level) {
+            case DS_BEHAVIOR_WIN2000:
+            case DS_BEHAVIOR_WIN2003:
+            case DS_BEHAVIOR_WIN2008:
+            case DS_BEHAVIOR_WIN2008R2:
+            case DS_BEHAVIOR_WIN2012:
+                opts->dc_functional_level = dc_level;
+                DEBUG(SSSDBG_CONF_SETTINGS,
+                      ("Setting AD compatibility level to [%d]\n",
+                       opts->dc_functional_level));
+                break;
+            default:
+                DEBUG(SSSDBG_MINOR_FAILURE,
+                      ("Received invalid value for AD compatibility level. "
+                       "Continuing without AD performance enhancements\n"));
+            }
+        } else if (ret != ENOENT) {
+            DEBUG(SSSDBG_MINOR_FAILURE,
+                  ("Error detecting Active Directory compatibility level "
+                   "(%s). Continuing without AD performance enhancements\n",
+                   strerror(ret)));
         }
     }
 

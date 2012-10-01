@@ -429,8 +429,8 @@ int ldap_get_autofs_options(TALLOC_CTX *memctx,
                   dp_opt_get_string(opts->basic, SDAP_AUTOFS_SEARCH_BASE)));
         }
     } else {
-        DEBUG(SSSDBG_OP_FAILURE, ("Error: no autofs search base set\n"));
-        return ENOENT;
+        DEBUG(SSSDBG_TRACE_FUNC, ("Search base not set, trying to discover it later "
+              "connecting to the LDAP server.\n"));
     }
 
     ret = sdap_parse_search_base(opts, opts->basic,
@@ -1243,18 +1243,9 @@ int sdap_service_init(TALLOC_CTX *memctx, struct be_ctx *ctx,
     }
 
     if (!urls) {
-        if (backup_urls) {
-            DEBUG(SSSDBG_CONF_SETTINGS, ("Missing primary LDAP URL but "
-                                         "backup URL given - using it "
-                                         "as primary!\n"));
-            urls = backup_urls;
-            backup_urls = NULL;
-        }
-        else {
-            DEBUG(SSSDBG_CONF_SETTINGS, ("Missing primary and backup LDAP "
-                                         "URLs - using service discovery!\n"));
-            urls = BE_SRV_IDENTIFIER;
-        }
+        DEBUG(SSSDBG_CONF_SETTINGS,
+              ("No primary servers defined, using service discovery\n"));
+        urls = BE_SRV_IDENTIFIER;
     }
 
     ret = sdap_urls_init(ctx, service, service_name, dns_service_name,

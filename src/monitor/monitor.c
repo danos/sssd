@@ -51,6 +51,7 @@
 #include "dbus/dbus.h"
 #include "sbus/sssd_dbus.h"
 #include "monitor/monitor_interfaces.h"
+#include "responder/nss/nsssrv.h"
 
 #ifdef USE_KEYRING
 #include <keyutils.h>
@@ -701,6 +702,10 @@ static int service_signal_rotate(struct mt_svc *svc)
 {
     return service_signal(svc, MON_CLI_METHOD_ROTATE);
 }
+static int service_signal_clear_memcache(struct mt_svc *svc)
+{
+    return service_signal(svc, MON_CLI_METHOD_CLEAR_MEMCACHE);
+}
 
 static int check_domain_ranges(struct sss_domain_info *domains)
 {
@@ -1177,10 +1182,15 @@ static void monitor_hup(struct tevent_context *ev,
 
     DEBUG(1, ("Received SIGHUP.\n"));
 
-    /* Signal all services to rotate debug files */
+    /* Send D-Bus message to other services to rotate their logs.
+     * NSS service receives also message to clear memory caches. */
     for(cur_svc = ctx->svc_list; cur_svc; cur_svc = cur_svc->next) {
         service_signal_rotate(cur_svc);
+        if (!strcmp(NSS_SBUS_SERVICE_NAME, cur_svc->name)) {
+            service_signal_clear_memcache(cur_svc);
+        }
     }
+
 }
 
 static int monitor_cleanup(void)
@@ -1621,7 +1631,8 @@ done:
 errno_t monitor_config_file_fallback(TALLOC_CTX *mem_ctx,
                                      struct mt_ctx *ctx,
                                      const char *file,
-                                     monitor_reconf_fn fn);
+                                     monitor_reconf_fn fn,
+                                     bool ignore_missing);
 static void rewatch_config_file(struct tevent_context *ev,
                                 struct tevent_timer *te,
                                 struct timeval t, void *ptr)
@@ -1642,12 +1653,13 @@ static void rewatch_config_file(struct tevent_context *ev,
     /* Retry six times at five-second intervals before giving up */
     cb->retries++;
     if (cb->retries > 6) {
-        DEBUG(0, ("Could not restore inotify watch. Switching to polling!\n"));
+        DEBUG(SSSDBG_FATAL_FAILURE,
+             ("Could not restore inotify watch. Switching to polling!\n"));
         close(file_ctx->mt_ctx->inotify_fd);
         err = monitor_config_file_fallback(file_ctx->parent_ctx,
                                            file_ctx->mt_ctx,
                                            cb->filename,
-                                           cb->fn);
+                                           cb->fn,true);
         if (err != EOK)
             kill(getpid(), SIGTERM);
 
@@ -1669,12 +1681,14 @@ static void rewatch_config_file(struct tevent_context *ev,
         tv.tv_sec = t.tv_sec+5;
         tv.tv_usec = t.tv_usec;
 
-        DEBUG(1, ("Could not add inotify watch for file [%s]. Error [%d:%s]\n",
-                  cb->filename, err, strerror(err)));
+        DEBUG(SSSDBG_CRIT_FAILURE,
+             ("Could not add inotify watch for file [%s]. Error [%d:%s]\n",
+             cb->filename, err, strerror(err)));
 
         tev = tevent_add_timer(ev, ev, tv, rewatch_config_file, rw_ctx);
         if (tev == NULL) {
-            DEBUG(0, ("Could not restore inotify watch. Quitting!\n"));
+            DEBUG(SSSDBG_FATAL_FAILURE,
+                 ("Could not restore inotify watch. Quitting!\n"));
             close(file_ctx->mt_ctx->inotify_fd);
             kill(getpid(), SIGTERM);
         }
@@ -1814,7 +1828,8 @@ static int try_inotify(struct config_file_ctx *file_ctx, const char *filename,
 static int monitor_config_file(TALLOC_CTX *mem_ctx,
                                struct mt_ctx *ctx,
                                const char *file,
-                               monitor_reconf_fn fn)
+                               monitor_reconf_fn fn,
+                               bool ignore_missing)
 {
     int ret, err;
     bool use_inotify;
@@ -1823,9 +1838,18 @@ static int monitor_config_file(TALLOC_CTX *mem_ctx,
     ret = stat(file, &file_stat);
     if (ret < 0) {
         err = errno;
-        DEBUG(0, ("Could not stat file [%s]. Error [%d:%s]\n",
-                  file, err, strerror(err)));
-        return err;
+        if (err == ENOENT && ignore_missing) {
+            DEBUG(SSSDBG_MINOR_FAILURE,
+                    ("file [%s] is missing. Will not update online status "
+                     "based on watching the file\n", file));
+            return EOK;
+        } else {
+            DEBUG(SSSDBG_FATAL_FAILURE,
+                 ("Could not stat file [%s]. Error [%d:%s]\n",
+                 file, err, strerror(err)));
+
+            return err;
+        }
     }
     if (!ctx->file_ctx) {
         ctx->file_ctx = talloc_zero(mem_ctx, struct config_file_ctx);
@@ -1853,7 +1877,7 @@ static int monitor_config_file(TALLOC_CTX *mem_ctx,
 
     if (!use_inotify) {
         /* Could not monitor file with inotify, fall back to polling */
-        ret = monitor_config_file_fallback(mem_ctx, ctx, file, fn);
+        ret = monitor_config_file_fallback(mem_ctx, ctx, file, fn, true);
     }
 
     return ret;
@@ -1862,7 +1886,8 @@ static int monitor_config_file(TALLOC_CTX *mem_ctx,
 errno_t monitor_config_file_fallback(TALLOC_CTX *mem_ctx,
                                      struct mt_ctx *ctx,
                                      const char *file,
-                                     monitor_reconf_fn fn)
+                                     monitor_reconf_fn fn,
+                                     bool ignore_missing)
 {
     struct config_file_callback *cb = NULL;
     struct stat file_stat;
@@ -1872,9 +1897,19 @@ errno_t monitor_config_file_fallback(TALLOC_CTX *mem_ctx,
     ret = stat(file, &file_stat);
     if (ret < 0) {
         err = errno;
-        DEBUG(0, ("Could not stat file [%s]. Error [%d:%s]\n",
-                  file, err, strerror(err)));
-        return err;
+        if (err == ENOENT && ignore_missing) {
+             DEBUG(SSSDBG_MINOR_FAILURE,
+                     ("file [%s] is missing. Will not update online status "
+                      "based on watching the file\n", file));
+             return EOK;
+
+        } else {
+            DEBUG(SSSDBG_FATAL_FAILURE,
+                 ("Could not stat file [%s]. Error [%d:%s]\n",
+                 file, err, strerror(err)));
+
+            return err;
+        }
     }
 
     cb = talloc_zero(ctx->file_ctx, struct config_file_callback);
@@ -1992,14 +2027,15 @@ int monitor_process_init(struct mt_ctx *ctx,
     Uncomment this once the backends are honoring reloadConfig()
 
     /* Watch for changes to the confdb config file */
-    ret = monitor_config_file(ctx, ctx, config_file, monitor_signal_reconf);
+    ret = monitor_config_file(ctx, ctx, config_file, monitor_signal_reconf,
+                              true);
     if (ret != EOK) {
         return ret;
     }
 #endif
     /* Watch for changes to the DNS resolv.conf */
     ret = monitor_config_file(ctx, ctx, RESOLV_CONF_PATH,
-                              monitor_update_resolv);
+                             monitor_update_resolv,true);
     if (ret != EOK) {
         return ret;
     }

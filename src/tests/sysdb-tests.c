@@ -30,6 +30,7 @@
 #include "confdb/confdb_setup.h"
 #include "db/sysdb_private.h"
 #include "db/sysdb_services.h"
+#include "db/sysdb_autofs.h"
 #include "tests/common.h"
 
 #define TESTS_PATH "tests_sysdb"
@@ -48,6 +49,8 @@
 
 #define MBO_USER_BASE 27500
 #define MBO_GROUP_BASE 28500
+
+#define TEST_AUTOFS_MAP_BASE 29500
 
 struct sysdb_test_ctx {
     struct sysdb_ctx *sysdb;
@@ -161,6 +164,7 @@ struct test_data {
     const char *username;
     const char *groupname;
     const char *netgrname;
+    const char *autofsmapname;
     uid_t uid;
     gid_t gid;
     const char *shell;
@@ -212,7 +216,7 @@ static int test_remove_user(struct test_data *data)
     struct ldb_dn *user_dn;
     int ret;
 
-    user_dn = sysdb_user_dn(data->ctx->sysdb, data, "LOCAL", data->username);
+    user_dn = sysdb_user_dn(data->ctx->sysdb, data, data->username);
     if (!user_dn) return ENOMEM;
 
     ret = sysdb_delete_entry(data->ctx->sysdb, user_dn, true);
@@ -275,7 +279,7 @@ static int test_remove_group(struct test_data *data)
     struct ldb_dn *group_dn;
     int ret;
 
-    group_dn = sysdb_group_dn(data->ctx->sysdb, data, "LOCAL", data->groupname);
+    group_dn = sysdb_group_dn(data->ctx->sysdb, data, data->groupname);
     if (!group_dn) return ENOMEM;
 
     ret = sysdb_delete_entry(data->ctx->sysdb, group_dn, true);
@@ -436,7 +440,7 @@ static int test_remove_netgroup_entry(struct test_data *data)
     struct ldb_dn *netgroup_dn;
     int ret;
 
-    netgroup_dn = sysdb_netgroup_dn(data->ctx->sysdb, data, "LOCAL", data->netgrname);
+    netgroup_dn = sysdb_netgroup_dn(data->ctx->sysdb, data, data->netgrname);
     if (!netgroup_dn) return ENOMEM;
 
     ret = sysdb_delete_entry(data->ctx->sysdb, netgroup_dn, true);
@@ -1676,7 +1680,7 @@ START_TEST (test_sysdb_asq_search)
     data->attrlist[0] = "gidNumber";
     data->attrlist[1] = NULL;
 
-    user_dn = sysdb_user_dn(data->ctx->sysdb, data, "LOCAL", ASQ_TEST_USER);
+    user_dn = sysdb_user_dn(data->ctx->sysdb, data, ASQ_TEST_USER);
     fail_unless(user_dn != NULL, "sysdb_user_dn failed");
 
     ret = sysdb_asq_search(data, test_ctx->sysdb,
@@ -2379,7 +2383,7 @@ START_TEST (test_sysdb_group_dn_name)
     }
 
     groupname = talloc_asprintf(test_ctx, "testgroup%d", _i);
-    group_dn = sysdb_group_dn(test_ctx->sysdb, test_ctx, "LOCAL", groupname);
+    group_dn = sysdb_group_dn(test_ctx->sysdb, test_ctx, groupname);
     if (!group_dn || !groupname) {
         fail("Out of memory");
         return;
@@ -2442,8 +2446,7 @@ START_TEST (test_sysdb_search_netgroup_by_name)
                                         netgrname, NULL, &msg);
     fail_if(ret != EOK, "Could not find netgroup with name %s", netgrname);
 
-    netgroup_dn = sysdb_netgroup_dn(test_ctx->sysdb, test_ctx,
-                                    test_ctx->domain->name, netgrname);
+    netgroup_dn = sysdb_netgroup_dn(test_ctx->sysdb, test_ctx, netgrname);
     fail_if(netgroup_dn == NULL);
     fail_if(ldb_dn_compare(msg->dn, netgroup_dn) != 0, "Found wrong netgroup!\n");
     talloc_free(test_ctx);
@@ -3378,7 +3381,7 @@ START_TEST(test_sysdb_original_dn_case_insensitive)
                              "cn=case_sensitive_group1,cn=example,cn=com");
     fail_if(filter == NULL, "Cannot construct filter\n");
 
-    base_dn = sysdb_domain_dn(test_ctx->sysdb, test_ctx, test_ctx->domain->name);
+    base_dn = sysdb_domain_dn(test_ctx->sysdb, test_ctx);
     fail_if(base_dn == NULL, "Cannot construct basedn\n");
 
     ret = sysdb_search_entry(test_ctx, test_ctx->sysdb,
@@ -3611,6 +3614,209 @@ START_TEST(test_sysdb_subdomain_group_ops)
 }
 END_TEST
 
+#ifdef BUILD_AUTOFS
+START_TEST(test_autofs_create_map)
+{
+    struct sysdb_test_ctx *test_ctx;
+    const char *autofsmapname;
+    errno_t ret;
+
+    ret = setup_sysdb_tests(&test_ctx);
+    fail_if(ret != EOK, "Could not set up the test");
+
+    autofsmapname = talloc_asprintf(test_ctx, "testmap%d", _i);
+    fail_if(autofsmapname == NULL, "Out of memory\n");
+
+    ret = sysdb_save_autofsmap(test_ctx->sysdb, autofsmapname,
+                               autofsmapname, NULL, 0, 0);
+    fail_if(ret != EOK, "Could not store autofs map %s", autofsmapname);
+    talloc_free(test_ctx);
+}
+END_TEST
+
+START_TEST(test_autofs_retrieve_map)
+{
+    struct sysdb_test_ctx *test_ctx;
+    const char *autofsmapname;
+    errno_t ret;
+    struct ldb_message *map = NULL;
+
+    ret = setup_sysdb_tests(&test_ctx);
+    fail_if(ret != EOK, "Could not set up the test");
+
+    autofsmapname = talloc_asprintf(test_ctx, "testmap%d", _i);
+    fail_if(autofsmapname == NULL, "Out of memory\n");
+
+    ret = sysdb_get_map_byname(test_ctx, test_ctx->sysdb,
+                               autofsmapname, &map);
+    fail_if(ret != EOK, "Could not retrieve autofs map %s", autofsmapname);
+    fail_if(map == NULL, "No map retrieved?\n");
+    talloc_free(test_ctx);
+}
+END_TEST
+
+START_TEST(test_autofs_delete_map)
+{
+    struct sysdb_test_ctx *test_ctx;
+    const char *autofsmapname;
+    errno_t ret;
+
+    ret = setup_sysdb_tests(&test_ctx);
+    fail_if(ret != EOK, "Could not set up the test");
+
+    autofsmapname = talloc_asprintf(test_ctx, "testmap%d", _i);
+    fail_if(autofsmapname == NULL, "Out of memory\n");
+
+    ret = sysdb_delete_autofsmap(test_ctx->sysdb, autofsmapname);
+    fail_if(ret != EOK, "Could not retrieve autofs map %s", autofsmapname);
+    talloc_free(test_ctx);
+}
+END_TEST
+
+START_TEST(test_autofs_retrieve_map_neg)
+{
+    struct sysdb_test_ctx *test_ctx;
+    const char *autofsmapname;
+    errno_t ret;
+    struct ldb_message *map = NULL;
+
+    ret = setup_sysdb_tests(&test_ctx);
+    fail_if(ret != EOK, "Could not set up the test");
+
+    autofsmapname = talloc_asprintf(test_ctx, "testmap%d", _i);
+    fail_if(autofsmapname == NULL, "Out of memory\n");
+
+    ret = sysdb_get_map_byname(test_ctx, test_ctx->sysdb,
+                               autofsmapname, &map);
+    fail_if(ret != ENOENT, "Expected ENOENT, got %d instead\n", ret);
+    fail_if(map != NULL, "Unexpected map found\n");
+    talloc_free(test_ctx);
+}
+END_TEST
+
+START_TEST(test_autofs_store_entry_in_map)
+{
+    struct sysdb_test_ctx *test_ctx;
+    const char *autofsmapname;
+    const char *autofskey;
+    const char *autofsval;
+    errno_t ret;
+    int ii;
+    const int limit = 10;
+
+    ret = setup_sysdb_tests(&test_ctx);
+    fail_if(ret != EOK, "Could not set up the test");
+
+    autofsmapname = talloc_asprintf(test_ctx, "testmap%d", _i);
+    fail_if(autofsmapname == NULL, "Out of memory\n");
+
+    for (ii=0; ii < limit; ii++) {
+        autofskey = talloc_asprintf(test_ctx, "%s_testkey%d",
+                                    autofsmapname, ii);
+        fail_if(autofskey == NULL, "Out of memory\n");
+
+        autofsval = talloc_asprintf(test_ctx, "testserver:/testval%d", ii);
+        fail_if(autofsval == NULL, "Out of memory\n");
+
+        ret = sysdb_save_autofsentry(test_ctx->sysdb, autofsmapname, autofskey,
+                                     autofsval, NULL);
+        fail_if(ret != EOK, "Could not save autofs entry %s", autofskey);
+    }
+
+    talloc_free(test_ctx);
+}
+END_TEST
+
+START_TEST(test_autofs_retrieve_keys_by_map)
+{
+    struct sysdb_test_ctx *test_ctx;
+    const char *autofsmapname;
+    errno_t ret;
+    size_t count;
+    struct ldb_message **entries;
+    const int expected = 10;
+
+    ret = setup_sysdb_tests(&test_ctx);
+    fail_if(ret != EOK, "Could not set up the test");
+
+    autofsmapname = talloc_asprintf(test_ctx, "testmap%d", _i);
+    fail_if(autofsmapname == NULL, "Out of memory\n");
+
+    ret = sysdb_autofs_entries_by_map(test_ctx, test_ctx->sysdb,
+                                      autofsmapname, &count, &entries);
+    fail_if(ret != EOK, "Cannot get autofs entries for map %s\n",
+            autofsmapname);
+    fail_if(count != expected, "Expected to find %d entries, got %d\n",
+            expected, count);
+    talloc_free(test_ctx);
+}
+END_TEST
+
+START_TEST(test_autofs_key_duplicate)
+{
+    struct sysdb_test_ctx *test_ctx;
+    const char *autofsmapname;
+    const char *autofskey;
+    const char *autofsval;
+    errno_t ret;
+
+    ret = setup_sysdb_tests(&test_ctx);
+    fail_if(ret != EOK, "Could not set up the test");
+
+    autofsmapname = talloc_asprintf(test_ctx, "testmap%d", _i);
+    fail_if(autofsmapname == NULL, "Out of memory\n");
+
+    autofskey = talloc_asprintf(test_ctx, "testkey");
+    fail_if(autofskey == NULL, "Out of memory\n");
+
+    autofsval = talloc_asprintf(test_ctx, "testserver:/testval%d", _i);
+    fail_if(autofsval == NULL, "Out of memory\n");
+
+    ret = sysdb_save_autofsentry(test_ctx->sysdb, autofsmapname, autofskey,
+                                 autofsval, NULL);
+    fail_if(ret != EOK, "Could not save autofs entry %s", autofskey);
+    talloc_free(test_ctx);
+}
+END_TEST
+
+START_TEST(test_autofs_get_duplicate_keys)
+{
+    struct sysdb_test_ctx *test_ctx;
+    const char *autofskey;
+    errno_t ret;
+    const char *attrs[] = { SYSDB_AUTOFS_ENTRY_KEY,
+                            SYSDB_AUTOFS_ENTRY_VALUE,
+                            NULL };
+    size_t count;
+    struct ldb_message **msgs;
+    struct ldb_dn *dn;
+    const char *filter;
+    const int expected = 10;
+
+    ret = setup_sysdb_tests(&test_ctx);
+    fail_if(ret != EOK, "Could not set up the test");
+
+    autofskey = talloc_asprintf(test_ctx, "testkey");
+    fail_if(autofskey == NULL, "Out of memory\n");
+
+    filter = talloc_asprintf(test_ctx, "(&(objectclass=%s)(%s=%s))",
+                             SYSDB_AUTOFS_ENTRY_OC, SYSDB_AUTOFS_ENTRY_KEY, autofskey);
+    fail_if(filter == NULL, "Out of memory\n");
+
+    dn = ldb_dn_new_fmt(test_ctx, test_ctx->sysdb->ldb, SYSDB_TMPL_CUSTOM_SUBTREE,
+                        AUTOFS_MAP_SUBDIR, test_ctx->sysdb->domain->name);
+    fail_if(dn == NULL, "Out of memory\n");
+
+    ret = sysdb_search_entry(test_ctx, test_ctx->sysdb, dn, LDB_SCOPE_SUBTREE,
+                             filter, attrs, &count, &msgs);
+    fail_if(count != expected, "Found %d entries with name %s, expected %d\n",
+            count, autofskey, expected);
+    talloc_free(test_ctx);
+}
+END_TEST
+
+#endif /* BUILD_AUTOFS */
+
 Suite *create_sysdb_suite(void)
 {
     Suite *s = suite_create("sysdb");
@@ -3829,6 +4035,34 @@ Suite *create_sysdb_suite(void)
 
     suite_add_tcase(s, tc_subdomain);
 
+#ifdef BUILD_AUTOFS
+    TCase *tc_autofs = tcase_create("SYSDB autofs Tests");
+
+    tcase_add_loop_test(tc_subdomain, test_autofs_create_map,
+                        TEST_AUTOFS_MAP_BASE, TEST_AUTOFS_MAP_BASE+10);
+
+    tcase_add_loop_test(tc_subdomain, test_autofs_retrieve_map,
+                        TEST_AUTOFS_MAP_BASE, TEST_AUTOFS_MAP_BASE+10);
+
+    tcase_add_loop_test(tc_subdomain, test_autofs_store_entry_in_map,
+                        TEST_AUTOFS_MAP_BASE, TEST_AUTOFS_MAP_BASE+10);
+
+    tcase_add_loop_test(tc_subdomain, test_autofs_retrieve_keys_by_map,
+                        TEST_AUTOFS_MAP_BASE, TEST_AUTOFS_MAP_BASE+10);
+
+    tcase_add_loop_test(tc_subdomain, test_autofs_delete_map,
+                        TEST_AUTOFS_MAP_BASE, TEST_AUTOFS_MAP_BASE+10);
+
+    tcase_add_loop_test(tc_subdomain, test_autofs_retrieve_map_neg,
+                        TEST_AUTOFS_MAP_BASE, TEST_AUTOFS_MAP_BASE+10);
+
+    tcase_add_loop_test(tc_subdomain, test_autofs_key_duplicate,
+                        TEST_AUTOFS_MAP_BASE, TEST_AUTOFS_MAP_BASE+10);
+
+    tcase_add_test(tc_subdomain, test_autofs_get_duplicate_keys);
+
+    suite_add_tcase(s, tc_autofs);
+#endif
 
     return s;
 }
