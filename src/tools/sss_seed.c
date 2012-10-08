@@ -196,6 +196,14 @@ static int seed_password_input_prompt(TALLOC_CTX *mem_ctx, char **_password)
         ret = EINVAL;
         goto done;
     }
+
+    /* Do not allow empty passwords */
+    if (strlen(temp) == 0) {
+        ERROR("Empty passwords are not allowed.\n");
+        ret = EINVAL;
+        goto done;
+    }
+
     password = talloc_strdup(tmp_ctx, temp);
     if (password == NULL) {
         ret = ENOMEM;
@@ -235,6 +243,8 @@ static int seed_password_input_file(TALLOC_CTX *mem_ctx,
     uint8_t buf[PASS_MAX+1];
     int fd = -1;
     int ret = EOK;
+    int valid_i;
+    int i;
 
     tmp_ctx = talloc_new(NULL);
     if (tmp_ctx == NULL) {
@@ -253,7 +263,7 @@ static int seed_password_input_file(TALLOC_CTX *mem_ctx,
     }
 
     errno = 0;
-    len = sss_atomic_read_s(fd, buf, PASS_MAX);
+    len = sss_atomic_read_s(fd, buf, PASS_MAX + 1);
     if (len == -1) {
         ret = errno;
         DEBUG(SSSDBG_MINOR_FAILURE, ("Failed to read password from file "
@@ -264,7 +274,40 @@ static int seed_password_input_file(TALLOC_CTX *mem_ctx,
     }
 
     close(fd);
+
+    if (len > PASS_MAX) {
+        ERROR("Password file too big.\n");
+        ret = EINVAL;
+        goto done;
+    }
+
     buf[len] = '\0';
+
+    /* Only the first line is valid (without '\n'). */
+    for (valid_i = -1; valid_i + 1 < len; valid_i++) {
+        if (buf[valid_i + 1] == '\n') {
+            buf[valid_i + 1] = '\0';
+            break;
+        }
+    }
+
+    /* Do not allow empty passwords. */
+    if (valid_i < 0) {
+        ERROR("Empty passwords are not allowed.\n");
+        ret = EINVAL;
+        goto done;
+    }
+
+    /* valid_i is the last valid index of the password followed by \0.
+     * If characters other than \n occur int the rest of the file, it
+     * is an error. */
+    for (i = valid_i + 2; i < len; i++) {
+        if (buf[i] != '\n') {
+            ERROR("Multi-line passwords are not allowed.\n");
+            ret = EINVAL;
+            goto done;
+        }
+    }
 
     password = talloc_strdup(tmp_ctx, (char *)buf);
     if (password == NULL) {
@@ -377,6 +420,7 @@ done:
     if (ret == EOK) {
         *_uctx = talloc_steal(mem_ctx, input_uctx);
     } else {
+        ERROR("Interactive input failed.\n");
         talloc_zfree(input_uctx);
     }
     return ret;
@@ -446,8 +490,6 @@ static int seed_init(TALLOC_CTX *mem_ctx,
     }
 
     debug_prg_name = argv[0];
-    debug_level = debug_convert_old_level(pc_debug);
-
     ret = set_locale();
     if (ret != EOK) {
         DEBUG(SSSDBG_CRIT_FAILURE, ("set_locale failed (%d): %s\n",
@@ -456,8 +498,6 @@ static int seed_init(TALLOC_CTX *mem_ctx,
         ret = EINVAL;
         goto fini;
     }
-
-    CHECK_ROOT(ret, argv[0]);
 
     /* parse arguments */
     pc = poptGetContext(NULL, argc, argv, options, 0);
@@ -480,6 +520,10 @@ static int seed_init(TALLOC_CTX *mem_ctx,
     if (ret != -1) {
         BAD_POPT_PARAMS(pc, poptStrerror(ret), ret, fini);
     }
+
+    debug_level = debug_convert_old_level(pc_debug);
+
+    CHECK_ROOT(ret, argv[0]);
 
     /* check username provided */
     if (pc_name == NULL) {
@@ -588,8 +632,11 @@ static int seed_init_db(TALLOC_CTX *mem_ctx,
                                       DB_PATH, &domain, &sysdb);
     if (ret != EOK) {
         DEBUG(SSSDBG_CRIT_FAILURE,
-              ("Could not initialize connection to the sysdb\n"));
-        ERROR("Could not initialize the connection to the sysdb\n");
+              ("Could not initialize connection to domain '%s' in sysdb.%s\n",
+               domain_name, ret == ENOENT ? " Domain not found." : ""));
+        ERROR("Could not initialize connection to domain '%1$s' in sysdb.%2$s\n",
+              domain_name, ret == ENOENT ? " Domain not found." : "");
+
         goto done;
     }
 

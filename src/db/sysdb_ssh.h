@@ -25,22 +25,40 @@
 
 #define SSH_HOSTS_SUBDIR "ssh_hosts"
 
+#define SYSDB_SSH_HOST_OC "sshHost"
+
+#define SYSDB_SSH_KNOWN_HOSTS_EXPIRE "sshKnownHostsExpire"
+
 errno_t
 sysdb_store_ssh_host(struct sysdb_ctx *sysdb,
                      const char *name,
                      const char *alias,
+                     time_t now,
                      struct sysdb_attrs *attrs);
+
+errno_t
+sysdb_update_ssh_known_host_expire(struct sysdb_ctx *sysdb,
+                                   const char *name,
+                                   time_t now,
+                                   int known_hosts_timeout);
 
 errno_t
 sysdb_delete_ssh_host(struct sysdb_ctx *sysdb,
                       const char *name);
 
 errno_t
-sysdb_search_ssh_hosts(TALLOC_CTX *mem_ctx,
-                       struct sysdb_ctx *sysdb,
-                       const char *name,
-                       const char **attrs,
-                       struct ldb_message ***hosts,
-                       size_t *host_count);
+sysdb_get_ssh_host(TALLOC_CTX *mem_ctx,
+                   struct sysdb_ctx *sysdb,
+                   const char *name,
+                   const char **attrs,
+                   struct ldb_message **host);
+
+errno_t
+sysdb_get_ssh_known_hosts(TALLOC_CTX *mem_ctx,
+                          struct sysdb_ctx *sysdb,
+                          time_t now,
+                          const char **attrs,
+                          struct ldb_message ***hosts,
+                          size_t *num_hosts);
 
 #endif /* _SYSDB_SSH_H_ */

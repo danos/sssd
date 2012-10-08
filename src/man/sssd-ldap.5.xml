@@ -163,13 +163,33 @@
                             Depending on the selected schema, the default
                             attribute names retrieved from the servers may vary.
                             The way that some attributes are handled may also differ.
-
+                        </para>
+                        <para>
                             Four schema types are currently supported:
-                            rfc2307
-                            rfc2307bis
-                            IPA
-                            AD
-
+                            <itemizedlist>
+                                <listitem>
+                                    <para>
+                                        rfc2307
+                                    </para>
+                                </listitem>
+                                <listitem>
+                                    <para>
+                                        rfc2307bis
+                                    </para>
+                                </listitem>
+                                <listitem>
+                                    <para>
+                                        IPA
+                                    </para>
+                                </listitem>
+                                <listitem>
+                                    <para>
+                                        AD
+                                    </para>
+                                </listitem>
+                            </itemizedlist>
+                        </para>
+                        <para>
                             The main difference between these schema types is
                             how group memberships are recorded in the server.
                             With rfc2307, group members are listed by name in the
@@ -867,7 +887,7 @@
                     <listitem>
                         <para>
                             This option tells SSSD to take advantage of an
-                            Active Directory-specific feature which will speed
+                            Active Directory-specific feature which might speed
                             up initgroups operations (most notably when
                             dealing with complex or deep nested groups).
                         </para>
@@ -884,7 +904,7 @@
                             MSDN(TM) documentation</ulink> for more details.
                         </para>
                         <para>
-                            Default: True
+                            Default: False
                         </para>
                     </listitem>
                 </varlistentry>
@@ -1600,17 +1620,34 @@
                 </varlistentry>
 
                 <varlistentry>
+                    <term>ldap_chpass_update_last_change (bool)</term>
+                    <listitem>
+                        <para>
+                            Specifies whether to update the
+                            ldap_user_shadow_last_change attribute with
+                            days since the Epoch after a password change
+                            operation.
+                        </para>
+                        <para>
+                            Default: False
+                        </para>
+                    </listitem>
+                </varlistentry>
+
+                <varlistentry>
                     <term>ldap_access_filter (string)</term>
                     <listitem>
                         <para>
-                            If using access_provider = ldap, this option is
+                            If using access_provider = ldap and
+                            ldap_access_order = filter (default), this option is
                             mandatory. It specifies an LDAP search filter
                             criteria that must be met for the user to be
                             granted access on this host. If
-                            access_provider = ldap and this option is
-                            not set, it will result in all users being
-                            denied access. Use access_provider = permit to
-                            change this default behavior.
+                            access_provider = ldap, ldap_access_order = filter
+                            and this option is not set, it will result in all
+                            users being denied access.
+                            Use access_provider = permit to change this default
+                            behavior.
                         </para>
                         <para>
                             Example:
@@ -2129,6 +2166,7 @@ ldap_access_filter = memberOf=cn=allowedusers,ou=Groups,dc=example,dc=com
                 </varlistentry>
             </variablelist>
         </para>
+        <xi:include xmlns:xi="http://www.w3.org/2001/XInclude" href="include/autofs_restart.xml" />
     </refsect1>
 
     <refsect1 id='advanced-options'>
@@ -2199,12 +2237,12 @@ ldap_access_filter = memberOf=cn=allowedusers,ou=Groups,dc=example,dc=com
 
                 <varlistentry condition="with_sudo">
                     <term>ldap_sudo_search_base (string)</term>
-                    <xi:include xmlns:xi="http://www.w3.org/2001/XInclude" href="include/ldap_search_bases_experimental.xml" />
+                    <xi:include xmlns:xi="http://www.w3.org/2001/XInclude" href="include/ldap_search_bases.xml" />
                 </varlistentry>
 
                 <varlistentry condition="with_autofs">
                     <term>ldap_autofs_search_base (string)</term>
-                    <xi:include xmlns:xi="http://www.w3.org/2001/XInclude" href="include/ldap_search_bases_experimental.xml" />
+                    <xi:include xmlns:xi="http://www.w3.org/2001/XInclude" href="include/ldap_search_bases.xml" />
                 </varlistentry>
 
             </variablelist>

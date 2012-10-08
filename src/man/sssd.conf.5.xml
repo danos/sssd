@@ -124,12 +124,16 @@
                         <term>re_expression (string)</term>
                         <listitem>
                             <para>
-                                Default regular expression that describes how to parse the string
-                                containing user name and domain into these components.
+                                Default regular expression that describes how to
+                                parse the string containing user name and domain
+                                into these components.
                             </para>
                             <para>
-                                Each domain can have an individual regular expression configured.
-                                see DOMAIN SECTIONS for more info on these regular expressions.
+                                Each domain can have an individual regular
+                                expression configured. For some ID providers
+                                there are also default regular expressions.  See
+                                DOMAIN SECTIONS for more info on these regular
+                                expressions.
                             </para>
                         </listitem>
                     </varlistentry>
@@ -211,6 +215,30 @@
                             </para>
                             <para>
                                 Default: 60
+                            </para>
+                        </listitem>
+                    </varlistentry>
+                    <varlistentry>
+                        <term>default_domain_suffix (string)</term>
+                        <listitem>
+                            <para>
+                                This string will be used as a default domain
+                                name for all names without a domain name
+                                component. The main use case are environments
+                                were the local domain is only managing hosts
+                                but no users and all users are coming from a
+                                trusted domain. The option allows those users
+                                to log in just with their user name without
+                                giving a domain name as well.
+                            </para>
+                            <para>
+                                Please note that if this option is set all
+                                users from the local domain have to use their
+                                fully qualified name, e.g. user@domain.name,
+                                to log in.
+                            </para>
+                            <para>
+                                Default: not set
                             </para>
                         </listitem>
                     </varlistentry>
@@ -784,7 +812,20 @@ override_homedir = /home/%u
                         </para>
                     </listitem>
                 </varlistentry>
+                <varlistentry>
+                    <term>ssh_known_hosts_timeout (integer)</term>
+                    <listitem>
+                        <para>
+                            How many seconds to keep a host in the managed
+                            known_hosts file after its host keys were requested.
+                        </para>
+                        <para>
+                            Default: 180
+                        </para>
+                    </listitem>
+                </varlistentry>
             </variablelist>
+            <xi:include xmlns:xi="http://www.w3.org/2001/XInclude" href="include/autofs_restart.xml" />
         </refsect2>
 
         <refsect2 id='SSH' condition="with_ssh">
@@ -1435,13 +1476,34 @@ override_homedir = /home/%u
                     <term>re_expression (string)</term>
                     <listitem>
                         <para>
-                            Regular expression for this domain that describes how to parse
-                            the string containing user name and domain into these components.
+                            Regular expression for this domain that describes
+                            how to parse the string containing user name and
+                            domain into these components.
+                        </para>
+                        <para>
+                            Default for the AD and IPA provider:
+                            <quote>(((?P&lt;domain&gt;[^\\]+)\\(?P&lt;name&gt;.+$))|((?P&lt;name&gt;[^@]+)@(?P&lt;domain&gt;.+$))|(^(?P&lt;name&gt;[^@\\]+)$))</quote>
+                            which allows three different styles for user names:
+                            <itemizedlist>
+                                <listitem>
+                                    <para>username</para>
+                                </listitem>
+                                <listitem>
+                                    <para>username@domain.name</para>
+                                </listitem>
+                                <listitem>
+                                    <para>domain\username</para>
+                                </listitem>
+                            </itemizedlist>
+                            While the first two correspond to the general
+                            default the third one is introduced to allow easy
+                            integration of users from Windows domains.
                         </para>
                         <para>
                             Default: <quote>(?P&lt;name&gt;[^@]+)@?(?P&lt;domain&gt;[^@]*$)</quote>
-                            which translates to "the name is everything up to the
-                            <quote>@</quote> sign, the domain everything after that"
+                            which translates to "the name is everything up to
+                            the <quote>@</quote> sign, the domain everything
+                            after that"
                         </para>
                         <para>
                             PLEASE NOTE: the support for non-unique named

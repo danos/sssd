@@ -64,6 +64,10 @@
  * doesn't shutdown on receiving SIGTERM */
 #define MONITOR_DEF_FORCE_TIME 60
 
+/* name of the monitor server instance */
+#define MONITOR_NAME        "sssd"
+#define SSSD_PIDFILE_PATH   PID_PATH"/"MONITOR_NAME".pid"
+
 /* Special value to leave the Kerberos Replay Cache set to use
  * the libkrb5 defaults
  */
@@ -140,6 +144,8 @@ struct mt_ctx {
     struct sss_domain_info *domains;
     TALLOC_CTX *service_ctx; /* Memory context for services */
     char **services;
+    int num_services;
+    int started_services;
     struct mt_svc *svc_list;
     struct sbus_connection *sbus_srv;
     struct config_file_ctx *file_ctx;
@@ -150,6 +156,7 @@ struct mt_ctx {
     struct netlink_ctx *nlctx;
     const char *conf_path;
     struct sss_sigchild_ctx *sigchld_ctx;
+    bool pid_file_created;
 };
 
 static int start_service(struct mt_svc *mt_svc);
@@ -345,6 +352,12 @@ static int svc_destructor(void *mem)
         talloc_set_destructor((TALLOC_CTX *)svc->conn_spy, NULL);
         talloc_zfree(svc->conn_spy);
     }
+
+    if (svc->type == MT_SVC_SERVICE && svc->svc_started
+            && svc->mt_ctx != NULL && svc->mt_ctx->started_services > 0) {
+        svc->mt_ctx->started_services--;
+    }
+
     return 0;
 }
 
@@ -417,6 +430,25 @@ static int mark_service_as_started(struct mt_svc *svc)
         for (i = 0; ctx->services[i]; i++) {
             add_new_service(ctx, ctx->services[i], 0);
         }
+    }
+
+    if (svc->type == MT_SVC_SERVICE) {
+        ctx->started_services++;
+    }
+
+    /* create the pid file if all services are alive */
+    if (!ctx->pid_file_created && ctx->started_services == ctx->num_services) {
+        DEBUG(SSSDBG_TRACE_FUNC, ("All services have successfully started, "
+                                  "creating pid file\n"));
+        ret = pidfile(PID_PATH, MONITOR_NAME);
+        if (ret != EOK) {
+            DEBUG(SSSDBG_FATAL_FAILURE,
+                  ("Error creating pidfile: %s/%s.pid! (%d [%s])\n",
+                   PID_PATH, MONITOR_NAME, ret, strerror(ret)));
+            kill(getpid(), SIGTERM);
+        }
+
+        ctx->pid_file_created = true;
     }
 
 done:
@@ -715,8 +747,8 @@ static int check_domain_ranges(struct sss_domain_info *domains)
     while (dom) {
         other = dom->next;
         if (dom->id_max && dom->id_min > dom->id_max) {
-            DEBUG(1, ("Domain '%s' does not have a valid ID range\n",
-                      dom->name));
+            DEBUG(SSSDBG_CRIT_FAILURE,
+                  ("Domain '%s' does not have a valid ID range\n", dom->name));
             return EINVAL;
         }
 
@@ -725,8 +757,9 @@ static int check_domain_ranges(struct sss_domain_info *domains)
             id_max = MIN((dom->id_max ? dom->id_max : UINT32_MAX),
                          (other->id_max ? other->id_max : UINT32_MAX));
             if (id_min <= id_max) {
-                DEBUG(1, ("Domains '%s' and '%s' overlap in range %u - %u\n",
-                          dom->name, other->name, id_min, id_max));
+                DEBUG(SSSDBG_MINOR_FAILURE,
+                      ("Domains '%s' and '%s' overlap in range %u - %u\n",
+                      dom->name, other->name, id_min, id_max));
             }
             other = other->next;
         }
@@ -789,6 +822,7 @@ int get_monitor_config(struct mt_ctx *ctx)
     int ret;
     int timeout_seconds;
     char *badsrv = NULL;
+    int i;
 
     ret = confdb_get_int(ctx->cdb,
                          CONFDB_MONITOR_CONF_ENTRY,
@@ -817,6 +851,12 @@ int get_monitor_config(struct mt_ctx *ctx)
     if (badsrv != NULL) {
         DEBUG(0, ("Invalid service %s\n", badsrv));
         return EINVAL;
+    }
+
+    ctx->started_services = 0;
+    ctx->num_services = 0;
+    for (i = 0; ctx->services[i] != NULL; i++) {
+        ctx->num_services++;
     }
 
     ctx->domain_ctx = talloc_new(ctx);
@@ -1195,29 +1235,17 @@ static void monitor_hup(struct tevent_context *ev,
 
 static int monitor_cleanup(void)
 {
-    char *file;
     int ret;
-    TALLOC_CTX *tmp_ctx;
-
-    tmp_ctx = talloc_new(NULL);
-    if (!tmp_ctx) return ENOMEM;
-
-    file = talloc_asprintf(tmp_ctx, "%s/%s.pid", PID_PATH, "sssd");
-    if (file == NULL) {
-        return ENOMEM;
-    }
 
     errno = 0;
-    ret = unlink(file);
+    ret = unlink(SSSD_PIDFILE_PATH);
     if (ret == -1) {
         ret = errno;
-        DEBUG(0, ("Error removing pidfile! (%d [%s])\n",
-                ret, strerror(ret)));
-        talloc_free(file);
-        return errno;
+        DEBUG(SSSDBG_FATAL_FAILURE,
+              ("Error removing pidfile! (%d [%s])\n", ret, strerror(ret)));
+        return ret;
     }
 
-    talloc_free(file);
     return EOK;
 }
 
@@ -1404,6 +1432,8 @@ static errno_t load_configuration(TALLOC_CTX *mem_ctx,
     if(!ctx) {
         return ENOMEM;
     }
+
+    ctx->pid_file_created = false;
     talloc_set_destructor((TALLOC_CTX *)ctx, monitor_ctx_destructor);
 
     cdb_file = talloc_asprintf(ctx, "%s/%s", DB_PATH, CONFDB_FILE);
@@ -2508,15 +2538,15 @@ int main(int argc, const char *argv[])
     if (opt_daemon) flags |= FLAGS_DAEMON;
     if (opt_interactive) flags |= FLAGS_INTERACTIVE;
 
-    if (opt_config_file)
+    if (opt_config_file) {
         config_file = talloc_strdup(tmp_ctx, opt_config_file);
-    else
+    } else {
         config_file = talloc_strdup(tmp_ctx, CONFDB_DEFAULT_CONFIG_FILE);
-    if(!config_file)
-        return 6;
+    }
 
-    /* we want a pid file check */
-    flags |= FLAGS_PID_FILE;
+    if (!config_file) {
+        return 6;
+    }
 
     /* Open before server_setup() does to have logging
      * during configuration checking */
@@ -2561,6 +2591,15 @@ int main(int argc, const char *argv[])
                 "netgroup nsswitch maps.");
     }
 
+    /* Check if the SSSD is already running */
+    ret = check_file(SSSD_PIDFILE_PATH, 0, 0, 0600, CHECK_REG, NULL, false);
+    if (ret == EOK) {
+        DEBUG(SSSDBG_FATAL_FAILURE,
+              ("pidfile exists at %s\n", SSSD_PIDFILE_PATH));
+        ERROR("SSSD is already running\n");
+        return 2;
+    }
+
     /* Parse config file, fail if cannot be done */
     ret = load_configuration(tmp_ctx, config_file, &monitor);
     if (ret != EOK) {
@@ -2585,7 +2624,7 @@ int main(int argc, const char *argv[])
 
     /* set up things like debug , signals, daemonization, etc... */
     monitor->conf_path = CONFDB_MONITOR_CONF_ENTRY;
-    ret = server_setup("sssd", flags, monitor->conf_path, &main_ctx);
+    ret = server_setup(MONITOR_NAME, flags, monitor->conf_path, &main_ctx);
     if (ret != EOK) return 2;
 
     monitor->ev = main_ctx->event_ctx;

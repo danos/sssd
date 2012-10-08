@@ -66,6 +66,7 @@
 #define CONFDB_MONITOR_ACTIVE_DOMAINS "domains"
 #define CONFDB_MONITOR_TRY_INOTIFY "try_inotify"
 #define CONFDB_MONITOR_KRB5_RCACHEDIR "krb5_rcache_dir"
+#define CONFDB_MONITOR_DEFAULT_DOMAIN "default_domain_suffix"
 
 /* Both monitor and domains */
 #define CONFDB_NAME_REGEX   "re_expression"
@@ -120,6 +121,8 @@
 #define CONFDB_SSH_CONF_ENTRY "config/ssh"
 #define CONFDB_SSH_HASH_KNOWN_HOSTS "ssh_hash_known_hosts"
 #define CONFDB_DEFAULT_SSH_HASH_KNOWN_HOSTS true
+#define CONFDB_SSH_KNOWN_HOSTS_TIMEOUT "ssh_known_hosts_timeout"
+#define CONFDB_DEFAULT_SSH_KNOWN_HOSTS_TIMEOUT 180
 
 /* PAC */
 #define CONFDB_PAC_CONF_ENTRY "config/pac"
