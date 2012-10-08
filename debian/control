@@ -49,6 +49,7 @@ Homepage: https://fedorahosted.org/sssd/
 
 Package: sssd
 Architecture: any
+Multi-Arch: foreign
 Depends: ${shlibs:Depends}, ${misc:Depends}, python,
  python-sss,
  libipa-hbac0 (= ${binary:Version}),
