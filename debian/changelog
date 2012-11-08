@@ -76,6 +76,7 @@ sssd (1.9.2-1) UNRELEASED; urgency=low
       libdcerpc-dev to build-depends
     - Add -I/usr/include/samba-4.0 to CFLAGS
   * control: Mark sssd as Multi-Arch: foreign.
+  * watch: Add a comment about the upstream git tree.
 
  -- Timo Aaltonen <tjaalton@ubuntu.com>  Thu, 24 May 2012 14:46:39 +0300
 
