@@ -92,7 +92,7 @@ Description: System Security Services Daemon -- tools
 
 Package: libnss-sss
 Architecture: any
-Depends: ${shlibs:Depends}, ${misc:Depends}, perl
+Depends: ${shlibs:Depends}, ${misc:Depends}
 Pre-Depends: multiarch-support
 Recommends: sssd
 Multi-Arch: same

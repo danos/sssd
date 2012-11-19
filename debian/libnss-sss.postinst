@@ -20,20 +20,11 @@ insert_nss_entry() {
         log "Could not find /etc/nsswitch.conf."
         return
     fi
-    perl -i -pe '
-        sub insert {
-            # this also splits on tab
-            my @bits=split(" ", shift);
-            # do not break configuration if the line already
-            # references sss
-            if (grep { $_ eq "sss"} @bits) {
-                return join " ", @bits;
-            }
-            # append sss at the end
-            push @bits, "sss";
-            return join " ",@bits;
-        }
-        s/^(passwd:\s+|group:\s+|shadow:\s+|netgroup:\s+)(.*)/$1.insert($2)/e;
+    # append 'sss' to the end of the line if it's not found already
+    sed -i --regexp-extended '
+      /^(passwd|group|shadow|netgroup):/ {
+        /\bsss\b/! s/$/ sss/
+      }
     ' /etc/nsswitch.conf
 }
 

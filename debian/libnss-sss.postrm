@@ -16,18 +16,11 @@ remove_nss_entry() {
         log "Could not find /etc/nsswitch.conf."
         return
     fi
-    perl -i -pe '
-        my @remove=(
-            "sss",
-        );
-        sub remove {
-            my $s=shift;
-            foreach my $bit (@remove) {
-                $s=~s/\s+\Q$bit\E//g;
-            }
-            return $s;
-        }
-        s/^(passwd:|group:|shadow:|netgroup:)(.*)/$1.remove($2)/e;
+    sed -i --regexp-extended '
+      /^(passwd|group|shadow|netgroup):/ {
+        s/\bsss\b//g
+        s/[[:space:]]+$//
+      }
     ' /etc/nsswitch.conf
 }
 
