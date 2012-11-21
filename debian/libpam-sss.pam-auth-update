@@ -11,11 +11,6 @@ Account-Type: Additional
 Account:
 	sufficient					pam_localuser.so
 	[default=bad success=ok user_unknown=ignore]	pam_sss.so
-Password-Type: Primary
-Password:
-	sufficient					pam_sss.so
-Password-Initial:
-	sufficient					pam_sss.so
 Session-Type: Additional
 Session-Interactive-Only: yes
 Session:
