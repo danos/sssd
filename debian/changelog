@@ -86,6 +86,8 @@ sssd (1.9.2-1) UNRELEASED; urgency=low
   * rules: Set DEB_HOST_MULTIARCH, drop --libdir and remnants of cdbs.
   * sssd.install: Install the support binaries under the multiarch path.
   * rules,sssd.postinst: Move generate-config to /usr/share/sssd.
+  * rules, sssd.install: Use the correct install path for the
+    krb5_locator plugin.
 
  -- Timo Aaltonen <tjaalton@ubuntu.com>  Thu, 24 May 2012 14:46:39 +0300
 

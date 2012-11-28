@@ -1,7 +1,7 @@
 usr/bin/sss_ssh_authorizedkeys
 usr/bin/sss_ssh_knownhostsproxy
 usr/lib/*/ldb/modules/ldb/memberof.so
-usr/lib/*/krb5/plugins/libkrb5/*
+usr/lib/*/krb5/plugins/krb5/*
 usr/lib/*/krb5/plugins/authdata/*
 usr/lib/*/sssd/lib*.so*
 usr/lib/*/sssd/*_child
