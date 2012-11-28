@@ -21,7 +21,7 @@ case "$1" in
     configure)
     # Try to autogenerate a configuration file on package install
     if [ -z "$2" ] && [ ! -e /etc/sssd/sssd.conf ]; then
-        /usr/lib/sssd/generate-config > /etc/sssd/sssd.conf.new
+        /usr/share/sssd/generate-config > /etc/sssd/sssd.conf.new
 	if [ ! -s /etc/sssd/sssd.conf.new ] ; then
 	    rm /etc/sssd/sssd.conf.new
 	else
