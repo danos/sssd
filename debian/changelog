@@ -82,7 +82,7 @@ sssd (1.9.2-1) UNRELEASED; urgency=low
   * libpam-sss.pam-auth-update*: Add a separate file for the password stack,
     and drop it from the main file. It needs to have a higher priority
     from the rest so that password changes work with pam_cracklib installed.
-  * compat,rules: Bump compat to 9.
+  * compat: Bump compat to 9.
   * rules: Set DEB_HOST_MULTIARCH, drop --libdir and remnants of cdbs.
 
  -- Timo Aaltonen <tjaalton@ubuntu.com>  Thu, 24 May 2012 14:46:39 +0300
