@@ -84,6 +84,7 @@ sssd (1.9.2-1) UNRELEASED; urgency=low
     from the rest so that password changes work with pam_cracklib installed.
   * compat: Bump compat to 9.
   * rules: Set DEB_HOST_MULTIARCH, drop --libdir and remnants of cdbs.
+  * sssd.install: Install the support binaries under the multiarch path.
 
  -- Timo Aaltonen <tjaalton@ubuntu.com>  Thu, 24 May 2012 14:46:39 +0300
 
