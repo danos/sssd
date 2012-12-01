@@ -1,3 +1,2 @@
 usr/include/sss_sudo.h
 usr/lib/*/libsss_sudo.so
-usr/lib/*/pkgconfig/libsss_sudo.pc
