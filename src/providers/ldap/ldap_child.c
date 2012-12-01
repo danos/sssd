@@ -35,12 +35,13 @@
 #include "providers/dp_backend.h"
 
 static krb5_context krb5_error_ctx;
+#define LDAP_CHILD_DEBUG(level, error) KRB5_DEBUG(level, krb5_error_ctx, error)
 
-static const char *__krb5_error_msg;
+static const char *__ldap_child_krb5_error_msg;
 #define KRB5_SYSLOG(krb5_error) do { \
-    __krb5_error_msg = sss_krb5_get_error_message(krb5_error_ctx, krb5_error); \
-    sss_log(SSS_LOG_ERR, "%s", __krb5_error_msg); \
-    sss_krb5_free_error_message(krb5_error_ctx, __krb5_error_msg); \
+    __ldap_child_krb5_error_msg = sss_krb5_get_error_message(krb5_error_ctx, krb5_error); \
+    sss_log(SSS_LOG_ERR, "%s", __ldap_child_krb5_error_msg); \
+    sss_krb5_free_error_message(krb5_error_ctx, __ldap_child_krb5_error_msg); \
 } while(0)
 
 struct input_buffer {
@@ -140,6 +141,25 @@ static int pack_buffer(struct response *r, int result, krb5_error_code krberr,
     return EOK;
 }
 
+static errno_t
+set_child_debugging(krb5_context ctx)
+{
+    krb5_error_code kerr;
+
+    /* Set the global error context */
+    krb5_error_ctx = ctx;
+
+    if (debug_level & SSSDBG_TRACE_ALL) {
+        kerr = sss_child_set_krb5_tracing(ctx);
+        if (kerr) {
+            LDAP_CHILD_DEBUG(SSSDBG_MINOR_FAILURE, kerr);
+            return EIO;
+        }
+    }
+
+    return EOK;
+}
+
 static krb5_error_code ldap_child_get_tgt_sync(TALLOC_CTX *memctx,
                                                const char *realm_str,
                                                const char *princ_str,
@@ -171,6 +191,11 @@ static krb5_error_code ldap_child_get_tgt_sync(TALLOC_CTX *memctx,
         return krberr;
     }
     DEBUG(SSSDBG_TRACE_INTERNAL, ("Kerberos context initialized\n"));
+
+    krberr = set_child_debugging(context);
+    if (krberr != EOK) {
+        DEBUG(SSSDBG_MINOR_FAILURE, ("Cannot set krb5_child debugging\n"));
+    }
 
     if (!realm_str) {
         krberr = krb5_get_default_realm(context, &default_realm);

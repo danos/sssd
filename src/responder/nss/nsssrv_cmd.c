@@ -1090,6 +1090,7 @@ done:
     }
 }
 
+static void nss_cmd_getpwuid_cb(struct tevent_req *req);
 static int nss_cmd_getpwuid(struct cli_ctx *cctx)
 {
     struct nss_cmd_ctx *cmdctx;
@@ -1098,6 +1099,7 @@ static int nss_cmd_getpwuid(struct cli_ctx *cctx)
     uint8_t *body;
     size_t blen;
     int ret;
+    struct tevent_req *req;
 
     nctx = talloc_get_type(cctx->rctx->pvt_ctx, struct nss_ctx);
 
@@ -1137,6 +1139,17 @@ static int nss_cmd_getpwuid(struct cli_ctx *cctx)
 
     dctx->check_provider = NEED_CHECK_PROVIDER(dctx->domain->provider);
 
+    if (cctx->rctx->get_domains_last_call.tv_sec == 0) {
+        req = sss_dp_get_domains_send(cctx->rctx, cctx->rctx, false, NULL);
+        if (req == NULL) {
+            ret = ENOMEM;
+        } else {
+            tevent_req_set_callback(req, nss_cmd_getpwuid_cb, dctx);
+            ret = EAGAIN;
+        }
+        goto done;
+    }
+
     /* ok, find it ! */
     ret = nss_cmd_getpwuid_search(dctx);
     if (ret == EOK) {
@@ -1146,6 +1159,29 @@ static int nss_cmd_getpwuid(struct cli_ctx *cctx)
 
 done:
     return nss_cmd_done(cmdctx, ret);
+}
+
+static void nss_cmd_getpwuid_cb(struct tevent_req *req)
+{
+    struct nss_dom_ctx *dctx = tevent_req_callback_data(req, struct nss_dom_ctx);
+    struct nss_cmd_ctx *cmdctx = dctx->cmdctx;
+    errno_t ret;
+
+    ret = sss_dp_get_domains_recv(req);
+    talloc_free(req);
+    if (ret != EOK) {
+        goto done;
+    }
+
+    /* ok, find it ! */
+    ret = nss_cmd_getpwuid_search(dctx);
+    if (ret == EOK) {
+        /* we have results to return */
+        ret = nss_cmd_getpw_send_reply(dctx, true);
+    }
+
+done:
+    nss_cmd_done(cmdctx, ret);
 }
 
 /* to keep it simple at this stage we are retrieving the
@@ -1617,6 +1653,14 @@ static int nss_cmd_retpwent(struct cli_ctx *cctx, int num)
         }
 
         if (!n) break;
+
+        if (n < 0) {
+            DEBUG(SSSDBG_CRIT_FAILURE, ("BUG: Negative difference"
+                  "[%d - %d = %d]\n", pdom->res->count, cctx->pwent_cur, n));
+            DEBUG(SSSDBG_CRIT_FAILURE, ("Domain: %d (total %d)\n",
+                                        cctx->pwent_dom_idx, pctx->num));
+            break;
+        }
 
         if (n > num) n = num;
 
@@ -2556,6 +2600,7 @@ done:
     }
 }
 
+static void nss_cmd_getgrgid_cb(struct tevent_req *req);
 static int nss_cmd_getgrgid(struct cli_ctx *cctx)
 {
     struct nss_cmd_ctx *cmdctx;
@@ -2564,6 +2609,7 @@ static int nss_cmd_getgrgid(struct cli_ctx *cctx)
     uint8_t *body;
     size_t blen;
     int ret;
+    struct tevent_req *req;
 
     nctx = talloc_get_type(cctx->rctx->pvt_ctx, struct nss_ctx);
 
@@ -2603,6 +2649,17 @@ static int nss_cmd_getgrgid(struct cli_ctx *cctx)
 
     dctx->check_provider = NEED_CHECK_PROVIDER(dctx->domain->provider);
 
+    if (cctx->rctx->get_domains_last_call.tv_sec == 0) {
+        req = sss_dp_get_domains_send(cctx->rctx, cctx->rctx, false, NULL);
+        if (req == NULL) {
+            ret = ENOMEM;
+        } else {
+            tevent_req_set_callback(req, nss_cmd_getgrgid_cb, dctx);
+            ret = EAGAIN;
+        }
+        goto done;
+    }
+
     /* ok, find it ! */
     ret = nss_cmd_getgrgid_search(dctx);
     if (ret == EOK) {
@@ -2612,6 +2669,29 @@ static int nss_cmd_getgrgid(struct cli_ctx *cctx)
 
 done:
     return nss_cmd_done(cmdctx, ret);
+}
+
+static void nss_cmd_getgrgid_cb(struct tevent_req *req)
+{
+    struct nss_dom_ctx *dctx = tevent_req_callback_data(req, struct nss_dom_ctx);
+    struct nss_cmd_ctx *cmdctx = dctx->cmdctx;
+    errno_t ret;
+
+    ret = sss_dp_get_domains_recv(req);
+    talloc_free(req);
+    if (ret != EOK) {
+        goto done;
+    }
+
+    /* ok, find it ! */
+    ret = nss_cmd_getgrgid_search(dctx);
+    if (ret == EOK) {
+        /* we have results to return */
+        ret = nss_cmd_getpw_send_reply(dctx, true);
+    }
+
+done:
+    nss_cmd_done(cmdctx, ret);
 }
 
 /* to keep it simple at this stage we are retrieving the

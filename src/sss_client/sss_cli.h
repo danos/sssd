@@ -478,9 +478,11 @@ enum nss_status sss_nss_make_request(enum sss_cli_command cmd,
                                      int *errnop);
 
 int sss_pam_make_request(enum sss_cli_command cmd,
-                                     struct sss_cli_req_data *rd,
-                                     uint8_t **repbuf, size_t *replen,
-                                     int *errnop);
+                         struct sss_cli_req_data *rd,
+                         uint8_t **repbuf, size_t *replen,
+                         int *errnop);
+void sss_pam_close_fd(void);
+
 int sss_pac_make_request(enum sss_cli_command cmd,
                          struct sss_cli_req_data *rd,
                          uint8_t **repbuf, size_t *replen,

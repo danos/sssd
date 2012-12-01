@@ -69,8 +69,6 @@ struct krb5_child_ctx {
     char *ccache_dir;
     char *ccname_template;
     int auth_timeout;
-
-    int child_debug_fd;
 };
 
 struct krb5_req {
@@ -696,6 +694,7 @@ static krb5_error_code validate_tgt(struct krb5_req *kr)
     krb5_keytab_entry entry;
     krb5_verify_init_creds_opt opt;
     krb5_principal validation_princ = NULL;
+    bool realm_entry_found = false;
 
     memset(&keytab, 0, sizeof(keytab));
     kerr = krb5_kt_resolve(kr->ctx, kr->keytab, &keytab);
@@ -736,8 +735,15 @@ static krb5_error_code validate_tgt(struct krb5_req *kr)
         if (krb5_realm_compare(kr->ctx, validation_princ, kr->princ)) {
             DEBUG(SSSDBG_TRACE_INTERNAL,
                   ("Found keytab entry with the realm of the credential.\n"));
+            realm_entry_found = true;
             break;
         }
+    }
+
+    if (!realm_entry_found) {
+        DEBUG(SSSDBG_TRACE_INTERNAL,
+                ("Keytab entry with the realm of the credential not found "
+                 "in keytab. Using the last entry.\n"));
     }
 
     /* Close the keytab here.  Even though we're using cursors, the file
@@ -1610,6 +1616,25 @@ done:
     return kerr;
 }
 
+static errno_t
+set_child_debugging(krb5_context ctx)
+{
+    krb5_error_code kerr;
+
+    /* Set the global error context */
+    krb5_error_ctx = ctx;
+
+    if (debug_level & SSSDBG_TRACE_ALL) {
+        kerr = sss_child_set_krb5_tracing(ctx);
+        if (kerr) {
+            KRB5_CHILD_DEBUG(SSSDBG_MINOR_FAILURE, kerr);
+            return EIO;
+        }
+    }
+
+    return EOK;
+}
+
 static int krb5_child_setup(struct krb5_req *kr, uint32_t offline)
 {
     krb5_error_code kerr = 0;
@@ -1676,7 +1701,11 @@ static int krb5_child_setup(struct krb5_req *kr, uint32_t offline)
         KRB5_CHILD_DEBUG(SSSDBG_CRIT_FAILURE, kerr);
         goto failed;
     }
-    krb5_error_ctx = kr->ctx;
+
+    kerr = set_child_debugging(kr->ctx);
+    if (kerr != EOK) {
+        DEBUG(SSSDBG_MINOR_FAILURE, ("Cannot set krb5_child debugging\n"));
+    }
 
     kerr = krb5_parse_name(kr->ctx, kr->upn, &kr->princ);
     if (kerr != 0) {
