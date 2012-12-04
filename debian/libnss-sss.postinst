@@ -22,7 +22,7 @@ insert_nss_entry() {
     fi
     # append 'sss' to the end of the line if it's not found already
     sed -i --regexp-extended '
-      /^(passwd|group|shadow|netgroup):/ {
+      /^(passwd|group|netgroup):/ {
         /\bsss\b/! s/$/ sss/
       }
     ' /etc/nsswitch.conf

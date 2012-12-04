@@ -88,6 +88,8 @@ sssd (1.9.2-1) UNRELEASED; urgency=low
   * rules,sssd.postinst: Move generate-config to /usr/share/sssd.
   * rules, sssd.install: Use the correct install path for the
     krb5_locator plugin.
+  * libnss-sss.postinst: SSSD doesn't handle shadow maps, so don't pretend
+    that it would.
 
  -- Timo Aaltonen <tjaalton@ubuntu.com>  Thu, 24 May 2012 14:46:39 +0300
 
