@@ -68,7 +68,6 @@ sssd (1.9.3-1) UNRELEASED; urgency=low
   * python-sss.install: py-files got moved under SSSDConfig.
   * control, rules: Use default build flags, bump dpkg-dev build-dep to
     1.16.1~.
-  * Bump libsss-sudo soname.
   * rules: Install the apparmor profile with -m644.
   * python-sss: Add pysss_murmur.so.
   * rules, control, sssd.install: PAC responder support.
@@ -90,6 +89,9 @@ sssd (1.9.3-1) UNRELEASED; urgency=low
     krb5_locator plugin.
   * libnss-sss.postinst: SSSD doesn't handle shadow maps, so don't pretend
     that it would.
+  * libsss-sudo*, control: Remove the soname from the library, move .so to
+    the libsss-sudo, Replaces old libsss-sudo-dev. Drop the pkgconfig file
+    from the -dev package.
 
  -- Timo Aaltonen <tjaalton@ubuntu.com>  Thu, 24 May 2012 14:46:39 +0300
 
