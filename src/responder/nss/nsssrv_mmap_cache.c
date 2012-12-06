@@ -348,6 +348,26 @@ static struct sss_mc_rec *sss_mc_get_record(struct sss_mc_ctx *mcc,
 
 
 /***************************************************************************
+ * generic invalidation
+ ***************************************************************************/
+
+static errno_t sss_mmap_cache_invalidate(struct sss_mc_ctx *mcc,
+                                         struct sized_string *key)
+{
+    struct sss_mc_rec *rec;
+
+    rec = sss_mc_find_record(mcc, key);
+    if (rec == NULL) {
+        /* nothing to invalidate */
+        return ENOENT;
+    }
+
+    sss_mc_invalidate_rec(mcc, rec);
+
+    return EOK;
+}
+
+/***************************************************************************
  * passwd map
  ***************************************************************************/
 
@@ -422,6 +442,58 @@ errno_t sss_mmap_cache_pw_store(struct sss_mc_ctx *mcc,
     return EOK;
 }
 
+errno_t sss_mmap_cache_pw_invalidate(struct sss_mc_ctx *mcc,
+                                     struct sized_string *name)
+{
+    return sss_mmap_cache_invalidate(mcc, name);
+}
+
+errno_t sss_mmap_cache_pw_invalidate_uid(struct sss_mc_ctx *mcc, uid_t uid)
+{
+    struct sss_mc_rec *rec;
+    struct sss_mc_pwd_data *data;
+    uint32_t hash;
+    uint32_t slot;
+    char *uidstr;
+    errno_t ret;
+
+    uidstr = talloc_asprintf(NULL, "%ld", (long)uid);
+    if (!uidstr) {
+        return ENOMEM;
+    }
+
+    hash = sss_mc_hash(mcc, uidstr, strlen(uidstr) + 1);
+
+    slot = mcc->hash_table[hash];
+    if (slot > MC_SIZE_TO_SLOTS(mcc->dt_size)) {
+        ret = ENOENT;
+        goto done;
+    }
+
+    while (slot != MC_INVALID_VAL) {
+        rec = MC_SLOT_TO_PTR(mcc->data_table, slot, struct sss_mc_rec);
+        data = (struct sss_mc_pwd_data *)(&rec->data);
+
+        if (uid == data->uid) {
+            break;
+        }
+
+        slot = rec->next;
+    }
+
+    if (slot == MC_INVALID_VAL) {
+        ret = ENOENT;
+        goto done;
+    }
+
+    sss_mc_invalidate_rec(mcc, rec);
+
+    ret = EOK;
+
+done:
+    talloc_zfree(uidstr);
+    return ret;
+}
 
 /***************************************************************************
  * group map
@@ -492,6 +564,59 @@ int sss_mmap_cache_gr_store(struct sss_mc_ctx *mcc,
     return EOK;
 }
 
+errno_t sss_mmap_cache_gr_invalidate(struct sss_mc_ctx *mcc,
+                                     struct sized_string *name)
+{
+    return sss_mmap_cache_invalidate(mcc, name);
+}
+
+errno_t sss_mmap_cache_gr_invalidate_gid(struct sss_mc_ctx *mcc, gid_t gid)
+{
+    struct sss_mc_rec *rec;
+    struct sss_mc_grp_data *data;
+    uint32_t hash;
+    uint32_t slot;
+    char *gidstr;
+    errno_t ret;
+
+    gidstr = talloc_asprintf(NULL, "%ld", (long)gid);
+    if (!gidstr) {
+        return ENOMEM;
+    }
+
+    hash = sss_mc_hash(mcc, gidstr, strlen(gidstr) + 1);
+
+    slot = mcc->hash_table[hash];
+    if (slot > MC_SIZE_TO_SLOTS(mcc->dt_size)) {
+        ret = ENOENT;
+        goto done;
+    }
+
+    while (slot != MC_INVALID_VAL) {
+        rec = MC_SLOT_TO_PTR(mcc->data_table, slot, struct sss_mc_rec);
+        data = (struct sss_mc_grp_data *)(&rec->data);
+
+        if (gid == data->gid) {
+            break;
+        }
+
+        slot = rec->next;
+    }
+
+    if (slot == MC_INVALID_VAL) {
+        ret = ENOENT;
+        goto done;
+    }
+
+    sss_mc_invalidate_rec(mcc, rec);
+
+    ret = EOK;
+
+done:
+    talloc_zfree(gidstr);
+    return ret;
+}
+
 
 /***************************************************************************
  * initialization
@@ -537,14 +662,21 @@ static errno_t sss_mc_create_file(struct sss_mc_ctx *mc_ctx)
     mode_t old_mask;
     int ofd;
     int ret;
+    useconds_t t = 50000;
+    int retries = 3;
 
     ofd = open(mc_ctx->file, O_RDWR);
     if (ofd != -1) {
+        ret = sss_br_lock_file(ofd, 0, 1, retries, t);
+        if (ret != EOK) {
+            DEBUG(SSSDBG_FATAL_FAILURE,
+                  ("Failed to lock file %s.\n", mc_ctx->file));
+        }
         ret = sss_mc_set_recycled(ofd);
         if (ret) {
-            DEBUG(SSSDBG_TRACE_FUNC, ("Failed to mark mmap file %s as"
-                                      " recycled: %d(%s)\n",
-                                      mc_ctx->file, ret, strerror(ret)));
+            DEBUG(SSSDBG_FATAL_FAILURE, ("Failed to mark mmap file %s as"
+                                         " recycled: %d(%s)\n",
+                                         mc_ctx->file, ret, strerror(ret)));
         }
 
         close(ofd);
@@ -568,10 +700,23 @@ static errno_t sss_mc_create_file(struct sss_mc_ctx *mc_ctx)
         ret = errno;
         DEBUG(SSSDBG_CRIT_FAILURE, ("Failed to open mmap file %s: %d(%s)\n",
                                     mc_ctx->file, ret, strerror(ret)));
+        goto done;
     }
 
+    ret = sss_br_lock_file(mc_ctx->fd, 0, 1, retries, t);
+    if (ret != EOK) {
+        DEBUG(SSSDBG_FATAL_FAILURE,
+              ("Failed to lock file %s.\n", mc_ctx->file));
+        goto done;
+    }
+
+done:
     /* reset mask back */
     umask(old_mask);
+
+    if (ret) {
+        close(mc_ctx->fd);
+    }
 
     return ret;
 }

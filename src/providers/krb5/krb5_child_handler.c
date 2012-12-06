@@ -92,6 +92,7 @@ static errno_t create_send_buffer(struct krb5child_req *kr,
     size_t rp;
     const char *keytab;
     uint32_t validate;
+    uint32_t different_realm;
     size_t username_len = 0;
 
     keytab = dp_opt_get_cstring(kr->krb5_ctx->opts, KRB5_KEYTAB);
@@ -101,6 +102,7 @@ static errno_t create_send_buffer(struct krb5child_req *kr,
     }
 
     validate = dp_opt_get_bool(kr->krb5_ctx->opts, KRB5_VALIDATE) ? 1 : 0;
+    different_realm = kr->upn_from_different_realm ? 1 : 0;
 
     buf = talloc(kr, struct io_buffer);
     if (buf == NULL) {
@@ -108,7 +110,7 @@ static errno_t create_send_buffer(struct krb5child_req *kr,
         return ENOMEM;
     }
 
-    buf->size = 6*sizeof(uint32_t) + strlen(kr->upn);
+    buf->size = 7*sizeof(uint32_t) + strlen(kr->upn);
 
     if (kr->pd->cmd == SSS_PAM_AUTHENTICATE ||
         kr->pd->cmd == SSS_CMD_RENEW ||
@@ -140,6 +142,7 @@ static errno_t create_send_buffer(struct krb5child_req *kr,
     SAFEALIGN_COPY_UINT32(&buf->data[rp], &kr->gid, &rp);
     SAFEALIGN_COPY_UINT32(&buf->data[rp], &validate, &rp);
     SAFEALIGN_COPY_UINT32(&buf->data[rp], &kr->is_offline, &rp);
+    SAFEALIGN_COPY_UINT32(&buf->data[rp], &different_realm, &rp);
 
     SAFEALIGN_SET_UINT32(&buf->data[rp], strlen(kr->upn), &rp);
     safealign_memcpy(&buf->data[rp], kr->upn, strlen(kr->upn), &rp);
@@ -438,6 +441,8 @@ parse_krb5_child_response(TALLOC_CTX *mem_ctx, uint8_t *buf, ssize_t len,
     uint32_t *expiration;
     uint32_t *msg_subtype;
     struct krb5_child_response *res;
+    const char *upn = NULL;
+    size_t upn_len;
 
     if ((size_t) len < sizeof(int32_t)) {
         DEBUG(SSSDBG_CRIT_FAILURE, ("message too short.\n"));
@@ -502,6 +507,11 @@ parse_krb5_child_response(TALLOC_CTX *mem_ctx, uint8_t *buf, ssize_t len,
                   tgtt.authtime, tgtt.starttime, tgtt.endtime, tgtt.renew_till));
         }
 
+        if (msg_type == SSS_KRB5_INFO_UPN) {
+            upn = (char *) buf + p;
+            upn_len = msg_len;
+        }
+
         if (msg_type == SSS_PAM_USER_INFO) {
             msg_subtype = (uint32_t *)&buf[p];
             if (*msg_subtype == SSS_PAM_USER_INFO_EXPIRE_WARN)
@@ -540,6 +550,15 @@ parse_krb5_child_response(TALLOC_CTX *mem_ctx, uint8_t *buf, ssize_t len,
     if (ccname) {
         res->ccname = talloc_strndup(res, ccname, ccname_len);
         if (res->ccname == NULL) {
+            DEBUG(SSSDBG_CRIT_FAILURE, ("talloc_strndup failed.\n"));
+            talloc_free(res);
+            return ENOMEM;
+        }
+    }
+
+    if (upn != NULL) {
+        res->correct_upn = talloc_strndup(res, upn, upn_len);
+        if (res->correct_upn == NULL) {
             DEBUG(SSSDBG_CRIT_FAILURE, ("talloc_strndup failed.\n"));
             talloc_free(res);
             return ENOMEM;

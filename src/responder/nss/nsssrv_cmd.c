@@ -107,6 +107,56 @@ struct setent_ctx {
  * PASSWD db related functions
  ***************************************************************************/
 
+void nss_update_pw_memcache(struct nss_ctx *nctx)
+{
+    struct sss_domain_info *dom;
+    struct ldb_result *res;
+    uint64_t exp;
+    struct sized_string key;
+    const char *id;
+    time_t now;
+    int ret;
+    int i;
+
+    now = time(NULL);
+
+    for (dom = nctx->rctx->domains; dom != NULL; dom = dom->next) {
+        ret = sysdb_enumpwent(nctx, dom->sysdb, &res);
+        if (ret != EOK) {
+            DEBUG(SSSDBG_CRIT_FAILURE,
+                  ("Failed to enumerate users for domain [%s]\n", dom->name));
+            continue;
+        }
+
+        for (i = 0; i < res->count; i++) {
+            exp = ldb_msg_find_attr_as_uint64(res->msgs[i],
+                                              SYSDB_CACHE_EXPIRE, 0);
+            if (exp >= now) {
+                continue;
+            }
+
+            /* names require more manipulation (build up fqname conditionally),
+             * but uidNumber is unique and always resolvable too, so we use
+             * that to update the cache, as it points to the same entry */
+            id = ldb_msg_find_attr_as_string(res->msgs[i], SYSDB_UIDNUM, NULL);
+            if (!id) {
+                DEBUG(SSSDBG_CRIT_FAILURE,
+                      ("Failed to find uidNumber in %s.\n",
+                       ldb_dn_get_linearized(res->msgs[i]->dn)));
+                continue;
+            }
+            to_sized_string(&key, id);
+
+            ret = sss_mmap_cache_pw_invalidate(nctx->pwd_mc_ctx, &key);
+            if (ret != EOK && ret != ENOENT) {
+                DEBUG(SSSDBG_CRIT_FAILURE,
+                      ("Internal failure in memory cache code: %d [%s]\n",
+                       ret, strerror(ret)));
+            }
+        }
+    }
+}
+
 static gid_t get_gid_override(struct ldb_message *msg,
                               struct sss_domain_info *dom)
 {
@@ -173,7 +223,9 @@ static const char *get_shell_override(TALLOC_CTX *mem_ctx,
     user_shell = ldb_msg_find_attr_as_string(msg, SYSDB_SHELL, NULL);
     if (!user_shell) {
         /* Check whether there is a default shell specified */
-        if (nctx->default_shell) {
+        if (dom->default_shell) {
+            return talloc_strdup(mem_ctx, dom->default_shell);
+        } else if (nctx->default_shell) {
             return talloc_strdup(mem_ctx, nctx->default_shell);
         }
         return NULL;
@@ -633,7 +685,7 @@ static int nss_cmd_getpwnam_search(struct nss_dom_ctx *dctx)
         dctx->domain = dom;
 
         talloc_free(name);
-        name = sss_get_cased_name(dctx, cmdctx->name, dom->case_sensitive);
+        name = sss_get_cased_name(cmdctx, cmdctx->name, dom->case_sensitive);
         if (!name) return ENOMEM;
 
         /* verify this user has not yet been negatively cached,
@@ -664,7 +716,9 @@ static int nss_cmd_getpwnam_search(struct nss_dom_ctx *dctx)
             return EIO;
         }
 
-        ret = sysdb_getpwnam(cmdctx, sysdb, name, &dctx->res);
+        /* if this is a subdomain we need to search for the fully qualified
+         * name in the database */
+        ret = sysdb_subdom_getpwnam(cmdctx, sysdb, name, &dctx->res);
         if (ret != EOK) {
             DEBUG(1, ("Failed to make request to our cache!\n"));
             return EIO;
@@ -1742,6 +1796,56 @@ done:
  * GROUP db related functions
  ***************************************************************************/
 
+void nss_update_gr_memcache(struct nss_ctx *nctx)
+{
+    struct sss_domain_info *dom;
+    struct ldb_result *res;
+    uint64_t exp;
+    struct sized_string key;
+    const char *id;
+    time_t now;
+    int ret;
+    int i;
+
+    now = time(NULL);
+
+    for (dom = nctx->rctx->domains; dom != NULL; dom = dom->next) {
+        ret = sysdb_enumgrent(nctx, dom->sysdb, &res);
+        if (ret != EOK) {
+            DEBUG(SSSDBG_CRIT_FAILURE,
+                  ("Failed to enumerate users for domain [%s]\n", dom->name));
+            continue;
+        }
+
+        for (i = 0; i < res->count; i++) {
+            exp = ldb_msg_find_attr_as_uint64(res->msgs[i],
+                                              SYSDB_CACHE_EXPIRE, 0);
+            if (exp >= now) {
+                continue;
+            }
+
+            /* names require more manipulation (build up fqname conditionally),
+             * but uidNumber is unique and always resolvable too, so we use
+             * that to update the cache, as it points to the same entry */
+            id = ldb_msg_find_attr_as_string(res->msgs[i], SYSDB_GIDNUM, NULL);
+            if (!id) {
+                DEBUG(SSSDBG_CRIT_FAILURE,
+                      ("Failed to find gidNumber in %s.\n",
+                       ldb_dn_get_linearized(res->msgs[i]->dn)));
+                continue;
+            }
+            to_sized_string(&key, id);
+
+            ret = sss_mmap_cache_gr_invalidate(nctx->grp_mc_ctx, &key);
+            if (ret != EOK && ret != ENOENT) {
+                DEBUG(SSSDBG_CRIT_FAILURE,
+                      ("Internal failure in memory cache code: %d [%s]\n",
+                       ret, strerror(ret)));
+            }
+        }
+    }
+}
+
 #define GID_ROFFSET 0
 #define MNUM_ROFFSET sizeof(uint32_t)
 #define STRS_ROFFSET 2*sizeof(uint32_t)
@@ -1866,6 +1970,8 @@ static int fill_members(struct sss_packet *packet,
 
         memnum++;
     }
+
+    ret = 0;
 
 done:
     *_memnum = memnum;
@@ -2197,7 +2303,9 @@ static int nss_cmd_getgrnam_search(struct nss_dom_ctx *dctx)
             return EIO;
         }
 
-        ret = sysdb_getgrnam(cmdctx, sysdb, name, &dctx->res);
+        /* if this is a subdomain we need to search for the fully qualified
+         * name in the database */
+        ret = sysdb_subdom_getgrnam(cmdctx, sysdb, name, &dctx->res);
         if (ret != EOK) {
             DEBUG(1, ("Failed to make request to our cache!\n"));
             return EIO;
@@ -2687,7 +2795,7 @@ static void nss_cmd_getgrgid_cb(struct tevent_req *req)
     ret = nss_cmd_getgrgid_search(dctx);
     if (ret == EOK) {
         /* we have results to return */
-        ret = nss_cmd_getpw_send_reply(dctx, true);
+        ret = nss_cmd_getgr_send_reply(dctx, true);
     }
 
 done:
@@ -3233,6 +3341,97 @@ static int nss_cmd_endgrent(struct cli_ctx *cctx)
 done:
     sss_cmd_done(cctx, NULL);
     return EOK;
+}
+
+void nss_update_initgr_memcache(struct nss_ctx *nctx,
+                                const char *name, const char *domain,
+                                int gnum, uint32_t *groups)
+{
+    struct sss_domain_info *dom;
+    struct ldb_result *res;
+    bool changed = false;
+    uint32_t id;
+    uint32_t gids[gnum];
+    int ret;
+    int i, j;
+
+    if (gnum == 0) {
+        /* there are no groups to invalidate in any case, just return */
+        return;
+    }
+
+    for (dom = nctx->rctx->domains; dom != NULL; dom = dom->next) {
+        if (strcasecmp(dom->name, domain) == 0) {
+            break;
+        }
+    }
+
+    if (dom == NULL) {
+        DEBUG(SSSDBG_OP_FAILURE,
+              ("Unknown domain (%s) requested by provider\n", domain));
+        return;
+    }
+
+    ret = sysdb_initgroups(NULL, dom->sysdb, name, &res);
+    if (ret != EOK && ret != ENOENT) {
+        DEBUG(SSSDBG_CRIT_FAILURE,
+              ("Failed to make request to our cache! [%d][%s]\n",
+               ret, strerror(ret)));
+        return;
+    }
+
+    /* copy, we need the original intact in case we need to invalidate
+     * all the original groups */
+    memcpy(gids, groups, gnum * sizeof(uint32_t));
+
+    if (ret == ENOENT || res->count == 0) {
+        changed = true;
+    } else {
+        /* we skip the first entry, it's the user itself */
+        for (i = 1; i < res->count; i++) {
+            id = ldb_msg_find_attr_as_uint(res->msgs[i], SYSDB_GIDNUM, 0);
+            if (id == 0) {
+                /* probably non-posix group, skip */
+                continue;
+            }
+            for (j = 0; j < gnum; j++) {
+                if (gids[j] == id) {
+                    gids[j] = 0;
+                    break;
+                }
+            }
+            if (j >= gnum) {
+                /* we couldn't find a match, this means the groups have
+                 * changed after the refresh */
+                changed = true;
+                break;
+            }
+        }
+
+        if (!changed) {
+            for (j = 0; j < gnum; j++) {
+                if (gids[j] != 0) {
+                    /* we found an un-cleared groups, this means the groups
+                     * have changed after the refresh (some got deleted) */
+                    changed = true;
+                    break;
+                }
+            }
+        }
+    }
+
+    if (changed) {
+        for (i = 0; i < gnum; i++) {
+            id = groups[i];
+
+            ret = sss_mmap_cache_gr_invalidate_gid(nctx->grp_mc_ctx, id);
+            if (ret != EOK && ret != ENOENT) {
+                DEBUG(SSSDBG_CRIT_FAILURE,
+                      ("Internal failure in memory cache code: %d [%s]\n",
+                       ret, strerror(ret)));
+            }
+        }
+    }
 }
 
 /* FIXME: what about mpg, should we return the user's GID ? */

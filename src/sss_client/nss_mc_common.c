@@ -13,9 +13,8 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU Lesser General Public License for more details.
  *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this program; if not, write to the Free Software
- * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ * You should have received a copy of the GNU Lesser General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
 /* NSS interfaces to mmap cache */
@@ -47,6 +46,9 @@ errno_t sss_nss_check_header(struct sss_cli_mc_ctx *ctx)
     /* retry barrier protected reading max 5 times then give up */
     for (count = 5; count > 0; count--) {
         memcpy(&h, ctx->mmap_base, sizeof(struct sss_mc_header));
+        /* we need a barrier here to make sure the compiler does not optimize
+         * too much and avoids updating the register for the next check */
+        __sync_synchronize();
         if (MC_VALID_BARRIER(h.b1) && h.b1 == h.b2) {
             /* record is consistent so we can proceed */
             break;

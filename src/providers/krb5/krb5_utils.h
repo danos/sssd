@@ -32,6 +32,15 @@
 #include "providers/krb5/krb5_auth.h"
 #include "providers/data_provider.h"
 
+errno_t find_or_guess_upn(TALLOC_CTX *mem_ctx, struct ldb_message *msg,
+                          struct krb5_ctx *krb5_ctx,
+                          const char *domain_name, const char *user,
+                          const char *user_dom, char **_upn);
+
+errno_t check_if_cached_upn_needs_update(struct sysdb_ctx *sysdb,
+                                         const char *user,
+                                         const char *upn);
+
 /* Operations on a credential cache */
 typedef errno_t (*cc_be_create_fn)(const char *location, pcre *illegal_re,
                                    uid_t uid, gid_t gid, bool private_path);
@@ -83,4 +92,7 @@ errno_t cc_dir_create(const char *location, pcre *illegal_re,
 
 #endif /* HAVE_KRB5_DIRCACHE */
 
+errno_t get_domain_or_subdomain(TALLOC_CTX *mem_ctx, struct be_ctx *be_ctx,
+                                char *domain_name,
+                                struct sss_domain_info **dom);
 #endif /* __KRB5_UTILS_H__ */

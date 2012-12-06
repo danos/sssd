@@ -22,10 +22,20 @@
     %global with_ccache --with-default-ccache-dir='/run/user/%U' --with-default-ccname-template="DIR:%d/krb5cc"
 %endif
 
+%if (0%{?fedora} >= 16)
+    %global use_systemd 1
+%endif
+
+%if (0%{?use_systemd} == 1)
+    %global with_initscript --with-initscript=systemd --with-systemdunitdir=%{_unitdir}
+%else
+    %global with_initscript --with-initscript=sysv
+%endif
+
 %global enable_experimental 1
 
 %if (0%{?enable_experimental} == 1)
-%global experimental --enable-all-experimental-features
+    %global experimental --enable-all-experimental-features
 %endif
 
 # Determine the location of the LDB modules directory
@@ -33,7 +43,7 @@
 
 Name: @PACKAGE_NAME@
 Version: @PACKAGE_VERSION@
-Release: 0@PRERELEASE_VERSION@%{?dist}
+Release: 1@PRERELEASE_VERSION@%{?dist}
 Group: Applications/System
 Summary: System Security Services Daemon
 License: GPLv3+
@@ -52,10 +62,15 @@ Requires: sssd-client%{?_isa} = %{version}-%{release}
 Requires: libipa_hbac = %{version}-%{release}
 Requires: libsss_idmap = %{version}-%{release}
 Requires: cyrus-sasl-gssapi
-Requires: keyutils-libs
+%if (0%{?use_systemd} == 1)
+Requires(post): systemd-units systemd-sysv
+Requires(preun): systemd-units
+Requires(postun): systemd-units
+%else
 Requires(post): initscripts chkconfig
 Requires(preun):  initscripts chkconfig
 Requires(postun): initscripts chkconfig
+%endif
 
 %global servicename sssd
 %global sssdstatedir %{_localstatedir}/lib/sss
@@ -148,7 +163,6 @@ Provides userspace tools for manipulating users, groups, and nested groups in
 SSSD when using id_provider = local in /etc/sssd/sssd.conf.
 
 Also provides several other administrative tools:
-    * sss_cache to expire cached entries
     * sss_debuglevel to change the debug level on the fly
     * sss_seed which pre-creates a user entry for use in kickstarts
     * sss_obfuscate for generating an obfuscated LDAP password
@@ -250,8 +264,9 @@ autoreconf -ivf
     --enable-pammoddir=/%{_lib}/security \
     --disable-static \
     --disable-rpath \
-    %{with_ccache} \
-    %{experimental}
+    %{?with_ccache} \
+    %{with_initscript} \
+    %{?experimental}
 
 make %{?_smp_mflags} all
 
@@ -310,6 +325,9 @@ for man in `find $RPM_BUILD_ROOT/%{_mandir}/??/man?/ -type f | sed -e "s#$RPM_BU
 do
     lang=`echo $man | cut -c 1-2`
     case `basename $man` in
+        sss_cache*)
+            echo \%lang\(${lang}\) \%{_mandir}/${man}\* >> sssd.lang
+            ;;
         sss_*)
             echo \%lang\(${lang}\) \%{_mandir}/${man}\* >> sssd_tools.lang
             ;;
@@ -322,7 +340,7 @@ do
     esac
 done
 
-# Old versions of rpmbuild require %ghost files to be present in the buildroot
+# Old versions of rpmbuild require ghost files to be present in the buildroot
 mkdir -p $RPM_BUILD_ROOT/%{mcpath}
 touch $RPM_BUILD_ROOT/%{mcpath}/passwd
 touch $RPM_BUILD_ROOT/%{mcpath}/group
@@ -334,8 +352,12 @@ rm -rf $RPM_BUILD_ROOT
 %defattr(-,root,root,-)
 %doc COPYING
 %doc src/examples/sssd-example.conf
-%{_initrddir}/%{name}
 %{_sbindir}/sssd
+%if (0%{?use_systemd} == 1)
+%{_unitdir}/sssd.service
+%else
+%{_initrddir}/%{name}
+%endif
 
 %dir %{_libexecdir}/%{servicename}
 %{_libexecdir}/%{servicename}/krb5_child
@@ -366,6 +388,8 @@ rm -rf $RPM_BUILD_ROOT
 %{ldb_modulesdir}/memberof.so
 %{_bindir}/sss_ssh_authorizedkeys
 %{_bindir}/sss_ssh_knownhostsproxy
+%{_sbindir}/sss_cache
+
 %dir %{sssdstatedir}
 %dir %{_localstatedir}/cache/krb5rcache
 %attr(700,root,root) %dir %{dbpath}
@@ -392,6 +416,7 @@ rm -rf $RPM_BUILD_ROOT
 %{_mandir}/man5/sssd-simple.5*
 %{_mandir}/man5/sssd-sudo.5*
 %{_mandir}/man8/sssd.8*
+%{_mandir}/man8/sss_cache.8*
 %{_mandir}/man1/sss_ssh_authorizedkeys.1*
 %{_mandir}/man1/sss_ssh_knownhostsproxy.1*
 %{python_sitearch}/pysss.so
@@ -422,7 +447,6 @@ rm -rf $RPM_BUILD_ROOT
 %{_sbindir}/sss_groupmod
 %{_sbindir}/sss_groupshow
 %{_sbindir}/sss_obfuscate
-%{_sbindir}/sss_cache
 %{_sbindir}/sss_debuglevel
 %{_sbindir}/sss_seed
 %{_mandir}/man8/sss_groupadd.8*
@@ -433,7 +457,6 @@ rm -rf $RPM_BUILD_ROOT
 %{_mandir}/man8/sss_userdel.8*
 %{_mandir}/man8/sss_usermod.8*
 %{_mandir}/man8/sss_obfuscate.8*
-%{_mandir}/man8/sss_cache.8*
 %{_mandir}/man8/sss_debuglevel.8*
 %{_mandir}/man8/sss_seed.8*
 
@@ -503,6 +526,42 @@ A utility library to allow communication between Autofs and SSSD
 %doc src/sss_client/COPYING src/sss_client/COPYING.LESSER
 %{_libdir}/sssd/modules/libsss_autofs.so*
 
+%if (0%{?use_systemd} == 1)
+# systemd
+%post
+if [ $1 -eq 1 ] ; then
+    # Initial installation
+    /bin/systemctl daemon-reload >/dev/null 2>&1 || :
+fi
+
+%preun
+if [ $1 -eq 0 ] ; then
+    # Package removal, not upgrade
+    /bin/systemctl --no-reload disable sssd.service > /dev/null 2>&1 || :
+    /bin/systemctl stop sssd.service > /dev/null 2>&1 || :
+fi
+
+%postun
+/bin/systemctl daemon-reload >/dev/null 2>&1 || :
+if [ $1 -ge 1 ] ; then
+    # Package upgrade, not uninstall
+    /bin/systemctl try-restart sssd.service >/dev/null 2>&1 || :
+fi
+
+%triggerun -- sssd < 1.9.3-1
+# Save the current service runlevel info
+# User must manually run systemd-sysv-convert --apply sssd
+# to migrate them to systemd targets
+/usr/bin/systemd-sysv-convert --save sssd >/dev/null 2>&1 ||:
+
+# If the package is allowed to autostart:
+/bin/systemctl --no-reload enable sssd.service >/dev/null 2>&1 ||:
+
+# Run these because the SysV package being removed won't do them
+/sbin/chkconfig --del sssd >/dev/null 2>&1 || :
+/bin/systemctl try-restart sssd.service >/dev/null 2>&1 || :
+%else
+# sysv
 %post
 /sbin/chkconfig --add %{servicename}
 
@@ -515,6 +574,7 @@ if [ $1 = 0 ]; then
     /sbin/service %{servicename} stop 2>&1 > /dev/null
     /sbin/chkconfig --del %{servicename}
 fi
+%endif
 
 %post client -p /sbin/ldconfig
 

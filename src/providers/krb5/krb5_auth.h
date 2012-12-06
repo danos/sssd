@@ -45,7 +45,7 @@ struct krb5child_req {
     const char *ccname;
     const char *old_ccname;
     const char *homedir;
-    const char *upn;
+    char *upn;
     uid_t uid;
     gid_t gid;
     bool is_offline;
@@ -54,6 +54,7 @@ struct krb5child_req {
     bool active_ccache_present;
     bool valid_tgt_present;
     bool run_as_user;
+    bool upn_from_different_realm;
 };
 
 errno_t krb5_setup(TALLOC_CTX *mem_ctx, struct pam_data *pd,
@@ -79,6 +80,7 @@ struct krb5_child_response {
     int32_t msg_status;
     struct tgt_times tgtt;
     char *ccname;
+    char *correct_upn;
 };
 
 errno_t

@@ -614,7 +614,7 @@ errno_t sysdb_store_domuser(struct sss_domain_info *domain,
     CHECK_DOMAIN_INFO(domain);
 
     return sysdb_store_user(domain->sysdb, name, pwd, uid, gid, gecos, homedir,
-                            shell, attrs, remove_attrs, cache_timeout, now);
+                            shell, NULL, attrs, remove_attrs, cache_timeout, now);
 }
 
 errno_t sysdb_delete_domuser(struct sss_domain_info *domain,
@@ -667,4 +667,44 @@ errno_t sysdb_delete_domgroup(struct sss_domain_info *domain,
     CHECK_DOMAIN_INFO(domain);
 
     return sysdb_delete_group(domain->sysdb, name, gid);
+}
+
+int sysdb_subdom_getpwnam(TALLOC_CTX *mem_ctx,
+                          struct sysdb_ctx *sysdb,
+                          const char *name,
+                          struct ldb_result **res)
+{
+    char *src_name = NULL;
+    int ret;
+
+    if (sysdb->domain->parent) {
+        src_name = talloc_asprintf(mem_ctx, sysdb->domain->names->fq_fmt,
+                                   name, sysdb->domain->name);
+        if (!src_name) return ENOMEM;
+    }
+
+    ret = sysdb_getpwnam(mem_ctx, sysdb, src_name ? src_name : name, res);
+    talloc_zfree(src_name);
+
+    return ret;
+}
+
+int sysdb_subdom_getgrnam(TALLOC_CTX *mem_ctx,
+                          struct sysdb_ctx *sysdb,
+                          const char *name,
+                          struct ldb_result **res)
+{
+    char *src_name = NULL;
+    int ret;
+
+    if (sysdb->domain->parent) {
+        src_name = talloc_asprintf(mem_ctx, sysdb->domain->names->fq_fmt,
+                                   name, sysdb->domain->name);
+        if (!src_name) return ENOMEM;
+    }
+
+    ret = sysdb_getgrnam(mem_ctx, sysdb, src_name ? src_name : name, res);
+    talloc_zfree(src_name);
+
+    return ret;
 }

@@ -203,22 +203,6 @@
                         </listitem>
                     </varlistentry>
                     <varlistentry>
-                        <term>force_timeout (integer)</term>
-                        <listitem>
-                            <para>
-                                If a service is not responding to ping checks (see
-                                the <quote>timeout</quote> option), it is first sent
-                                the SIGTERM signal that instructs it to quit gracefully.
-                                If the service does not terminate after <quote>force_timeout</quote>
-                                seconds, the monitor will forcibly shut it down by
-                                sending a SIGKILL signal.
-                            </para>
-                            <para>
-                                Default: 60
-                            </para>
-                        </listitem>
-                    </varlistentry>
-                    <varlistentry>
                         <term>default_domain_suffix (string)</term>
                         <listitem>
                             <para>
@@ -341,6 +325,22 @@
                             descriptor without communicating on it. This value
                             is limited in order to avoid resource exhaustion
                             on the system.
+                        </para>
+                        <para>
+                            Default: 60
+                        </para>
+                    </listitem>
+                </varlistentry>
+                <varlistentry>
+                    <term>force_timeout (integer)</term>
+                    <listitem>
+                        <para>
+                            If a service is not responding to ping checks (see
+                            the <quote>timeout</quote> option), it is first sent
+                            the SIGTERM signal that instructs it to quit gracefully.
+                            If the service does not terminate after <quote>force_timeout</quote>
+                            seconds, the monitor will forcibly shut it down by
+                            sending a SIGKILL signal.
                         </para>
                         <para>
                             Default: 60
@@ -585,7 +585,8 @@ override_homedir = /home/%u
                         <para>
                             The default shell to use if the provider does not
                             return one during lookup. This option supersedes
-                            any other shell options if it takes effect.
+                            any other shell options if it takes effect and can
+                            be set either in the [nss] section or per-domain.
                         </para>
                         <para>
                             Default: not set (Return NULL if no shell is
@@ -812,18 +813,6 @@ override_homedir = /home/%u
                         </para>
                     </listitem>
                 </varlistentry>
-                <varlistentry>
-                    <term>ssh_known_hosts_timeout (integer)</term>
-                    <listitem>
-                        <para>
-                            How many seconds to keep a host in the managed
-                            known_hosts file after its host keys were requested.
-                        </para>
-                        <para>
-                            Default: 180
-                        </para>
-                    </listitem>
-                </varlistentry>
             </variablelist>
             <xi:include xmlns:xi="http://www.w3.org/2001/XInclude" href="include/autofs_restart.xml" />
         </refsect2>
@@ -843,6 +832,18 @@ override_homedir = /home/%u
                         </para>
                         <para>
                             Default: true
+                        </para>
+                    </listitem>
+                </varlistentry>
+                <varlistentry>
+                    <term>ssh_known_hosts_timeout (integer)</term>
+                    <listitem>
+                        <para>
+                            How many seconds to keep a host in the managed
+                            known_hosts file after its host keys were requested.
+                        </para>
+                        <para>
+                            Default: 180
                         </para>
                     </listitem>
                 </varlistentry>
@@ -971,6 +972,22 @@ override_homedir = /home/%u
                             enumeration lookups are completed successfully.
                             For more information, refer to the man pages for
                             the specific id_provider in use.
+                        </para>
+                    </listitem>
+                </varlistentry>
+                <varlistentry>
+                    <term>force_timeout (integer)</term>
+                    <listitem>
+                        <para>
+                            If a service is not responding to ping checks (see
+                            the <quote>timeout</quote> option), it is first sent
+                            the SIGTERM signal that instructs it to quit gracefully.
+                            If the service does not terminate after <quote>force_timeout</quote>
+                            seconds, the monitor will forcibly shut it down by
+                            sending a SIGKILL signal.
+                        </para>
+                        <para>
+                            Default: 60
                         </para>
                     </listitem>
                 </varlistentry>
@@ -1394,8 +1411,9 @@ override_homedir = /home/%u
                     <term>subdomains_provider (string)</term>
                     <listitem>
                         <para>
-                            The provider which should handle fetching of subdomains.
-                            This value should be always the same as id_provider.
+                            The provider which should handle fetching of
+                            subdomains. This value should be always the same as
+                            id_provider.
                             Supported subdomain providers are:
                         </para>
                         <para>
@@ -1404,13 +1422,16 @@ override_homedir = /home/%u
                             <citerefentry>
                                 <refentrytitle>sssd-ipa</refentrytitle>
                                 <manvolnum>5</manvolnum>
-                            </citerefentry> for more information on configuring IPA.
+                            </citerefentry> for more information on configuring
+                            IPA.
                         </para>
                         <para>
-                            <quote>none</quote> disallows fetching subdomains explicitly.
+                            <quote>none</quote> disallows fetching subdomains
+                            explicitly.
                         </para>
                         <para>
-                            Default: none
+                            Default: The value of <quote>id_provider</quote> is
+                            used if it is set.
                         </para>
                     </listitem>
                 </varlistentry>

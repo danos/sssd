@@ -124,6 +124,7 @@
 #define SYSDB_ORIG_DN "originalDN"
 #define SYSDB_ORIG_MODSTAMP "originalModifyTimestamp"
 #define SYSDB_ORIG_MEMBEROF "originalMemberOf"
+#define SYSDB_ORIG_MEMBER "orig_member"
 #define SYSDB_ORIG_MEMBER_USER "originalMemberUser"
 #define SYSDB_ORIG_MEMBER_HOST "originalMemberHost"
 
@@ -200,6 +201,7 @@
 #define SYSDB_INITGR_ATTR SYSDB_MEMBEROF
 #define SYSDB_INITGR_ATTRS {SYSDB_GIDNUM, SYSDB_POSIX, \
                             SYSDB_DEFAULT_ATTRS, \
+                            SYSDB_ORIG_DN, \
                             NULL}
 
 #define SYSDB_TMPL_USER SYSDB_NAME"=%s,"SYSDB_TMPL_USER_BASE
@@ -212,6 +214,36 @@
 #define SYSDB_MOD_ADD LDB_FLAG_MOD_ADD
 #define SYSDB_MOD_DEL LDB_FLAG_MOD_DELETE
 #define SYSDB_MOD_REP LDB_FLAG_MOD_REPLACE
+
+/* sysdb version check macros */
+#define SYSDB_VERSION_ERROR_HINT \
+    ERROR("Removing cache files in "DB_PATH" should fix the issue, " \
+          "but note that removing cache files will also remove all of your " \
+          "cached credentials.\n")
+
+#define SYSDB_VERSION_LOWER_ERROR(ret) do { \
+    if (ret == EUCLEAN) { \
+        ERROR("Lower version of database is expected!\n"); \
+        SYSDB_VERSION_ERROR_HINT; \
+    } \
+} while(0)
+
+#define SYSDB_VERSION_HIGHER_ERROR(ret) do { \
+    if (ret == EMEDIUMTYPE) { \
+        ERROR("Higher version of database is expected!\n"); \
+        ERROR("In order to upgrade the database, you must run SSSD.\n"); \
+        SYSDB_VERSION_ERROR_HINT; \
+    } \
+} while(0)
+
+/* use this in daemons */
+#define SYSDB_VERSION_ERROR_DAEMON(ret) \
+    SYSDB_VERSION_LOWER_ERROR(ret)
+
+/* use this in tools */
+#define SYSDB_VERSION_ERROR(ret) \
+    SYSDB_VERSION_LOWER_ERROR(ret); \
+    SYSDB_VERSION_HIGHER_ERROR(ret)
 
 struct confdb_ctx;
 struct sysdb_ctx;
@@ -328,6 +360,7 @@ struct ldb_dn *sysdb_netgroup_base_dn(struct sysdb_ctx *sysdb, TALLOC_CTX *mem_c
 errno_t sysdb_group_dn_name(struct sysdb_ctx *sysdb, TALLOC_CTX *mem_ctx,
                             const char *dn_str, char **name);
 struct ldb_dn *sysdb_domain_dn(struct sysdb_ctx *sysdb, TALLOC_CTX *mem_ctx);
+struct ldb_dn *sysdb_base_dn(struct sysdb_ctx *sysdb, TALLOC_CTX *mem_ctx);
 struct ldb_dn *sysdb_custom_dn(struct sysdb_ctx *sysdb, TALLOC_CTX *mem_ctx,
                                const char *object_name,
                                const char *subtree_name);
@@ -419,6 +452,15 @@ errno_t sysdb_store_domgroup(struct sss_domain_info *domain,
                              time_t now);
 errno_t sysdb_delete_domgroup(struct sss_domain_info *domain,
                               const char *name, gid_t gid);
+
+int sysdb_subdom_getpwnam(TALLOC_CTX *mem_ctx,
+                          struct sysdb_ctx *sysdb,
+                          const char *name,
+                          struct ldb_result **res);
+int sysdb_subdom_getgrnam(TALLOC_CTX *mem_ctx,
+                          struct sysdb_ctx *sysdb,
+                          const char *name,
+                          struct ldb_result **res);
 
 errno_t sysdb_get_ranges(TALLOC_CTX *mem_ctx, struct sysdb_ctx *sysdb,
                              size_t *range_count,
@@ -621,6 +663,7 @@ int sysdb_add_user(struct sysdb_ctx *sysdb,
                    const char *gecos,
                    const char *homedir,
                    const char *shell,
+                   const char *orig_dn,
                    struct sysdb_attrs *attrs,
                    int cache_timeout,
                    time_t now);
@@ -667,6 +710,7 @@ int sysdb_store_user(struct sysdb_ctx *sysdb,
                      const char *gecos,
                      const char *homedir,
                      const char *shell,
+                     const char *orig_dn,
                      struct sysdb_attrs *attrs,
                      char **remove_attrs,
                      uint64_t cache_timeout,

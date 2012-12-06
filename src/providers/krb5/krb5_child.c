@@ -36,8 +36,9 @@
 #include "providers/dp_backend.h"
 #include "providers/krb5/krb5_auth.h"
 #include "providers/krb5/krb5_utils.h"
+#include "sss_cli.h"
 
-#define SSSD_KRB5_CHANGEPW_PRINCIPAL "kadmin/changepw"
+#define SSSD_KRB5_CHANGEPW_PRINCIPAL discard_const("kadmin/changepw")
 
 struct krb5_child_ctx {
     /* opts taken from kinit */
@@ -89,6 +90,7 @@ struct krb5_req {
     char *ccname;
     char *keytab;
     bool validate;
+    bool upn_from_different_realm;
     char *fast_ccname;
 
     const char *upn;
@@ -98,6 +100,49 @@ struct krb5_req {
 
 static krb5_context krb5_error_ctx;
 #define KRB5_CHILD_DEBUG(level, error) KRB5_DEBUG(level, krb5_error_ctx, error)
+
+static krb5_error_code get_changepw_options(krb5_context ctx,
+                                            krb5_get_init_creds_opt **_options)
+{
+    krb5_get_init_creds_opt *options;
+    krb5_error_code kerr;
+
+    kerr = sss_krb5_get_init_creds_opt_alloc(ctx, &options);
+    if (kerr != 0) {
+        KRB5_CHILD_DEBUG(SSSDBG_CRIT_FAILURE, kerr);
+        return kerr;
+    }
+
+    sss_krb5_get_init_creds_opt_set_canonicalize(options, 0);
+    krb5_get_init_creds_opt_set_forwardable(options, 0);
+    krb5_get_init_creds_opt_set_proxiable(options, 0);
+    krb5_get_init_creds_opt_set_renew_life(options, 0);
+    krb5_get_init_creds_opt_set_tkt_life(options, 5*60);
+
+    *_options = options;
+
+    return 0;
+}
+
+static errno_t sss_send_pac(krb5_authdata **pac_authdata)
+{
+    struct sss_cli_req_data sss_data;
+    int ret;
+    int errnop;
+
+    sss_data.len = pac_authdata[0]->length;
+    sss_data.data = pac_authdata[0]->contents;
+
+    ret = sss_pac_make_request(SSS_PAC_ADD_PAC_USER, &sss_data,
+                               NULL, NULL, &errnop);
+    if (ret != NSS_STATUS_SUCCESS || errnop != 0) {
+        DEBUG(SSSDBG_OP_FAILURE, ("sss_pac_make_request failed [%d][%d].\n",
+                                  ret, errnop));
+        return EIO;
+    }
+
+    return EOK;
+}
 
 static void sss_krb5_expire_callback_func(krb5_context context, void *data,
                                           krb5_timestamp password_expiration,
@@ -665,10 +710,13 @@ static errno_t sendresponse(int fd, krb5_error_code kerr, int pam_status,
     return EOK;
 }
 
-static errno_t add_ticket_times_to_response(struct krb5_req *kr)
+static errno_t add_ticket_times_and_upn_to_response(struct krb5_req *kr)
 {
     int ret;
     int64_t t[4];
+    krb5_error_code kerr;
+    char *upn = NULL;
+    unsigned int upn_len = 0;
 
     t[0] = (int64_t) kr->creds->times.authtime;
     t[1] = (int64_t) kr->creds->times.starttime;
@@ -679,8 +727,24 @@ static errno_t add_ticket_times_to_response(struct krb5_req *kr)
                            4*sizeof(int64_t), (uint8_t *) t);
     if (ret != EOK) {
         DEBUG(1, ("pack_response_packet failed.\n"));
+        goto done;
     }
 
+    kerr = krb5_unparse_name_ext(kr->ctx, kr->creds->client, &upn, &upn_len);
+    if (kerr != 0) {
+        DEBUG(SSSDBG_OP_FAILURE, ("krb5_unparse_name failed.\n"));
+        goto done;
+    }
+
+    ret = pam_add_response(kr->pd, SSS_KRB5_INFO_UPN, upn_len,
+                           (uint8_t *) upn);
+    krb5_free_unparsed_name(kr->ctx, upn);
+    if (ret != EOK) {
+        DEBUG(1, ("pack_response_packet failed.\n"));
+        goto done;
+    }
+
+done:
     return ret;
 }
 
@@ -695,6 +759,8 @@ static krb5_error_code validate_tgt(struct krb5_req *kr)
     krb5_verify_init_creds_opt opt;
     krb5_principal validation_princ = NULL;
     bool realm_entry_found = false;
+    krb5_ccache validation_ccache = NULL;
+    krb5_authdata **pac_authdata = NULL;
 
     memset(&keytab, 0, sizeof(keytab));
     kerr = krb5_kt_resolve(kr->ctx, kr->keytab, &keytab);
@@ -777,7 +843,7 @@ static krb5_error_code validate_tgt(struct krb5_req *kr)
 
     krb5_verify_init_creds_opt_init(&opt);
     kerr = krb5_verify_init_creds(kr->ctx, kr->creds, validation_princ, keytab,
-                                  NULL, &opt);
+                                  &validation_ccache, &opt);
 
     if (kerr == 0) {
         DEBUG(SSSDBG_TRACE_FUNC, ("TGT verified using key for [%s].\n",
@@ -785,9 +851,37 @@ static krb5_error_code validate_tgt(struct krb5_req *kr)
     } else {
         DEBUG(SSSDBG_CRIT_FAILURE ,("TGT failed verification using key " \
                                     "for [%s].\n", principal));
+        goto done;
+    }
+
+    /* Try to find and send the PAC to the PAC responder for principals which
+     * do not belong to our realm. Failures are not critical. */
+    if (kr->upn_from_different_realm) {
+        kerr = sss_extract_pac(kr->ctx, validation_ccache, validation_princ,
+                               kr->creds->client, keytab, &pac_authdata);
+        if (kerr != 0) {
+            DEBUG(SSSDBG_OP_FAILURE, ("sss_extract_and_send_pac failed, group " \
+                                      "membership for user with principal [%s] " \
+                                      "might not be correct.\n", kr->name));
+            kerr = 0;
+            goto done;
+        }
+
+        kerr = sss_send_pac(pac_authdata);
+        krb5_free_authdata(kr->ctx, pac_authdata);
+        if (kerr != 0) {
+            DEBUG(SSSDBG_OP_FAILURE, ("sss_send_pac failed, group " \
+                                      "membership for user with principal [%s] " \
+                                      "might not be correct.\n", kr->name));
+            kerr = 0;
+        }
     }
 
 done:
+    if (validation_ccache != NULL) {
+        krb5_cc_destroy(kr->ctx, validation_ccache);
+    }
+
     if (krb5_kt_close(kr->ctx, keytab) != 0) {
         DEBUG(SSSDBG_MINOR_FAILURE, ("krb5_kt_close failed"));
     }
@@ -915,9 +1009,9 @@ static krb5_error_code get_and_save_tgt(struct krb5_req *kr,
         goto done;
     }
 
-    ret = add_ticket_times_to_response(kr);
+    ret = add_ticket_times_and_upn_to_response(kr);
     if (ret != EOK) {
-        DEBUG(1, ("add_ticket_times_to_response failed.\n"));
+        DEBUG(1, ("add_ticket_times_and_upn_to_response failed.\n"));
     }
 
     kerr = 0;
@@ -981,10 +1075,10 @@ static errno_t changepw_child(int fd, struct krb5_req *kr)
     char *user_error_message = NULL;
     size_t user_resp_len;
     uint8_t *user_resp;
-    char *changepw_princ = NULL;
     krb5_prompter_fct prompter = sss_krb5_prompter;
     const char *realm_name;
     int realm_length;
+    krb5_get_init_creds_opt *chagepw_options;
 
     DEBUG(SSSDBG_TRACE_LIBS, ("Password change operation\n"));
 
@@ -1002,19 +1096,15 @@ static errno_t changepw_child(int fd, struct krb5_req *kr)
         goto sendresponse;
     }
 
-    changepw_princ = talloc_asprintf(kr, "%s@%s", SSSD_KRB5_CHANGEPW_PRINCIPAL,
-                                                  kr->krb5_ctx->realm);
-    if (changepw_princ == NULL) {
-        DEBUG(1, ("talloc_asprintf failed.\n"));
-        kerr = KRB5KRB_ERR_GENERIC;
-        goto sendresponse;
-    }
-    DEBUG(SSSDBG_FUNC_DATA,
-          ("Created a changepw principal [%s]\n", changepw_princ));
-
     if (kr->pd->cmd == SSS_PAM_CHAUTHTOK_PRELIM) {
         /* We do not need a password expiration warning here. */
         prompter = NULL;
+    }
+
+    kerr = get_changepw_options(kr->ctx, &chagepw_options);
+    if (kerr != 0) {
+        DEBUG(SSSDBG_OP_FAILURE, ("get_changepw_options failed.\n"));
+        goto sendresponse;
     }
 
     sss_krb5_princ_realm(kr->ctx, kr->princ, &realm_name, &realm_length);
@@ -1023,8 +1113,9 @@ static errno_t changepw_child(int fd, struct krb5_req *kr)
           ("Attempting kinit for realm [%s]\n",realm_name));
     kerr = krb5_get_init_creds_password(kr->ctx, kr->creds, kr->princ,
                                         pass_str, prompter, kr, 0,
-                                        changepw_princ,
-                                        kr->options);
+                                        SSSD_KRB5_CHANGEPW_PRINCIPAL,
+                                        chagepw_options);
+    sss_krb5_get_init_creds_opt_free(kr->ctx, chagepw_options);
     if (kerr != 0) {
         pam_status = kerr_handle_error(kerr);
         goto sendresponse;
@@ -1130,8 +1221,8 @@ static errno_t tgt_req_child(int fd, struct krb5_req *kr)
     int ret;
     krb5_error_code kerr = 0;
     char *pass_str = NULL;
-    char *changepw_princ = NULL;
     int pam_status = PAM_SYSTEM_ERR;
+    krb5_get_init_creds_opt *chagepw_options;
 
     DEBUG(SSSDBG_TRACE_LIBS, ("Attempting to get a TGT\n"));
 
@@ -1150,16 +1241,6 @@ static errno_t tgt_req_child(int fd, struct krb5_req *kr)
         goto sendresponse;
     }
 
-    changepw_princ = talloc_asprintf(kr, "%s@%s", SSSD_KRB5_CHANGEPW_PRINCIPAL,
-                                                  kr->krb5_ctx->realm);
-    if (changepw_princ == NULL) {
-        DEBUG(1, ("talloc_asprintf failed.\n"));
-        kerr = KRB5KRB_ERR_GENERIC;
-        goto sendresponse;
-    }
-    DEBUG(SSSDBG_FUNC_DATA,
-          ("Created a changepw principal [%s]\n", changepw_princ));
-
     kerr = get_and_save_tgt(kr, pass_str);
 
     /* If the password is expired the KDC will always return
@@ -1175,10 +1256,20 @@ static errno_t tgt_req_child(int fd, struct krb5_req *kr)
             KRB5_CHILD_DEBUG(SSSDBG_CRIT_FAILURE, kerr);
             DEBUG(1, ("Failed to unset expire callback, continue ...\n"));
         }
+
+        kerr = get_changepw_options(kr->ctx, &chagepw_options);
+        if (kerr != 0) {
+            DEBUG(SSSDBG_OP_FAILURE, ("get_changepw_options failed.\n"));
+            goto sendresponse;
+        }
+
         kerr = krb5_get_init_creds_password(kr->ctx, kr->creds, kr->princ,
                                             pass_str, sss_krb5_prompter, kr, 0,
-                                            changepw_princ,
-                                            kr->options);
+                                            SSSD_KRB5_CHANGEPW_PRINCIPAL,
+                                            chagepw_options);
+
+        sss_krb5_get_init_creds_opt_free(kr->ctx, chagepw_options);
+
         krb5_free_cred_contents(kr->ctx, kr->creds);
         if (kerr == 0) {
             kerr = KRB5KDC_ERR_KEY_EXP;
@@ -1308,9 +1399,9 @@ static errno_t renew_tgt_child(int fd, struct krb5_req *kr)
         goto done;
     }
 
-    ret = add_ticket_times_to_response(kr);
+    ret = add_ticket_times_and_upn_to_response(kr);
     if (ret != EOK) {
-        DEBUG(1, ("add_ticket_times_to_response failed.\n"));
+        DEBUG(1, ("add_ticket_times_and_upn_to_response failed.\n"));
     }
 
     status = PAM_SUCCESS;
@@ -1359,6 +1450,7 @@ static errno_t unpack_buffer(uint8_t *buf, size_t size, struct pam_data *pd,
     size_t p = 0;
     uint32_t len;
     uint32_t validate;
+    uint32_t different_realm;
 
     DEBUG(SSSDBG_TRACE_LIBS, ("total buffer size: [%d]\n", size));
 
@@ -1370,6 +1462,8 @@ static errno_t unpack_buffer(uint8_t *buf, size_t size, struct pam_data *pd,
     SAFEALIGN_COPY_UINT32_CHECK(&validate, buf + p, size, &p);
     kr->validate = (validate == 0) ? false : true;
     SAFEALIGN_COPY_UINT32_CHECK(offline, buf + p, size, &p);
+    SAFEALIGN_COPY_UINT32_CHECK(&different_realm, buf + p, size, &p);
+    kr->upn_from_different_realm = (different_realm == 0) ? false : true;
     SAFEALIGN_COPY_UINT32_CHECK(&len, buf + p, size, &p);
     if ((p + len ) > size) return EINVAL;
     kr->upn = talloc_strndup(pd, (char *)(buf + p), len);

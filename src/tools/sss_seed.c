@@ -631,6 +631,7 @@ static int seed_init_db(TALLOC_CTX *mem_ctx,
     ret = sysdb_init_domain_and_sysdb(tmp_ctx, confdb, domain_name,
                                       DB_PATH, &domain, &sysdb);
     if (ret != EOK) {
+        SYSDB_VERSION_ERROR(ret);
         DEBUG(SSSDBG_CRIT_FAILURE,
               ("Could not initialize connection to domain '%s' in sysdb.%s\n",
                domain_name, ret == ENOENT ? " Domain not found." : ""));
@@ -739,7 +740,7 @@ static int seed_cache_user(struct seed_ctx *sctx)
         ret = sysdb_add_user(sctx->sysdb, sctx->uctx->name,
                              sctx->uctx->uid, sctx->uctx->gid,
                              sctx->uctx->gecos, sctx->uctx->home,
-                             sctx->uctx->shell, NULL, 0, 0);
+                             sctx->uctx->shell, NULL, NULL, 0, 0);
         if (ret != EOK) {
             DEBUG(SSSDBG_OP_FAILURE,
                   ("Failed to add user to the cache. (%d)[%s]\n",

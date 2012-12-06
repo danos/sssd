@@ -93,30 +93,16 @@ int sss_sudo_send_recv(uid_t uid,
                        uint32_t *_error,
                        struct sss_sudo_result **_result)
 {
-    char *fullname = NULL;
     int ret;
 
     if (username == NULL || strlen(username) == 0) {
         return EINVAL;
     }
 
-    if (domainname != NULL) {
-        ret = asprintf(&fullname, "%s@%s", username, domainname);
-        if (ret == -1) {
-            return ENOMEM;
-        }
-    } else {
-        fullname = strdup(username);
-        if (fullname == NULL) {
-            return ENOMEM;
-        }
-    }
-
     /* send query and receive response */
 
-    ret = sss_sudo_send_recv_generic(SSS_SUDO_GET_SUDORULES, uid, fullname,
+    ret = sss_sudo_send_recv_generic(SSS_SUDO_GET_SUDORULES, uid, username,
                                      _error, NULL, _result);
-    free(fullname);
     return ret;
 }
 

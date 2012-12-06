@@ -170,4 +170,16 @@ typedef krb5_times sss_krb5_ticket_times;
 /* Redirect libkrb5 tracing towards our DEBUG statements */
 errno_t sss_child_set_krb5_tracing(krb5_context ctx);
 
+krb5_error_code sss_krb5_find_authdata(krb5_context context,
+                                       krb5_authdata *const *ticket_authdata,
+                                       krb5_authdata *const *ap_req_authdata,
+                                       krb5_authdatatype ad_type,
+                                       krb5_authdata ***results);
+
+krb5_error_code sss_extract_pac(krb5_context ctx,
+                                krb5_ccache ccache,
+                                krb5_principal server_principal,
+                                krb5_principal client_principal,
+                                krb5_keytab keytab,
+                                krb5_authdata ***_pac_authdata);
 #endif /* __SSS_KRB5_H__ */

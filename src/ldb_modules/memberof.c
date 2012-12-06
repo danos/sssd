@@ -33,6 +33,8 @@
 #define DB_MEMBERUID "memberuid"
 #define DB_NAME "name"
 #define DB_USER_CLASS "user"
+#define DB_GROUP_CLASS "group"
+#define DB_CACHE_EXPIRE "dataExpireTimestamp"
 #define DB_OC "objectClass"
 
 #ifndef talloc_zfree
@@ -42,6 +44,11 @@
 #ifndef MAX
 #define MAX(a,b) (((a) > (b)) ? (a) : (b))
 #endif
+
+struct mbof_val_array {
+    struct ldb_val *vals;
+    int num;
+};
 
 struct mbof_dn_array {
     struct ldb_dn **dns;
@@ -133,17 +140,36 @@ struct mbof_del_ctx {
     int num_muops;
     int cur_muop;
 
+    struct mbof_memberuid_op *ghops;
+    int num_ghops;
+    int cur_ghop;
+
     struct mbof_mod_ctx *follow_mod;
     bool is_mod;
+};
+
+struct mbof_mod_del_op {
+    struct mbof_mod_ctx *mod_ctx;
+
+    struct ldb_message *mod_msg;
+    struct ldb_message_element *el;
+
+    hash_table_t *inherited_gh;
 };
 
 struct mbof_mod_ctx {
     struct mbof_ctx *ctx;
 
     const struct ldb_message_element *membel;
+    const struct ldb_message_element *ghel;
     struct ldb_message *entry;
 
-    struct mbof_dn_array *to_add;
+    struct mbof_dn_array *mb_add;
+    struct mbof_dn_array *mb_remove;
+
+    struct mbof_val_array *gh_add;
+    struct mbof_val_array *gh_remove;
+    struct mbof_mod_del_op *igh;
 
     struct ldb_message *msg;
     bool terminate;
@@ -165,7 +191,18 @@ static struct mbof_ctx *mbof_init(struct ldb_module *module,
     return ctx;
 }
 
-static int entry_is_user_object(struct ldb_message *entry)
+static void *hash_alloc(const size_t size, void *pvt)
+{
+    return talloc_size(pvt, size);
+}
+
+static void hash_free(void *ptr, void *pvt)
+{
+    talloc_free(ptr);
+}
+
+static int entry_has_objectclass(struct ldb_message *entry,
+                                 const char *objectclass)
 {
     struct ldb_message_element *el;
     struct ldb_val *val;
@@ -179,12 +216,22 @@ static int entry_is_user_object(struct ldb_message *entry)
     /* see if this is a user */
     for (i = 0; i < el->num_values; i++) {
         val = &(el->values[i]);
-        if (strncasecmp(DB_USER_CLASS, (char *)val->data, val->length) == 0) {
+        if (strncasecmp(objectclass, (char *)val->data, val->length) == 0) {
             return LDB_SUCCESS;
         }
     }
 
     return LDB_ERR_NO_SUCH_ATTRIBUTE;
+}
+
+static int entry_is_user_object(struct ldb_message *entry)
+{
+    return entry_has_objectclass(entry, DB_USER_CLASS);
+}
+
+static int entry_is_group_object(struct ldb_message *entry)
+{
+    return entry_has_objectclass(entry, DB_GROUP_CLASS);
 }
 
 static int mbof_append_muop(TALLOC_CTX *memctx,
@@ -289,7 +336,19 @@ static int mbof_append_muop(TALLOC_CTX *memctx,
  * we proceed to store the user name.
  *
  * At the end we will add a memberuid attribute to our new object that
- * includes all direct and indeirect user members names.
+ * includes all direct and indirect user members names.
+ *
+ * Group objects can also contain a "ghost" attribute. A ghost attribute
+ * represents a user that is a member of the group but has not yet been
+ * looked up so there is no real user entry with member/memberof links.
+ *
+ * If an object being added contains a "ghost" attribute, the ghost attribute
+ * is in turn copied to all parents of that object so that retrieving a
+ * group returns both its direct and indirect members. The ghost attribute is
+ * similar to the memberuid attribute in many respects. One difference is that
+ * the memberuid attribute is completely generated and managed by the memberof
+ * plugin - in contrast, the ghost attribute is added to the entry that "owns"
+ * it and only propagated to parent groups.
  */
 
 static int mbof_append_addop(struct mbof_add_ctx *add_ctx,
@@ -335,6 +394,57 @@ static int mbof_append_addop(struct mbof_add_ctx *add_ctx,
     return LDB_SUCCESS;
 }
 
+static int mbof_add_fill_ghop_ex(struct mbof_add_ctx *add_ctx,
+                                 struct ldb_message *entry,
+                                 struct mbof_dn_array *parents,
+                                 struct ldb_val *ghvals,
+                                 unsigned int num_gh_vals)
+{
+    int ret;
+    int i, j;
+
+    if (!parents || parents->num == 0) {
+        /* no parents attributes ... */
+        return LDB_SUCCESS;
+    }
+
+    ret = entry_is_group_object(entry);
+    switch (ret) {
+    case LDB_SUCCESS:
+        /* it's a group object, continue */
+        break;
+
+    case LDB_ERR_NO_SUCH_ATTRIBUTE:
+        /* it is not a group object, just return */
+        return LDB_SUCCESS;
+
+    default:
+        /* an error occured, return */
+        return ret;
+    }
+
+    ldb_debug(ldb_module_get_ctx(add_ctx->ctx->module),
+              LDB_DEBUG_TRACE,
+              "will add %d ghost users to %d parents\n",
+              num_gh_vals, parents->num);
+
+    for (i = 0; i < parents->num; i++) {
+        for (j = 0; j < num_gh_vals; j++) {
+            ret = mbof_append_muop(add_ctx, &add_ctx->muops,
+                                   &add_ctx->num_muops,
+                                   LDB_FLAG_MOD_ADD,
+                                   parents->dns[i],
+                                   (const char *) ghvals[j].data,
+                                   DB_GHOST);
+            if (ret != LDB_SUCCESS) {
+                return ret;
+            }
+        }
+    }
+
+    return LDB_SUCCESS;
+}
+
 static int memberof_recompute_task(struct ldb_module *module,
                                    struct ldb_request *req);
 
@@ -344,6 +454,9 @@ static int mbof_next_add(struct mbof_add_operation *addop);
 static int mbof_next_add_callback(struct ldb_request *req,
                                   struct ldb_reply *ares);
 static int mbof_add_operation(struct mbof_add_operation *addop);
+static int mbof_add_fill_ghop(struct mbof_add_ctx *add_ctx,
+                              struct ldb_message *entry,
+                              struct mbof_dn_array *parents);
 static int mbof_add_missing(struct mbof_add_ctx *add_ctx, struct ldb_dn *dn);
 static int mbof_add_cleanup(struct mbof_add_ctx *add_ctx);
 static int mbof_add_cleanup_callback(struct ldb_request *req,
@@ -810,33 +923,9 @@ static int mbof_add_operation(struct mbof_add_operation *addop)
         return ret;
     }
 
-    el = ldb_msg_find_element(addop->entry, DB_GHOST);
-    if (el) {
-        for (i = 0; i < el->num_values; i++) {
-            /* add memberuid to all group's parents */
-            for (j = 0; j < parents->num; j++) {
-                ret = mbof_append_muop(add_ctx, &add_ctx->muops,
-                                       &add_ctx->num_muops,
-                                       LDB_FLAG_MOD_ADD,
-                                       parents->dns[j],
-                                       (char *)el->values[i].data,
-                                       DB_GHOST);
-                if (ret != LDB_SUCCESS) {
-                    return ret;
-                }
-            }
-
-            /* now add memberuid to the group itself */
-            ret = mbof_append_muop(add_ctx, &add_ctx->muops,
-                                   &add_ctx->num_muops,
-                                   LDB_FLAG_MOD_ADD,
-                                   addop->entry_dn,
-                                   (char *)el->values[i].data,
-                                   DB_GHOST);
-            if (ret != LDB_SUCCESS) {
-                return ret;
-            }
-        }
+    ret = mbof_add_fill_ghop(add_ctx, addop->entry, parents);
+    if (ret != LDB_SUCCESS) {
+        return ret;
     }
 
     /* we are done with the entry now */
@@ -879,6 +968,22 @@ static int mbof_add_operation(struct mbof_add_operation *addop)
     talloc_steal(mod_req, msg);
 
     return ldb_next_request(ctx->module, mod_req);
+}
+
+static int mbof_add_fill_ghop(struct mbof_add_ctx *add_ctx,
+                              struct ldb_message *entry,
+                              struct mbof_dn_array *parents)
+{
+    struct ldb_message_element *ghel;
+
+    ghel = ldb_msg_find_element(entry, DB_GHOST);
+    if (ghel == NULL || ghel->num_values == 0) {
+        /* No ghel attribute, just return success */
+        return LDB_SUCCESS;
+    }
+
+    return mbof_add_fill_ghop_ex(add_ctx, entry, parents,
+                                 ghel->values, ghel->num_values);
 }
 
 static int mbof_add_missing(struct mbof_add_ctx *add_ctx, struct ldb_dn *dn)
@@ -1162,7 +1267,14 @@ static int mbof_add_muop_callback(struct ldb_request *req,
  * understand how we proceed to select which new operation to process.
  *
  * As a final operation remove any memberuid corresponding to a removal of
- * a memberof field from a user entry
+ * a memberof field from a user entry. Also if the original entry had a ghost
+ * attribute, we need to remove that attribute from all its parents as well.
+ *
+ * There is one catch though - at the memberof level, we can't know if the
+ * attribute being removed from a parent group is just inherited from the group
+ * being removed or also a direct member of the parent group. To make sure
+ * that the attribute is displayed next time the group is requested, we also
+ * set expire the parent group at the same time.
  */
 
 static int mbof_del_search_callback(struct ldb_request *req,
@@ -1191,8 +1303,13 @@ static int mbof_del_get_next(struct mbof_del_operation *delop,
                              struct mbof_del_operation **nextop);
 static int mbof_del_fill_muop(struct mbof_del_ctx *del_ctx,
                               struct ldb_message *entry);
+static int mbof_del_fill_ghop(struct mbof_del_ctx *del_ctx,
+                              struct ldb_message *entry);
 static int mbof_del_muop(struct mbof_del_ctx *ctx);
 static int mbof_del_muop_callback(struct ldb_request *req,
+                                  struct ldb_reply *ares);
+static int mbof_del_ghop(struct mbof_del_ctx *del_ctx);
+static int mbof_del_ghop_callback(struct ldb_request *req,
                                   struct ldb_reply *ares);
 static void free_delop_contents(struct mbof_del_operation *delop);
 
@@ -1200,7 +1317,8 @@ static void free_delop_contents(struct mbof_del_operation *delop);
 static int memberof_del(struct ldb_module *module, struct ldb_request *req)
 {
     static const char *attrs[] = { DB_OC, DB_NAME,
-                                   DB_MEMBER, DB_MEMBEROF, NULL };
+                                   DB_MEMBER, DB_MEMBEROF,
+                                   DB_GHOST, NULL };
     struct ldb_context *ldb = ldb_module_get_ctx(module);
     struct mbof_del_operation *first;
     struct ldb_request *search;
@@ -1425,6 +1543,13 @@ static int mbof_orig_del_callback(struct ldb_request *req,
             return ldb_module_done(ctx->req, NULL, NULL, ret);
         }
 
+        /* ..or ghost attributes to remove */
+        ret = mbof_del_fill_ghop(del_ctx, del_ctx->first->entry);
+        if (ret != LDB_SUCCESS) {
+            talloc_zfree(ares);
+            return ldb_module_done(ctx->req, NULL, NULL, ret);
+        }
+
         /* if there are any parents, fire a removal sequence */
         ret = mbof_del_cleanup_parents(del_ctx);
     }
@@ -1435,6 +1560,10 @@ static int mbof_orig_del_callback(struct ldb_request *req,
     /* see if there are memberuid operations to perform */
     else if (del_ctx->muops) {
         return mbof_del_muop(del_ctx);
+    }
+    /* see if we need to remove some ghost users */
+    else if (del_ctx->ghops) {
+        return mbof_del_ghop(del_ctx);
     }
     else {
         /* no parents nor children, end ops */
@@ -1546,6 +1675,10 @@ static int mbof_del_clean_par_callback(struct ldb_request *req,
         /* see if there are memberuid operations to perform */
         else if (del_ctx->muops) {
             return mbof_del_muop(del_ctx);
+        }
+        /* see if we need to remove some ghost users */
+        else if (del_ctx->ghops) {
+            return mbof_del_ghop(del_ctx);
         }
         else {
             /* no children, end ops */
@@ -2175,7 +2308,8 @@ static int mbof_del_mod_callback(struct ldb_request *req,
 }
 
 static int mbof_mod_add(struct mbof_mod_ctx *mod_ctx,
-                        struct mbof_dn_array *ael);
+                        struct mbof_dn_array *ael,
+                        struct mbof_val_array *addgh);
 
 static int mbof_del_progeny(struct mbof_del_operation *delop)
 {
@@ -2227,10 +2361,15 @@ static int mbof_del_progeny(struct mbof_del_operation *delop)
     if (del_ctx->muops) {
         return mbof_del_muop(del_ctx);
     }
+    /* see if we need to remove some ghost users */
+    else if (del_ctx->ghops) {
+        return mbof_del_ghop(del_ctx);
+    }
     /* see if there are follow functions to run */
     if (del_ctx->follow_mod) {
         return mbof_mod_add(del_ctx->follow_mod,
-                            del_ctx->follow_mod->to_add);
+                            del_ctx->follow_mod->mb_add,
+                            del_ctx->follow_mod->gh_add);
     }
 
     /* ok, no more ops, this means our job is done */
@@ -2355,7 +2494,90 @@ static int mbof_del_fill_muop(struct mbof_del_ctx *del_ctx,
     return LDB_SUCCESS;
 }
 
-/* del memberuid attributes to parent groups */
+static int mbof_del_fill_ghop_ex(struct mbof_del_ctx *del_ctx,
+                                 struct ldb_message *entry,
+                                 struct ldb_val *ghvals,
+                                 unsigned int num_gh_vals)
+{
+    struct ldb_message_element *mbof;
+    struct ldb_dn *valdn;
+    int ret;
+    int i, j;
+
+    mbof = ldb_msg_find_element(entry, DB_MEMBEROF);
+    if (!mbof || mbof->num_values == 0) {
+        /* no memberof attributes ... */
+        return LDB_SUCCESS;
+    }
+
+    ret = entry_is_group_object(entry);
+    switch (ret) {
+    case LDB_SUCCESS:
+        /* it's a group object, continue */
+        break;
+
+    case LDB_ERR_NO_SUCH_ATTRIBUTE:
+        /* it is not a group object, just return */
+        return LDB_SUCCESS;
+
+    default:
+        /* an error occured, return */
+        return ret;
+    }
+
+    ldb_debug(ldb_module_get_ctx(del_ctx->ctx->module),
+              LDB_DEBUG_TRACE,
+              "will delete %d ghost users from %d parents\n",
+              num_gh_vals, mbof->num_values);
+
+    for (i = 0; i < mbof->num_values; i++) {
+        valdn = ldb_dn_from_ldb_val(del_ctx->ghops,
+                                    ldb_module_get_ctx(del_ctx->ctx->module),
+                                    &mbof->values[i]);
+        if (!valdn || !ldb_dn_validate(valdn)) {
+            ldb_debug(ldb_module_get_ctx(del_ctx->ctx->module),
+                      LDB_DEBUG_ERROR,
+                      "Invalid dn value: [%s]",
+                      (const char *)mbof->values[i].data);
+        }
+
+        ldb_debug(ldb_module_get_ctx(del_ctx->ctx->module),
+                  LDB_DEBUG_TRACE,
+                  "processing ghosts in parent [%s]\n",
+                  (const char *) mbof->values[i].data);
+
+        for (j = 0; j < num_gh_vals; j++) {
+            ret = mbof_append_muop(del_ctx, &del_ctx->ghops,
+                                   &del_ctx->num_ghops,
+                                   LDB_FLAG_MOD_DELETE,
+                                   valdn,
+                                   (const char *) ghvals[j].data,
+                                   DB_GHOST);
+            if (ret != LDB_SUCCESS) {
+                return ret;
+            }
+        }
+    }
+
+    return LDB_SUCCESS;
+}
+
+static int mbof_del_fill_ghop(struct mbof_del_ctx *del_ctx,
+                              struct ldb_message *entry)
+{
+    struct ldb_message_element *ghel;
+
+    ghel = ldb_msg_find_element(entry, DB_GHOST);
+    if (ghel == NULL || ghel->num_values == 0) {
+        /* No ghel attribute, just return success */
+        return LDB_SUCCESS;
+    }
+
+    return mbof_del_fill_ghop_ex(del_ctx, entry,
+                                 ghel->values, ghel->num_values);
+}
+
+/* del memberuid attributes from parent groups */
 static int mbof_del_muop(struct mbof_del_ctx *del_ctx)
 {
     struct ldb_context *ldb;
@@ -2421,10 +2643,128 @@ static int mbof_del_muop_callback(struct ldb_request *req,
         if (del_ctx->cur_muop < del_ctx->num_muops) {
             ret = mbof_del_muop(del_ctx);
         }
+        /* see if we need to remove some ghost users */
+        else if (del_ctx->ghops) {
+            return mbof_del_ghop(del_ctx);
+        }
         /* see if there are follow functions to run */
         else if (del_ctx->follow_mod) {
             return mbof_mod_add(del_ctx->follow_mod,
-                                del_ctx->follow_mod->to_add);
+                                del_ctx->follow_mod->mb_add,
+                                del_ctx->follow_mod->gh_add);
+        }
+        else {
+            return ldb_module_done(ctx->req,
+                                   ctx->ret_ctrls,
+                                   ctx->ret_resp,
+                                   LDB_SUCCESS);
+        }
+
+        if (ret != LDB_SUCCESS) {
+            talloc_zfree(ares);
+            return ldb_module_done(ctx->req, NULL, NULL, ret);
+        }
+    }
+
+    talloc_zfree(ares);
+    return LDB_SUCCESS;
+}
+
+/* del ghost attributes from parent groups */
+static int mbof_del_ghop(struct mbof_del_ctx *del_ctx)
+{
+    struct ldb_context *ldb;
+    struct ldb_message *msg;
+    struct ldb_request *mod_req;
+    struct mbof_ctx *ctx;
+    int ret;
+
+    ctx = del_ctx->ctx;
+    ldb = ldb_module_get_ctx(ctx->module);
+
+    msg = ldb_msg_new(del_ctx);
+    if (!msg) return LDB_ERR_OPERATIONS_ERROR;
+
+    msg->dn = del_ctx->ghops[del_ctx->cur_ghop].dn;
+
+    ret = ldb_msg_add(msg, del_ctx->ghops[del_ctx->cur_ghop].el,
+                      LDB_FLAG_MOD_DELETE);
+    if (ret != LDB_SUCCESS) {
+        return ret;
+    }
+
+    /* Also expire any parent groups to force reloading direct members in
+     * case the ghost users we remove now were actually *also* direct members
+     * of the parent groups
+     */
+    ret = ldb_msg_add_empty(msg, DB_CACHE_EXPIRE, LDB_FLAG_MOD_REPLACE, NULL);
+    if (ret != LDB_SUCCESS) {
+        return ret;
+    }
+
+    ret = ldb_msg_add_string(msg, DB_CACHE_EXPIRE, "1");
+    if (ret != LDB_SUCCESS) {
+        return ret;
+    }
+
+    ret = ldb_build_mod_req(&mod_req, ldb, del_ctx,
+                            msg, NULL,
+                            del_ctx, mbof_del_ghop_callback,
+                            ctx->req);
+    if (ret != LDB_SUCCESS) {
+        return ret;
+    }
+
+    return ldb_next_request(ctx->module, mod_req);
+}
+
+static int mbof_del_ghop_callback(struct ldb_request *req,
+                                  struct ldb_reply *ares)
+{
+    struct mbof_del_ctx *del_ctx;
+    struct mbof_ctx *ctx;
+    int ret;
+
+    del_ctx = talloc_get_type(req->context, struct mbof_del_ctx);
+    ctx = del_ctx->ctx;
+
+    if (!ares) {
+        return ldb_module_done(ctx->req, NULL, NULL,
+                               LDB_ERR_OPERATIONS_ERROR);
+    }
+
+    /* We must treat no such attribute as non-fatal b/c the entry
+     * might have been directly nested in the parent as well and
+     * updated with another replace operation.
+     */
+    if (ares->error != LDB_SUCCESS &&  \
+        ares->error != LDB_ERR_NO_SUCH_ATTRIBUTE) {
+        return ldb_module_done(ctx->req,
+                               ares->controls,
+                               ares->response,
+                               ares->error);
+    }
+
+    switch (ares->type) {
+    case LDB_REPLY_ENTRY:
+        /* shouldn't happen */
+        talloc_zfree(ares);
+        return ldb_module_done(ctx->req, NULL, NULL,
+                               LDB_ERR_OPERATIONS_ERROR);
+    case LDB_REPLY_REFERRAL:
+        /* ignore */
+        break;
+
+    case LDB_REPLY_DONE:
+        del_ctx->cur_ghop++;
+        if (del_ctx->cur_ghop < del_ctx->num_ghops) {
+            ret = mbof_del_ghop(del_ctx);
+        }
+        /* see if there are follow functions to run */
+        else if (del_ctx->follow_mod) {
+            return mbof_mod_add(del_ctx->follow_mod,
+                                del_ctx->follow_mod->mb_add,
+                                del_ctx->follow_mod->gh_add);
         }
         else {
             return ldb_module_done(ctx->req,
@@ -2458,33 +2798,73 @@ static void free_delop_contents(struct mbof_del_operation *delop)
 
 /* A modify operation just implements either an add operation, or a delete
  * operation or both (replace) in turn.
- * The only difference between a modify and a pure add or a pure delete is that
+ * One difference between a modify and a pure add or a pure delete is that
  * the object is not created a new or not completely removed, but the setup just
  * treats it in the same way children objects are treated in a pure add or delete
  * operation. A list of appropriate parents and objects to modify is built, then
  * we jump directly in the add or delete code.
  * If both add and delete are necessary, delete operations are performed first
- * and then a followup add operation is concatenated */
+ * and then a followup add operation is concatenated
+ *
+ * Another difference is the ghost users. Because of its semi-managed nature,
+ * the ghost attribute requires some special care. During a modify operation, the
+ * ghost attribute can be set to a new list. That list coming, from an
+ * application, would typically only include the direct ghost
+ * members. However, we want to keep both direct and indirect ghost members
+ * in the cache to be able to return them all in a single call. To solve
+ * that problem, we also iterate over members of the group being modified,
+ * collect all ghost entries and add them back in case the original modify
+ * operation wiped them out.
+ */
 
 static int mbof_mod_callback(struct ldb_request *req,
                              struct ldb_reply *ares);
+static int mbof_collect_child_ghosts(struct mbof_mod_ctx *mod_ctx);
+static int mbof_get_ghost_from_parent(struct mbof_mod_del_op *igh);
+static int mbof_get_ghost_from_parent_cb(struct ldb_request *req,
+                                         struct ldb_reply *ares);
 static int mbof_orig_mod(struct mbof_mod_ctx *mod_ctx);
 static int mbof_orig_mod_callback(struct ldb_request *req,
                                   struct ldb_reply *ares);
+static int mbof_inherited_mod(struct mbof_mod_ctx *mod_ctx);
+static int mbof_inherited_mod_callback(struct ldb_request *req,
+                                       struct ldb_reply *ares);
 static int mbof_mod_process(struct mbof_mod_ctx *mod_ctx, bool *done);
+static int mbof_mod_process_membel(TALLOC_CTX *mem_ctx, struct ldb_context *ldb,
+                                   struct ldb_message *entry,
+                                   const struct ldb_message_element *membel,
+                                   struct mbof_dn_array **_added,
+                                   struct mbof_dn_array **_removed);
+static int mbof_mod_process_ghel(TALLOC_CTX *mem_ctx, struct ldb_context *ldb,
+                                 struct ldb_message *entry,
+                                 const struct ldb_message_element *ghel,
+                                 const struct ldb_message_element *inherited,
+                                 struct mbof_val_array **_added,
+                                 struct mbof_val_array **_removed);
 static int mbof_mod_delete(struct mbof_mod_ctx *mod_ctx,
-                           struct mbof_dn_array *del);
+                           struct mbof_dn_array *del,
+                           struct mbof_val_array *delgh);
 static int mbof_fill_dn_array(TALLOC_CTX *memctx,
                               struct ldb_context *ldb,
                               const struct ldb_message_element *el,
                               struct mbof_dn_array **dn_array);
+static int mbof_fill_vals_array(TALLOC_CTX *memctx,
+                                struct ldb_context *ldb,
+                                unsigned int num_values,
+                                struct ldb_val *values,
+                                struct mbof_val_array **val_array);
+static int mbof_fill_vals_array_el(TALLOC_CTX *memctx,
+                                   struct ldb_context *ldb,
+                                   const struct ldb_message_element *el,
+                                   struct mbof_val_array **val_array);
 
 static int memberof_mod(struct ldb_module *module, struct ldb_request *req)
 {
     struct ldb_message_element *el;
     struct mbof_mod_ctx *mod_ctx;
     struct mbof_ctx *ctx;
-    static const char *attrs[] = {DB_MEMBER, DB_MEMBEROF, NULL};
+    static const char *attrs[] = { DB_OC, DB_GHOST,
+                                   DB_MEMBER, DB_MEMBEROF, NULL};
     struct ldb_context *ldb = ldb_module_get_ctx(module);
     struct ldb_request *search;
     int ret;
@@ -2527,14 +2907,14 @@ static int memberof_mod(struct ldb_module *module, struct ldb_request *req)
         return LDB_ERR_OPERATIONS_ERROR;
     }
 
-    /* continue with normal ops if there are no members */
-    el = ldb_msg_find_element(mod_ctx->msg, DB_MEMBER);
-    if (!el) {
+    mod_ctx->membel = ldb_msg_find_element(mod_ctx->msg, DB_MEMBER);
+    mod_ctx->ghel = ldb_msg_find_element(mod_ctx->msg, DB_GHOST);
+
+    /* continue with normal ops if there are no members and no ghosts */
+    if (mod_ctx->membel == NULL && mod_ctx->ghel == NULL) {
         mod_ctx->terminate = true;
         return mbof_orig_mod(mod_ctx);
     }
-
-    mod_ctx->membel = el;
 
     /* can't do anything,
      * must check first what's on the entry */
@@ -2605,11 +2985,173 @@ static int mbof_mod_callback(struct ldb_request *req,
                                    LDB_ERR_NO_SUCH_OBJECT);
         }
 
-        ret = mbof_orig_mod(mod_ctx);
+        ret = mbof_collect_child_ghosts(mod_ctx);
         if (ret != LDB_SUCCESS) {
             talloc_zfree(ares);
             return ldb_module_done(ctx->req, NULL, NULL, ret);
         }
+    }
+
+    talloc_zfree(ares);
+    return LDB_SUCCESS;
+}
+
+static int mbof_collect_child_ghosts(struct mbof_mod_ctx *mod_ctx)
+{
+    int ret;
+    const struct ldb_message_element *member;
+
+    member = ldb_msg_find_element(mod_ctx->entry, DB_MEMBER);
+
+    if (member == NULL || member->num_values == 0 ||
+        mod_ctx->ghel == NULL || mod_ctx->ghel->flags != LDB_FLAG_MOD_REPLACE) {
+        ret = mbof_orig_mod(mod_ctx);
+        if (ret != LDB_SUCCESS) {
+            return ret;
+        }
+
+        return LDB_SUCCESS;
+    }
+
+    mod_ctx->igh = talloc_zero(mod_ctx, struct mbof_mod_del_op);
+    if (mod_ctx == NULL) {
+        return LDB_ERR_OPERATIONS_ERROR;
+    }
+    mod_ctx->igh->mod_ctx = mod_ctx;
+
+    ret = hash_create_ex(1024, &mod_ctx->igh->inherited_gh, 0, 0, 0, 0,
+                         hash_alloc, hash_free, mod_ctx, NULL, NULL);
+    if (ret != HASH_SUCCESS) {
+        return LDB_ERR_OPERATIONS_ERROR;
+    }
+
+
+    return mbof_get_ghost_from_parent(mod_ctx->igh);
+}
+
+static int mbof_get_ghost_from_parent(struct mbof_mod_del_op *igh)
+{
+    struct ldb_request *search;
+    struct ldb_context *ldb;
+    struct mbof_ctx *ctx;
+    int ret;
+    static const char *attrs[] = { DB_GHOST, NULL };
+    char *expression;
+    char *clean_dn;
+    const char *dn;
+
+    ctx = igh->mod_ctx->ctx;
+    ldb = ldb_module_get_ctx(ctx->module);
+
+    dn = ldb_dn_get_linearized(igh->mod_ctx->entry->dn);
+    if (!dn) {
+        talloc_free(ctx);
+        return LDB_ERR_OPERATIONS_ERROR;
+    }
+
+    ret = sss_filter_sanitize(igh, dn, &clean_dn);
+    if (ret != 0) {
+        return LDB_ERR_OPERATIONS_ERROR;
+    }
+
+    expression = talloc_asprintf(igh,
+                                 "(&(%s=%s)(%s=%s))",
+                                 DB_OC, DB_GROUP_CLASS,
+                                 DB_MEMBEROF, clean_dn);
+    if (!expression) {
+        return LDB_ERR_OPERATIONS_ERROR;
+    }
+    talloc_zfree(clean_dn);
+
+    ret = ldb_build_search_req(&search, ldb, igh,
+                               NULL,
+                               LDB_SCOPE_SUBTREE,
+                               expression, attrs, NULL,
+                               igh, mbof_get_ghost_from_parent_cb,
+                               ctx->req);
+    if (ret != LDB_SUCCESS) {
+        return ret;
+    }
+
+    return ldb_request(ldb, search);
+}
+
+static int mbof_get_ghost_from_parent_cb(struct ldb_request *req,
+                                         struct ldb_reply *ares)
+{
+    struct mbof_mod_del_op *igh;
+    struct mbof_ctx *ctx;
+    struct ldb_message_element *el;
+    struct ldb_val *dup;
+    int ret;
+    hash_value_t value;
+    hash_key_t key;
+    int i;
+
+    igh = talloc_get_type(req->context, struct mbof_mod_del_op);
+    ctx = igh->mod_ctx->ctx;
+
+    if (!ares) {
+        return ldb_module_done(ctx->req, NULL, NULL,
+                               LDB_ERR_OPERATIONS_ERROR);
+    }
+    if (ares->error != LDB_SUCCESS) {
+        return ldb_module_done(ctx->req,
+                               ares->controls,
+                               ares->response,
+                               ares->error);
+    }
+
+    switch (ares->type) {
+    case LDB_REPLY_ENTRY:
+        el = ldb_msg_find_element(ares->message, DB_GHOST);
+        if (!el) {
+            break;
+        }
+
+        for (i=0; i < el->num_values; i++) {
+            key.type = HASH_KEY_STRING;
+            key.str = (char *) el->values[i].data;
+
+            if (hash_has_key(igh->inherited_gh, &key)) {
+                /* We already have this user. Don't re-add him */
+                continue;
+            }
+
+            dup = talloc_zero(igh->inherited_gh, struct ldb_val);
+            if (dup == NULL) {
+                return LDB_ERR_OPERATIONS_ERROR;
+            }
+
+            *dup = ldb_val_dup(igh->inherited_gh, &el->values[i]);
+            if (dup->data == NULL) {
+                return LDB_ERR_OPERATIONS_ERROR;
+            }
+
+            value.type = HASH_VALUE_PTR;
+            value.ptr = dup;
+
+            ret = hash_enter(igh->inherited_gh, &key, &value);
+            if (ret != HASH_SUCCESS) {
+                return LDB_ERR_OPERATIONS_ERROR;
+            }
+        }
+        break;
+
+    case LDB_REPLY_REFERRAL:
+        /* ignore */
+        break;
+
+    case LDB_REPLY_DONE:
+        /* All the children are gathered, let's do the real
+         * modify operation
+         */
+        ret = mbof_orig_mod(igh->mod_ctx);
+        if (ret != LDB_SUCCESS) {
+            talloc_zfree(ares);
+            return ldb_module_done(ctx->req, NULL, NULL, ret);
+        }
+        break;
     }
 
     talloc_zfree(ares);
@@ -2674,7 +3216,13 @@ static int mbof_orig_mod_callback(struct ldb_request *req,
 
     if (!mod_ctx->terminate) {
         /* next step */
-        ret = mbof_mod_process(mod_ctx, &mod_ctx->terminate);
+        if (mod_ctx->igh && mod_ctx->igh->inherited_gh &&
+            hash_count(mod_ctx->igh->inherited_gh) > 0) {
+            ret = mbof_inherited_mod(mod_ctx);
+        } else {
+            ret = mbof_mod_process(mod_ctx, &mod_ctx->terminate);
+        }
+
         if (ret != LDB_SUCCESS) {
             talloc_zfree(ares);
             return ldb_module_done(ctx->req, NULL, NULL, ret);
@@ -2693,65 +3241,232 @@ static int mbof_orig_mod_callback(struct ldb_request *req,
     return LDB_SUCCESS;
 }
 
-static int mbof_mod_process(struct mbof_mod_ctx *mod_ctx, bool *done)
+static int mbof_inherited_mod(struct mbof_mod_ctx *mod_ctx)
 {
-    const struct ldb_message_element *el;
+    struct ldb_request *mod_req;
     struct ldb_context *ldb;
     struct mbof_ctx *ctx;
-    struct mbof_dn_array *removed;
-    struct mbof_dn_array *added;
-    int i, j, ret;
+    int ret;
+    struct ldb_message_element *el;
+    struct ldb_message *msg;
+    struct ldb_val *val;
+    struct ldb_val *dup;
+    hash_value_t *values;
+    unsigned long num_values;
+    int i, j;
 
     ctx = mod_ctx->ctx;
     ldb = ldb_module_get_ctx(ctx->module);
 
-    switch (mod_ctx->membel->flags) {
+    /* add back the inherited children to entry */
+    msg = ldb_msg_new(mod_ctx);
+    if (!msg) return LDB_ERR_OPERATIONS_ERROR;
+
+    msg->dn = mod_ctx->entry->dn;
+
+    /* We only inherit during replaces, so it's safe to only look
+     * at the replaced set
+     */
+    ret = ldb_msg_add_empty(msg, DB_GHOST, LDB_FLAG_MOD_ADD, &el);
+    if (ret != LDB_SUCCESS) {
+        return ret;
+    }
+
+    ret = hash_values(mod_ctx->igh->inherited_gh, &num_values, &values);
+    if (ret != HASH_SUCCESS) {
+        return LDB_ERR_OPERATIONS_ERROR;
+    }
+
+    el->values = talloc_array(msg, struct ldb_val, num_values);
+    if (!el->values) {
+        return LDB_ERR_OPERATIONS_ERROR;
+    }
+
+    for (i = 0, j = 0; i < num_values; i++) {
+        val = talloc_get_type(values[i].ptr, struct ldb_val);
+
+        dup = ldb_msg_find_val(mod_ctx->ghel, val);
+        if (dup) {
+            continue;
+        }
+
+        el->values[j].length = strlen((const char *) val->data);
+        el->values[j].data = (uint8_t *) talloc_strdup(el->values,
+                                                    (const char *) val->data);
+        if (!el->values[j].data) {
+            return LDB_ERR_OPERATIONS_ERROR;
+        }
+        j++;
+    }
+    el->num_values = j;
+
+    mod_ctx->igh->mod_msg = msg;
+    mod_ctx->igh->el = el;
+
+    ret = ldb_build_mod_req(&mod_req, ldb, ctx->req,
+                            msg, ctx->req->controls,
+                            mod_ctx, mbof_inherited_mod_callback,
+                            ctx->req);
+    if (ret != LDB_SUCCESS) {
+        return ret;
+    }
+
+    return ldb_next_request(ctx->module, mod_req);
+}
+
+static int mbof_inherited_mod_callback(struct ldb_request *req,
+                                       struct ldb_reply *ares)
+{
+    struct ldb_context *ldb;
+    struct mbof_mod_ctx *mod_ctx;
+    struct mbof_ctx *ctx;
+    int ret;
+
+    mod_ctx = talloc_get_type(req->context, struct mbof_mod_ctx);
+    ctx = mod_ctx->ctx;
+    ldb = ldb_module_get_ctx(ctx->module);
+
+    if (!ares) {
+        return ldb_module_done(ctx->req, NULL, NULL,
+                               LDB_ERR_OPERATIONS_ERROR);
+    }
+    if (ares->error != LDB_SUCCESS) {
+        return ldb_module_done(ctx->req,
+                               ares->controls,
+                               ares->response,
+                               ares->error);
+    }
+
+    if (ares->type != LDB_REPLY_DONE) {
+        talloc_zfree(ares);
+        ldb_debug(ldb, LDB_DEBUG_TRACE, "Invalid reply type!");
+        ldb_set_errstring(ldb, "Invalid reply type!");
+        return ldb_module_done(ctx->req, NULL, NULL,
+                               LDB_ERR_OPERATIONS_ERROR);
+    }
+
+    ret = mbof_mod_process(mod_ctx, &mod_ctx->terminate);
+    if (ret != LDB_SUCCESS) {
+        talloc_zfree(ares);
+        return ldb_module_done(ctx->req, NULL, NULL, ret);
+    }
+
+    if (mod_ctx->terminate) {
+        talloc_zfree(ares);
+        return ldb_module_done(ctx->req,
+                               ctx->ret_ctrls,
+                               ctx->ret_resp,
+                               LDB_SUCCESS);
+    }
+
+    talloc_zfree(ares);
+    return LDB_SUCCESS;
+}
+
+static int mbof_mod_process(struct mbof_mod_ctx *mod_ctx, bool *done)
+{
+    struct ldb_context *ldb;
+    struct mbof_ctx *ctx;
+    int ret;
+
+    ctx = mod_ctx->ctx;
+    ldb = ldb_module_get_ctx(ctx->module);
+
+    ret = mbof_mod_process_membel(mod_ctx, ldb, mod_ctx->entry, mod_ctx->membel,
+                                  &mod_ctx->mb_add, &mod_ctx->mb_remove);
+    if (ret != LDB_SUCCESS) {
+        return ret;
+    }
+
+    ret = mbof_mod_process_ghel(mod_ctx, ldb, mod_ctx->entry, mod_ctx->ghel,
+                                mod_ctx->igh ? mod_ctx->igh->el : NULL,
+                                &mod_ctx->gh_add, &mod_ctx->gh_remove);
+    if (ret != LDB_SUCCESS) {
+        return ret;
+    }
+
+    /* Process the operations */
+    /* if we have something to remove do it first */
+    if ((mod_ctx->mb_remove && mod_ctx->mb_remove->num) ||
+        (mod_ctx->gh_remove && mod_ctx->gh_remove->num)) {
+        return mbof_mod_delete(mod_ctx, mod_ctx->mb_remove, mod_ctx->gh_remove);
+    }
+
+    /* if there is nothing to remove and we have stuff to add
+     * do it right away */
+    if ((mod_ctx->mb_add && mod_ctx->mb_add->num) ||
+        (mod_ctx->gh_add && mod_ctx->gh_add->num)) {
+        return mbof_mod_add(mod_ctx, mod_ctx->mb_add, mod_ctx->gh_add);
+    }
+
+    /* the replacement function resulted in a null op,
+     * nothing to do, return happily */
+    *done = true;
+    return LDB_SUCCESS;
+}
+
+static int mbof_mod_process_membel(TALLOC_CTX *mem_ctx,
+                                   struct ldb_context *ldb,
+                                   struct ldb_message *entry,
+                                   const struct ldb_message_element *membel,
+                                   struct mbof_dn_array **_added,
+                                   struct mbof_dn_array **_removed)
+{
+    const struct ldb_message_element *el;
+    struct mbof_dn_array *removed = NULL;
+    struct mbof_dn_array *added = NULL;
+    int i, j, ret;
+
+    if (!membel) {
+        /* Nothing to do.. */
+        return LDB_SUCCESS;
+    }
+
+    switch (membel->flags) {
     case LDB_FLAG_MOD_ADD:
 
-        ret = mbof_fill_dn_array(mod_ctx, ldb, mod_ctx->membel, &added);
+        ret = mbof_fill_dn_array(mem_ctx, ldb, membel, &added);
         if (ret != LDB_SUCCESS) {
             return ret;
         }
-
-        return mbof_mod_add(mod_ctx, added);
+        break;
 
     case LDB_FLAG_MOD_DELETE:
 
-        if (mod_ctx->membel->num_values == 0) {
-            el = ldb_msg_find_element(mod_ctx->entry, DB_MEMBER);
+        if (membel->num_values == 0) {
+            el = ldb_msg_find_element(entry, DB_MEMBER);
         } else {
-            el = mod_ctx->membel;
+            el = membel;
         }
 
         if (!el) {
             /* nothing to do really */
-            *done = true;
-            return LDB_SUCCESS;
+            break;
         }
 
-        ret = mbof_fill_dn_array(mod_ctx, ldb, el, &removed);
+        ret = mbof_fill_dn_array(mem_ctx, ldb, el, &removed);
         if (ret != LDB_SUCCESS) {
             return ret;
         }
-
-        return mbof_mod_delete(mod_ctx, removed);
+        break;
 
     case LDB_FLAG_MOD_REPLACE:
 
         removed = NULL;
-        el = ldb_msg_find_element(mod_ctx->entry, DB_MEMBER);
+        el = ldb_msg_find_element(entry, DB_MEMBER);
         if (el) {
-            ret = mbof_fill_dn_array(mod_ctx, ldb, el, &removed);
+            ret = mbof_fill_dn_array(mem_ctx, ldb, el, &removed);
             if (ret != LDB_SUCCESS) {
                 return ret;
             }
         }
 
         added = NULL;
-        el = mod_ctx->membel;
+        el = membel;
         if (el) {
-            ret = mbof_fill_dn_array(mod_ctx, ldb, el, &added);
+            ret = mbof_fill_dn_array(mem_ctx, ldb, el, &added);
             if (ret != LDB_SUCCESS) {
+                talloc_free(removed);
                 return ret;
             }
         }
@@ -2778,35 +3493,130 @@ static int mbof_mod_process(struct mbof_mod_ctx *mod_ctx, bool *done)
                 }
             }
         }
+        break;
 
-        /* if we need to add something put it away so that it
-         * can be done after all delete operations are over */
-        if (added && added->num) {
-            mod_ctx->to_add = added;
-        }
+    default:
+        return LDB_ERR_OPERATIONS_ERROR;
+    }
 
-        /* if we have something to remove do it first */
-        if (removed && removed->num) {
-            return mbof_mod_delete(mod_ctx, removed);
-        }
+    *_added = added;
+    *_removed = removed;
+    return LDB_SUCCESS;
+}
 
-        /* if there is nothing to remove and we have stuff to add
-         * do it right away */
-        if (mod_ctx->to_add) {
-            return mbof_mod_add(mod_ctx, added);
-        }
+static int mbof_mod_process_ghel(TALLOC_CTX *mem_ctx, struct ldb_context *ldb,
+                                 struct ldb_message *entry,
+                                 const struct ldb_message_element *ghel,
+                                 const struct ldb_message_element *inherited,
+                                 struct mbof_val_array **_added,
+                                 struct mbof_val_array **_removed)
+{
+    const struct ldb_message_element *el;
+    struct mbof_val_array *removed = NULL;
+    struct mbof_val_array *added = NULL;
+    int i, j, ret;
 
-        /* the replacement function resulted in a null op,
-         * nothing to do, return happily */
-        *done = true;
+    if (!ghel) {
+        /* Nothing to do.. */
         return LDB_SUCCESS;
     }
 
-    return LDB_ERR_OPERATIONS_ERROR;
+    el = ldb_msg_find_element(entry, DB_MEMBEROF);
+    if (!el || el->num_values == 0) {
+        /* no memberof attributes ... */
+        return LDB_SUCCESS;
+    }
+
+    switch (ghel->flags) {
+    case LDB_FLAG_MOD_ADD:
+        ret = mbof_fill_vals_array_el(mem_ctx, ldb, ghel, &added);
+        if (ret != LDB_SUCCESS) {
+            return ret;
+        }
+        break;
+
+    case LDB_FLAG_MOD_DELETE:
+        if (ghel->num_values == 0) {
+            el = ldb_msg_find_element(entry, DB_GHOST);
+        } else {
+            el = ghel;
+        }
+
+        if (!el) {
+            /* nothing to do really */
+            break;
+        }
+
+        ret = mbof_fill_vals_array_el(mem_ctx, ldb, ghel, &removed);
+        if (ret != LDB_SUCCESS) {
+            return ret;
+        }
+        break;
+
+    case LDB_FLAG_MOD_REPLACE:
+        el = ldb_msg_find_element(entry, DB_GHOST);
+        if (el) {
+            ret = mbof_fill_vals_array_el(mem_ctx, ldb, el, &removed);
+            if (ret != LDB_SUCCESS) {
+                return ret;
+            }
+        }
+
+        el = ghel;
+        if (el) {
+            ret = mbof_fill_vals_array_el(mem_ctx, ldb, el, &added);
+            if (ret != LDB_SUCCESS) {
+                talloc_free(removed);
+                return ret;
+            }
+        }
+
+        if (inherited) {
+            ret = mbof_fill_vals_array_el(mem_ctx, ldb, inherited, &added);
+            if (ret != LDB_SUCCESS) {
+                talloc_free(added);
+                talloc_free(removed);
+                return ret;
+            }
+        }
+
+        /* remove from arrays values that ended up unchanged */
+        if (removed && removed->num && added && added->num) {
+            for (i = 0; i < added->num; i++) {
+                for (j = 0; j < removed->num; j++) {
+                    if (strcmp((const char *) added->vals[i].data,
+                               (const char *) removed->vals[j].data) == 0) {
+                        break;
+                    }
+                }
+                if (j < removed->num) {
+                    /* preexisting one, not removed, nor added */
+                    for (; j+1 < removed->num; j++) {
+                        removed->vals[j] = removed->vals[j+1];
+                    }
+                    removed->num--;
+                    for (j = i; j+1 < added->num; j++) {
+                        added->vals[j] = added->vals[j+1];
+                    }
+                    added->num--;
+                    i--;
+                }
+            }
+        }
+        break;
+
+    default:
+        return LDB_ERR_OPERATIONS_ERROR;
+    }
+
+    *_added = added;
+    *_removed = removed;
+    return LDB_SUCCESS;
 }
 
 static int mbof_mod_add(struct mbof_mod_ctx *mod_ctx,
-                        struct mbof_dn_array *ael)
+                        struct mbof_dn_array *ael,
+                        struct mbof_val_array *addgh)
 {
     const struct ldb_message_element *el;
     struct mbof_dn_array *parents;
@@ -2826,14 +3636,6 @@ static int mbof_mod_add(struct mbof_mod_ctx *mod_ctx,
         return ret;
     }
 
-    parents->dns = talloc_realloc(parents, parents->dns,
-                                  struct ldb_dn *, parents->num + 1);
-    if (!parents->dns) {
-        return LDB_ERR_OPERATIONS_ERROR;
-    }
-    parents->dns[parents->num] = mod_ctx->entry->dn;
-    parents->num++;
-
     add_ctx = talloc_zero(mod_ctx, struct mbof_add_ctx);
     if (!add_ctx) {
         return LDB_ERR_OPERATIONS_ERROR;
@@ -2841,18 +3643,42 @@ static int mbof_mod_add(struct mbof_mod_ctx *mod_ctx,
     add_ctx->ctx = ctx;
     add_ctx->msg_dn = mod_ctx->msg->dn;
 
-    for (i = 0; i < ael->num; i++) {
-        ret = mbof_append_addop(add_ctx, parents, ael->dns[i]);
+    if (addgh != NULL) {
+        /* Build the memberuid add op */
+        ret =  mbof_add_fill_ghop_ex(add_ctx, mod_ctx->entry,
+                                     parents, addgh->vals, addgh->num);
         if (ret != LDB_SUCCESS) {
             return ret;
         }
     }
 
-    return mbof_next_add(add_ctx->add_list);
+    if (ael != NULL) {
+        /* Add itself to the list of the parents to also get the memberuid */
+        parents->dns = talloc_realloc(parents, parents->dns,
+                                    struct ldb_dn *, parents->num + 1);
+        if (!parents->dns) {
+            return LDB_ERR_OPERATIONS_ERROR;
+        }
+        parents->dns[parents->num] = mod_ctx->entry->dn;
+        parents->num++;
+
+        /* Build the member-add array */
+        for (i = 0; i < ael->num; i++) {
+            ret = mbof_append_addop(add_ctx, parents, ael->dns[i]);
+            if (ret != LDB_SUCCESS) {
+                return ret;
+            }
+        }
+
+        return mbof_next_add(add_ctx->add_list);
+    }
+
+    return mbof_add_muop(add_ctx);
 }
 
 static int mbof_mod_delete(struct mbof_mod_ctx *mod_ctx,
-                           struct mbof_dn_array *del)
+                           struct mbof_dn_array *del,
+                           struct mbof_val_array *delgh)
 {
     struct mbof_del_operation *first;
     struct mbof_del_ctx *del_ctx;
@@ -2877,25 +3703,39 @@ static int mbof_mod_delete(struct mbof_mod_ctx *mod_ctx,
     }
     del_ctx->first = first;
 
+    /* add followup function if we also have stuff to add */
+    if ((mod_ctx->mb_add && mod_ctx->mb_add->num > 0) ||
+        (mod_ctx->gh_add && mod_ctx->gh_add->num > 0)) {
+        del_ctx->follow_mod = mod_ctx;
+    }
+
     first->del_ctx = del_ctx;
     first->entry = mod_ctx->entry;
     first->entry_dn = mod_ctx->entry->dn;
 
-    /* prepare del sets */
-    for (i = 0; i < del->num; i++) {
-        ret = mbof_append_delop(first, del->dns[i]);
+    if (delgh != NULL) {
+        ret = mbof_del_fill_ghop_ex(del_ctx, del_ctx->first->entry,
+                                    delgh->vals, delgh->num);
         if (ret != LDB_SUCCESS) {
             return ret;
         }
     }
 
-    /* add followup function if we also have stuff to add */
-    if (mod_ctx->to_add) {
-        del_ctx->follow_mod = mod_ctx;
+    /* prepare del sets */
+    if (del != NULL) {
+        for (i = 0; i < del->num; i++) {
+            ret = mbof_append_delop(first, del->dns[i]);
+            if (ret != LDB_SUCCESS) {
+                return ret;
+            }
+        }
+
+        /* now that sets are built, start processing */
+        return mbof_del_execute_op(first->children[0]);
     }
 
-    /* now that sets are built, start processing */
-    return mbof_del_execute_op(first->children[0]);
+    /* No member processing, just delete ghosts */
+    return mbof_del_ghop(del_ctx);
 }
 
 static int mbof_fill_dn_array(TALLOC_CTX *memctx,
@@ -2936,6 +3776,62 @@ static int mbof_fill_dn_array(TALLOC_CTX *memctx,
     return LDB_SUCCESS;
 }
 
+static int mbof_fill_vals_array(TALLOC_CTX *memctx,
+                                struct ldb_context *ldb,
+                                unsigned int num_values,
+                                struct ldb_val *values,
+                                struct mbof_val_array **val_array)
+{
+    struct mbof_val_array *var = *val_array;
+    int i, index;
+
+    if (var == NULL) {
+        var = talloc_zero(memctx, struct mbof_val_array);
+        if (!var) {
+            return LDB_ERR_OPERATIONS_ERROR;
+        }
+        *val_array = var;
+    }
+
+    if (values == NULL || num_values == 0) {
+        return LDB_SUCCESS;
+    }
+
+    /* We do not care about duplicate values now.
+     * They will be filtered later */
+    index = var->num;
+    var->num += num_values;
+    var->vals = talloc_realloc(memctx, var->vals, struct ldb_val, var->num);
+    if (!var->vals) {
+        return LDB_ERR_OPERATIONS_ERROR;
+    }
+
+    /* FIXME - use ldb_val_dup() */
+    for (i = 0; i < num_values; i++) {
+        var->vals[index].length = strlen((const char *) values[i].data);
+        var->vals[index].data = (uint8_t *) talloc_strdup(var,
+                                          (const char *) values[i].data);
+        if (var->vals[index].data == NULL) {
+            return LDB_ERR_OPERATIONS_ERROR;
+        }
+        index++;
+    }
+
+    return LDB_SUCCESS;
+}
+
+static int mbof_fill_vals_array_el(TALLOC_CTX *memctx,
+                                   struct ldb_context *ldb,
+                                   const struct ldb_message_element *el,
+                                   struct mbof_val_array **val_array)
+{
+    if (el == NULL) {
+        return LDB_SUCCESS;
+    }
+
+    return mbof_fill_vals_array(memctx, ldb, el->num_values, el->values,
+                                val_array);
+}
 
 /*************************
  * Cleanup task routines *
@@ -2973,16 +3869,6 @@ struct mbof_rcmp_context {
     struct mbof_member *group_list;
     hash_table_t *group_table;
 };
-
-static void *hash_alloc(const size_t size, void *pvt)
-{
-    return talloc_size(pvt, size);
-}
-
-static void hash_free(void *ptr, void *pvt)
-{
-    talloc_free(ptr);
-}
 
 static int mbof_steal_msg_el(TALLOC_CTX *memctx,
                              const char *name,

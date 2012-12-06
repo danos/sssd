@@ -23,6 +23,7 @@
 #include <time.h>
 #include "util/util.h"
 #include "util/sss_selinux.h"
+#include "util/auth_utils.h"
 #include "db/sysdb.h"
 #include "confdb/confdb.h"
 #include "responder/common/responder_packet.h"
@@ -443,6 +444,7 @@ static errno_t write_selinux_login_file(const char *username, char *string)
     } else {
         ret = EOK;
     }
+    close(fd);
     fd = -1;
 
 done:
@@ -715,8 +717,8 @@ static void pam_reply_delay(struct tevent_context *ev, struct tevent_timer *te,
 }
 
 static int pam_forwarder(struct cli_ctx *cctx, int pam_cmd);
-static void pam_cache_auth_done(struct pam_auth_req *preq, int ret,
-                                time_t expire_date, time_t delayed_until);
+static void pam_handle_cached_login(struct pam_auth_req *preq, int ret,
+                                    time_t expire_date, time_t delayed_until);
 
 static void pam_reply(struct pam_auth_req *preq)
 {
@@ -767,7 +769,7 @@ static void pam_reply(struct pam_auth_req *preq)
                                            pctx->rctx->cdb, false,
                                            &exp_date, &delay_until);
 
-                    pam_cache_auth_done(preq, ret, exp_date, delay_until);
+                    pam_handle_cached_login(preq, ret, exp_date, delay_until);
                     return;
             }
             break;
@@ -912,18 +914,18 @@ done:
     sss_cmd_done(cctx, preq);
 }
 
-static void pam_cache_auth_done(struct pam_auth_req *preq, int ret,
-                                time_t expire_date, time_t delayed_until)
+static void pam_handle_cached_login(struct pam_auth_req *preq, int ret,
+                                    time_t expire_date, time_t delayed_until)
 {
     uint32_t resp_type;
     size_t resp_len;
     uint8_t *resp;
     int64_t dummy;
 
-    switch (ret) {
-        case EOK:
-            preq->pd->pam_status = PAM_SUCCESS;
+    preq->pd->pam_status = cached_login_pam_status(ret);
 
+    switch (preq->pd->pam_status) {
+        case PAM_SUCCESS:
             resp_type = SSS_PAM_USER_INFO_OFFLINE_AUTH;
             resp_len = sizeof(uint32_t) + sizeof(int64_t);
             resp = talloc_size(preq->pd, resp_len);
@@ -940,14 +942,7 @@ static void pam_cache_auth_done(struct pam_auth_req *preq, int ret,
                 }
             }
             break;
-        case ENOENT:
-            preq->pd->pam_status = PAM_AUTHINFO_UNAVAIL;
-            break;
-        case EINVAL:
-            preq->pd->pam_status = PAM_AUTH_ERR;
-            break;
-        case EACCES:
-            preq->pd->pam_status = PAM_PERM_DENIED;
+        case PAM_PERM_DENIED:
             if (delayed_until >= 0) {
                 resp_type = SSS_PAM_USER_INFO_OFFLINE_AUTH_DELAYED;
                 resp_len = sizeof(uint32_t) + sizeof(int64_t);
@@ -967,7 +962,8 @@ static void pam_cache_auth_done(struct pam_auth_req *preq, int ret,
             }
             break;
         default:
-            preq->pd->pam_status = PAM_SYSTEM_ERR;
+            DEBUG(SSSDBG_TRACE_LIBS,
+                  ("cached login returned: %d\n", preq->pd->pam_status));
     }
 
     pam_reply(preq);
@@ -1221,7 +1217,10 @@ static int pam_check_user_search(struct pam_auth_req *preq)
             preq->pd->pam_status = PAM_SYSTEM_ERR;
             return EFAULT;
         }
-        ret = sysdb_getpwnam(preq, sysdb, name, &preq->res);
+
+        /* if this is a subdomain we need to search for the fully qualified
+         * name in the database */
+        ret = sysdb_subdom_getpwnam(preq, sysdb, name, &preq->res);
         if (ret != EOK) {
             DEBUG(1, ("Failed to make request to our cache!\n"));
             return EIO;

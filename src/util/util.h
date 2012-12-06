@@ -77,6 +77,7 @@ errno_t set_debug_file_from_fd(const int fd);
 #define SSSDBG_TRACE_LIBS     0x1000   /* level 7 */
 #define SSSDBG_TRACE_INTERNAL 0x2000   /* level 8 */
 #define SSSDBG_TRACE_ALL      0x4000   /* level 9 */
+#define SSSDBG_IMPORTANT_INFO SSSDBG_OP_FAILURE
 
 #define SSSDBG_INVALID        -1
 #define SSSDBG_UNRESOLVED     0
@@ -192,7 +193,10 @@ errno_t set_debug_file_from_fd(const int fd);
 
     \param level the debug level, please use one of the SSSDBG*_ macros
 */
-#define DEBUG_IS_SET(level) (debug_level & (level))
+#define DEBUG_IS_SET(level) (debug_level & (level) || \
+                            (debug_level == SSSDBG_UNRESOLVED && \
+                                            (level & (SSSDBG_FATAL_FAILURE | \
+                                                      SSSDBG_CRIT_FAILURE))))
 
 #define CONVERT_AND_SET_DEBUG_LEVEL(new_value) debug_level = ( \
     ((new_value) != SSSDBG_INVALID) \
@@ -358,6 +362,7 @@ void sss_log(int priority, const char *format, ...);
 struct main_context {
     struct tevent_context *event_ctx;
     struct confdb_ctx *confdb_ctx;
+    pid_t parent_pid;
 };
 
 int die_if_parent_died(void);
@@ -528,6 +533,12 @@ sss_escape_ip_address(TALLOC_CTX *mem_ctx, int family, const char *addr);
 errno_t
 remove_ipv6_brackets(char *ipv6addr);
 
+
+errno_t add_string_to_list(TALLOC_CTX *mem_ctx, const char *string,
+                           char ***list_p);
+
+bool string_in_list(const char *string, char **list, bool case_sensitive);
+
 /* from sss_tc_utf8.c */
 char *
 sss_tc_utf8_str_tolower(TALLOC_CTX *mem_ctx, const char *s);
@@ -552,6 +563,10 @@ struct sss_domain_info *new_subdomain(TALLOC_CTX *mem_ctx,
 struct sss_domain_info *copy_subdomain(TALLOC_CTX *mem_ctx,
                                        struct sss_domain_info *subdomain);
 
+/* from util_lock.c */
+errno_t sss_br_lock_file(int fd, size_t start, size_t len,
+                         int num_tries, useconds_t wait);
+
 /* Endianness-compatibility for systems running older versions of glibc */
 
 #ifndef le32toh
@@ -570,5 +585,11 @@ struct sss_domain_info *copy_subdomain(TALLOC_CTX *mem_ctx,
 #endif /* __USE_BSD */
 
 #endif /* le32toh */
+
+#ifdef HAVE_PAC_RESPONDER
+#define BUILD_WITH_PAC_RESPONDER true
+#else
+#define BUILD_WITH_PAC_RESPONDER false
+#endif
 
 #endif /* __SSSD_UTIL_H__ */

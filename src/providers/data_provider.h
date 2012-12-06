@@ -54,6 +54,13 @@
 #define DP_METHOD_AUTOFSHANDLER "autofsHandler"
 #define DP_METHOD_HOSTHANDLER "hostHandler"
 #define DP_METHOD_GETDOMAINS "getDomains"
+
+/* this is a reverse method sent from providers to
+ * the nss responder to tell it to update the mmap
+ * cache */
+#define DP_REV_METHOD_UPDATE_CACHE "updateCache"
+#define DP_REV_METHOD_INITGR_CHECK "initgrCheck"
+
 /**
  * @defgroup pamHandler PAM DBUS request
  * @ingroup sss_pam
@@ -195,6 +202,7 @@ struct pam_data {
 #define SSS_PROXY_INFO 0x10000000
 
 #define SSS_KRB5_INFO_TGT_LIFETIME (SSS_SERVER_INFO|SSS_KRB5_INFO|0x01)
+#define SSS_KRB5_INFO_UPN (SSS_SERVER_INFO|SSS_KRB5_INFO|0x02)
 
 errno_t copy_pam_data(TALLOC_CTX *mem_ctx, struct pam_data *old_pd,
                       struct pam_data **new_pd);

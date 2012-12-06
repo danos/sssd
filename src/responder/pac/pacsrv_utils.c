@@ -167,13 +167,6 @@ errno_t domsid_rid_to_uid(struct pac_ctx *pac_ctx,
         return ENOMEM;
     }
 
-    err = sss_idmap_smb_sid_to_sid(pac_ctx->idmap_ctx, domsid, &sid_str);
-    if (err != IDMAP_SUCCESS) {
-        DEBUG(SSSDBG_OP_FAILURE, ("sss_idmap_smb_sid_to_sid failed.\n"));
-        ret = EFAULT;
-        goto done;
-    }
-
     err = sss_idmap_sid_to_unix(pac_ctx->idmap_ctx, sid_str, &id);
     if (err == IDMAP_NO_DOMAIN) {
         ret = add_idmap_domain(pac_ctx->idmap_ctx, sysdb, domain_name,
@@ -502,11 +495,16 @@ errno_t get_pwd_from_pac(TALLOC_CTX *mem_ctx,
                          struct pac_ctx *pac_ctx,
                          struct sss_domain_info *dom,
                          struct PAC_LOGON_INFO *logon_info,
-                         struct passwd **_pwd)
+                         struct passwd **_pwd,
+                         struct sysdb_attrs **_attrs)
 {
     struct passwd *pwd = NULL;
+    struct sysdb_attrs *attrs = NULL;
     struct netr_SamBaseInfo *base_info;
     int ret;
+    char *lname;
+    char *uc_realm;
+    char *upn;
 
     pwd = talloc_zero(mem_ctx, struct passwd);
     if (pwd == NULL) {
@@ -516,31 +514,38 @@ errno_t get_pwd_from_pac(TALLOC_CTX *mem_ctx,
 
     base_info = &logon_info->info3.base;
 
-    if (base_info->account_name.size != 0) {
-        pwd->pw_name = talloc_strdup(pwd,
-                                     base_info->account_name.string);
-        if (pwd->pw_name == NULL) {
-            DEBUG(SSSDBG_OP_FAILURE, ("talloc_strdup failed.\n"));
-            ret = ENOMEM;
-            goto done;
-        }
-    } else {
+    if (base_info->account_name.size == 0) {
         DEBUG(SSSDBG_OP_FAILURE, ("Missing account name in PAC.\n"));
         ret = EINVAL;
         goto done;
     }
-
-    if (base_info->rid > 0) {
-        ret = domsid_rid_to_uid(pac_ctx, dom->sysdb, dom->name,
-                                base_info->domain_sid,
-                                base_info->rid, &pwd->pw_uid);
-        if (ret != EOK) {
-            DEBUG(SSSDBG_OP_FAILURE, ("domsid_rid_to_uid failed.\n"));
-            goto done;
-        }
-    } else {
+    if (base_info->rid == 0) {
         DEBUG(SSSDBG_OP_FAILURE, ("Missing user RID in PAC.\n"));
         ret = EINVAL;
+        goto done;
+    }
+
+    /* To be compatible with winbind based lookups we have to use lower
+     * case names only, effectively making the domain case-insenvitive. */
+    lname = sss_tc_utf8_str_tolower(pwd, base_info->account_name.string);
+    if (lname == NULL) {
+        DEBUG(SSSDBG_OP_FAILURE, ("sss_tc_utf8_str_tolower failed.\n"));
+        ret = ENOMEM;
+        goto done;
+    }
+    pwd->pw_name = talloc_asprintf(pwd, dom->names->fq_fmt,
+                                   lname, dom->name);
+    if (!pwd->pw_name) {
+        DEBUG(SSSDBG_OP_FAILURE, ("talloc_sprintf failed.\n"));
+        ret = ENOMEM;
+        goto done;
+    }
+
+    ret = domsid_rid_to_uid(pac_ctx, dom->sysdb, dom->name,
+                            base_info->domain_sid,
+                            base_info->rid, &pwd->pw_uid);
+    if (ret != EOK) {
+        DEBUG(SSSDBG_OP_FAILURE, ("domsid_rid_to_uid failed.\n"));
         goto done;
     }
 
@@ -560,7 +565,7 @@ errno_t get_pwd_from_pac(TALLOC_CTX *mem_ctx,
 
     if (dom->subdomain_homedir) {
         pwd->pw_dir = expand_homedir_template(pwd, dom->subdomain_homedir,
-                                              pwd->pw_name, pwd->pw_uid,
+                                              lname, pwd->pw_uid,
                                               dom->name);
         if (pwd->pw_dir == NULL) {
             ret = ENOMEM;
@@ -570,7 +575,43 @@ errno_t get_pwd_from_pac(TALLOC_CTX *mem_ctx,
 
     pwd->pw_shell = NULL; /* Using default */
 
+    attrs = sysdb_new_attrs(mem_ctx);
+    if (attrs == NULL) {
+        DEBUG(SSSDBG_OP_FAILURE, ("sysdb_new_attrs failed.\n"));
+        ret = ENOMEM;
+        goto done;
+    }
+
+    uc_realm = get_uppercase_realm(mem_ctx, dom->name);
+    if (uc_realm == NULL) {
+        DEBUG(SSSDBG_OP_FAILURE, ("get_uppercase_realm failed.\n"));
+        ret = ENOMEM;
+        goto done;
+    }
+
+    upn = talloc_asprintf(mem_ctx, "%s@%s", lname, uc_realm);
+    talloc_free(uc_realm);
+    if (upn == NULL) {
+        DEBUG(SSSDBG_OP_FAILURE, ("talloc_asprintf failed.\n"));
+        ret = ENOMEM;
+        goto done;
+    }
+
+    ret = sysdb_attrs_add_string(attrs, SYSDB_UPN, upn);
+    talloc_free(upn);
+    if (ret != EOK) {
+        DEBUG(SSSDBG_OP_FAILURE, ("sysdb_attrs_add_string failed.\n"));
+        goto done;
+    }
+
+    ret = sysdb_attrs_add_string(attrs, SYSDB_NAME_ALIAS, pwd->pw_name);
+    if (ret != EOK) {
+        DEBUG(SSSDBG_OP_FAILURE, ("sysdb_attrs_add_string failed.\n"));
+        goto done;
+    }
+
     *_pwd = pwd;
+    *_attrs = attrs;
 
     ret = EOK;
 
@@ -578,6 +619,162 @@ done:
     if (ret != EOK) {
         talloc_free(pwd);
     }
+
+    return ret;
+}
+
+errno_t diff_gid_lists(TALLOC_CTX *mem_ctx,
+                       size_t cur_grp_num,
+                       struct grp_info *cur_grp_list,
+                       size_t new_gid_num,
+                       gid_t *new_gid_list,
+                       size_t *_add_gid_num,
+                       gid_t **_add_gid_list,
+                       size_t *_del_grp_num,
+                       struct grp_info ***_del_grp_list)
+{
+    int ret;
+    size_t c;
+    hash_table_t *table;
+    hash_key_t key;
+    hash_value_t value;
+    size_t add_gid_num = 0;
+    gid_t *add_gid_list = NULL;
+    size_t del_grp_num = 0;
+    struct grp_info **del_grp_list = NULL;
+    TALLOC_CTX *tmp_ctx = NULL;
+    unsigned long value_count;
+    hash_value_t *values;
+
+    if ((cur_grp_num != 0 && cur_grp_list == NULL) ||
+        (new_gid_num != 0 && new_gid_list == NULL)) {
+        DEBUG(SSSDBG_OP_FAILURE, ("Missing group array.\n"));
+        return EINVAL;
+    }
+
+    if (cur_grp_num == 0 && new_gid_num == 0) {
+        ret = EOK;
+        goto done;
+    }
+
+    tmp_ctx = talloc_new(NULL);
+    if (tmp_ctx == NULL) {
+        DEBUG(SSSDBG_OP_FAILURE, ("talloc_new failed.\n"));
+        ret = ENOMEM;
+        goto done;
+    }
+
+    if (cur_grp_num == 0 && new_gid_num != 0) {
+        add_gid_num = new_gid_num;
+        add_gid_list = talloc_array(tmp_ctx, gid_t, add_gid_num);
+        if (add_gid_list == NULL) {
+            DEBUG(SSSDBG_OP_FAILURE, ("talloc_array failed.\n"));
+            ret = ENOMEM;
+            goto done;
+        }
+
+        for (c = 0; c < add_gid_num; c++) {
+            add_gid_list[c] = new_gid_list[c];
+        }
+
+        ret = EOK;
+        goto done;
+    }
+
+    if (cur_grp_num != 0 && new_gid_num == 0) {
+        del_grp_num = cur_grp_num;
+        del_grp_list = talloc_array(tmp_ctx, struct grp_info *, del_grp_num);
+        if (del_grp_list == NULL) {
+            DEBUG(SSSDBG_OP_FAILURE, ("talloc_array failed.\n"));
+            ret = ENOMEM;
+            goto done;
+        }
+
+        for (c = 0; c < del_grp_num; c++) {
+            del_grp_list[c] = &cur_grp_list[c];
+        }
+
+        ret = EOK;
+        goto done;
+    }
+
+    /* Add all current GIDs to a hash and then compare with the new ones in a
+     * single loop */
+    ret = sss_hash_create(tmp_ctx, cur_grp_num, &table);
+    if (ret != EOK) {
+        DEBUG(SSSDBG_OP_FAILURE, ("sss_hash_create failed.\n"));
+        goto done;
+    }
+
+    key.type = HASH_KEY_ULONG;
+    value.type = HASH_VALUE_PTR;
+    for (c = 0; c < cur_grp_num; c++) {
+        key.ul = (unsigned long) cur_grp_list[c].gid;
+        value.ptr = &cur_grp_list[c];
+
+        ret = hash_enter(table, &key, &value);
+        if (ret != HASH_SUCCESS) {
+            DEBUG(SSSDBG_OP_FAILURE, ("hash_enter failed.\n"));
+            ret = EIO;
+            goto done;
+        }
+    }
+
+    for (c = 0; c < new_gid_num; c++) {
+        key.ul = (unsigned long) new_gid_list[c];
+
+        ret = hash_delete(table, &key);
+        if (ret == HASH_ERROR_KEY_NOT_FOUND) {
+            /* gid not found, must be added */
+            add_gid_num++;
+            add_gid_list = talloc_realloc(tmp_ctx, add_gid_list, gid_t, add_gid_num);
+            if (add_gid_list == NULL) {
+                DEBUG(SSSDBG_OP_FAILURE, ("talloc_realloc failed.\n"));
+                ret = ENOMEM;
+                goto done;
+            }
+
+            add_gid_list[add_gid_num - 1] = new_gid_list[c];
+        } else if (ret != HASH_SUCCESS) {
+            DEBUG(SSSDBG_OP_FAILURE, ("hash_delete failed.\n"));
+            ret = EIO;
+            goto done;
+        }
+    }
+
+    /* the remaining entries in the hash are not in the new list anymore and
+     * must be deleted */
+    ret = hash_values(table, &value_count, &values);
+    if (ret != HASH_SUCCESS) {
+        DEBUG(SSSDBG_OP_FAILURE, ("hash_keys failed.\n"));
+        ret = EIO;
+        goto done;
+    }
+
+    del_grp_num = value_count;
+    del_grp_list = talloc_array(tmp_ctx, struct grp_info *, del_grp_num);
+    if (del_grp_list == NULL) {
+        DEBUG(SSSDBG_OP_FAILURE, ("talloc_array failed.\n"));
+        ret = ENOMEM;
+        goto done;
+    }
+
+    for (c = 0; c < del_grp_num; c++) {
+        del_grp_list[c] = (struct grp_info *) values[c].ptr;
+    }
+
+    ret = EOK;
+
+done:
+
+    if (ret == EOK) {
+        *_add_gid_num = add_gid_num;
+        *_add_gid_list = talloc_steal(mem_ctx, add_gid_list);
+        *_del_grp_num = del_grp_num;
+        *_del_grp_list = talloc_steal(mem_ctx, del_grp_list);
+    }
+
+    talloc_free(tmp_ctx);
 
     return ret;
 }

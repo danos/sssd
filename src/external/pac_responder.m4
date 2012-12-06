@@ -19,14 +19,17 @@ then
     KRB5_VERSION="`$KRB5_CONFIG --version`"
     case $KRB5_VERSION in
         Kerberos\ 5\ release\ 1.9* | \
-        Kerberos\ 5\ release\ 1.10*)
+        Kerberos\ 5\ release\ 1.10* | \
+        Kerberos\ 5\ release\ 1.11*)
             krb5_version_ok=yes
             AC_MSG_RESULT(yes)
             ;;
         *)
             AC_MSG_WARN([Cannot build authdata plugin with this version of
-                         MIT Kerberos, please use 1.9.x or 1.10.x])
+                         MIT Kerberos, please use 1.9.x or later])
     esac
 fi
 
 AM_CONDITIONAL([BUILD_PAC_RESPONDER], [test x$build_pac_responder = xyes -a x$ndr_krb5pac_ok = xyes -a x$krb5_version_ok = xyes ])
+AM_COND_IF([BUILD_PAC_RESPONDER],
+           [AC_DEFINE_UNQUOTED(HAVE_PAC_RESPONDER, 1, [Build with the PAC responder])])

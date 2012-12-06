@@ -283,6 +283,10 @@ struct ldb_dn *sysdb_domain_dn(struct sysdb_ctx *sysdb, TALLOC_CTX *mem_ctx)
 {
     return ldb_dn_new_fmt(mem_ctx, sysdb->ldb, SYSDB_DOM_BASE, sysdb->domain->name);
 }
+struct ldb_dn *sysdb_base_dn(struct sysdb_ctx *sysdb, TALLOC_CTX *mem_ctx)
+{
+    return ldb_dn_new(mem_ctx, sysdb->ldb, SYSDB_BASE);
+}
 
 struct ldb_context *sysdb_ctx_get_ldb(struct sysdb_ctx *sysdb)
 {
@@ -943,6 +947,38 @@ errno_t sysdb_add_to_domain(struct sss_domain_info *domain,
     return EOK;
 }
 
+/* Compare versions of sysdb, returns ERRNO accordingly */
+static errno_t
+sysdb_version_check(const char *expected,
+                    const char *received)
+{
+    int ret;
+    unsigned int exp_major, exp_minor, recv_major, recv_minor;
+
+    ret = sscanf(expected, "%u.%u", &exp_major, &exp_minor);
+    if (ret != 2) {
+        return EINVAL;
+    }
+    ret = sscanf(received, "%u.%u", &recv_major, &recv_minor);
+    if (ret != 2) {
+        return EINVAL;
+    }
+
+    if (recv_major > exp_major) {
+        return EUCLEAN;
+    } else if (recv_major < exp_major) {
+        return EMEDIUMTYPE;
+    }
+
+    if (recv_minor > exp_minor) {
+        return EUCLEAN;
+    } else if (recv_minor < exp_minor) {
+        return EMEDIUMTYPE;
+    }
+
+    return EOK;
+}
+
 int sysdb_domain_init_internal(TALLOC_CTX *mem_ctx,
                                struct sss_domain_info *domain,
                                const char *db_path,
@@ -1011,128 +1047,139 @@ int sysdb_domain_init_internal(TALLOC_CTX *mem_ctx,
 
     if (res->count == 1) {
         el = ldb_msg_find_element(res->msgs[0], "version");
-        if (el) {
-            if (el->num_values != 1) {
-                ret = EINVAL;
-                goto done;
-            }
-            version = talloc_strndup(tmp_ctx,
-                                     (char *)(el->values[0].data),
-                                     el->values[0].length);
-            if (!version) {
-                ret = ENOMEM;
-                goto done;
-            }
+        if (!el) {
+            ret = EIO;
+            goto done;
+        }
 
-            if (strcmp(version, SYSDB_VERSION) == 0) {
-                /* all fine, return */
-                ret = EOK;
-                goto done;
-            }
+        if (el->num_values != 1) {
+            ret = EINVAL;
+            goto done;
+        }
+        version = talloc_strndup(tmp_ctx,
+                                 (char *)(el->values[0].data),
+                                 el->values[0].length);
+        if (!version) {
+            ret = ENOMEM;
+            goto done;
+        }
 
-            if (!allow_upgrade) {
-                DEBUG(0, ("Wrong DB version (got %s expected %s)\n",
-                          version, SYSDB_VERSION));
-                ret = EINVAL;
-                goto done;
-            }
+        if (strcmp(version, SYSDB_VERSION) == 0) {
+            /* all fine, return */
+            ret = EOK;
+            goto done;
+        }
 
-            DEBUG(4, ("Upgrading DB [%s] from version: %s\n",
-                      domain->name, version));
+        if (!allow_upgrade) {
+            DEBUG(SSSDBG_FATAL_FAILURE,
+                  ("Wrong DB version (got %s expected %s)\n",
+                   version, SYSDB_VERSION));
+            ret = sysdb_version_check(SYSDB_VERSION, version);
+            goto done;
+        }
 
-            if (strcmp(version, SYSDB_VERSION_0_3) == 0) {
-                ret = sysdb_upgrade_03(sysdb, &version);
-                if (ret != EOK) {
-                    goto done;
-                }
-            }
+        DEBUG(SSSDBG_CONF_SETTINGS, ("Upgrading DB [%s] from version: %s\n",
+                  domain->name, version));
 
-            if (strcmp(version, SYSDB_VERSION_0_4) == 0) {
-                ret = sysdb_upgrade_04(sysdb, &version);
-                if (ret != EOK) {
-                    goto done;
-                }
-            }
-
-            if (strcmp(version, SYSDB_VERSION_0_5) == 0) {
-                ret = sysdb_upgrade_05(sysdb, &version);
-                if (ret != EOK) {
-                    goto done;
-                }
-            }
-
-            if (strcmp(version, SYSDB_VERSION_0_6) == 0) {
-                ret = sysdb_upgrade_06(sysdb, &version);
-                if (ret != EOK) {
-                    goto done;
-                }
-            }
-
-            if (strcmp(version, SYSDB_VERSION_0_7) == 0) {
-                ret = sysdb_upgrade_07(sysdb, &version);
-                if (ret != EOK) {
-                    goto done;
-                }
-            }
-
-            if (strcmp(version, SYSDB_VERSION_0_8) == 0) {
-                ret = sysdb_upgrade_08(sysdb, &version);
-                if (ret != EOK) {
-                    goto done;
-                }
-            }
-
-            if (strcmp(version, SYSDB_VERSION_0_9) == 0) {
-                ret = sysdb_upgrade_09(sysdb, &version);
-                if (ret != EOK) {
-                    goto done;
-                }
-            }
-
-            if (strcmp(version, SYSDB_VERSION_0_10) == 0) {
-                ret = sysdb_upgrade_10(sysdb, &version);
-                if (ret != EOK) {
-                    goto done;
-                }
-            }
-
-            if (strcmp(version, SYSDB_VERSION_0_11) == 0) {
-                ret = sysdb_upgrade_11(sysdb, &version);
-                if (ret != EOK) {
-                    goto done;
-                }
-            }
-
-            if (strcmp(version, SYSDB_VERSION_0_12) == 0) {
-                ret = sysdb_upgrade_12(sysdb, &version);
-                if (ret != EOK) {
-                    goto done;
-                }
-            }
-
-            /* The version should now match SYSDB_VERSION.
-             * If not, it means we didn't match any of the
-             * known older versions. The DB might be
-             * corrupt or generated by a newer version of
-             * SSSD.
-             */
-            if (strcmp(version, SYSDB_VERSION) == 0) {
-                /* The cache has been upgraded.
-                 * We need to reopen the LDB to ensure that
-                 * any changes made above take effect.
-                 */
-                talloc_zfree(sysdb->ldb);
-                ret = sysdb_ldb_connect(sysdb, sysdb->ldb_file, &sysdb->ldb);
-                if (ret != EOK) {
-                    DEBUG(1, ("sysdb_ldb_connect failed.\n"));
-                }
+        if (strcmp(version, SYSDB_VERSION_0_3) == 0) {
+            ret = sysdb_upgrade_03(sysdb, &version);
+            if (ret != EOK) {
                 goto done;
             }
         }
 
+        if (strcmp(version, SYSDB_VERSION_0_4) == 0) {
+            ret = sysdb_upgrade_04(sysdb, &version);
+            if (ret != EOK) {
+                goto done;
+            }
+        }
+
+        if (strcmp(version, SYSDB_VERSION_0_5) == 0) {
+            ret = sysdb_upgrade_05(sysdb, &version);
+            if (ret != EOK) {
+                goto done;
+            }
+        }
+
+        if (strcmp(version, SYSDB_VERSION_0_6) == 0) {
+            ret = sysdb_upgrade_06(sysdb, &version);
+            if (ret != EOK) {
+                goto done;
+            }
+        }
+
+        if (strcmp(version, SYSDB_VERSION_0_7) == 0) {
+            ret = sysdb_upgrade_07(sysdb, &version);
+            if (ret != EOK) {
+                goto done;
+            }
+        }
+
+        if (strcmp(version, SYSDB_VERSION_0_8) == 0) {
+            ret = sysdb_upgrade_08(sysdb, &version);
+            if (ret != EOK) {
+                goto done;
+            }
+        }
+
+        if (strcmp(version, SYSDB_VERSION_0_9) == 0) {
+            ret = sysdb_upgrade_09(sysdb, &version);
+            if (ret != EOK) {
+                goto done;
+            }
+        }
+
+        if (strcmp(version, SYSDB_VERSION_0_10) == 0) {
+            ret = sysdb_upgrade_10(sysdb, &version);
+            if (ret != EOK) {
+                goto done;
+            }
+        }
+
+        if (strcmp(version, SYSDB_VERSION_0_11) == 0) {
+            ret = sysdb_upgrade_11(sysdb, &version);
+            if (ret != EOK) {
+                goto done;
+            }
+        }
+
+        if (strcmp(version, SYSDB_VERSION_0_12) == 0) {
+            ret = sysdb_upgrade_12(sysdb, &version);
+            if (ret != EOK) {
+                goto done;
+            }
+        }
+
+        if (strcmp(version, SYSDB_VERSION_0_13) == 0) {
+            ret = sysdb_upgrade_13(sysdb, &version);
+            if (ret != EOK) {
+                goto done;
+            }
+        }
+
+        /* The version should now match SYSDB_VERSION.
+         * If not, it means we didn't match any of the
+         * known older versions. The DB might be
+         * corrupt or generated by a newer version of
+         * SSSD.
+         */
+        if (strcmp(version, SYSDB_VERSION) == 0) {
+            /* The cache has been upgraded.
+             * We need to reopen the LDB to ensure that
+             * any changes made above take effect.
+             */
+            talloc_zfree(sysdb->ldb);
+            ret = sysdb_ldb_connect(sysdb, sysdb->ldb_file, &sysdb->ldb);
+            if (ret != EOK) {
+                DEBUG(SSSDBG_CRIT_FAILURE, ("sysdb_ldb_connect failed.\n"));
+            }
+            goto done;
+        }
+
         DEBUG(0,("Unknown DB version [%s], expected [%s] for domain %s!\n",
                  version?version:"not found", SYSDB_VERSION, domain->name));
-        ret = EINVAL;
+        ret = sysdb_version_check(SYSDB_VERSION, version);
         goto done;
     }
 

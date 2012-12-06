@@ -30,6 +30,132 @@
 #include "src/util/find_uid.h"
 #include "util/util.h"
 
+errno_t find_or_guess_upn(TALLOC_CTX *mem_ctx, struct ldb_message *msg,
+                          struct krb5_ctx *krb5_ctx,
+                          const char *domain_name, const char *user,
+                          const char *user_dom, char **_upn)
+{
+    const char *upn;
+    int ret;
+
+    upn = ldb_msg_find_attr_as_string(msg, SYSDB_UPN, NULL);
+    if (upn == NULL) {
+        ret = krb5_get_simple_upn(mem_ctx, krb5_ctx, domain_name, user,
+                                  user_dom, _upn);
+        if (ret != EOK) {
+            DEBUG(SSSDBG_OP_FAILURE, ("krb5_get_simple_upn failed.\n"));
+            return ret;
+        }
+    } else {
+        *_upn = talloc_strdup(mem_ctx, upn);
+        if (*_upn == NULL) {
+            DEBUG(SSSDBG_OP_FAILURE, ("talloc_strdup failed.\n"));
+            return ENOMEM;
+        }
+    }
+
+    return EOK;
+}
+
+errno_t check_if_cached_upn_needs_update(struct sysdb_ctx *sysdb,
+                                         const char *user,
+                                         const char *upn)
+{
+    TALLOC_CTX *tmp_ctx;
+    int ret;
+    int sret;
+    const char *attrs[] = {SYSDB_UPN, NULL};
+    struct sysdb_attrs *new_attrs;
+    struct ldb_result *res;
+    bool in_transaction = false;
+    const char *cached_upn;
+
+    if (sysdb == NULL || user == NULL || upn == NULL) {
+        return EINVAL;
+    }
+
+    tmp_ctx = talloc_new(NULL);
+    if (tmp_ctx == NULL) {
+        DEBUG(SSSDBG_OP_FAILURE, ("talloc_new failed.\n"));
+        return ENOMEM;
+    }
+
+    ret = sysdb_get_user_attr(tmp_ctx, sysdb, user, attrs, &res);
+    if (ret != EOK) {
+        DEBUG(SSSDBG_OP_FAILURE, ("sysdb_get_user_attr failed.\n"));
+        goto done;
+    }
+
+    if (res->count != 1) {
+        DEBUG(SSSDBG_OP_FAILURE, ("[%d] user objects for name [%s] found, " \
+                                  "expected 1.\n", res->count, user));
+        ret = EINVAL;
+        goto done;
+    }
+
+    cached_upn = ldb_msg_find_attr_as_string(res->msgs[0], SYSDB_UPN, NULL);
+
+    if (cached_upn != NULL && strcmp(cached_upn, upn) == 0) {
+        DEBUG(SSSDBG_TRACE_ALL, ("Cached UPN and new one match, "
+                                 "nothing to do.\n"));
+        ret = EOK;
+        goto done;
+    }
+
+    DEBUG(SSSDBG_TRACE_LIBS, ("Replacing UPN [%s] with [%s] for user [%s].\n",
+                              cached_upn, upn, user));
+
+    new_attrs = sysdb_new_attrs(tmp_ctx);
+    if (new_attrs == NULL) {
+        DEBUG(SSSDBG_OP_FAILURE, ("sysdb_new_attrs failed.\n"));
+        ret = ENOMEM;
+        goto done;
+    }
+
+    ret = sysdb_attrs_add_string(new_attrs, SYSDB_UPN, upn);
+    if (ret != EOK) {
+        DEBUG(SSSDBG_OP_FAILURE, ("sysdb_attrs_add_string failed.\n"));
+        goto done;
+    }
+
+    ret = sysdb_transaction_start(sysdb);
+    if (ret != EOK) {
+        DEBUG(SSSDBG_OP_FAILURE,
+              ("Error %d starting transaction (%s)\n", ret, strerror(ret)));
+        goto done;
+    }
+    in_transaction = true;
+
+    ret = sysdb_set_entry_attr(sysdb, res->msgs[0]->dn, new_attrs,
+                               SYSDB_MOD_REP);
+    if (ret != EOK) {
+        DEBUG(SSSDBG_OP_FAILURE, ("sysdb_set_entry_attr failed [%d][%s].\n",
+                                  ret, strerror(ret)));
+        goto done;
+    }
+
+    ret = sysdb_transaction_commit(sysdb);
+    if (ret != EOK) {
+        DEBUG(SSSDBG_OP_FAILURE, ("Failed to commit transaction!\n"));
+        goto done;
+    }
+    in_transaction = false;
+
+    ret = EOK;
+
+done:
+    if (in_transaction) {
+        sret = sysdb_transaction_cancel(sysdb);
+        if (sret != EOK) {
+            DEBUG(SSSDBG_CRIT_FAILURE, ("Failed to cancel transaction\n"));
+        }
+    }
+
+    talloc_free(tmp_ctx);
+
+    return ret;
+}
+
 char *expand_ccname_template(TALLOC_CTX *mem_ctx, struct krb5child_req *kr,
                              const char *template, bool file_mode,
                              bool case_sensitive, bool *private_path)
@@ -821,15 +947,15 @@ errno_t
 cc_dir_create(const char *location, pcre *illegal_re,
               uid_t uid, gid_t gid, bool private_path)
 {
-    const char *dirname;
+    const char *dir_name;
 
-    dirname = sss_krb5_residual_check_type(location, SSS_KRB5_TYPE_DIR);
-    if (dirname == NULL) {
+    dir_name = sss_krb5_residual_check_type(location, SSS_KRB5_TYPE_DIR);
+    if (dir_name == NULL) {
         DEBUG(SSSDBG_CRIT_FAILURE, ("Bad residual type\n"));
         return EINVAL;
     }
 
-    return create_ccache_dir_head(dirname, illegal_re, uid, gid, private_path);
+    return create_ccache_dir_head(dir_name, illegal_re, uid, gid, private_path);
 }
 
 static krb5_error_code
@@ -1031,3 +1157,22 @@ struct sss_krb5_cc_be dir_cc = {
 };
 
 #endif /* HAVE_KRB5_DIRCACHE */
+
+errno_t get_domain_or_subdomain(TALLOC_CTX *mem_ctx, struct be_ctx *be_ctx,
+                                char *domain_name,
+                                struct sss_domain_info **dom)
+{
+
+    if (domain_name != NULL &&
+        strcasecmp(domain_name, be_ctx->domain->name) != 0) {
+        *dom = new_subdomain(mem_ctx, be_ctx->domain, domain_name, NULL, NULL);
+        if (*dom == NULL) {
+            DEBUG(SSSDBG_OP_FAILURE, ("new_subdomain failed.\n"));
+            return ENOMEM;
+        }
+    } else {
+        *dom = be_ctx->domain;
+    }
+
+    return EOK;
+}

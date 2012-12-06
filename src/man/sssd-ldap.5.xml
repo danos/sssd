@@ -1418,9 +1418,27 @@
                             Specify the SASL authorization id to use.
                             When GSSAPI is used, this represents the Kerberos
                             principal used for authentication to the directory.
+                            This option can either contain the full principal (for
+                            example host/myhost@EXAMPLE.COM) or just the principal name
+                            (for example host/myhost).
                         </para>
                         <para>
                             Default: host/hostname@REALM
+                        </para>
+                    </listitem>
+                </varlistentry>
+
+                <varlistentry>
+                    <term>ldap_sasl_realm (string)</term>
+                    <listitem>
+                        <para>
+                            Specify the SASL realm to use. When not specified,
+                            this option defaults to the value of krb5_realm.
+                            If the ldap_sasl_authid contains the realm as well,
+                            this option is ignored.
+                        </para>
+                        <para>
+                            Default: the value of krb5_realm.
                         </para>
                     </listitem>
                 </varlistentry>

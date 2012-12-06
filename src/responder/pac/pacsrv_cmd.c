@@ -53,6 +53,7 @@ struct pac_req_ctx {
     struct pac_ctx *pac_ctx;
     const char *domain_name;
     const char *user_name;
+    char *fq_name;
     struct sss_domain_info *dom;
 
     struct PAC_LOGON_INFO *logon_info;
@@ -60,10 +61,23 @@ struct pac_req_ctx {
 
     size_t gid_count;
     gid_t *gids;
+
+    size_t current_grp_count;
+    struct grp_info *current_grp_list;
+
+    size_t add_gid_count;
+    gid_t *add_gids;
+
+    size_t del_grp_count;
+    struct grp_info **del_grp_list;
 };
 
 static errno_t pac_add_user_next(struct pac_req_ctx *pr_ctx);
 static void pac_get_domains_done(struct tevent_req *req);
+static errno_t pac_user_get_grp_info(TALLOC_CTX *mem_ctx,
+                                     struct pac_req_ctx *pr_ctx,
+                                     size_t *_current_grp_count,
+                                     struct grp_info **_current_grp_list);
 static errno_t save_pac_user(struct pac_req_ctx *pr_ctx);
 static void pac_get_group_done(struct tevent_req *subreq);
 static errno_t pac_save_memberships_next(struct tevent_req *req);
@@ -113,13 +127,21 @@ static errno_t pac_add_pac_user(struct cli_ctx *cctx)
         goto done;
     }
 
-    pr_ctx->user_name = pr_ctx->logon_info->info3.base.account_name.string;
-    if (pr_ctx->user_name == NULL) {
+    if (pr_ctx->logon_info->info3.base.account_name.string == NULL) {
         ret = EINVAL;
         DEBUG(SSSDBG_FATAL_FAILURE, ("Missing account name in PAC.\n"));
         goto done;
     }
 
+    /* To be compatible with winbind based lookups we have to use lower case
+     * names only, effectively making the domain case-insenvitive. */
+    pr_ctx->user_name = sss_tc_utf8_str_tolower(pr_ctx,
+                            pr_ctx->logon_info->info3.base.account_name.string);
+    if (pr_ctx->user_name == NULL) {
+        ret = ENOMEM;
+        DEBUG(SSSDBG_FATAL_FAILURE, ("sss_tc_utf8_str_tolower failed.\n"));
+        goto done;
+    }
 
     pr_ctx->dom = responder_get_domain(pr_ctx, cctx->rctx, pr_ctx->domain_name);
     if (pr_ctx->dom == NULL) {
@@ -180,9 +202,26 @@ static errno_t pac_add_user_next(struct pac_req_ctx *pr_ctx)
     struct dom_sid *my_dom_sid;
     struct local_mapping_ranges *my_range_map;
 
+    /* this is a subdomain so we need to search for the fully qualified
+     * name in the database */
+    pr_ctx->fq_name = talloc_asprintf(pr_ctx, pr_ctx->dom->names->fq_fmt,
+                                      pr_ctx->user_name, pr_ctx->dom->name);
+    if (!pr_ctx->fq_name) {
+        ret = ENOMEM;
+        DEBUG(SSSDBG_OP_FAILURE, ("talloc_sprintf failed.\n"));
+        goto done;
+    }
+
     ret = save_pac_user(pr_ctx);
     if (ret != EOK) {
         DEBUG(SSSDBG_OP_FAILURE, ("save_pac_user failed.\n"));
+        goto done;
+    }
+
+    ret = pac_user_get_grp_info(pr_ctx, pr_ctx, &pr_ctx->current_grp_count,
+                                &pr_ctx->current_grp_list);
+    if (ret != EOK) {
+        DEBUG(SSSDBG_OP_FAILURE, ("pac_user_get_grp_info failed.\n"));
         goto done;
     }
 
@@ -201,6 +240,12 @@ static errno_t pac_add_user_next(struct pac_req_ctx *pr_ctx)
         goto done;
     }
 
+    ret = diff_gid_lists(pr_ctx,
+                         pr_ctx->current_grp_count, pr_ctx->current_grp_list,
+                         pr_ctx->gid_count, pr_ctx->gids,
+                         &pr_ctx->add_gid_count, &pr_ctx->add_gids,
+                         &pr_ctx->del_grp_count, &pr_ctx->del_grp_list);
+
     req = pac_save_memberships_send(pr_ctx);
     if (req == NULL) {
         ret = ENOMEM;
@@ -215,14 +260,19 @@ done:
     return ret;
 }
 
-static errno_t save_pac_user(struct pac_req_ctx *pr_ctx)
+static errno_t pac_user_get_grp_info(TALLOC_CTX *mem_ctx,
+                                     struct pac_req_ctx *pr_ctx,
+                                     size_t *_current_grp_count,
+                                     struct grp_info **_current_grp_list)
 {
     struct sysdb_ctx *sysdb;
     int ret;
-    const char *attrs[] = {SYSDB_NAME, SYSDB_UIDNUM, SYSDB_GIDNUM, NULL};
-    struct ldb_message *msg;
-    struct passwd *pwd = NULL;
     TALLOC_CTX *tmp_ctx = NULL;
+    struct ldb_result *res = NULL;
+    struct grp_info *current_grp_list = NULL;
+    size_t current_grp_count = 0;
+    size_t c;
+    const char *tmp_str;
 
     sysdb = pr_ctx->dom->sysdb;
     if (sysdb == NULL) {
@@ -238,13 +288,101 @@ static errno_t save_pac_user(struct pac_req_ctx *pr_ctx)
         goto done;
     }
 
-    ret = sysdb_search_user_by_name(tmp_ctx, sysdb, pr_ctx->user_name, attrs,
+    ret = sysdb_initgroups(tmp_ctx, sysdb, pr_ctx->user_name, &res);
+    if (ret != EOK) {
+        DEBUG(SSSDBG_OP_FAILURE, ("sysdb_initgroups failed.\n"));
+        goto done;
+    }
+
+    /* First result is the user entry then the groups follow */
+    if (res->count > 1) {
+        current_grp_count = res->count - 1;
+        current_grp_list = talloc_array(tmp_ctx, struct grp_info,
+                                        current_grp_count);
+        if (current_grp_list == NULL) {
+            DEBUG(SSSDBG_OP_FAILURE, ("talloc_array failed.\n"));
+            ret = ENOMEM;
+            goto done;
+        }
+
+        for (c = 0; c < current_grp_count; c++) {
+            current_grp_list[c].gid =
+                                  ldb_msg_find_attr_as_uint64(res->msgs[c + 1],
+                                                              SYSDB_GIDNUM, 0);
+            if (current_grp_list[c].gid == 0) {
+                DEBUG(SSSDBG_OP_FAILURE, ("Missing GID.\n"));
+                ret = EINVAL;
+                goto done;
+            }
+
+            tmp_str = ldb_msg_find_attr_as_string(res->msgs[c + 1],
+                                                  SYSDB_ORIG_DN, NULL);
+            if (tmp_str == NULL) {
+                DEBUG(SSSDBG_OP_FAILURE, ("Missing original DN.\n"));
+                ret = EINVAL;
+                goto done;
+            }
+
+            current_grp_list[c].orig_dn = talloc_strdup(current_grp_list,
+                                                        tmp_str);
+            if (current_grp_list[c].orig_dn == NULL) {
+                DEBUG(SSSDBG_OP_FAILURE, ("talloc_strdup failed.\n"));
+                ret = ENOMEM;
+                goto done;
+            }
+
+            current_grp_list[c].dn = ldb_dn_copy(current_grp_list,
+                                                 res->msgs[c + 1]->dn);
+            if (current_grp_list[c].dn == NULL) {
+                DEBUG(SSSDBG_OP_FAILURE, ("ldb_dn_copy failed.\n"));
+                ret = ENOMEM;
+                goto done;
+            }
+        }
+    }
+
+    *_current_grp_count = current_grp_count;
+    *_current_grp_list = talloc_steal(mem_ctx, current_grp_list);
+
+    ret = EOK;
+
+done:
+    talloc_free(tmp_ctx);
+
+    return ret;
+}
+
+static errno_t save_pac_user(struct pac_req_ctx *pr_ctx)
+{
+    struct sysdb_ctx *sysdb;
+    int ret;
+    const char *attrs[] = {SYSDB_NAME, SYSDB_UIDNUM, SYSDB_GIDNUM, NULL};
+    struct ldb_message *msg;
+    struct passwd *pwd = NULL;
+    TALLOC_CTX *tmp_ctx = NULL;
+    struct sysdb_attrs *user_attrs = NULL;
+
+    sysdb = pr_ctx->dom->sysdb;
+    if (sysdb == NULL) {
+        ret = EINVAL;
+        DEBUG(SSSDBG_FATAL_FAILURE, ("Fatal: Sysdb CTX not found for this domain!\n"));
+        goto done;
+    }
+
+    tmp_ctx = talloc_new(NULL);
+    if (tmp_ctx == NULL) {
+        ret = ENOMEM;
+        DEBUG(SSSDBG_OP_FAILURE, ("talloc_new failed.\n"));
+        goto done;
+    }
+
+    ret = sysdb_search_user_by_name(tmp_ctx, sysdb, pr_ctx->fq_name, attrs,
                                     &msg);
     if (ret == EOK) {
         /* TODO: check id uid and gid are equal. */
     } else if (ret == ENOENT) {
         ret = get_pwd_from_pac(tmp_ctx, pr_ctx->pac_ctx, pr_ctx->dom,
-                               pr_ctx->logon_info, &pwd);
+                               pr_ctx->logon_info, &pwd, &user_attrs);
         if (ret != EOK) {
             DEBUG(SSSDBG_OP_FAILURE, ("get_pwd_from_pac failed.\n"));
             goto done;
@@ -253,7 +391,7 @@ static errno_t save_pac_user(struct pac_req_ctx *pr_ctx)
         ret = sysdb_store_user(sysdb, pwd->pw_name, NULL,
                                pwd->pw_uid, pwd->pw_gid, pwd->pw_gecos,
                                pwd->pw_dir,
-                               pwd->pw_shell, NULL, NULL,
+                               pwd->pw_shell, NULL, user_attrs, NULL,
                                pr_ctx->dom->user_timeout, 0);
         if (ret != EOK) {
             DEBUG(SSSDBG_OP_FAILURE, ("sysdb_store_user failed [%d][%s].\n",
@@ -280,6 +418,9 @@ struct pac_save_memberships_state {
     struct sss_domain_info *group_dom;
 };
 
+static errno_t
+pac_save_memberships_delete(struct pac_save_memberships_state *state);
+
 struct tevent_req *pac_save_memberships_send(struct pac_req_ctx *pr_ctx)
 {
     struct pac_save_memberships_state *state;
@@ -293,7 +434,7 @@ struct tevent_req *pac_save_memberships_send(struct pac_req_ctx *pr_ctx)
     }
 
     state->gid_iter = 0;
-    state->user_dn = sysdb_user_dn(dom->sysdb, state, pr_ctx->user_name);
+    state->user_dn = sysdb_user_dn(dom->sysdb, state, pr_ctx->fq_name);
     if (state->user_dn == NULL) {
         ret = ENOMEM;
         goto done;
@@ -305,6 +446,12 @@ struct tevent_req *pac_save_memberships_send(struct pac_req_ctx *pr_ctx)
         state->group_dom = pr_ctx->dom->parent;
     } else {
         state->group_dom = pr_ctx->dom;
+    }
+
+    ret = pac_save_memberships_delete(state);
+    if (ret != EOK) {
+        DEBUG(SSSDBG_OP_FAILURE, ("pac_save_memberships_delete failed.\n"));
+        goto done;
     }
 
     ret = pac_save_memberships_next(req);
@@ -322,6 +469,93 @@ done:
     return req;
 }
 
+static errno_t
+pac_save_memberships_delete(struct pac_save_memberships_state *state)
+{
+    int ret;
+    int sret;
+    size_t c;
+    struct pac_req_ctx *pr_ctx;
+    bool in_transaction = false;
+    TALLOC_CTX *tmp_ctx;
+    struct sysdb_attrs *user_attrs = NULL;
+
+    pr_ctx = state->pr_ctx;
+
+    if (pr_ctx->del_grp_count == 0) {
+        return EOK;
+    }
+
+    if (pr_ctx->del_grp_list == NULL) {
+        DEBUG(SSSDBG_OP_FAILURE, ("Missing group list.\n"));
+        return EINVAL;
+    }
+
+    tmp_ctx = talloc_new(NULL);
+    if (tmp_ctx == NULL) {
+        DEBUG(SSSDBG_OP_FAILURE, ("talloc_new failed.\n"));
+        return ENOMEM;
+    }
+
+    user_attrs = sysdb_new_attrs(tmp_ctx);
+    if (user_attrs == NULL) {
+        DEBUG(SSSDBG_OP_FAILURE, ("sysdb_new_attrs failed.\n"));
+        ret = ENOMEM;
+        goto done;
+    }
+
+    ret = sysdb_transaction_start(state->group_dom->sysdb);
+    if (ret != EOK) {
+        DEBUG(SSSDBG_OP_FAILURE, ("sysdb_transaction_start failed.\n"));
+        goto done;
+    }
+    in_transaction = true;
+
+    for (c = 0; c < pr_ctx->del_grp_count; c++) {
+        ret = sysdb_mod_group_member(state->group_dom->sysdb, state->user_dn,
+                                     pr_ctx->del_grp_list[c]->dn,
+                                     LDB_FLAG_MOD_DELETE);
+        if (ret != EOK) {
+            DEBUG(SSSDBG_OP_FAILURE, ("sysdb_mod_group_member failed.\n"));
+            goto done;
+        }
+
+        ret = sysdb_attrs_add_string(user_attrs, SYSDB_ORIG_MEMBEROF,
+                                     pr_ctx->del_grp_list[c]->orig_dn);
+        if (ret != EOK) {
+            DEBUG(SSSDBG_OP_FAILURE, ("sysdb_attrs_add_string failed.\n"));
+            goto done;
+        }
+    }
+
+    ret = sysdb_set_entry_attr(pr_ctx->dom->sysdb, state->user_dn, user_attrs,
+                               LDB_FLAG_MOD_DELETE);
+    if (ret != EOK) {
+        DEBUG(SSSDBG_OP_FAILURE, ("sysdb_set_entry_attr failed.\n"));
+        goto done;
+    }
+
+    ret = sysdb_transaction_commit(state->group_dom->sysdb);
+    if (ret != EOK) {
+        DEBUG(SSSDBG_OP_FAILURE, ("sysdb_transaction_commit failed.\n"));
+        goto done;
+    }
+    in_transaction = false;
+
+    ret = EOK;
+done:
+    if (in_transaction) {
+        sret = sysdb_transaction_cancel(state->group_dom->sysdb);
+        if (sret != EOK) {
+            DEBUG(SSSDBG_OP_FAILURE, ("sysdb_transaction_cancel failed.\n"));
+        }
+    }
+
+    talloc_free(tmp_ctx);
+
+    return ret;
+}
+
 static errno_t pac_save_memberships_next(struct tevent_req *req)
 {
     errno_t ret;
@@ -333,8 +567,17 @@ static errno_t pac_save_memberships_next(struct tevent_req *req)
     state = tevent_req_data(req, struct pac_save_memberships_state);
     pr_ctx = state->pr_ctx;
 
-    while (state->gid_iter < pr_ctx->gid_count) {
-        gid = pr_ctx->gids[state->gid_iter];
+    if (pr_ctx->add_gid_count == 0) {
+        return EOK;
+    }
+
+    if (pr_ctx->add_gids == NULL) {
+        DEBUG(SSSDBG_OP_FAILURE, ("Missing group list.\n"));
+        return EINVAL;
+    }
+
+    while (state->gid_iter < pr_ctx->add_gid_count) {
+        gid = pr_ctx->add_gids[state->gid_iter];
 
         ret = pac_store_membership(state->pr_ctx, state->group_dom->sysdb,
                                     state->user_dn, state->gid_iter);
@@ -412,60 +655,61 @@ pac_store_membership(struct pac_req_ctx *pr_ctx,
                       int gid_iter)
 {
     TALLOC_CTX *tmp_ctx;
-    const char *group_name;
-    struct sysdb_attrs *group_attrs;
+    struct sysdb_attrs *user_attrs;
     struct ldb_message *group;
     uint32_t gid;
     errno_t ret;
+    const char *orig_group_dn;
+    const char *group_attrs[] = { SYSDB_ORIG_DN, NULL };
 
     tmp_ctx = talloc_new(NULL);
     if (tmp_ctx == NULL) {
         return ENOMEM;
     }
 
-    gid = pr_ctx->gids[gid_iter];
+    gid = pr_ctx->add_gids[gid_iter];
 
     ret = sysdb_search_group_by_gid(tmp_ctx, group_sysdb,
-                                    gid, NULL, &group);
+                                    gid, group_attrs, &group);
     if (ret != EOK) {
+        DEBUG(SSSDBG_TRACE_INTERNAL, ("sysdb_search_group_by_gid for gid [%d]" \
+                                      "failed [%d][%s].\n",
+                                      gid, ret, strerror(ret)));
         goto done;
     }
 
-    group_name = ldb_msg_find_attr_as_string(group, SYSDB_NAME, NULL);
-    if (group_name == NULL) {
-        ret = EIO;
+    ret = sysdb_mod_group_member(group_sysdb, user_dn, group->dn,
+                                 LDB_FLAG_MOD_ADD);
+    if (ret != EOK) {
+        DEBUG(SSSDBG_OP_FAILURE, ("sysdb_mod_group_member failed.\n"));
         goto done;
     }
 
-    group_attrs = talloc_zero(tmp_ctx, struct sysdb_attrs);
-    if (group_attrs == NULL) {
+    orig_group_dn = ldb_msg_find_attr_as_string(group, SYSDB_ORIG_DN, NULL);
+    if (orig_group_dn == NULL) {
+        DEBUG(SSSDBG_OP_FAILURE, ("Original DN not found.\n"));
+        ret = EINVAL;
+        goto done;
+    }
+
+    user_attrs = sysdb_new_attrs(tmp_ctx);
+    if (user_attrs == NULL) {
+        DEBUG(SSSDBG_OP_FAILURE, ("sysdb_new_attrs failed.\n"));
         ret = ENOMEM;
         goto done;
     }
-    group_attrs->num = 1;
-    group_attrs->a = ldb_msg_find_element(group, SYSDB_MEMBER);
-    if (group_attrs->a == NULL) {
-        group_attrs->a = talloc_zero(group_attrs, struct ldb_message_element);
-        if (group_attrs->a == NULL) {
-            ret = ENOMEM;
-            goto done;
-        }
-        group_attrs->a[0].name = talloc_strdup(group_attrs->a, SYSDB_MEMBER);
-        if (group_attrs->a[0].name == NULL) {
-            ret = ENOMEM;
-            goto done;
-        }
-    }
 
-    ret = sysdb_attrs_add_string(group_attrs, SYSDB_MEMBER,
-                                 ldb_dn_get_linearized(user_dn));
+    ret = sysdb_attrs_add_string(user_attrs, SYSDB_ORIG_MEMBEROF,
+                                 orig_group_dn);
     if (ret != EOK) {
+        DEBUG(SSSDBG_OP_FAILURE, ("sysdb_attrs_add_string failed.\n"));
         goto done;
     }
 
-    ret = sysdb_store_group(group_sysdb, group_name, gid,
-                            group_attrs, pr_ctx->dom->group_timeout, 0);
+    ret = sysdb_set_entry_attr(pr_ctx->dom->sysdb, user_dn, user_attrs,
+                              LDB_FLAG_MOD_ADD);
     if (ret != EOK) {
+        DEBUG(SSSDBG_OP_FAILURE, ("sysdb_set_entry_attr failed.\n"));
         goto done;
     }
 

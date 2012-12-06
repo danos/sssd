@@ -368,6 +368,7 @@ dist_noinst_HEADERS = \
     src/util/murmurhash3.h \
     src/util/mmap_cache.h \
     src/util/atomic_io.h \
+    src/util/auth_utils.h \
     src/monitor/monitor.h \
     src/monitor/monitor_interfaces.h \
     src/responder/common/responder.h \
@@ -507,7 +508,8 @@ libsss_util_la_SOURCES = \
     src/util/murmurhash3.c \
     src/util/atomic_io.c \
     src/util/sss_selinux.c \
-    src/util/domain_info_utils.c
+    src/util/domain_info_utils.c \
+    src/util/util_lock.c
 libsss_util_la_LIBADD = \
     $(SSSD_LIBS) \
     $(UNICODE_LIBS) \
@@ -744,11 +746,11 @@ sss_seed_LDADD = \
 if BUILD_SUDO
 sss_sudo_cli_SOURCES = \
     src/sss_client/common.c \
+    src/sss_client/sudo/sss_sudo.c \
+    src/sss_client/sudo/sss_sudo_response.c \
     src/sss_client/sudo_testcli/sudo_testcli.c
 sss_sudo_cli_CFLAGS = $(AM_CFLAGS)
 sss_sudo_cli_LDFLAGS = $(CLIENT_LIBS)
-sss_sudo_cli_LDADD = \
-    libsss_sudo.la
 endif
 
 if BUILD_SSH
@@ -759,6 +761,7 @@ sss_ssh_authorizedkeys_SOURCES = \
 sss_ssh_authorizedkeys_CFLAGS = $(AM_CFLAGS)
 sss_ssh_authorizedkeys_LDADD = \
     libsss_util.la
+sss_ssh_authorizedkeys_LDFLAGS = $(CLIENT_LIBS)
 
 sss_ssh_knownhostsproxy_SOURCES = \
     src/sss_client/common.c \
@@ -767,6 +770,7 @@ sss_ssh_knownhostsproxy_SOURCES = \
 sss_ssh_knownhostsproxy_CFLAGS = $(AM_CFLAGS)
 sss_ssh_knownhostsproxy_LDADD = \
     libsss_util.la
+sss_ssh_knownhostsproxy_LDFLAGS = $(CLIENT_LIBS)
 endif
 
 #################
@@ -1184,7 +1188,8 @@ libsss_sudo_la_SOURCES = \
 libsss_sudo_la_LDFLAGS = \
     $(CLIENT_LIBS) \
     -Wl,--version-script,$(srcdir)/src/sss_client/sss_sudo.exports \
-    -version-info 2:0:1
+    -module \
+    -avoid-version
 
 sudolib_LTLIBRARIES = libsss_sudo.la
 
@@ -1443,7 +1448,8 @@ krb5_child_SOURCES = \
     src/util/sss_krb5.c \
     src/util/atomic_io.c \
     src/util/util.c \
-    src/util/signal.c
+    src/util/signal.c \
+    src/sss_client/common.c
 krb5_child_CFLAGS = \
     $(AM_CFLAGS) \
     $(POPT_CFLAGS) \
@@ -1455,7 +1461,8 @@ krb5_child_LDADD = \
     $(TEVENT_LIBS) \
     $(POPT_LIBS) \
     $(DHASH_LIBS) \
-    $(KRB5_LIBS)
+    $(KRB5_LIBS) \
+    $(CLIENT_LIBS)
 
 ldap_child_SOURCES = \
     src/providers/ldap/ldap_child.c \
