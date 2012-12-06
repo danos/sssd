@@ -1,6 +1,6 @@
-sssd (1.9.2-1) UNRELEASED; urgency=low
+sssd (1.9.3-1) UNRELEASED; urgency=low
 
-  * New upstream release 1.9.2. Highlights:
+  * New upstream release 1.9.3. Highlights:
     - Add native support for autofs to the IPA provider
     - Support for ID-mapping when connecting to Active Directory
     - Support for handling very large (> 1500 users) groups in Active
