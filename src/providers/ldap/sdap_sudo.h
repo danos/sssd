@@ -31,6 +31,16 @@ struct sdap_sudo_ctx {
     bool use_host_filter;
 
     bool full_refresh_done;
+    bool full_refresh_in_progress;
+    int full_refresh_attempts;
+    struct be_cb *first_refresh_online_cb;
+    struct tevent_req *first_refresh_timer;
+};
+
+enum sdap_sudo_refresh_type {
+    SDAP_SUDO_REFRESH_FULL,
+    SDAP_SUDO_REFRESH_SMART,
+    SDAP_SUDO_REFRESH_RULES
 };
 
 /* Common functions from ldap_sudo.c */

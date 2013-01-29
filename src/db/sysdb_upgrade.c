@@ -1059,6 +1059,9 @@ int sysdb_upgrade_10(struct sysdb_ctx *sysdb, const char **ver)
             goto done;
         }
 
+        DEBUG(SSSDBG_TRACE_LIBS, ("User [%s] is a member of %d groups\n",
+              name, memberof_el->num_values));
+
         for (j = 0; j < memberof_el->num_values; j++) {
             msg = ldb_msg_new(tmp_ctx);
             if (msg == NULL) {
@@ -1091,13 +1094,53 @@ int sysdb_upgrade_10(struct sysdb_ctx *sysdb, const char **ver)
                 goto done;
             }
 
-            ret = ldb_modify(sysdb->ldb, msg);
+            DEBUG(SSSDBG_TRACE_FUNC, ("Adding ghost [%s] to entry [%s]\n",
+                  name, ldb_dn_get_linearized(msg->dn)));
+
+            ret = sss_ldb_modify_permissive(sysdb->ldb, msg);
             talloc_zfree(msg);
-            if (ret != LDB_SUCCESS) {
+            if (ret == LDB_ERR_ATTRIBUTE_OR_VALUE_EXISTS) {
+                /* If we failed adding the ghost user(s) because the values already
+                 * exist, they were probably propagated from a parent that was
+                 * upgraded before us. Mark the group as expired so that it is
+                 * refreshed on next request.
+                 */
+                msg = ldb_msg_new(tmp_ctx);
+                if (msg == NULL) {
+                    ret = ENOMEM;
+                    goto done;
+                }
+
+                msg->dn = ldb_dn_from_ldb_val(tmp_ctx, sysdb->ldb, &memberof_el->values[j]);
+                if (msg->dn == NULL) {
+                    ret = ENOMEM;
+                    goto done;
+                }
+
+                ret = ldb_msg_add_empty(msg, SYSDB_CACHE_EXPIRE,
+                                        LDB_FLAG_MOD_REPLACE, NULL);
+                if (ret != LDB_SUCCESS) {
+                    goto done;
+                }
+
+                ret = ldb_msg_add_string(msg, SYSDB_CACHE_EXPIRE, "1");
+                if (ret != LDB_SUCCESS) {
+                    goto done;
+                }
+
+                ret = sss_ldb_modify_permissive(sysdb->ldb, msg);
+                talloc_zfree(msg);
+                if (ret != LDB_SUCCESS) {
+                    goto done;
+                }
+            } else if (ret != LDB_SUCCESS) {
                 ret = sysdb_error_to_errno(ret);
                 goto done;
             }
         }
+
+        DEBUG(SSSDBG_TRACE_FUNC, ("Removing fake user [%s]\n",
+              ldb_dn_get_linearized(user->dn)));
 
         ret = ldb_delete(sysdb->ldb, user->dn);
         if (ret != LDB_SUCCESS) {

@@ -289,6 +289,11 @@ SSSD_TOOLS_OBJ = \
     src/tools/selinux.c \
     src/tools/nscd.c
 
+SSSD_LCL_TOOLS_OBJ = \
+    src/sss_client/common.c \
+    src/tools/tools_mc_util.c \
+    $(SSSD_TOOLS_OBJ)
+
 SSSD_RESOLV_OBJ = \
     src/resolv/async_resolv.c
 if BUILD_ARES_DATA
@@ -373,6 +378,7 @@ dist_noinst_HEADERS = \
     src/monitor/monitor_interfaces.h \
     src/responder/common/responder.h \
     src/responder/common/responder_packet.h \
+    src/responder/common/responder_sbus.h \
     src/responder/pam/pamsrv.h \
     src/responder/pam/pam_helpers.h \
     src/responder/nss/nsssrv.h \
@@ -682,10 +688,13 @@ sss_useradd_LDADD = \
 sss_userdel_SOURCES = \
     src/tools/sss_userdel.c \
     src/util/find_uid.c \
-    $(SSSD_TOOLS_OBJ)
+    $(SSSD_LCL_TOOLS_OBJ)
 sss_userdel_LDADD = \
     libsss_util.la \
     $(TOOLS_LIBS)
+sss_userdel_CFLAGS = $(AM_CFLAGS)
+sss_userdel_LDFLAGS = \
+    $(CLIENT_LIBS)
 
 sss_groupadd_SOURCES = \
     src/tools/sss_groupadd.c \
@@ -696,24 +705,33 @@ sss_groupadd_LDADD = \
 
 sss_groupdel_SOURCES = \
     src/tools/sss_groupdel.c \
-    $(SSSD_TOOLS_OBJ)
+    $(SSSD_LCL_TOOLS_OBJ)
 sss_groupdel_LDADD = \
     libsss_util.la \
     $(TOOLS_LIBS)
+sss_groupdel_CFLAGS = $(AM_CFLAGS)
+sss_groupdel_LDFLAGS = \
+    $(CLIENT_LIBS)
 
 sss_usermod_SOURCES = \
     src/tools/sss_usermod.c \
-    $(SSSD_TOOLS_OBJ)
+    $(SSSD_LCL_TOOLS_OBJ)
 sss_usermod_LDADD = \
     libsss_util.la \
     $(TOOLS_LIBS)
+sss_usermod_CFLAGS = $(AM_CFLAGS)
+sss_usermod_LDFLAGS = \
+    $(CLIENT_LIBS)
 
 sss_groupmod_SOURCES = \
     src/tools/sss_groupmod.c \
-    $(SSSD_TOOLS_OBJ)
+    $(SSSD_LCL_TOOLS_OBJ)
 sss_groupmod_LDADD = \
     libsss_util.la \
     $(TOOLS_LIBS)
+sss_groupmod_CFLAGS = $(AM_CFLAGS)
+sss_groupmod_LDFLAGS = \
+    $(CLIENT_LIBS)
 
 sss_groupshow_SOURCES = \
     src/tools/sss_groupshow.c \
@@ -724,10 +742,13 @@ sss_groupshow_LDADD = \
 
 sss_cache_SOURCES = \
     src/tools/sss_cache.c \
-    $(SSSD_TOOLS_OBJ)
+    $(SSSD_LCL_TOOLS_OBJ)
 sss_cache_LDADD = \
     libsss_util.la \
     $(TOOLS_LIBS)
+sss_cache_CFLAGS = $(AM_CFLAGS)
+sss_cache_LDFLAGS = \
+    $(CLIENT_LIBS)
 
 sss_debuglevel_SOURCES = \
     src/tools/sss_debuglevel.c \
@@ -1067,6 +1088,7 @@ pac_responder_tests_LDADD = \
     $(TALLOC_LIBS) \
     $(NDR_KRB5PAC_LIBS) \
     $(SSSD_LIBS) \
+    -lm \
     libsss_idmap.la \
     libsss_debug.la \
     libsss_util.la \

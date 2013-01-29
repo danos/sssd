@@ -2621,7 +2621,12 @@ static int mbof_del_muop_callback(struct ldb_request *req,
         return ldb_module_done(ctx->req, NULL, NULL,
                                LDB_ERR_OPERATIONS_ERROR);
     }
-    if (ares->error != LDB_SUCCESS) {
+    /* if the attribute was not present it means the db is not
+     * perfectly consistent but failing here is not useful
+     * anyway and missing entries cause no harm if we are trying
+     * to remove them anyway */
+    if (ares->error != LDB_SUCCESS &&
+        ares->error != LDB_ERR_NO_SUCH_ATTRIBUTE) {
         return ldb_module_done(ctx->req,
                                ares->controls,
                                ares->response,
@@ -2737,7 +2742,7 @@ static int mbof_del_ghop_callback(struct ldb_request *req,
      * might have been directly nested in the parent as well and
      * updated with another replace operation.
      */
-    if (ares->error != LDB_SUCCESS &&  \
+    if (ares->error != LDB_SUCCESS &&
         ares->error != LDB_ERR_NO_SUCH_ATTRIBUTE) {
         return ldb_module_done(ctx->req,
                                ares->controls,
@@ -3014,7 +3019,7 @@ static int mbof_collect_child_ghosts(struct mbof_mod_ctx *mod_ctx)
     }
 
     mod_ctx->igh = talloc_zero(mod_ctx, struct mbof_mod_del_op);
-    if (mod_ctx == NULL) {
+    if (mod_ctx->igh == NULL) {
         return LDB_ERR_OPERATIONS_ERROR;
     }
     mod_ctx->igh->mod_ctx = mod_ctx;
@@ -3082,7 +3087,7 @@ static int mbof_get_ghost_from_parent_cb(struct ldb_request *req,
     struct mbof_mod_del_op *igh;
     struct mbof_ctx *ctx;
     struct ldb_message_element *el;
-    struct ldb_val *dup;
+    struct ldb_val *dupval;
     int ret;
     hash_value_t value;
     hash_key_t key;
@@ -3118,18 +3123,18 @@ static int mbof_get_ghost_from_parent_cb(struct ldb_request *req,
                 continue;
             }
 
-            dup = talloc_zero(igh->inherited_gh, struct ldb_val);
-            if (dup == NULL) {
+            dupval = talloc_zero(igh->inherited_gh, struct ldb_val);
+            if (dupval == NULL) {
                 return LDB_ERR_OPERATIONS_ERROR;
             }
 
-            *dup = ldb_val_dup(igh->inherited_gh, &el->values[i]);
-            if (dup->data == NULL) {
+            *dupval = ldb_val_dup(igh->inherited_gh, &el->values[i]);
+            if (dupval->data == NULL) {
                 return LDB_ERR_OPERATIONS_ERROR;
             }
 
             value.type = HASH_VALUE_PTR;
-            value.ptr = dup;
+            value.ptr = dupval;
 
             ret = hash_enter(igh->inherited_gh, &key, &value);
             if (ret != HASH_SUCCESS) {
@@ -3250,7 +3255,7 @@ static int mbof_inherited_mod(struct mbof_mod_ctx *mod_ctx)
     struct ldb_message_element *el;
     struct ldb_message *msg;
     struct ldb_val *val;
-    struct ldb_val *dup;
+    struct ldb_val *dupval;
     hash_value_t *values;
     unsigned long num_values;
     int i, j;
@@ -3285,8 +3290,8 @@ static int mbof_inherited_mod(struct mbof_mod_ctx *mod_ctx)
     for (i = 0, j = 0; i < num_values; i++) {
         val = talloc_get_type(values[i].ptr, struct ldb_val);
 
-        dup = ldb_msg_find_val(mod_ctx->ghel, val);
-        if (dup) {
+        dupval = ldb_msg_find_val(mod_ctx->ghel, val);
+        if (dupval) {
             continue;
         }
 
@@ -3783,7 +3788,7 @@ static int mbof_fill_vals_array(TALLOC_CTX *memctx,
                                 struct mbof_val_array **val_array)
 {
     struct mbof_val_array *var = *val_array;
-    int i, index;
+    int i, vi;
 
     if (var == NULL) {
         var = talloc_zero(memctx, struct mbof_val_array);
@@ -3799,7 +3804,7 @@ static int mbof_fill_vals_array(TALLOC_CTX *memctx,
 
     /* We do not care about duplicate values now.
      * They will be filtered later */
-    index = var->num;
+    vi = var->num;
     var->num += num_values;
     var->vals = talloc_realloc(memctx, var->vals, struct ldb_val, var->num);
     if (!var->vals) {
@@ -3808,13 +3813,13 @@ static int mbof_fill_vals_array(TALLOC_CTX *memctx,
 
     /* FIXME - use ldb_val_dup() */
     for (i = 0; i < num_values; i++) {
-        var->vals[index].length = strlen((const char *) values[i].data);
-        var->vals[index].data = (uint8_t *) talloc_strdup(var,
+        var->vals[vi].length = strlen((const char *) values[i].data);
+        var->vals[vi].data = (uint8_t *) talloc_strdup(var,
                                           (const char *) values[i].data);
-        if (var->vals[index].data == NULL) {
+        if (var->vals[vi].data == NULL) {
             return LDB_ERR_OPERATIONS_ERROR;
         }
-        index++;
+        vi++;
     }
 
     return LDB_SUCCESS;

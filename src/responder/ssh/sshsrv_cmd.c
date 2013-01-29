@@ -65,6 +65,11 @@ sss_ssh_cmd_get_user_pubkeys(struct cli_ctx *cctx)
           ("Requesting SSH user public keys for [%s] from [%s]\n",
            cmd_ctx->name, cmd_ctx->domname ? cmd_ctx->domname : "<ALL>"));
 
+    if (strcmp(cmd_ctx->name, "root") == 0) {
+        ret = ENOENT;
+        goto done;
+    }
+
     if (cmd_ctx->domname) {
         cmd_ctx->domain = responder_get_domain(cmd_ctx, cctx->rctx,
                                                cmd_ctx->domname);
@@ -688,8 +693,8 @@ ssh_cmd_parse_request(struct ssh_cmd_ctx *cmd_ctx)
     }
 
     SAFEALIGN_COPY_UINT32_CHECK(&name_len, body+c, body_len, &c);
-    if (name_len == 0) {
-        DEBUG(SSSDBG_CRIT_FAILURE, ("Zero-length name is not valid\n"));
+    if (name_len == 0 || name_len > body_len - c) {
+        DEBUG(SSSDBG_CRIT_FAILURE, ("Invalid name length\n"));
         return EINVAL;
     }
 
@@ -711,8 +716,8 @@ ssh_cmd_parse_request(struct ssh_cmd_ctx *cmd_ctx)
 
     if (flags & 1) {
         SAFEALIGN_COPY_UINT32_CHECK(&alias_len, body+c, body_len, &c);
-        if (alias_len == 0) {
-            DEBUG(SSSDBG_CRIT_FAILURE, ("Zero-length alias is not valid\n"));
+        if (alias_len == 0 || alias_len > body_len - c) {
+            DEBUG(SSSDBG_CRIT_FAILURE, ("Invalid alias length\n"));
             return EINVAL;
         }
 

@@ -36,6 +36,36 @@
 
 /* ====================  Utility functions ==================== */
 
+static errno_t sysdb_sudo_convert_time(const char *str, time_t *unix_time)
+{
+    struct tm tm;
+    char *tret = NULL;
+
+    /* SUDO requires times to be in generalized time format:
+     * YYYYMMDDHHMMSS[.|,fraction][(+|-HHMM)|Z]
+     *
+     * We need to use more format strings to parse this with strptime().
+     */
+    const char **format = NULL;
+    const char *formats[] = {"%Y%m%d%H%M%SZ",    /* 201212121300Z */
+                             "%Y%m%d%H%M%S%z",   /* 201212121300+-0200 */
+                             "%Y%m%d%H%M%S.0Z",
+                             "%Y%m%d%H%M%S.0%z",
+                             "%Y%m%d%H%M%S,0Z",
+                             "%Y%m%d%H%M%S,0%z",
+                             NULL};
+
+    for (format = formats; *format != NULL; format++) {
+        tret = strptime(str, *format, &tm);
+        if (tret != NULL && *tret == '\0') {
+            *unix_time = mktime(&tm);
+            return EOK;
+        }
+    }
+
+    return EINVAL;
+}
+
 static errno_t sysdb_sudo_check_time(struct sysdb_attrs *rule,
                                      time_t now,
                                      bool *result)
@@ -43,11 +73,9 @@ static errno_t sysdb_sudo_check_time(struct sysdb_attrs *rule,
     TALLOC_CTX *tmp_ctx = NULL;
     const char **values = NULL;
     const char *name = NULL;
-    char *tret = NULL;
     time_t notBefore = 0;
     time_t notAfter = 0;
     time_t converted;
-    struct tm tm;
     errno_t ret;
     int i;
 
@@ -67,7 +95,6 @@ static errno_t sysdb_sudo_check_time(struct sysdb_attrs *rule,
     /*
      * From man sudoers.ldap:
      *
-     * A timestamp is in the form yyyymmddHHMMSSZ.
      * If multiple sudoNotBefore entries are present, the *earliest* is used.
      * If multiple sudoNotAfter entries are present, the *last one* is used.
      *
@@ -91,14 +118,12 @@ static errno_t sysdb_sudo_check_time(struct sysdb_attrs *rule,
     }
 
     for (i=0; values[i] ; i++) {
-        tret = strptime(values[i], SYSDB_SUDO_TIME_FORMAT, &tm);
-        if (tret == NULL || *tret != '\0') {
+        ret = sysdb_sudo_convert_time(values[i], &converted);
+        if (ret != EOK) {
             DEBUG(SSSDBG_MINOR_FAILURE, ("Invalid time format in rule [%s]!\n",
                   name));
-            ret = EINVAL;
             goto done;
         }
-        converted = mktime(&tm);
 
         /* Grab the earliest */
         if (!notBefore) {
@@ -123,14 +148,12 @@ static errno_t sysdb_sudo_check_time(struct sysdb_attrs *rule,
     }
 
     for (i=0; values[i] ; i++) {
-        tret = strptime(values[i], SYSDB_SUDO_TIME_FORMAT, &tm);
-        if (tret == NULL || *tret != '\0') {
+        ret = sysdb_sudo_convert_time(values[i], &converted);
+        if (ret != EOK) {
             DEBUG(SSSDBG_MINOR_FAILURE, ("Invalid time format in rule [%s]!\n",
                   name));
-            ret = EINVAL;
             goto done;
         }
-        converted = mktime(&tm);
 
         /* Grab the latest */
         if (!notAfter) {
@@ -151,13 +174,13 @@ done:
 }
 
 errno_t sysdb_sudo_filter_rules_by_time(TALLOC_CTX *mem_ctx,
-                                        size_t in_num_rules,
+                                        uint32_t in_num_rules,
                                         struct sysdb_attrs **in_rules,
                                         time_t now,
-                                        size_t *_num_rules,
+                                        uint32_t *_num_rules,
                                         struct sysdb_attrs ***_rules)
 {
-    size_t num_rules = 0;
+    uint32_t num_rules = 0;
     struct sysdb_attrs **rules = NULL;
     TALLOC_CTX *tmp_ctx = NULL;
     bool allowed = false;
@@ -290,19 +313,25 @@ sysdb_get_sudo_user_info(TALLOC_CTX *mem_ctx, const char *username,
 {
     TALLOC_CTX *tmp_ctx;
     errno_t ret;
-    const char *attrs[3];
     struct ldb_message *msg;
+    struct ldb_message *group_msg = NULL;
     char **sysdb_groupnames = NULL;
+    const char *primary_group = NULL;
     struct ldb_message_element *groups;
     uid_t uid = 0;
+    gid_t gid = 0;
+    size_t num_groups = 0;
     int i;
+    const char *attrs[] = { SYSDB_MEMBEROF,
+                            SYSDB_GIDNUM,
+                            SYSDB_UIDNUM,
+                            NULL };
+    const char *group_attrs[] = { SYSDB_NAME,
+                                  NULL };
 
     tmp_ctx = talloc_new(NULL);
     NULL_CHECK(tmp_ctx, ret, done);
 
-    attrs[0] = SYSDB_MEMBEROF;
-    attrs[1] = SYSDB_UIDNUM;
-    attrs[2] = NULL;
     ret = sysdb_search_user_by_name(tmp_ctx, sysdb, username,
                                     attrs, &msg);
     if (ret != EOK) {
@@ -319,13 +348,16 @@ sysdb_get_sudo_user_info(TALLOC_CTX *mem_ctx, const char *username,
         }
     }
 
+    /* resolve secondary groups */
     if (groupnames != NULL) {
         groups = ldb_msg_find_element(msg, SYSDB_MEMBEROF);
         if (!groups || groups->num_values == 0) {
             /* No groups for this user in sysdb currently */
             sysdb_groupnames = NULL;
+            num_groups = 0;
         } else {
-            sysdb_groupnames = talloc_array(tmp_ctx, char *, groups->num_values+1);
+            num_groups = groups->num_values;
+            sysdb_groupnames = talloc_array(tmp_ctx, char *, num_groups + 1);
             NULL_CHECK(sysdb_groupnames, ret, done);
 
             /* Get a list of the groups by groupname only */
@@ -340,6 +372,36 @@ sysdb_get_sudo_user_info(TALLOC_CTX *mem_ctx, const char *username,
                 }
             }
             sysdb_groupnames[groups->num_values] = NULL;
+        }
+    }
+
+    /* resolve primary group */
+    gid = ldb_msg_find_attr_as_uint64(msg, SYSDB_GIDNUM, 0);
+    if (gid != 0) {
+        ret = sysdb_search_group_by_gid(tmp_ctx, sysdb, gid,
+                                        group_attrs, &group_msg);
+        if (ret == EOK) {
+            primary_group = ldb_msg_find_attr_as_string(group_msg, SYSDB_NAME,
+                                                        NULL);
+            if (primary_group == NULL) {
+                ret = ENOMEM;
+                goto done;
+            }
+
+            num_groups++;
+            sysdb_groupnames = talloc_realloc(tmp_ctx, sysdb_groupnames,
+                                              char *, num_groups + 1);
+            NULL_CHECK(sysdb_groupnames, ret, done);
+
+            sysdb_groupnames[num_groups - 1] = talloc_strdup(sysdb_groupnames,
+                                                             primary_group);
+            NULL_CHECK(sysdb_groupnames[num_groups - 1], ret, done);
+
+            sysdb_groupnames[num_groups] = NULL;
+        } else if (ret != ENOENT) {
+            DEBUG(SSSDBG_CRIT_FAILURE, ("Error looking up group [%d]: %s\n",
+                                        ret, strerror(ret)));
+            goto done;
         }
     }
 

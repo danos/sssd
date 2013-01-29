@@ -106,6 +106,12 @@ static void sss_mc_add_rec_to_chain(struct sss_mc_ctx *mcc,
     struct sss_mc_rec *cur;
     uint32_t slot;
 
+    if (hash > mcc->ht_size) {
+        /* Invalid hash. This should never happen, but better
+         * return than trying to access out of bounds memory */
+        return;
+    }
+
     slot = mcc->hash_table[hash];
     if (slot == MC_INVALID_VAL) {
         /* no previous record/collision, just add to hash table */
@@ -136,6 +142,12 @@ static void sss_mc_rm_rec_from_chain(struct sss_mc_ctx *mcc,
     struct sss_mc_rec *cur = NULL;
     uint32_t slot;
 
+    if (hash > mcc->ht_size) {
+        /* Invalid hash. This should never happen, but better
+         * return than trying to access out of bounds memory */
+        return;
+    }
+
     slot = mcc->hash_table[hash];
     cur = MC_SLOT_TO_PTR(mcc->data_table, slot, struct sss_mc_rec);
     if (cur == rec) {
@@ -157,6 +169,19 @@ static void sss_mc_rm_rec_from_chain(struct sss_mc_ctx *mcc,
     }
 }
 
+static void sss_mc_free_slots(struct sss_mc_ctx *mcc, struct sss_mc_rec *rec)
+{
+    uint32_t slot;
+    uint32_t num;
+    uint32_t i;
+
+    slot = MC_PTR_TO_SLOT(mcc->data_table, rec);
+    num = MC_SIZE_TO_SLOTS(rec->len);
+    for (i = 0; i < num; i++) {
+        MC_CLEAR_BIT(mcc->free_table, slot + i);
+    }
+}
+
 static void sss_mc_invalidate_rec(struct sss_mc_ctx *mcc,
                                   struct sss_mc_rec *rec)
 {
@@ -165,25 +190,86 @@ static void sss_mc_invalidate_rec(struct sss_mc_ctx *mcc,
         return;
     }
 
+    /* Remove from hash chains */
     /* hash chain 1 */
     sss_mc_rm_rec_from_chain(mcc, rec, rec->hash1);
     /* hash chain 2 */
     sss_mc_rm_rec_from_chain(mcc, rec, rec->hash2);
 
+    /* Clear from free_table */
+    sss_mc_free_slots(mcc, rec);
+
+    /* Invalidate record fields */
     MC_RAISE_INVALID_BARRIER(rec);
-    memset(rec->data, 'X', rec->len - sizeof(struct sss_mc_rec));
-    rec->len = MC_INVALID_VAL;
-    rec->expire = (uint64_t)-1;
-    rec->next = MC_INVALID_VAL;
-    rec->hash1 = MC_INVALID_VAL;
-    rec->hash2 = MC_INVALID_VAL;
+    memset(rec->data, MC_INVALID_VAL8, ((MC_SLOT_SIZE * MC_SIZE_TO_SLOTS(rec->len))
+                                        - sizeof(struct sss_mc_rec)));
+    rec->len = MC_INVALID_VAL32;
+    rec->expire = MC_INVALID_VAL64;
+    rec->next = MC_INVALID_VAL32;
+    rec->hash1 = MC_INVALID_VAL32;
+    rec->hash2 = MC_INVALID_VAL32;
     MC_LOWER_BARRIER(rec);
+}
+
+static bool sss_mc_is_valid_rec(struct sss_mc_ctx *mcc, struct sss_mc_rec *rec)
+{
+    struct sss_mc_rec *self;
+    uint32_t slot;
+
+    if (((uint8_t *)rec < mcc->data_table) ||
+        ((uint8_t *)rec > (mcc->data_table + mcc->dt_size - MC_SLOT_SIZE))) {
+        return false;
+    }
+
+    if ((rec->b1 == MC_INVALID_VAL) ||
+        (rec->b1 != rec->b2)) {
+        return false;
+    }
+
+    if (!MC_CHECK_RECORD_LENGTH(mcc, rec)) {
+        return false;
+    }
+
+    if (rec->expire == MC_INVALID_VAL64) {
+        return false;
+    }
+
+    /* rec->next can be invalid if there are no next records */
+
+    if (rec->hash1 == MC_INVALID_VAL32) {
+        return false;
+    } else {
+        self = NULL;
+        slot = mcc->hash_table[rec->hash1];
+        while (slot != MC_INVALID_VAL32 && self != rec) {
+            self = MC_SLOT_TO_PTR(mcc->data_table, slot, struct sss_mc_rec);
+            slot = self->next;
+        }
+        if (self != rec) {
+            return false;
+        }
+    }
+    if (rec->hash2 != MC_INVALID_VAL32) {
+        self = NULL;
+        slot = mcc->hash_table[rec->hash2];
+        while (slot != MC_INVALID_VAL32 && self != rec) {
+            self = MC_SLOT_TO_PTR(mcc->data_table, slot, struct sss_mc_rec);
+            slot = self->next;
+        }
+        if (self != rec) {
+            return false;
+        }
+    }
+
+    /* all tests passed */
+    return true;
 }
 
 /* FIXME: This is a very simplistic, inefficient, memory allocator,
  * it will just free the oldest entries regardless of expiration if it
  * cycled the whole freebits map and found no empty slot */
-static int sss_mc_find_free_slots(struct sss_mc_ctx *mcc, int num_slots)
+static errno_t sss_mc_find_free_slots(struct sss_mc_ctx *mcc,
+                                      int num_slots, uint32_t *free_slot)
 {
     struct sss_mc_rec *rec;
     uint32_t tot_slots;
@@ -194,7 +280,7 @@ static int sss_mc_find_free_slots(struct sss_mc_ctx *mcc, int num_slots)
 
     tot_slots = mcc->ft_size * 8;
 
-    /* Try to find a free slot w/o removing a nything first */
+    /* Try to find a free slot w/o removing anything first */
     /* FIXME: is it really worth it ? May be it is easier to
      * just recycle the next set of slots ? */
     if ((mcc->next_slot + num_slots) > tot_slots) {
@@ -235,7 +321,8 @@ static int sss_mc_find_free_slots(struct sss_mc_ctx *mcc, int num_slots)
         }
         if (cur == t) {
             /* ok found num_slots consecutive free bits */
-            return cur - num_slots;
+            *free_slot = cur - num_slots;
+            return EOK;
         }
     }
 
@@ -247,17 +334,26 @@ static int sss_mc_find_free_slots(struct sss_mc_ctx *mcc, int num_slots)
     }
     for (i = 0; i < num_slots; i++) {
         MC_PROBE_BIT(mcc->free_table, cur + i, used);
-        if (!used) continue;
+        if (used) {
+            /* the first used slot should be a record header, however we
+             * carefully check it is a valid header and hardfail if not */
+            rec = MC_SLOT_TO_PTR(mcc->data_table, cur + i, struct sss_mc_rec);
+            if (!sss_mc_is_valid_rec(mcc, rec)) {
+                /* this is a fatal error, the caller should probaly just
+                 * invalidate the whole cache */
+                return EFAULT;
+            }
+            /* next loop skip the whole record */
+            i += MC_SIZE_TO_SLOTS(rec->len) - 1;
 
-        rec = MC_SLOT_TO_PTR(mcc->data_table, cur + i, struct sss_mc_rec);
-        for (t = i + MC_SIZE_TO_SLOTS(rec->len); i < t; i++) {
-            MC_CLEAR_BIT(mcc->free_table, cur + i);
+            /* finally invalidate record completely */
+            sss_mc_invalidate_rec(mcc, rec);
         }
-        sss_mc_invalidate_rec(mcc, rec);
     }
 
     mcc->next_slot = cur + num_slots;
-    return cur;
+    *free_slot = cur;
+    return EOK;
 }
 
 static struct sss_mc_rec *sss_mc_find_record(struct sss_mc_ctx *mcc,
@@ -295,15 +391,18 @@ static struct sss_mc_rec *sss_mc_find_record(struct sss_mc_ctx *mcc,
     return rec;
 }
 
-static struct sss_mc_rec *sss_mc_get_record(struct sss_mc_ctx *mcc,
-                                            size_t rec_len,
-                                            struct sized_string *key)
+static errno_t sss_mc_get_record(struct sss_mc_ctx **_mcc,
+                                 size_t rec_len,
+                                 struct sized_string *key,
+                                 struct sss_mc_rec **_rec)
 {
+    struct sss_mc_ctx *mcc = *_mcc;
     struct sss_mc_rec *old_rec = NULL;
     struct sss_mc_rec *rec;
     int old_slots;
     int num_slots;
     uint32_t base_slot;
+    errno_t ret;
     int i;
 
     num_slots = MC_SIZE_TO_SLOTS(rec_len);
@@ -313,22 +412,25 @@ static struct sss_mc_rec *sss_mc_get_record(struct sss_mc_ctx *mcc,
         old_slots = MC_SIZE_TO_SLOTS(old_rec->len);
 
         if (old_slots == num_slots) {
-            return old_rec;
+            *_rec = old_rec;
+            return EOK;
         }
 
         /* slot size changed, invalidate record and fall through to get a
         * fully new record */
-        base_slot = MC_PTR_TO_SLOT(mcc->data_table, old_rec);
         sss_mc_invalidate_rec(mcc, old_rec);
-
-        /* and now free slots */
-        for (i = 0; i < old_slots; i++) {
-            MC_CLEAR_BIT(mcc->free_table, base_slot + i);
-        }
     }
 
     /* we are going to use more space, find enough free slots */
-    base_slot = sss_mc_find_free_slots(mcc, num_slots);
+    ret = sss_mc_find_free_slots(mcc, num_slots, &base_slot);
+    if (ret != EOK) {
+        if (ret == EFAULT) {
+            DEBUG(SSSDBG_CRIT_FAILURE,
+                  ("Fatal internal mmap cache error, invalidating cache!\n"));
+            (void)sss_mmap_cache_reinit(talloc_parent(mcc), -1, -1, _mcc);
+        }
+        return ret;
+    }
 
     rec = MC_SLOT_TO_PTR(mcc->data_table, base_slot, struct sss_mc_rec);
 
@@ -343,7 +445,8 @@ static struct sss_mc_rec *sss_mc_get_record(struct sss_mc_ctx *mcc,
         MC_SET_BIT(mcc->free_table, base_slot + i);
     }
 
-    return rec;
+    *_rec = rec;
+    return EOK;
 }
 
 
@@ -355,6 +458,11 @@ static errno_t sss_mmap_cache_invalidate(struct sss_mc_ctx *mcc,
                                          struct sized_string *key)
 {
     struct sss_mc_rec *rec;
+
+    if (mcc == NULL) {
+        /* cache not initialized ? */
+        return EINVAL;
+    }
 
     rec = sss_mc_find_record(mcc, key);
     if (rec == NULL) {
@@ -371,7 +479,7 @@ static errno_t sss_mmap_cache_invalidate(struct sss_mc_ctx *mcc,
  * passwd map
  ***************************************************************************/
 
-errno_t sss_mmap_cache_pw_store(struct sss_mc_ctx *mcc,
+errno_t sss_mmap_cache_pw_store(struct sss_mc_ctx **_mcc,
                                 struct sized_string *name,
                                 struct sized_string *pw,
                                 uid_t uid, gid_t gid,
@@ -379,6 +487,7 @@ errno_t sss_mmap_cache_pw_store(struct sss_mc_ctx *mcc,
                                 struct sized_string *homedir,
                                 struct sized_string *shell)
 {
+    struct sss_mc_ctx *mcc = *_mcc;
     struct sss_mc_rec *rec;
     struct sss_mc_pwd_data *data;
     struct sized_string uidkey;
@@ -387,6 +496,11 @@ errno_t sss_mmap_cache_pw_store(struct sss_mc_ctx *mcc,
     size_t rec_len;
     size_t pos;
     int ret;
+
+    if (mcc == NULL) {
+        /* cache not initialized ? */
+        return EINVAL;
+    }
 
     ret = snprintf(uidstr, 11, "%ld", (long)uid);
     if (ret > 10) {
@@ -402,7 +516,10 @@ errno_t sss_mmap_cache_pw_store(struct sss_mc_ctx *mcc,
         return ENOMEM;
     }
 
-    rec = sss_mc_get_record(mcc, rec_len, name);
+    ret = sss_mc_get_record(_mcc, rec_len, name, &rec);
+    if (ret != EOK) {
+        return ret;
+    }
 
     data = (struct sss_mc_pwd_data *)rec->data;
     pos = 0;
@@ -457,6 +574,11 @@ errno_t sss_mmap_cache_pw_invalidate_uid(struct sss_mc_ctx *mcc, uid_t uid)
     char *uidstr;
     errno_t ret;
 
+    if (mcc == NULL) {
+        /* cache not initialized ? */
+        return EINVAL;
+    }
+
     uidstr = talloc_asprintf(NULL, "%ld", (long)uid);
     if (!uidstr) {
         return ENOMEM;
@@ -499,12 +621,13 @@ done:
  * group map
  ***************************************************************************/
 
-int sss_mmap_cache_gr_store(struct sss_mc_ctx *mcc,
+int sss_mmap_cache_gr_store(struct sss_mc_ctx **_mcc,
                             struct sized_string *name,
                             struct sized_string *pw,
                             gid_t gid, size_t memnum,
                             char *membuf, size_t memsize)
 {
+    struct sss_mc_ctx *mcc = *_mcc;
     struct sss_mc_rec *rec;
     struct sss_mc_grp_data *data;
     struct sized_string gidkey;
@@ -513,6 +636,11 @@ int sss_mmap_cache_gr_store(struct sss_mc_ctx *mcc,
     size_t rec_len;
     size_t pos;
     int ret;
+
+    if (mcc == NULL) {
+        /* cache not initialized ? */
+        return EINVAL;
+    }
 
     ret = snprintf(gidstr, 11, "%ld", (long)gid);
     if (ret > 10) {
@@ -528,7 +656,10 @@ int sss_mmap_cache_gr_store(struct sss_mc_ctx *mcc,
         return ENOMEM;
     }
 
-    rec = sss_mc_get_record(mcc, rec_len, name);
+    ret = sss_mc_get_record(_mcc, rec_len, name, &rec);
+    if (ret != EOK) {
+        return ret;
+    }
 
     data = (struct sss_mc_grp_data *)rec->data;
     pos = 0;
@@ -578,6 +709,11 @@ errno_t sss_mmap_cache_gr_invalidate_gid(struct sss_mc_ctx *mcc, gid_t gid)
     uint32_t slot;
     char *gidstr;
     errno_t ret;
+
+    if (mcc == NULL) {
+        /* cache not initialized ? */
+        return EINVAL;
+    }
 
     gidstr = talloc_asprintf(NULL, "%ld", (long)gid);
     if (!gidstr) {
@@ -661,7 +797,7 @@ static errno_t sss_mc_create_file(struct sss_mc_ctx *mc_ctx)
 {
     mode_t old_mask;
     int ofd;
-    int ret;
+    int ret, uret;
     useconds_t t = 50000;
     int retries = 3;
 
@@ -694,28 +830,34 @@ static errno_t sss_mc_create_file(struct sss_mc_ctx *mc_ctx)
      * by everyone for now */
     old_mask = umask(0022);
 
-    ret = 0;
+    errno = 0;
     mc_ctx->fd = open(mc_ctx->file, O_CREAT | O_EXCL | O_RDWR, 0644);
+    umask(old_mask);
     if (mc_ctx->fd == -1) {
         ret = errno;
         DEBUG(SSSDBG_CRIT_FAILURE, ("Failed to open mmap file %s: %d(%s)\n",
                                     mc_ctx->file, ret, strerror(ret)));
-        goto done;
+        return ret;
     }
 
     ret = sss_br_lock_file(mc_ctx->fd, 0, 1, retries, t);
     if (ret != EOK) {
         DEBUG(SSSDBG_FATAL_FAILURE,
               ("Failed to lock file %s.\n", mc_ctx->file));
-        goto done;
-    }
-
-done:
-    /* reset mask back */
-    umask(old_mask);
-
-    if (ret) {
         close(mc_ctx->fd);
+
+        /* Report on unlink failures but don't overwrite the errno
+         * from sss_br_lock_file
+         */
+        errno = 0;
+        uret = unlink(mc_ctx->file);
+        if (uret == -1) {
+            uret = errno;
+            DEBUG(SSSDBG_TRACE_FUNC, ("Failed to rm mmap file %s: %d(%s)\n",
+                                    mc_ctx->file, uret, strerror(uret)));
+        }
+
+        return ret;
     }
 
     return ret;
@@ -771,7 +913,7 @@ errno_t sss_mmap_cache_init(TALLOC_CTX *mem_ctx, const char *name,
     }
     mc_ctx->fd = -1;
 
-    mc_ctx->name = talloc_strdup(mem_ctx, name);
+    mc_ctx->name = talloc_strdup(mc_ctx, name);
     if (!mc_ctx->name) {
         ret = ENOMEM;
         goto done;
@@ -836,7 +978,7 @@ errno_t sss_mmap_cache_init(TALLOC_CTX *mem_ctx, const char *name,
     mc_ctx->hash_table = MC_PTR_ADD(mc_ctx->free_table,
                                     MC_ALIGN64(mc_ctx->ft_size));
 
-    memset(mc_ctx->data_table, 0x00, mc_ctx->dt_size);
+    memset(mc_ctx->data_table, 0xff, mc_ctx->dt_size);
     memset(mc_ctx->free_table, 0x00, mc_ctx->ft_size);
     memset(mc_ctx->hash_table, 0xff, mc_ctx->ht_size);
 
@@ -898,6 +1040,15 @@ errno_t sss_mmap_cache_reinit(TALLOC_CTX *mem_ctx, size_t n_elem,
     }
 
     type = (*mc_ctx)->type;
+
+    if (n_elem == (size_t)-1) {
+        n_elem = (*mc_ctx)->ft_size * 8;
+    }
+
+    if (timeout == (time_t)-1) {
+        timeout = (*mc_ctx)->valid_time_slot;
+    }
+
     ret = talloc_free(*mc_ctx);
     if (ret != 0) {
         /* This can happen only if destructor is associated with this
@@ -905,6 +1056,9 @@ errno_t sss_mmap_cache_reinit(TALLOC_CTX *mem_ctx, size_t n_elem,
         DEBUG(SSSDBG_MINOR_FAILURE, ("Destructor asociated with memory"
                                     " context failed.\n"));
     }
+
+    /* make sure we do not leave a potentially freed pointer around */
+    *mc_ctx = NULL;
 
     ret = sss_mmap_cache_init(mem_ctx, name, type, n_elem, timeout, mc_ctx);
     if (ret != EOK) {

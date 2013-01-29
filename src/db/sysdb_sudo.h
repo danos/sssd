@@ -45,8 +45,6 @@
 #define SYSDB_SUDO_CACHE_AT_NOTAFTER   "sudoNotAfter"
 #define SYSDB_SUDO_CACHE_AT_ORDER      "sudoOrder"
 
-#define SYSDB_SUDO_TIME_FORMAT "%Y%m%d%H%M%SZ"
-
 /* When constructing a sysdb filter, OR these values to include..   */
 #define SYSDB_SUDO_FILTER_NONE           0x00       /* no additional filter */
 #define SYSDB_SUDO_FILTER_USERNAME       0x01       /* username             */
@@ -62,10 +60,10 @@
                                        | SYSDB_SUDO_FILTER_NGRS
 
 errno_t sysdb_sudo_filter_rules_by_time(TALLOC_CTX *mem_ctx,
-                                        size_t in_num_rules,
+                                        uint32_t in_num_rules,
                                         struct sysdb_attrs **in_rules,
                                         time_t now,
-                                        size_t *_num_rules,
+                                        uint32_t *_num_rules,
                                         struct sysdb_attrs ***_rules);
 
 errno_t

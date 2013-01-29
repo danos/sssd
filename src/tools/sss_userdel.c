@@ -19,6 +19,7 @@
    along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
+#include <nss.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <talloc.h>
@@ -285,6 +286,14 @@ int main(int argc, const char **argv)
         goto fini;
     }
 
+    /* Delete user from memory cache */
+    ret = sss_mc_refresh_user(pc_username);
+    if (ret != EOK) {
+        ERROR("NSS request failed (%1$d). Entry might remain in memory "
+              "cache.\n", ret);
+        /* Nothing we can do about it */
+    }
+
     if (tctx->octx->remove_homedir) {
         ret = remove_homedir(tctx,
                              tctx->octx->home,
@@ -300,6 +309,8 @@ int main(int argc, const char **argv)
             goto fini;
         }
     }
+
+    ret = EOK;
 
 done:
     if (ret) {

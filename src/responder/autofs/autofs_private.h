@@ -21,8 +21,7 @@
 #ifndef _AUTOFSSRV_PRIVATE_H_
 #define _AUTOFSSRV_PRIVATE_H_
 
-#define SSS_AUTOFS_SBUS_SERVICE_VERSION 0x0001
-#define SSS_AUTOFS_SBUS_SERVICE_NAME    "autofs"
+#include "responder/common/responder_sbus.h"
 
 #define SSS_AUTOFS_PROTO_VERSION        0x001
 
@@ -75,6 +74,11 @@ struct autofs_map_ctx {
 };
 
 struct sss_cmd_table *get_autofs_cmds(void);
+
+void autofs_map_hash_delete_cb(hash_entry_t *item,
+                               hash_destroy_enum deltype, void *pvt);
+
+errno_t autofs_orphan_maps(struct autofs_ctx *actx);
 
 enum sss_dp_autofs_type {
     SSS_DP_AUTOFS

@@ -154,6 +154,8 @@ void nss_update_pw_memcache(struct nss_ctx *nctx)
                        ret, strerror(ret)));
             }
         }
+
+        talloc_zfree(res);
     }
 }
 
@@ -430,7 +432,7 @@ static int fill_pwent(struct sss_packet *packet,
         num++;
 
         if (pw_mmap_cache && nctx->pwd_mc_ctx) {
-            ret = sss_mmap_cache_pw_store(nctx->pwd_mc_ctx,
+            ret = sss_mmap_cache_pw_store(&nctx->pwd_mc_ctx,
                                           &fullname, &pwfield,
                                           uid, gid,
                                           &gecos, &homedir, &shell);
@@ -646,6 +648,47 @@ static void nsssrv_dp_send_acct_req_done(struct tevent_req *req)
 static void nss_cmd_getpwnam_dp_callback(uint16_t err_maj, uint32_t err_min,
                                          const char *err_msg, void *ptr);
 
+static int delete_entry_from_memcache(struct sss_domain_info *dom, char *name,
+                                      struct sss_mc_ctx *mc_ctx)
+{
+    TALLOC_CTX *tmp_ctx = NULL;
+    struct sized_string delete_name;
+    char *fqdn = NULL;
+    int ret;
+
+    tmp_ctx = talloc_new(NULL);
+    if (tmp_ctx == NULL) {
+        DEBUG(SSSDBG_CRIT_FAILURE, ("Out of memory.\n"));
+        return ENOMEM;
+    }
+
+    if (dom->fqnames) {
+        fqdn = talloc_asprintf(tmp_ctx, dom->names->fq_fmt, name, dom->name);
+        if (fqdn == NULL) {
+            DEBUG(SSSDBG_CRIT_FAILURE, ("Out of memory.\n"));
+            ret = ENOMEM;
+            goto done;
+        }
+        to_sized_string(&delete_name, fqdn);
+    } else {
+        to_sized_string(&delete_name, name);
+    }
+
+    ret = sss_mmap_cache_pw_invalidate(mc_ctx, &delete_name);
+    if (ret != EOK && ret != ENOENT) {
+        DEBUG(SSSDBG_CRIT_FAILURE,
+              ("Internal failure in memory cache code: %d [%s]\n",
+               ret, strerror(ret)));
+        goto done;
+    }
+
+    ret = EOK;
+done:
+    talloc_free(tmp_ctx);
+    return ret;
+
+}
+
 /* search for a user.
  * Returns:
  *   ENOENT, if user is definitely not found
@@ -743,6 +786,14 @@ static int nss_cmd_getpwnam_search(struct nss_dom_ctx *dctx)
             }
 
             DEBUG(2, ("No results for getpwnam call\n"));
+
+            /* User not found in ldb -> delete user from memory cache. */
+            ret = delete_entry_from_memcache(dctx->domain, name,
+                                             nctx->pwd_mc_ctx);
+            if (ret != EOK) {
+                DEBUG(SSSDBG_CRIT_FAILURE,
+                      ("Deleting user from memcache failed.\n"));
+            }
 
             return ENOENT;
         }
@@ -1843,6 +1894,7 @@ void nss_update_gr_memcache(struct nss_ctx *nctx)
                        ret, strerror(ret)));
             }
         }
+        talloc_zfree(res);
     }
 }
 
@@ -2167,7 +2219,7 @@ static int fill_grent(struct sss_packet *packet,
             /* body was reallocated, so fullname might be pointing to
              * where body used to be, not where it is */
             to_sized_string(&fullname, (const char *)&body[rzero+STRS_ROFFSET]);
-            ret = sss_mmap_cache_gr_store(nctx->grp_mc_ctx,
+            ret = sss_mmap_cache_gr_store(&nctx->grp_mc_ctx,
                                           &fullname, &pwfield, gid, memnum,
                                           (char *)&body[rzero] + STRS_ROFFSET +
                                             fullname.len + pwfield.len,
@@ -2330,6 +2382,15 @@ static int nss_cmd_getgrnam_search(struct nss_dom_ctx *dctx)
             }
 
             DEBUG(2, ("No results for getgrnam call\n"));
+
+            /* Group not found in ldb -> delete group from memory cache. */
+            ret = delete_entry_from_memcache(dctx->domain, name,
+                                             nctx->grp_mc_ctx);
+            if (ret != EOK) {
+                DEBUG(SSSDBG_CRIT_FAILURE,
+                      ("Deleting user from memcache failed.\n"));
+            }
+
 
             return ENOENT;
         }
@@ -3347,18 +3408,15 @@ void nss_update_initgr_memcache(struct nss_ctx *nctx,
                                 const char *name, const char *domain,
                                 int gnum, uint32_t *groups)
 {
+    TALLOC_CTX *tmp_ctx = NULL;
     struct sss_domain_info *dom;
     struct ldb_result *res;
+    struct sized_string delete_name;
     bool changed = false;
     uint32_t id;
     uint32_t gids[gnum];
     int ret;
     int i, j;
-
-    if (gnum == 0) {
-        /* there are no groups to invalidate in any case, just return */
-        return;
-    }
 
     for (dom = nctx->rctx->domains; dom != NULL; dom = dom->next) {
         if (strcasecmp(dom->name, domain) == 0) {
@@ -3372,12 +3430,14 @@ void nss_update_initgr_memcache(struct nss_ctx *nctx,
         return;
     }
 
-    ret = sysdb_initgroups(NULL, dom->sysdb, name, &res);
+    tmp_ctx = talloc_new(NULL);
+
+    ret = sysdb_initgroups(tmp_ctx, dom->sysdb, name, &res);
     if (ret != EOK && ret != ENOENT) {
         DEBUG(SSSDBG_CRIT_FAILURE,
               ("Failed to make request to our cache! [%d][%s]\n",
                ret, strerror(ret)));
-        return;
+        goto done;
     }
 
     /* copy, we need the original intact in case we need to invalidate
@@ -3385,10 +3445,20 @@ void nss_update_initgr_memcache(struct nss_ctx *nctx,
     memcpy(gids, groups, gnum * sizeof(uint32_t));
 
     if (ret == ENOENT || res->count == 0) {
+        /* The user is gone. Invalidate the mc record */
+        to_sized_string(&delete_name, name);
+        ret = sss_mmap_cache_pw_invalidate(nctx->pwd_mc_ctx, &delete_name);
+        if (ret != EOK && ret != ENOENT) {
+            DEBUG(SSSDBG_CRIT_FAILURE,
+                  ("Internal failure in memory cache code: %d [%s]\n",
+                  ret, strerror(ret)));
+        }
+
+        /* Also invalidate his groups */
         changed = true;
     } else {
         /* we skip the first entry, it's the user itself */
-        for (i = 1; i < res->count; i++) {
+        for (i = 0; i < res->count; i++) {
             id = ldb_msg_find_attr_as_uint(res->msgs[i], SYSDB_GIDNUM, 0);
             if (id == 0) {
                 /* probably non-posix group, skip */
@@ -3432,6 +3502,9 @@ void nss_update_initgr_memcache(struct nss_ctx *nctx,
             }
         }
     }
+
+done:
+    talloc_free(tmp_ctx);
 }
 
 /* FIXME: what about mpg, should we return the user's GID ? */

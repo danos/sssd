@@ -74,6 +74,43 @@ static uint32_t get_attr_as_uint32(struct ldb_message *msg, const char *attr)
     return l;
 }
 
+/*
+ * The wrapper around ldb_modify that uses LDB_CONTROL_PERMISSIVE_MODIFY_OID
+ * so that on adds entries that already exist are skipped and similarly
+ * entries that are missing are ignored on deletes
+ */
+int sss_ldb_modify_permissive(struct ldb_context *ldb,
+                              struct ldb_message *msg)
+{
+    struct ldb_request *req;
+    int ret = EOK;
+
+    ret = ldb_build_mod_req(&req, ldb, ldb,
+                            msg,
+                            NULL,
+                            NULL,
+                            ldb_op_default_callback,
+                            NULL);
+
+    if (ret != LDB_SUCCESS) return ret;
+
+    ret = ldb_request_add_control(req, LDB_CONTROL_PERMISSIVE_MODIFY_OID,
+                                  false, NULL);
+    if (ret != LDB_SUCCESS) {
+        talloc_free(req);
+        return ret;
+    }
+
+    ret = ldb_request(ldb, req);
+    if (ret == LDB_SUCCESS) {
+        ret = ldb_wait(req->handle, LDB_WAIT_ALL);
+    }
+
+    talloc_free(req);
+
+    return ret;
+}
+
 #define ERROR_OUT(v, r, l) do { v = r; goto l; } while(0)
 
 
@@ -1096,7 +1133,7 @@ int sysdb_add_user(struct sysdb_ctx *sysdb,
             }
         }
 
-        ret = ldb_modify(sysdb->ldb, msg);
+        ret = sss_ldb_modify_permissive(sysdb->ldb, msg);
         ret = sysdb_error_to_errno(ret);
         if (ret != EOK) {
             goto done;
@@ -3153,8 +3190,6 @@ errno_t sysdb_remove_attrs(struct sysdb_ctx *sysdb,
         ldb_msg_remove_attr(msg, remove_attrs[i]);
     }
 
-    ret = EOK;
-
     ret = sysdb_transaction_commit(sysdb);
     if (ret != EOK) {
         DEBUG(SSSDBG_CRIT_FAILURE, ("Failed to commit transaction\n"));
@@ -3163,6 +3198,7 @@ errno_t sysdb_remove_attrs(struct sysdb_ctx *sysdb,
 
     in_transaction = false;
 
+    ret = EOK;
 done:
     if (in_transaction) {
         sret = sysdb_transaction_cancel(sysdb);

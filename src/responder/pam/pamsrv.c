@@ -43,11 +43,9 @@
 #include "sbus/sbus_client.h"
 #include "responder/pam/pamsrv.h"
 #include "responder/common/negcache.h"
+#include "responder/common/responder_sbus.h"
 
 #define DEFAULT_PAM_FD_LIMIT 8192
-
-#define SSS_PAM_SBUS_SERVICE_VERSION 0x0001
-#define SSS_PAM_SBUS_SERVICE_NAME "pam"
 
 struct sbus_method monitor_pam_methods[] = {
     { MON_CLI_METHOD_PING, monitor_common_pong },
@@ -91,7 +89,10 @@ static void pam_dp_reconnect_init(struct sbus_connection *conn, int status, void
                                 DATA_PROVIDER_VERSION,
                                 "PAM");
         /* all fine */
-        if (ret == EOK) return;
+        if (ret == EOK) {
+            handle_requests_after_reconnect(be_conn->rctx);
+            return;
+        }
     }
 
     /* Handle failure */

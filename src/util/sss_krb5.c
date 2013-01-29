@@ -26,6 +26,35 @@
 #include "util/util.h"
 #include "util/sss_krb5.h"
 
+static char *
+get_primary(TALLOC_CTX *mem_ctx, const char *pattern, const char *hostname)
+{
+    char *primary;
+    char *dot;
+    char *c;
+    char *shortname;
+
+    if (strcmp(pattern, "%S$") == 0) {
+        shortname = talloc_strdup(mem_ctx, hostname);
+        if (!shortname) return NULL;
+
+        dot = strchr(shortname, '.');
+        if (dot) {
+            *dot = '\0';
+        }
+
+        for (c=shortname; *c != '\0'; ++c) {
+            *c = toupper(*c);
+        }
+
+        primary = talloc_asprintf(mem_ctx, "%s$", shortname);
+        talloc_free(shortname);
+        return primary;
+    }
+
+    return talloc_asprintf(mem_ctx, pattern, hostname);
+}
+
 errno_t select_principal_from_keytab(TALLOC_CTX *mem_ctx,
                                      const char *hostname,
                                      const char *desired_realm,
@@ -48,15 +77,22 @@ errno_t select_principal_from_keytab(TALLOC_CTX *mem_ctx,
     int realm_len;
 
     /**
+     * The %s conversion is passed as-is, the %S conversion is translated to
+     * "short host name"
+     *
      * Priority of lookup:
-     * - foobar$@REALM (AD domain)
+     * - our.hostname@REALM or host/our.hostname@REALM depending on the input
+     * - SHORT.HOSTNAME$@REALM (AD domain)
      * - host/our.hostname@REALM
+     * - foobar$@REALM (AD domain)
      * - host/foobar@REALM
      * - host/foo@BAR
      * - pick the first principal in the keytab
      */
-    const char *primary_patterns[] = {"%s$", "*$", "host/%s", "host/*", "host/*", NULL};
-    const char *realm_patterns[] = {"%s", "%s", "%s", "%s", NULL, NULL};
+    const char *primary_patterns[] = {"%s", "%S$", "host/%s", "*$", "host/*",
+                                      "host/*", NULL};
+    const char *realm_patterns[] =   {"%s", "%s",  "%s",      "%s", "%s",
+                                      NULL,     NULL};
 
     DEBUG(5, ("trying to select the most appropriate principal from keytab\n"));
     tmp_ctx = talloc_new(NULL);
@@ -95,7 +131,7 @@ errno_t select_principal_from_keytab(TALLOC_CTX *mem_ctx,
 
     do {
         if (primary_patterns[i]) {
-            primary = talloc_asprintf(tmp_ctx, primary_patterns[i], hostname);
+            primary = get_primary(tmp_ctx, primary_patterns[i], hostname);
             if (primary == NULL) {
                 ret = ENOMEM;
                 goto done;

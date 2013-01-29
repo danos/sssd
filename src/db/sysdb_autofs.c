@@ -77,6 +77,25 @@ done:
     return dn;
 }
 
+char *
+sysdb_autofsentry_strdn(TALLOC_CTX *mem_ctx,
+                        struct sysdb_ctx *sysdb,
+                        const char *map_name,
+                        const char *entry_name,
+                        const char *entry_value)
+{
+    struct ldb_dn *dn;
+    char *strdn;
+
+    dn = sysdb_autofsentry_dn(mem_ctx, sysdb,
+                              map_name, entry_name, entry_value);
+    if (!dn) return NULL;
+
+    strdn = talloc_strdup(mem_ctx, ldb_dn_get_linearized(dn));
+    talloc_free(dn);
+    return strdn;
+}
+
 errno_t
 sysdb_save_autofsmap(struct sysdb_ctx *sysdb_ctx,
                      const char *name,
@@ -195,7 +214,7 @@ sysdb_get_map_byname(TALLOC_CTX *mem_ctx,
     filter = talloc_asprintf(tmp_ctx, "(&(objectclass=%s)(%s=%s))",
                              SYSDB_AUTOFS_MAP_OC, SYSDB_NAME, safe_map_name);
     if (!filter) {
-        ret = EOK;
+        ret = ENOMEM;
         goto done;
     }
 
@@ -314,14 +333,12 @@ done:
 
 errno_t
 sysdb_del_autofsentry(struct sysdb_ctx *sysdb_ctx,
-                      const char *map,
-                      const char *key,
-                      const char *value)
+                      const char *entry_dn)
 {
     struct ldb_dn *dn;
     errno_t ret;
 
-    dn = sysdb_autofsentry_dn(sysdb_ctx, sysdb_ctx, map, key, value);
+    dn = ldb_dn_new(NULL, sysdb_ctx_get_ldb(sysdb_ctx), entry_dn);
     if (!dn) {
         return ENOMEM;
     }
@@ -414,6 +431,97 @@ sysdb_set_autofsmap_attr(struct sysdb_ctx *sysdb,
     ret = sysdb_set_entry_attr(sysdb, dn, attrs, mod_op);
 
 done:
+    talloc_free(tmp_ctx);
+    return ret;
+}
+
+errno_t
+sysdb_invalidate_autofs_maps(struct sysdb_ctx *sysdb)
+{
+    errno_t ret;
+    TALLOC_CTX *tmp_ctx;
+    const char *filter;
+    struct sysdb_attrs *sys_attrs = NULL;
+    const char *attrs[] = { SYSDB_OBJECTCLASS,
+                            SYSDB_NAME,
+                            SYSDB_CACHE_EXPIRE,
+                            NULL };
+    size_t count;
+    struct ldb_message **msgs;
+    const char *name;
+    bool in_transaction = false;
+    int sret;
+    int i;
+
+    tmp_ctx = talloc_new(NULL);
+    if (!tmp_ctx) return ENOMEM;
+
+    filter = talloc_asprintf(tmp_ctx, "(&(objectclass=%s)(%s=*))",
+                             SYSDB_AUTOFS_MAP_OC, SYSDB_NAME);
+    if (!filter) {
+        ret = ENOMEM;
+        goto done;
+    }
+
+    ret = sysdb_search_custom(tmp_ctx, sysdb, filter,
+                              AUTOFS_MAP_SUBDIR, attrs,
+                              &count, &msgs);
+    if (ret != EOK && ret != ENOENT) {
+        DEBUG(SSSDBG_CRIT_FAILURE,
+              ("Error looking up autofs maps"));
+        goto done;
+    } else if (ret == ENOENT) {
+        ret = EOK;
+        goto done;
+    }
+
+    sys_attrs = sysdb_new_attrs(tmp_ctx);
+    if (!sys_attrs) {
+        ret = ENOMEM;
+        goto done;
+    }
+
+    ret = sysdb_attrs_add_time_t(sys_attrs, SYSDB_CACHE_EXPIRE, 1);
+    if (ret != EOK) {
+        goto done;
+    }
+
+    ret = sysdb_transaction_start(sysdb);
+    if (ret != EOK) {
+        DEBUG(SSSDBG_CRIT_FAILURE, ("Failed to start transaction\n"));
+        goto done;
+    }
+    in_transaction = true;
+
+    for (i = 0; i < count; i++) {
+        name = ldb_msg_find_attr_as_string(msgs[i], SYSDB_NAME, NULL);
+        if (!name) {
+            DEBUG(SSSDBG_MINOR_FAILURE, ("A map with no name?\n"));
+            continue;
+        }
+
+        ret = sysdb_set_autofsmap_attr(sysdb, name, sys_attrs, SYSDB_MOD_REP);
+        if (ret != EOK) {
+            DEBUG(SSSDBG_MINOR_FAILURE, ("Could not expire map %s\n", name));
+            continue;
+        }
+    }
+
+    ret = sysdb_transaction_commit(sysdb);
+    if (ret != EOK) {
+        DEBUG(SSSDBG_OP_FAILURE, ("Could not commit transaction\n"));
+        goto done;
+    }
+    in_transaction = false;
+
+    ret = EOK;
+done:
+    if (in_transaction) {
+        sret = sysdb_transaction_cancel(sysdb);
+        if (sret != EOK) {
+            DEBUG(SSSDBG_OP_FAILURE, ("Could not cancel transaction\n"));
+        }
+    }
     talloc_free(tmp_ctx);
     return ret;
 }

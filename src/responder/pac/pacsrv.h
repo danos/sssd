@@ -37,12 +37,10 @@
 #include "sbus/sssd_dbus.h"
 #include "responder/common/responder_packet.h"
 #include "responder/common/responder.h"
+#include "responder/common/responder_sbus.h"
 #include "lib/idmap/sss_idmap.h"
 #include "util/sss_nss.h"
 #include "db/sysdb.h"
-
-#define PAC_SBUS_SERVICE_VERSION 0x0001
-#define PAC_SBUS_SERVICE_NAME "pac"
 
 #define PAC_PACKET_MAX_RECV_SIZE 1024
 
@@ -73,6 +71,12 @@ struct grp_info {
     struct ldb_dn *dn;
 };
 
+struct pac_dom_grps {
+    struct sss_domain_info *grp_dom;
+    size_t gid_count;
+    gid_t *gids;
+};
+
 int pac_cmd_execute(struct cli_ctx *cctx);
 
 struct sss_cmd_table *get_pac_cmds(void);
@@ -97,10 +101,11 @@ errno_t get_my_domain_data(struct pac_ctx *pac_ctx,
                            struct local_mapping_ranges **_range_map);
 
 errno_t get_gids_from_pac(TALLOC_CTX *mem_ctx,
+                          struct pac_ctx *pac_ctx,
                           struct local_mapping_ranges *range_map,
                           struct dom_sid *domain_sid,
                           struct PAC_LOGON_INFO *logon_info,
-                          size_t *_gid_count, gid_t **_gids);
+                          size_t *_gid_count, struct pac_dom_grps **_gids);
 
 errno_t get_data_from_pac(TALLOC_CTX *mem_ctx,
                           uint8_t *pac_blob, size_t pac_len,
@@ -117,9 +122,14 @@ errno_t diff_gid_lists(TALLOC_CTX *mem_ctx,
                        size_t cur_grp_num,
                        struct grp_info *cur_gid_list,
                        size_t new_gid_num,
-                       gid_t *new_gid_list,
+                       struct pac_dom_grps *new_gid_list,
                        size_t *_add_gid_num,
-                       gid_t **_add_gid_list,
+                       struct pac_dom_grps **_add_gid_list,
                        size_t *_del_gid_num,
                        struct grp_info ***_del_gid_list);
+
+struct sss_domain_info *find_domain_by_id(struct sss_domain_info *domains,
+                                          const char *id_str);
+
+bool new_and_cached_user_differs(struct passwd *pwd, struct ldb_message *msg);
 #endif /* __PACSRV_H__ */

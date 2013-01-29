@@ -47,8 +47,10 @@ typedef uint32_t rel_ptr_t;
 #define MC_PTR_ADD(ptr, bytes) (void *)((uint8_t *)(ptr) + (bytes))
 #define MC_PTR_DIFF(ptr, base) ((uint8_t *)(ptr) - (uint8_t *)(base))
 
-#define MC_INVALID_PTR (void *)0xffffffff
-#define MC_INVALID_VAL 0xffffffff
+#define MC_INVALID_VAL64 ((uint64_t)-1)
+#define MC_INVALID_VAL32 ((uint32_t)-1)
+#define MC_INVALID_VAL8 ((uint8_t)-1)
+#define MC_INVALID_VAL MC_INVALID_VAL32
 
 /*
  * 32 seem a good compromise for slot size
@@ -61,12 +63,17 @@ typedef uint32_t rel_ptr_t;
  */
 #define MC_SLOT_SIZE 32
 #define MC_SIZE_TO_SLOTS(len) (((len) + (MC_SLOT_SIZE - 1)) / MC_SLOT_SIZE)
-#define MC_PTR_TO_SLOT(base, ptr) \
-                    (((uint8_t *)(ptr) - (uint8_t *)(base)) / MC_SLOT_SIZE)
+#define MC_PTR_TO_SLOT(base, ptr) (MC_PTR_DIFF(ptr, base) / MC_SLOT_SIZE)
 #define MC_SLOT_TO_PTR(base, slot, type) \
                                 (type *)((base) + ((slot) * MC_SLOT_SIZE))
 
 #define MC_VALID_BARRIER(val) (((val) & 0xff000000) == 0xf0000000)
+
+#define MC_CHECK_RECORD_LENGTH(mc_ctx, rec) \
+        ((rec)->len >= MC_HEADER_SIZE && (rec)->len != MC_INVALID_VAL32 \
+         && ((rec)->len <= ((mc_ctx)->dt_size \
+                            - MC_PTR_DIFF(rec, (mc_ctx)->data_table))))
+
 
 #define SSS_MC_MAJOR_VNO    0
 #define SSS_MC_MINOR_VNO    4

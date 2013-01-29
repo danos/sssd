@@ -71,6 +71,45 @@ errno_t local_sid_to_id(struct local_mapping_ranges *map, struct dom_sid *sid,
     return EOK;
 }
 
+struct sss_domain_info *find_domain_by_id(struct sss_domain_info *domains,
+                                          const char *id_str)
+{
+    struct sss_domain_info *dom;
+    struct sss_domain_info *ret_dom = NULL;
+    size_t c;
+
+    if (id_str == NULL) {
+        DEBUG(SSSDBG_OP_FAILURE, ("Missing domain id.\n"));
+        return NULL;
+    }
+
+    for (dom = domains; dom; dom = dom->next) {
+        if (dom->domain_id == NULL) {
+            continue;
+        }
+
+        if (strcasecmp(dom->domain_id, id_str) == 0) {
+            ret_dom = dom;
+            break;
+        }
+
+        for (c = 0; c < dom->subdomain_count; c++) {
+            if (strcasecmp(dom->subdomains[c]->domain_id, id_str) == 0) {
+                ret_dom = dom->subdomains[c];
+                break;
+            }
+        }
+
+    }
+
+    if (!ret_dom) {
+        DEBUG(SSSDBG_OP_FAILURE, ("No domain with domain ID [%s] found",
+                                  id_str));
+    }
+
+    return ret_dom;
+}
+
 /**
  * Add a new remote domain and the corresponding ID range to the context of
  * the libsss_idmap. Without this it is not possible to find the Posix UID for
@@ -381,59 +420,263 @@ bool dom_sid_in_domain(const struct dom_sid *domain_sid,
     return true;
 }
 
-/**
- * Find all Posix GIDs from a PAC by searching for group SIDs from the local
- * domain and convert them to GIDs.
- */
-errno_t get_gids_from_pac(TALLOC_CTX *mem_ctx,
-                          struct local_mapping_ranges *range_map,
-                          struct dom_sid *domain_sid,
-                          struct PAC_LOGON_INFO *logon_info,
-                          size_t *_gid_count, gid_t **_gids)
+
+static errno_t get_dom_grps_from_hash(TALLOC_CTX *mem_ctx,
+                                      hash_table_t *gid_table,
+                                      struct sss_domain_info *grp_dom,
+                                      struct pac_dom_grps *dom_grps)
 {
     int ret;
-    size_t g = 0;
-    size_t s;
-    struct netr_SamInfo3 *info3;
+    size_t gid_count;
+    size_t g;
+    struct hash_iter_context_t *iter;
+    hash_entry_t *entry;
     gid_t *gids = NULL;
 
-    info3 = &logon_info->info3;
+    if (grp_dom == NULL) {
+        DEBUG(SSSDBG_OP_FAILURE, ("Missing domain for groups.\n"));
+        return EINVAL;
+    }
 
-    if (info3->sidcount == 0) {
-        DEBUG(SSSDBG_TRACE_ALL, ("No extra groups found.\n"));
+    gid_count = hash_count(gid_table);
+    if (gid_count == 0) {
+        DEBUG(SSSDBG_TRACE_FUNC, ("No groups found.\n"));
         ret = EOK;
         goto done;
     }
 
-    gids = talloc_array(mem_ctx, gid_t, info3->sidcount);
+    gids = talloc_zero_array(mem_ctx, gid_t, gid_count);
     if (gids == NULL) {
         DEBUG(SSSDBG_OP_FAILURE, ("talloc_array failed.\n"));
         ret = ENOMEM;
         goto done;
     }
 
-    for(s = 0; s < info3->sidcount; s++) {
-        if (dom_sid_in_domain(domain_sid, info3->sids[s].sid)) {
-            ret = local_sid_to_id(range_map, info3->sids[s].sid, &gids[g]);
-            if (ret != EOK) {
-                DEBUG(SSSDBG_OP_FAILURE, ("get_rid failed.\n"));
-                goto done;
-            }
-            DEBUG(SSSDBG_TRACE_ALL, ("Found extra group "
-                                     "with gid [%d].\n", gids[g]));
-            g++;
-        }
+
+    iter = new_hash_iter_context(gid_table);
+    if (iter == NULL) {
+        DEBUG(SSSDBG_OP_FAILURE, ("new_hash_iter_context failed.\n"));
+        ret = EIO;
+        goto done;
+    }
+
+    g = 0;
+    while ((entry = iter->next(iter)) != NULL) {
+        gids[g] = entry->key.ul;
+        g++;
+    }
+
+    if (gid_count != g) {
+        DEBUG(SSSDBG_OP_FAILURE, ("Number of hash entries and groups do not "
+                                  "match.\n"));
+        ret = EINVAL;
+        goto done;
     }
 
     ret = EOK;
 
 done:
-    if (ret == EOK) {
-        *_gid_count = g;
-        *_gids = gids;
-    } else {
+    if (ret != EOK) {
         talloc_free(gids);
+    } else {
+        dom_grps->grp_dom = grp_dom;
+        dom_grps->gid_count = gid_count;
+        dom_grps->gids = gids;
     }
+
+    return ret;
+}
+
+/**
+ * Find all Posix GIDs from a PAC by searching for group SIDs from the local
+ * domain and convert them to GIDs.
+ */
+errno_t get_gids_from_pac(TALLOC_CTX *mem_ctx,
+                          struct pac_ctx *pac_ctx,
+                          struct local_mapping_ranges *range_map,
+                          struct dom_sid *domain_sid,
+                          struct PAC_LOGON_INFO *logon_info,
+                          size_t *_gid_count, struct pac_dom_grps **_gids)
+{
+    int ret;
+    size_t gid_count = 0;
+    size_t s;
+    struct netr_SamInfo3 *info3;
+    struct pac_dom_grps *gids = NULL;
+    struct sss_domain_info *grp_dom;
+    char *sid_str = NULL;
+    enum idmap_error_code err;
+    struct dom_sid *grp_sid = NULL;
+    uint32_t id;
+    hash_table_t *gid_table;
+    hash_key_t key;
+    hash_value_t value;
+    TALLOC_CTX *tmp_ctx = NULL;
+
+    if (pac_ctx == NULL || range_map == NULL || domain_sid == NULL ||
+        logon_info == NULL || _gid_count == NULL || _gids == NULL) {
+        DEBUG(SSSDBG_OP_FAILURE, ("Missing parameter.\n"));
+        return EINVAL;
+    }
+
+    info3 = &logon_info->info3;
+
+    if (info3->sidcount == 0 && info3->base.groups.count == 0) {
+        DEBUG(SSSDBG_TRACE_ALL, ("No extra groups found.\n"));
+        ret = EOK;
+        goto done;
+    }
+
+    tmp_ctx = talloc_new(NULL);
+    if (tmp_ctx == NULL) {
+        DEBUG(SSSDBG_OP_FAILURE, ("talloc_new failed.\n"));
+        ret = ENOMEM;
+        goto done;
+    }
+
+    /* Currently three group containers are allocated, one for the IPA domain, one
+     * for the trusted AD domain and an empty one to indicate the end of the
+     * list. */
+    gids = talloc_zero_array(tmp_ctx, struct pac_dom_grps, 3);
+    if (gids == NULL) {
+        DEBUG(SSSDBG_OP_FAILURE, ("talloc_zero_array failed.\n"));
+        ret = ENOMEM;
+        goto done;
+    }
+
+    ret = sss_hash_create(tmp_ctx, info3->sidcount, &gid_table);
+    if (ret != EOK) {
+        DEBUG(SSSDBG_OP_FAILURE, ("sss_hash_create failed.\n"));
+        goto done;
+    }
+
+    key.type = HASH_KEY_ULONG;
+    value.type = HASH_VALUE_PTR;
+
+    err = sss_idmap_smb_sid_to_sid(pac_ctx->idmap_ctx, domain_sid,
+                                   &sid_str);
+    if (err != IDMAP_SUCCESS) {
+        DEBUG(SSSDBG_OP_FAILURE, ("sss_idmap_smb_sid_to_sid failed.\n"));
+        ret = EFAULT;
+        goto done;
+    }
+
+    grp_dom =  find_domain_by_id(pac_ctx->rctx->domains, sid_str);
+    if (grp_dom == NULL) {
+        DEBUG(SSSDBG_OP_FAILURE, ("find_domain_by_id failed.\n"));
+        ret = EINVAL;
+        goto done;
+    }
+
+    for(s = 0; s < info3->sidcount; s++) {
+        if (dom_sid_in_domain(domain_sid, info3->sids[s].sid)) {
+            ret = local_sid_to_id(range_map, info3->sids[s].sid,
+                                  &id);
+            if (ret != EOK) {
+                DEBUG(SSSDBG_OP_FAILURE, ("get_rid failed.\n"));
+                goto done;
+            }
+
+            key.ul = id;
+            value.ptr = grp_dom;
+
+            ret = hash_enter(gid_table, &key, &value);
+            if (ret != HASH_SUCCESS) {
+                DEBUG(SSSDBG_OP_FAILURE, ("hash_enter failed [%d][%s].\n",
+                                          ret, hash_error_string(ret)));
+                ret = EIO;
+                goto done;
+            }
+
+            DEBUG(SSSDBG_TRACE_ALL, ("Found extra group with gid [%d].\n", id));
+        }
+    }
+
+    ret = get_dom_grps_from_hash(gids, gid_table, grp_dom, &gids[0]);
+    if (ret != EOK) {
+        DEBUG(SSSDBG_OP_FAILURE, ("get_dom_grps_from_hash failed.\n"));
+        goto done;
+    }
+    gid_count += gids[0].gid_count;
+
+    talloc_free(gid_table);
+    ret = sss_hash_create(tmp_ctx, info3->base.groups.count, &gid_table);
+    if (ret != EOK) {
+        DEBUG(SSSDBG_OP_FAILURE, ("sss_hash_create failed.\n"));
+        goto done;
+    }
+
+    talloc_zfree(sid_str);
+    err = sss_idmap_smb_sid_to_sid(pac_ctx->idmap_ctx, info3->base.domain_sid,
+                                   &sid_str);
+    if (err != IDMAP_SUCCESS) {
+        DEBUG(SSSDBG_OP_FAILURE, ("sss_idmap_smb_sid_to_sid failed.\n"));
+        ret = EFAULT;
+        goto done;
+    }
+
+    grp_dom =  find_domain_by_id(pac_ctx->rctx->domains, sid_str);
+    if (grp_dom == NULL) {
+        DEBUG(SSSDBG_OP_FAILURE, ("find_domain_by_id failed.\n"));
+        ret = EINVAL;
+        goto done;
+    }
+
+    err = sss_idmap_sid_to_smb_sid(pac_ctx->idmap_ctx, sid_str, &grp_sid);
+    if (err != IDMAP_SUCCESS) {
+        DEBUG(SSSDBG_OP_FAILURE, ("sss_idmap_sid_to_smb_sid failed.\n"));
+        ret = EFAULT;
+        goto done;
+    }
+
+    grp_sid->num_auths++;
+
+    for (s = 0; s < info3->base.groups.count; s++) {
+        grp_sid->sub_auths[grp_sid->num_auths - 1] =
+                                                info3->base.groups.rids[s].rid;
+        err = sss_idmap_smb_sid_to_unix(pac_ctx->idmap_ctx, grp_sid,
+                                        &id);
+        if (err != IDMAP_SUCCESS) {
+            DEBUG(SSSDBG_FATAL_FAILURE, ("sss_idmap_smb_sid_to_unix failed for"
+                                         "[%s] [%d].\n", sid_str,
+                                         info3->base.groups.rids[s].rid));
+            ret = ENOENT;
+            goto done;
+        }
+
+        key.ul = id;
+        value.ptr = grp_dom;
+
+        ret = hash_enter(gid_table, &key, &value);
+        if (ret != HASH_SUCCESS) {
+            DEBUG(SSSDBG_OP_FAILURE, ("hash_enter failed [%d][%s].\n",
+                                      ret, hash_error_string(ret)));
+            ret = EIO;
+            goto done;
+        }
+
+        DEBUG(SSSDBG_TRACE_ALL, ("Found extra group with gid [%d].\n", id));
+    }
+
+    ret = get_dom_grps_from_hash(gids, gid_table, grp_dom, &gids[1]);
+    if (ret != EOK) {
+        DEBUG(SSSDBG_OP_FAILURE, ("get_dom_grps_from_hash failed.\n"));
+        goto done;
+    }
+    gid_count += gids[1].gid_count;
+
+    ret = EOK;
+
+done:
+    talloc_free(sid_str);
+    talloc_free(grp_sid);
+
+    if (ret == EOK) {
+        *_gid_count = gid_count;
+        *_gids = talloc_steal(mem_ctx, gids);
+    }
+
+    talloc_free(tmp_ctx);
 
     return ret;
 }
@@ -627,24 +870,26 @@ errno_t diff_gid_lists(TALLOC_CTX *mem_ctx,
                        size_t cur_grp_num,
                        struct grp_info *cur_grp_list,
                        size_t new_gid_num,
-                       gid_t *new_gid_list,
+                       struct pac_dom_grps *new_gid_list,
                        size_t *_add_gid_num,
-                       gid_t **_add_gid_list,
+                       struct pac_dom_grps **_add_gid_list,
                        size_t *_del_grp_num,
                        struct grp_info ***_del_grp_list)
 {
     int ret;
     size_t c;
+    size_t g;
     hash_table_t *table;
     hash_key_t key;
     hash_value_t value;
     size_t add_gid_num = 0;
-    gid_t *add_gid_list = NULL;
+    struct pac_dom_grps *add_gid_list = NULL;
     size_t del_grp_num = 0;
     struct grp_info **del_grp_list = NULL;
     TALLOC_CTX *tmp_ctx = NULL;
     unsigned long value_count;
     hash_value_t *values;
+    size_t new_dom_num = 0;
 
     if ((cur_grp_num != 0 && cur_grp_list == NULL) ||
         (new_gid_num != 0 && new_gid_list == NULL)) {
@@ -664,17 +909,37 @@ errno_t diff_gid_lists(TALLOC_CTX *mem_ctx,
         goto done;
     }
 
+    if (new_gid_num != 0) {
+        for (new_dom_num = 0; new_gid_list[new_dom_num].grp_dom != NULL;
+             new_dom_num++);
+    }
+
     if (cur_grp_num == 0 && new_gid_num != 0) {
         add_gid_num = new_gid_num;
-        add_gid_list = talloc_array(tmp_ctx, gid_t, add_gid_num);
+        add_gid_list = talloc_zero_array(tmp_ctx, struct pac_dom_grps,
+                                         new_dom_num + 1);
         if (add_gid_list == NULL) {
             DEBUG(SSSDBG_OP_FAILURE, ("talloc_array failed.\n"));
             ret = ENOMEM;
             goto done;
         }
 
-        for (c = 0; c < add_gid_num; c++) {
-            add_gid_list[c] = new_gid_list[c];
+        for (c = 0; c < new_dom_num; c++) {
+            add_gid_list[c].grp_dom = new_gid_list[c].grp_dom;
+            add_gid_list[c].gid_count = new_gid_list[c].gid_count;
+            if (new_gid_list[c].gid_count != 0) {
+                add_gid_list[c].gids = talloc_zero_array(add_gid_list, gid_t,
+                                                     new_gid_list[c].gid_count);
+                if (add_gid_list[c].gids == NULL) {
+                    DEBUG(SSSDBG_OP_FAILURE, ("talloc_zero_array failed.\n"));
+                    ret = ENOMEM;
+                    goto done;
+                }
+
+                for (g = 0; g < new_gid_list[c].gid_count; g++) {
+                    add_gid_list[c].gids[g] = new_gid_list[c].gids[g];
+                }
+            }
         }
 
         ret = EOK;
@@ -720,26 +985,45 @@ errno_t diff_gid_lists(TALLOC_CTX *mem_ctx,
         }
     }
 
-    for (c = 0; c < new_gid_num; c++) {
-        key.ul = (unsigned long) new_gid_list[c];
+    add_gid_list = talloc_zero_array(tmp_ctx, struct pac_dom_grps,
+                                     new_dom_num + 1);
+    if (add_gid_list == NULL) {
+        DEBUG(SSSDBG_OP_FAILURE, ("talloc_array failed.\n"));
+        ret = ENOMEM;
+        goto done;
+    }
 
-        ret = hash_delete(table, &key);
-        if (ret == HASH_ERROR_KEY_NOT_FOUND) {
-            /* gid not found, must be added */
-            add_gid_num++;
-            add_gid_list = talloc_realloc(tmp_ctx, add_gid_list, gid_t, add_gid_num);
-            if (add_gid_list == NULL) {
-                DEBUG(SSSDBG_OP_FAILURE, ("talloc_realloc failed.\n"));
-                ret = ENOMEM;
+    for (c = 0; c < new_dom_num; c++) {
+        add_gid_list[c].grp_dom = new_gid_list[c].grp_dom;
+        add_gid_list[c].gid_count = 0;
+
+        for (g = 0; g < new_gid_list[c].gid_count; g++) {
+            key.ul = (unsigned long) new_gid_list[c].gids[g];
+
+            ret = hash_delete(table, &key);
+            if (ret == HASH_ERROR_KEY_NOT_FOUND) {
+                /* gid not found, must be added */
+                add_gid_list[c].gid_count++;
+                add_gid_list[c].gids = talloc_realloc(add_gid_list,
+                                                     add_gid_list,
+                                                     gid_t,
+                                                     add_gid_list[c].gid_count);
+                if (add_gid_list[c].gids == NULL) {
+                    DEBUG(SSSDBG_OP_FAILURE, ("talloc_realloc failed.\n"));
+                    ret = ENOMEM;
+                    goto done;
+                }
+
+                add_gid_list[c].gids[add_gid_list[c].gid_count - 1] =
+                                                        new_gid_list[c].gids[g];
+            } else if (ret != HASH_SUCCESS) {
+                DEBUG(SSSDBG_OP_FAILURE, ("hash_delete failed.\n"));
+                ret = EIO;
                 goto done;
             }
-
-            add_gid_list[add_gid_num - 1] = new_gid_list[c];
-        } else if (ret != HASH_SUCCESS) {
-            DEBUG(SSSDBG_OP_FAILURE, ("hash_delete failed.\n"));
-            ret = EIO;
-            goto done;
         }
+
+        add_gid_num += add_gid_list[c].gid_count;
     }
 
     /* the remaining entries in the hash are not in the new list anymore and
@@ -777,4 +1061,46 @@ done:
     talloc_free(tmp_ctx);
 
     return ret;
+}
+
+static bool compare_string_with_attr(const char *val, struct ldb_message *msg,
+                                     const char *attr)
+{
+    const char *str;
+
+    str = ldb_msg_find_attr_as_string(msg, attr, NULL);
+    if ((str == NULL && val == NULL) ||
+        (str != NULL && val != NULL && strcmp(str, val) == 0)) {
+        return true;
+    }
+
+    return false;
+}
+
+bool new_and_cached_user_differs(struct passwd *pwd, struct ldb_message *msg)
+{
+    if (pwd == NULL || msg == NULL) {
+        return true;
+    }
+
+    if (!compare_string_with_attr(pwd->pw_name, msg, SYSDB_NAME)) {
+        DEBUG(SSSDBG_TRACE_FUNC, ("Names differ."));
+        return true;
+    }
+    if (!compare_string_with_attr(pwd->pw_gecos, msg, SYSDB_GECOS)) {
+        DEBUG(SSSDBG_TRACE_FUNC, ("Gecos fields differ."));
+        return true;
+    }
+
+    if (!compare_string_with_attr(pwd->pw_dir, msg, SYSDB_HOMEDIR)) {
+        DEBUG(SSSDBG_TRACE_FUNC, ("Home directories differ."));
+        return true;
+    }
+
+    if (!compare_string_with_attr(pwd->pw_shell, msg, SYSDB_SHELL)) {
+        DEBUG(SSSDBG_TRACE_FUNC, ("Shells differ."));
+        return true;
+    }
+
+    return false;
 }

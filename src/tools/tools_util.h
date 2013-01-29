@@ -104,16 +104,21 @@ int run_userdel_cmd(struct tools_ctx *tctx);
 
 errno_t signal_sssd(int signum);
 
+/* tools_mc_util.c */
 errno_t sss_memcache_invalidate(const char *mc_filename);
 
 errno_t sss_memcache_clear_all(void);
 
+errno_t sss_mc_refresh_user(const char *username);
+errno_t sss_mc_refresh_group(const char *groupname);
+errno_t sss_mc_refresh_grouplist(struct tools_ctx *tctx,
+                                 char **groupnames);
+
 /* from files.c */
 int remove_tree(const char *root);
 
-int copy_tree(const char *src_root,
-              const char *dst_root,
-              uid_t uid, gid_t gid);
+int copy_tree(const char *src_root, const char *dst_root,
+              mode_t mode_root, uid_t uid, gid_t gid);
 
 /* from nscd.c */
 enum nscd_db {

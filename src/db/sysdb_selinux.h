@@ -34,6 +34,7 @@
 #define SYSDB_SELINUX_ENABLED "enabled"
 #define SYSDB_SELINUX_DEFAULT_USER "user"
 #define SYSDB_SELINUX_DEFAULT_ORDER "order"
+#define SYSDB_SELINUX_HOST_PRIORITY "hostPriority"
 
 enum selinux_entity_type {
     SELINUX_CONFIG,
@@ -46,6 +47,12 @@ errno_t sysdb_store_selinux_usermap(struct sysdb_ctx *sysdb,
 errno_t sysdb_store_selinux_config(struct sysdb_ctx *sysdb,
                                    const char *default_map,
                                    const char *order);
+
+errno_t sysdb_get_selinux_usermaps(TALLOC_CTX *mem_ctx,
+                                   struct sysdb_ctx *sysdb,
+                                   const char **attrs,
+                                   size_t *count,
+                                   struct ldb_message ***messages);
 
 errno_t sysdb_search_selinux_usermap_by_mapname(TALLOC_CTX *mem_ctx,
                                                 struct sysdb_ctx *sysdb,

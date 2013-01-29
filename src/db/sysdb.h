@@ -107,11 +107,6 @@
 #define SYSDB_FQDN "fqdn"
 #define SYSDB_SERVERHOSTNAME "serverHostname"
 
-#define SYSDB_SELINUX_SEEALSO "seeAlso"
-#define SYSDB_SELINUX_USER "selinuxUser"
-#define SYSDB_SELINUX_ENABLED "enabled"
-#define SYSDB_SELINUX_HOST_PRIORITY "hostPriority"
-
 #define SYSDB_CACHEDPWD "cachedPassword"
 
 #define SYSDB_UUID "uniqueID"
@@ -566,6 +561,10 @@ int sysdb_get_netgroup_attr(TALLOC_CTX *mem_ctx,
 /* functions that modify the databse
  * they have to be called within a transaction
  * See sysdb_transaction_send()/_recv() */
+
+/* Permissive modify */
+int sss_ldb_modify_permissive(struct ldb_context *ldb,
+                              struct ldb_message *msg);
 
 /* Delete Entry */
 int sysdb_delete_entry(struct sysdb_ctx *sysdb,
