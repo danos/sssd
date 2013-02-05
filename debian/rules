@@ -41,6 +41,8 @@ override_dh_install:
 	mkdir -p $(CURDIR)/debian/libpam-sss/usr/share/pam-configs
 	install -m644 debian/libpam-sss.pam-auth-update \
 		$(CURDIR)/debian/libpam-sss/usr/share/pam-configs/sss
+	install -m644 debian/libpam-sss.pam-auth-update-password \
+		$(CURDIR)/debian/libpam-sss/usr/share/pam-configs/sss-password
 	install -m644 -D $(CURDIR)/debian/apparmor-profile \
 		$(CURDIR)/debian/sssd/etc/apparmor.d/usr.sbin.sssd
 
