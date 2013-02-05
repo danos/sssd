@@ -24,6 +24,7 @@ endif
 
 override_dh_auto_configure:
 	dh_auto_configure -- --enable-krb5-locator-plugin \
+	--datadir=/usr/share/ \
 	--with-ldb-lib-dir=/usr/lib/$(DEB_HOST_MULTIARCH)/ldb/modules/ldb \
 	--with-krb5-plugin-path=/usr/lib/$(DEB_HOST_MULTIARCH)/krb5/plugins/krb5 \
 	--enable-nsslibdir=/lib/$(DEB_HOST_MULTIARCH) \
