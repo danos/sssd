@@ -8,6 +8,8 @@ include /usr/share/dpkg/buildflags.mk
 CFLAGS = $(shell dpkg-buildflags --get CFLAGS)
 CFLAGS += -I/usr/include/samba-4.0
 
+export CK_DEFAULT_TIMEOUT=30
+
 DEB_HOST_MULTIARCH ?= $(shell dpkg-architecture -qDEB_HOST_MULTIARCH)
 
 APIDOCDIR = /usr/share/sssd

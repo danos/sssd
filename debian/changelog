@@ -44,6 +44,8 @@ sssd (1.9.4-1) UNRELEASED; urgency=low
   * Add postinst/postrm script for libsss-sudo. Those will add a "sudoers"
     entry to /etc/nsswitch.conf upon first installation of the package and
     will then take care of adding/removing sss from the stack as required.
+  * Set CK_DEFAULT_TIMEOUT to 30 so that slower buildds (armhf at least) can
+    run the tests without hitting the default 4s timeout.
 
  -- Timo Aaltonen <tjaalton@ubuntu.com>  Thu, 24 May 2012 14:46:39 +0300
 
