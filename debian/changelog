@@ -1,4 +1,4 @@
-sssd (1.8.4-2) UNRELEASED; urgency=low
+sssd (1.8.4-2) unstable; urgency=low
 
   * fix-cve-2013-0219-1.diff, fix-cve-2013-0219-2.diff,
     fix-cve-2013-0220.diff: Upstream commits from the stable tree to fix
