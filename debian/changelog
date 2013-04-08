@@ -52,15 +52,13 @@ sssd (1.9.4-1) UNRELEASED; urgency=low
 
  -- Timo Aaltonen <tjaalton@ubuntu.com>  Thu, 24 May 2012 14:46:39 +0300
 
-sssd (1.8.4-2) UNRELEASED; urgency=low
+sssd (1.8.4-2) unstable; urgency=low
 
-  * rules: Fix the current date format, and move the date mangling to
-    happen before dh_install is run. (Closes: #670019)
-  * sssd.{preinst,postrm}: Install the apparmor profile in force-complain
-    mode on install, and remove the profile directory on purge (if empty). Also
-    migrate from previous setup which installed it as disabled.
+  * fix-cve-2013-0219-1.diff, fix-cve-2013-0219-2.diff,
+    fix-cve-2013-0220.diff: Upstream commits from the stable tree to fix
+    recent CVE reports. (Closes: #698871)
 
- -- Timo Aaltonen <tjaalton@ubuntu.com>  Tue, 05 Jun 2012 11:39:33 +0300
+ -- Timo Aaltonen <tjaalton@ubuntu.com>  Wed, 27 Feb 2013 23:38:28 +0200
 
 sssd (1.8.4-1) unstable; urgency=low
 
