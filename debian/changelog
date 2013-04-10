@@ -43,6 +43,7 @@ sssd (1.9.4-1) UNRELEASED; urgency=low
   * fix-cve-2013-0219*.diff, -0220.diff: Dropped, included upstream.
   * cve-2013-0287-*.diff: Patches from upstream stable tree to fix
     CVE-2013-0287 (versions 1.9.0 and up).
+  * libsss-sudo.postrm: Run ldconfig on remove/purge.
 
   [ Stéphane Graber ]
   * Add postinst/postrm script for libsss-sudo. Those will add a "sudoers"
