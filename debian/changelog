@@ -44,6 +44,7 @@ sssd (1.9.4-1) UNRELEASED; urgency=low
   * cve-2013-0287-*.diff: Patches from upstream stable tree to fix
     CVE-2013-0287 (versions 1.9.0 and up).
   * libsss-sudo.postrm: Run ldconfig on remove/purge.
+  * fix-linking.diff: simple_access_tests need -ldl.
 
   [ Stéphane Graber ]
   * Add postinst/postrm script for libsss-sudo. Those will add a "sudoers"
