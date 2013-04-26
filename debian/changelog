@@ -1,4 +1,4 @@
-sssd (1.9.4-1) UNRELEASED; urgency=low
+sssd (1.9.5-1) UNRELEASED; urgency=low
 
   [ Timo Aaltonen ]
   * New upstream release 1.9.4.
@@ -41,8 +41,6 @@ sssd (1.9.4-1) UNRELEASED; urgency=low
     correctly substituted. (LP: #1079938)
   * sssd.dirs: Add krb5 include dir.
   * fix-cve-2013-0219*.diff, -0220.diff: Dropped, included upstream.
-  * cve-2013-0287-*.diff: Patches from upstream stable tree to fix
-    CVE-2013-0287 (versions 1.9.0 and up).
   * libsss-sudo.postrm: Run ldconfig on remove/purge.
   * fix-linking.diff: simple_access_tests need -ldl.
 
