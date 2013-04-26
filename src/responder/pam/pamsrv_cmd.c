@@ -378,6 +378,7 @@ static errno_t write_selinux_login_file(const char *username, char *string)
     mode_t oldmask;
     TALLOC_CTX *tmp_ctx;
     char *full_string = NULL;
+    int enforce;
     errno_t ret = EOK;
 
     len = strlen(string);
@@ -405,11 +406,22 @@ static errno_t write_selinux_login_file(const char *username, char *string)
 
     oldmask = umask(022);
     fd = mkstemp(tmp_path);
+    ret = errno;
     umask(oldmask);
     if (fd < 0) {
-        DEBUG(SSSDBG_OP_FAILURE, ("creating the temp file for SELinux "
-                                  "data failed. %s", tmp_path));
-        ret = EIO;
+        if (ret == ENOENT) {
+            /* if selinux is disabled and selogin dir does not exist,
+             * just ignore the error */
+            if (selinux_getenforcemode(&enforce) == 0 && enforce == -1) {
+                ret = EOK;
+                goto done;
+            }
+
+            /* continue if we can't get enforce mode or selinux is enabled */
+        }
+
+        DEBUG(SSSDBG_OP_FAILURE, ("unable to create temp file [%s] "
+              "for SELinux data [%d]: %s\n", tmp_path, ret, strerror(ret)));
         goto done;
     }
 
@@ -502,6 +514,7 @@ static errno_t process_selinux_mappings(struct pam_auth_req *preq)
     int i, j;
     size_t order_count;
     size_t len = 0;
+    bool selinux_support = false;
 
     tmp_ctx = talloc_new(NULL);
     if (tmp_ctx == NULL) {
@@ -525,6 +538,8 @@ static errno_t process_selinux_mappings(struct pam_auth_req *preq)
     } else if (ret != EOK) {
         goto done;
     }
+    /* Now we know that SELinux support is available */
+    selinux_support = true;
 
     default_user = ldb_msg_find_attr_as_string(config,
                                                SYSDB_SELINUX_DEFAULT_USER,
@@ -630,7 +645,7 @@ static errno_t process_selinux_mappings(struct pam_auth_req *preq)
 
     ret = write_selinux_login_file(pd->user, file_content);
 done:
-    if (!file_content) {
+    if (!file_content && selinux_support) {
         err = remove_selinux_login_file(pd->user);
         /* Don't overwrite original error condition if there was one */
         if (ret == EOK) ret = err;
@@ -1022,6 +1037,17 @@ done:
     return ret;
 }
 
+static int pam_auth_req_destructor(struct pam_auth_req *preq)
+{
+    if (preq && preq->dpreq_spy) {
+        /* If there is still a request pending, tell the spy
+         * the client is going away
+         */
+        preq->dpreq_spy->preq = NULL;
+    }
+    return 0;
+}
+
 static int pam_forwarder(struct cli_ctx *cctx, int pam_cmd)
 {
     struct sss_domain_info *dom;
@@ -1037,6 +1063,7 @@ static int pam_forwarder(struct cli_ctx *cctx, int pam_cmd)
     if (!preq) {
         return ENOMEM;
     }
+    talloc_set_destructor(preq, pam_auth_req_destructor);
     preq->cctx = cctx;
 
     preq->pd = talloc_zero(preq, struct pam_data);

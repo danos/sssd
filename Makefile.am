@@ -146,9 +146,9 @@ check_PROGRAMS = \
 PYTHON_TESTS =
 
 if BUILD_PYTHON_BINDINGS
-PYTHON_TESTS += $(srcdir)/src/config/SSSDConfigTest.py \
-                $(srcdir)/src/tests/pyhbac-test.py \
-                $(srcdir)/src/tests/pysss_murmur-test.py
+PYTHON_TESTS += src/config/SSSDConfigTest.py \
+                src/tests/pyhbac-test.py \
+                src/tests/pysss_murmur-test.py
 endif
 
 TESTS = \
@@ -426,6 +426,7 @@ dist_noinst_HEADERS = \
     src/providers/ldap/sdap_id_op.h \
     src/providers/ldap/ldap_opts.h \
     src/providers/ldap/sdap_range.h \
+    src/providers/ldap/sdap_users.h \
     src/providers/ipa/ipa_common.h \
     src/providers/ipa/ipa_config.h \
     src/providers/ipa/ipa_access.h \
@@ -1008,14 +1009,23 @@ ad_ldap_opt_tests_LDADD = \
 simple_access_tests_SOURCES = \
     src/tests/simple_access-tests.c \
     src/tests/common.c \
-    src/providers/simple/simple_access.c
+    src/providers/simple/simple_access_check.c \
+    src/providers/data_provider_be.c \
+    src/providers/data_provider_fo.c \
+    src/providers/data_provider_callbacks.c \
+    $(SSSD_FAILOVER_OBJ)
 simple_access_tests_CFLAGS = \
     $(AM_CFLAGS) \
-    $(CHECK_CFLAGS)
+    $(CHECK_CFLAGS) \
+    -DUNIT_TESTING
 simple_access_tests_LDADD = \
+    -ldl \
     $(SSSD_LIBS) \
+    $(CARES_LIBS) \
     $(CHECK_LIBS) \
-    libsss_util.la
+    $(PAM_LIBS) \
+    libsss_util.la \
+    libsss_test_common.la
 
 util_tests_SOURCES = \
     src/tests/util-tests.c
@@ -1347,7 +1357,8 @@ libsss_proxy_la_LDFLAGS = \
     -module
 
 libsss_simple_la_SOURCES = \
-    src/providers/simple/simple_access.c
+    src/providers/simple/simple_access.c \
+    src/providers/simple/simple_access_check.c
 libsss_simple_la_CFLAGS = \
     $(AM_CFLAGS)
 libsss_simple_la_LIBADD = \
