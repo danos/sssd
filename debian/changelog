@@ -43,6 +43,8 @@ sssd (1.9.5-1) UNRELEASED; urgency=low
   * fix-cve-2013-0219*.diff, -0220.diff: Dropped, included upstream.
   * libsss-sudo.postrm: Run ldconfig on remove/purge.
   * fix-linking.diff: simple_access_tests need -ldl.
+  * apparmor-profile: Fix the profile to use the multiarch path for it's
+    helper location (LP: #1175317).
 
   [ Stéphane Graber ]
   * Add postinst/postrm script for libsss-sudo. Those will add a "sudoers"
