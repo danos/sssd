@@ -8,3 +8,15 @@
      libsss_util.la \
      libsss_test_common.la
  
+diff --git a/configure.ac b/configure.ac
+index f90d7fe..24da88c 100644
+--- a/configure.ac
++++ b/configure.ac
+@@ -21,6 +21,7 @@ AM_PROG_AR
+ AC_DISABLE_STATIC
+ AC_PROG_INSTALL
+ AC_PROG_LIBTOOL
++link_all_deplibs=yes
+ AC_CONFIG_MACRO_DIR([m4])
+ AM_GNU_GETTEXT([external])
+ AM_GNU_GETTEXT_VERSION([0.14])

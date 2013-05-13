@@ -163,6 +163,27 @@ Description: ID mapping library for SSSD -- development files
  This package contains header files and symlinks to develop programs which will
  use the libsss-idmap library.
 
+Package: libsss-nss-idmap0
+Section: libs
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends},
+Pre-Depends: multiarch-support
+Multi-Arch: same
+Description: SID based lookups library for SSSD
+ Utility library for SID based lookups.
+
+Package: libsss-nss-idmap-dev
+Section: libdevel
+Architecture: any
+Depends: ${misc:Depends}, libsss-nss-idmap0 (= ${binary:Version})
+Pre-Depends: multiarch-support
+Multi-Arch: same
+Description: SID based lookups library for SSSD -- development files
+ Utility library for SID based lookups.
+ .
+ This package contains header files and symlinks to develop programs which will
+ use the libsss-nss-idmap library.
+
 Package: libsss-sudo
 Section: libs
 Architecture: any
@@ -195,6 +216,15 @@ Replaces: python-sss (<< 1.5.15)
 Description: Python bindings for the FreeIPA HBAC Evaluator library
  The libipa_hbac-python contains the bindings so that libipa_hbac can be
  used by Python applications.
+
+Package: python-libsss-nss-idmap
+Section: python
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}, ${python:Depends},
+ libsss-nss-idmap0 (= ${binary:Version})
+Description: Python bindings for the SID lookups library
+ This package contains the bindings for libnss_sss_idmap to be used by
+ Python applications.
 
 Package: python-sss
 Section: python
