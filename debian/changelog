@@ -4,6 +4,7 @@ sssd (1.10.0~beta1-1) UNRELEASED; urgency=low
   * fix-linking.diff: Updated, force link_all_deplibs=yes in configure.ac.
   * Add packaging for libsss-nss-idmap0, libsss-nss-idmap-dev,
     python-libsss-nss-idmap.
+  * watch: Updated to work with alpha/beta releases.
 
  -- Timo Aaltonen <tjaalton@ubuntu.com>  Mon, 13 May 2013 10:42:46 +0300
 
