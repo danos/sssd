@@ -43,14 +43,12 @@ sssd (1.10.0~beta1-1) UNRELEASED; urgency=low
   * sssd.dirs: Add krb5 include dir.
   * fix-cve-2013-0219*.diff, -0220.diff: Dropped, included upstream.
   * libsss-sudo.postrm: Run ldconfig on remove/purge.
-  * fix-linking.diff: simple_access_tests need -ldl.
   * apparmor-profile: Fix the profile to use the multiarch path for it's
     helper location (LP: #1175317).
   * Add packaging for libsss-nss-idmap0, libsss-nss-idmap-dev,
     python-libsss-nss-idmap.
   * watch: Updated to work with alpha/beta releases.
   * control: Migrate to libnl-3 now that it's supported.
-  * Added patch from upstream to fix linking with our libtool.
 
   [ Stéphane Graber ]
   * Add postinst/postrm script for libsss-sudo. Those will add a "sudoers"
