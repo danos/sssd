@@ -143,12 +143,41 @@
                         <term>full_name_format (string)</term>
                         <listitem>
                             <para>
-                                The default <citerefentry>
+                                A <citerefentry>
                                     <refentrytitle>printf</refentrytitle>
                                     <manvolnum>3</manvolnum>
                                 </citerefentry>-compatible format that describes how to
-                                translate a (name, domain) tuple into a fully qualified
-                                name.
+                                compose a fully qualified name from user name
+                                and domain name components.
+                            </para>
+                            <para>
+                                The following expansions are supported:
+                                <variablelist>
+                                    <varlistentry>
+                                        <term>%1$s</term>
+                                        <listitem><para>user name</para></listitem>
+                                    </varlistentry>
+                                    <varlistentry>
+                                        <term>%2$s</term>
+                                        <listitem>
+                                            <para>
+                                                domain name as specified in the
+                                                SSSD config file.
+                                            </para>
+                                        </listitem>
+                                    </varlistentry>
+                                    <varlistentry>
+                                        <term>%3$s</term>
+                                        <listitem>
+                                            <para>
+                                                domain flat name. Mostly usable
+                                                for Active Directory domains, both
+                                                directly configured or disovered
+                                                via IPA trusts.
+                                            </para>
+                                        </listitem>
+                                    </varlistentry>
+                                </variablelist>
                             </para>
                             <para>
                                 Each domain can have an individual format string configured.
@@ -819,16 +848,16 @@ override_homedir = /home/%u
                 following operations are done:
                 <itemizedlist>
                     <listitem><para>If the remote user does not exist in the
-                    cache, it is created. The uid is calculated based on the
-                    SID, trusted domains will have UPGs and the gid will have
-                    the same value as the uid. The home directory is set based
-                    on the subdomain_homedir parameter. The shell will be empty
-                    by default, i.e. the system defaults are used, but can be
-                    overwritten with the default_shell parameter.</para>
+                    cache, it is created. The uid is determined with the help
+                    of the SID, trusted domains will have UPGs and the gid
+                    will have the same value as the uid. The home directory is
+                    set based on the subdomain_homedir parameter. The shell will
+                    be empty by default, i.e. the system defaults are used, but
+                    can be overwritten with the default_shell parameter.</para>
                     </listitem>
-                    <listitem><para>If there are SIDs of groups from the domain
-                    the sssd client belongs to, the user will be added to those
-                    groups.</para></listitem>
+                    <listitem><para>If there are SIDs of groups from domains
+                    sssd knows about, the user will be added to those groups.
+                    </para></listitem>
                 </itemizedlist>
             </para>
             <para>
@@ -1481,6 +1510,10 @@ override_homedir = /home/%u
                             Regular expression for this domain that describes
                             how to parse the string containing user name and
                             domain into these components.
+                            The "domain" can match either the SSSD
+                            configuration domain name, or, in the case
+                            of IPA trust subdomains and Active Directory
+                            domains, the flat (NetBIOS) name of the domain.
                         </para>
                         <para>
                             Default for the AD and IPA provider:
@@ -1529,8 +1562,37 @@ override_homedir = /home/%u
                                 <refentrytitle>printf</refentrytitle>
                                 <manvolnum>3</manvolnum>
                             </citerefentry>-compatible format that describes how to
-                             translate a (name, domain) tuple for this domain into a fully
-                             qualified name.
+                            compose a fully qualified name from user name
+                            and domain name components.
+                        </para>
+                        <para>
+                            The following expansions are supported:
+                            <variablelist>
+                                <varlistentry>
+                                    <term>%1$s</term>
+                                    <listitem><para>user name</para></listitem>
+                                </varlistentry>
+                                <varlistentry>
+                                    <term>%2$s</term>
+                                    <listitem>
+                                        <para>
+                                            domain name as specified in the
+                                            SSSD config file.
+                                        </para>
+                                    </listitem>
+                                </varlistentry>
+                                <varlistentry>
+                                    <term>%3$s</term>
+                                    <listitem>
+                                        <para>
+                                            domain flat name. Mostly usable
+                                            for Active Directory domains, both
+                                            directly configured or disovered
+                                            via IPA trusts.
+                                        </para>
+                                    </listitem>
+                                </varlistentry>
+                            </variablelist>
                         </para>
                         <para>
                             Default: <quote>%1$s@%2$s</quote>.
@@ -1656,6 +1718,15 @@ override_homedir = /home/%u
                         </para>
                         <para>
                             Default: <filename>/home/%d/%u</filename>
+                        </para>
+                    </listitem>
+                </varlistentry>
+                <varlistentry>
+                    <term>realmd_tags (string)</term>
+                    <listitem>
+                        <para>
+                            Various tags stored by the realmd configuration service
+                            for this domain.
                         </para>
                     </listitem>
                 </varlistentry>

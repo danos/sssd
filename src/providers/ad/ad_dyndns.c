@@ -70,6 +70,13 @@ errno_t ad_dyndns_init(struct be_ctx *be_ctx,
         return EINVAL;
     }
 
+    ret = be_nsupdate_init_timer(ad_opts->dyndns_ctx, be_ctx->ev,
+                                 ad_dyndns_timer, ad_opts);
+    if (ret != EOK) {
+        DEBUG(SSSDBG_CRIT_FAILURE, ("Could not set up periodic update\n"));
+        return ret;
+    }
+
     ret = be_add_online_cb(be_ctx, be_ctx,
                            ad_dyndns_update,
                            ad_opts, NULL);
@@ -152,6 +159,7 @@ static void ad_dyndns_nsupdate_done(struct tevent_req *req)
 
 struct ad_dyndns_update_state {
     struct ad_options *ad_ctx;
+    const char *servername;
 };
 
 static void ad_dyndns_sdap_update_done(struct tevent_req *subreq);
@@ -163,7 +171,7 @@ ad_dyndns_update_send(struct ad_options *ctx)
     struct ad_dyndns_update_state *state;
     struct tevent_req *req, *subreq;
     struct sdap_id_ctx *sdap_ctx = ctx->id_ctx->sdap_id_ctx;
-    const char *servername;
+    LDAPURLDesc *lud;
 
     DEBUG(SSSDBG_TRACE_FUNC, ("Performing update\n"));
 
@@ -183,15 +191,36 @@ ad_dyndns_update_send(struct ad_options *ctx)
     }
     state->ad_ctx->dyndns_ctx->last_refresh = time(NULL);
 
-    if (strncmp(ctx->service->sdap->uri,
-                "ldap://", 7) != 0) {
-        DEBUG(SSSDBG_CRIT_FAILURE, ("Unexpected format of LDAP URI.\n"));
-        ret = EIO;
+    ret = ldap_url_parse(ctx->service->sdap->uri, &lud);
+    if (ret != LDAP_SUCCESS) {
+        DEBUG(SSSDBG_CRIT_FAILURE,
+              ("Failed to parse ldap URI (%s)!\n", ctx->service->sdap->uri));
+        ret = EINVAL;
         goto done;
     }
-    servername = ctx->service->sdap->uri + 7;
-    if (!servername) {
-        ret = EIO;
+
+    if (lud->lud_scheme != NULL &&
+        strcasecmp(lud->lud_scheme, "ldapi") == 0) {
+        DEBUG(SSSDBG_CRIT_FAILURE,
+              ("The LDAP scheme is ldapi://, cannot proceed with update\n"));
+        ldap_free_urldesc(lud);
+        ret = EINVAL;
+        goto done;
+    }
+
+    if (lud->lud_host == NULL) {
+        DEBUG(SSSDBG_CRIT_FAILURE,
+              ("The LDAP URI (%s) did not contain a host name\n",
+              ctx->service->sdap->uri));
+        ldap_free_urldesc(lud);
+        ret = EINVAL;
+        goto done;
+    }
+
+    state->servername = talloc_strdup(state, lud->lud_host);
+    ldap_free_urldesc(lud);
+    if (!state->servername) {
+        ret = ENOMEM;
         goto done;
     }
 
@@ -207,7 +236,7 @@ ad_dyndns_update_send(struct ad_options *ctx)
                                      NULL,
                                      dp_opt_get_string(ctx->basic,
                                                        AD_KRB5_REALM),
-                                     servername,
+                                     state->servername,
                                      dp_opt_get_int(ctx->dyndns_ctx->opts,
                                                     DP_OPT_DYNDNS_TTL),
                                      false);

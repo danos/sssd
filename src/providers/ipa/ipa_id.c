@@ -97,7 +97,7 @@ void ipa_account_info_handler(struct be_req *breq)
     } else {
         /* any account request is handled by sdap,
          * any invalid request is caught there. */
-        return sdap_handle_account_info(breq, ctx);
+        return sdap_handle_account_info(breq, ctx, ctx->conn);
     }
 
     if (!req) {
@@ -174,7 +174,7 @@ static struct tevent_req *ipa_id_get_netgroup_send(TALLOC_CTX *memctx,
     state->ctx = ipa_ctx;
     state->dp_error = DP_ERR_FATAL;
 
-    state->op = sdap_id_op_create(state, ctx->conn_cache);
+    state->op = sdap_id_op_create(state, ctx->conn->conn_cache);
     if (!state->op) {
         DEBUG(2, ("sdap_id_op_create failed\n"));
         ret = ENOMEM;

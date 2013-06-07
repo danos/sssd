@@ -987,27 +987,25 @@ static krb5_error_code validate_tgt(struct krb5_req *kr)
         goto done;
     }
 
-    /* Try to find and send the PAC to the PAC responder for principals which
-     * do not belong to our realm. Failures are not critical. */
-    if (kr->upn_from_different_realm) {
-        kerr = sss_extract_pac(kr->ctx, validation_ccache, validation_princ,
-                               kr->creds->client, keytab, &pac_authdata);
-        if (kerr != 0) {
-            DEBUG(SSSDBG_OP_FAILURE, ("sss_extract_and_send_pac failed, group " \
-                                      "membership for user with principal [%s] " \
-                                      "might not be correct.\n", kr->name));
-            kerr = 0;
-            goto done;
-        }
+    /* Try to find and send the PAC to the PAC responder.
+     * Failures are not critical. */
+    kerr = sss_extract_pac(kr->ctx, validation_ccache, validation_princ,
+                           kr->creds->client, keytab, &pac_authdata);
+    if (kerr != 0) {
+        DEBUG(SSSDBG_MINOR_FAILURE, ("sss_extract_and_send_pac failed, group " \
+                                     "membership for user with principal [%s] " \
+                                     "might not be correct.\n", kr->name));
+        kerr = 0;
+        goto done;
+    }
 
-        kerr = sss_send_pac(pac_authdata);
-        krb5_free_authdata(kr->ctx, pac_authdata);
-        if (kerr != 0) {
-            DEBUG(SSSDBG_OP_FAILURE, ("sss_send_pac failed, group " \
-                                      "membership for user with principal [%s] " \
-                                      "might not be correct.\n", kr->name));
-            kerr = 0;
-        }
+    kerr = sss_send_pac(pac_authdata);
+    krb5_free_authdata(kr->ctx, pac_authdata);
+    if (kerr != 0) {
+        DEBUG(SSSDBG_MINOR_FAILURE, ("sss_send_pac failed, group " \
+                                     "membership for user with principal [%s] " \
+                                     "might not be correct.\n", kr->name));
+        kerr = 0;
     }
 
 done:
@@ -2029,7 +2027,9 @@ static int k5c_setup(struct krb5_req *kr, uint32_t offline)
         } else if (strcasecmp(use_fast_str, "demand") == 0) {
             kerr = k5c_setup_fast(kr, lifetime_str, true);
         } else {
-            DEBUG(1, ("Unsupported value [%s] for krb5_use_fast.\n"));
+            DEBUG(SSSDBG_CRIT_FAILURE,
+                  ("Unsupported value [%s] for krb5_use_fast.\n",
+                   use_fast_str));
             return EINVAL;
         }
     }

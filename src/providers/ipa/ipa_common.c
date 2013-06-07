@@ -187,6 +187,13 @@ int ipa_get_id_options(struct ipa_options *ipa_opts,
         goto done;
     }
 
+    ret = sdap_domain_add(ipa_opts->id,
+                          ipa_opts->id_ctx->sdap_id_ctx->be->domain,
+                          NULL);
+    if (ret != EOK) {
+        goto done;
+    }
+
     /* get sdap options */
     ret = dp_get_options(ipa_opts->id, cdb, conf_path,
                          ipa_def_ldap_opts,
@@ -223,7 +230,7 @@ int ipa_get_id_options(struct ipa_options *ipa_opts,
     }
     ret = sdap_parse_search_base(ipa_opts->id, ipa_opts->id->basic,
                                  SDAP_SEARCH_BASE,
-                                 &ipa_opts->id->search_bases);
+                                 &ipa_opts->id->sdom->search_bases);
     if (ret != EOK) goto done;
 
     /* set krb realm */
@@ -277,7 +284,7 @@ int ipa_get_id_options(struct ipa_options *ipa_opts,
     }
     ret = sdap_parse_search_base(ipa_opts->id, ipa_opts->id->basic,
                                  SDAP_USER_SEARCH_BASE,
-                                 &ipa_opts->id->user_search_bases);
+                                 &ipa_opts->id->sdom->user_search_bases);
     if (ret != EOK) goto done;
 
     if (NULL == dp_opt_get_string(ipa_opts->id->basic,
@@ -296,7 +303,7 @@ int ipa_get_id_options(struct ipa_options *ipa_opts,
     }
     ret = sdap_parse_search_base(ipa_opts->id, ipa_opts->id->basic,
                                  SDAP_GROUP_SEARCH_BASE,
-                                 &ipa_opts->id->group_search_bases);
+                                 &ipa_opts->id->sdom->group_search_bases);
     if (ret != EOK) goto done;
 
     if (NULL == dp_opt_get_string(ipa_opts->id->basic,
@@ -334,7 +341,7 @@ int ipa_get_id_options(struct ipa_options *ipa_opts,
     }
     ret = sdap_parse_search_base(ipa_opts->id, ipa_opts->id->basic,
                                  SDAP_SUDO_SEARCH_BASE,
-                                 &ipa_opts->id->sudo_search_bases);
+                                 &ipa_opts->id->sdom->sudo_search_bases);
     if (ret != EOK) goto done;
 
     if (NULL == dp_opt_get_string(ipa_opts->id->basic,
@@ -357,7 +364,7 @@ int ipa_get_id_options(struct ipa_options *ipa_opts,
     }
     ret = sdap_parse_search_base(ipa_opts->id, ipa_opts->id->basic,
                                  SDAP_NETGROUP_SEARCH_BASE,
-                                 &ipa_opts->id->netgroup_search_bases);
+                                 &ipa_opts->id->sdom->netgroup_search_bases);
     if (ret != EOK) goto done;
 
     if (NULL == dp_opt_get_string(ipa_opts->basic,
@@ -450,7 +457,7 @@ int ipa_get_id_options(struct ipa_options *ipa_opts,
     }
     ret = sdap_parse_search_base(ipa_opts->id, ipa_opts->id->basic,
                                  SDAP_SERVICE_SEARCH_BASE,
-                                 &ipa_opts->id->service_search_bases);
+                                 &ipa_opts->id->sdom->service_search_bases);
     if (ret != EOK) goto done;
 
     if (NULL == dp_opt_get_string(ipa_opts->basic,
@@ -754,11 +761,11 @@ static void ipa_resolve_callback(void *private_data, struct fo_server *server)
     talloc_free(tmp_ctx);
 }
 
-errno_t ipa_servers_init(struct be_ctx *ctx,
-                         struct ipa_service *service,
-                         struct ipa_options *options,
-                         const char *servers,
-                         bool primary)
+static errno_t _ipa_servers_init(struct be_ctx *ctx,
+                                 struct ipa_service *service,
+                                 struct ipa_options *options,
+                                 const char *servers,
+                                 bool primary)
 {
     TALLOC_CTX *tmp_ctx;
     char **list = NULL;
@@ -823,6 +830,20 @@ errno_t ipa_servers_init(struct be_ctx *ctx,
 done:
     talloc_free(tmp_ctx);
     return ret;
+}
+
+static inline errno_t
+ipa_primary_servers_init(struct be_ctx *ctx, struct ipa_service *service,
+                         struct ipa_options *options, const char *servers)
+{
+    return _ipa_servers_init(ctx, service, options, servers, true);
+}
+
+static inline errno_t
+ipa_backup_servers_init(struct be_ctx *ctx, struct ipa_service *service,
+                        struct ipa_options *options, const char *servers)
+{
+    return _ipa_servers_init(ctx, service, options, servers, false);
 }
 
 static int ipa_user_data_cmp(void *ud1, void *ud2)
@@ -900,13 +921,13 @@ int ipa_service_init(TALLOC_CTX *memctx, struct be_ctx *ctx,
         primary_servers = BE_SRV_IDENTIFIER;
     }
 
-    ret = ipa_servers_init(ctx, service, options, primary_servers, true);
+    ret = ipa_primary_servers_init(ctx, service, options, primary_servers);
     if (ret != EOK) {
         goto done;
     }
 
     if (backup_servers) {
-        ret = ipa_servers_init(ctx, service, options, backup_servers, false);
+        ret = ipa_backup_servers_init(ctx, service, options, backup_servers);
         if (ret != EOK) {
             goto done;
         }
@@ -978,7 +999,7 @@ int ipa_get_autofs_options(struct ipa_options *ipa_opts,
 
     ret = sdap_parse_search_base(ipa_opts->id, ipa_opts->id->basic,
                                  SDAP_AUTOFS_SEARCH_BASE,
-                                 &ipa_opts->id->autofs_search_bases);
+                                 &ipa_opts->id->sdom->autofs_search_bases);
     if (ret != EOK && ret != ENOENT) {
         DEBUG(SSSDBG_OP_FAILURE, ("Could not parse autofs search base\n"));
         goto done;
@@ -1019,8 +1040,7 @@ errno_t ipa_get_dyndns_options(struct be_ctx *be_ctx,
     bool update;
     int ttl;
 
-    ret = be_nsupdate_init(ctx, be_ctx, ipa_dyndns_opts, ipa_dyndns_timer,
-                           ctx, &ctx->dyndns_ctx);
+    ret = be_nsupdate_init(ctx, be_ctx, ipa_dyndns_opts, &ctx->dyndns_ctx);
     if (ret != EOK) {
         DEBUG(SSSDBG_OP_FAILURE,
               ("Cannot initialize IPA dyndns opts [%d]: %s\n",

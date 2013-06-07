@@ -429,6 +429,7 @@ static int sdap_save_group(TALLOC_CTX *memctx,
     struct ldb_message_element *el;
     struct sysdb_attrs *group_attrs;
     const char *name = NULL;
+    char *group_name;
     gid_t gid;
     errno_t ret;
     char *usn_value = NULL;
@@ -614,7 +615,7 @@ static int sdap_save_group(TALLOC_CTX *memctx,
         goto done;
     }
 
-    ret = sdap_save_all_names(name, attrs, !dom->case_sensitive, group_attrs);
+    ret = sdap_save_all_names(name, attrs, dom, group_attrs);
     if (ret != EOK) {
         DEBUG(1, ("Failed to save group names\n"));
         goto done;
@@ -622,8 +623,15 @@ static int sdap_save_group(TALLOC_CTX *memctx,
 
     DEBUG(6, ("Storing info for group %s\n", name));
 
+    group_name = sss_get_domain_name(tmpctx, name, dom);
+    if (!group_name) {
+        DEBUG(SSSDBG_OP_FAILURE, ("failed to format user name,\n"));
+        ret = ENOMEM;
+        goto done;
+    }
+
     ret = sdap_store_group_with_gid(ctx, dom,
-                                    name, gid, group_attrs,
+                                    group_name, gid, group_attrs,
                                     dom->group_timeout,
                                     posix_group, now);
     if (ret) {
@@ -1451,6 +1459,7 @@ struct sdap_get_groups_state {
     struct sdap_options *opts;
     struct sdap_handle *sh;
     struct sss_domain_info *dom;
+    struct sdap_domain *sdom;
     struct sysdb_ctx *sysdb;
     const char **attrs;
     const char *base_filter;
@@ -1476,10 +1485,8 @@ static void sdap_get_groups_done(struct tevent_req *subreq);
 
 struct tevent_req *sdap_get_groups_send(TALLOC_CTX *memctx,
                                        struct tevent_context *ev,
-                                       struct sss_domain_info *dom,
-                                       struct sysdb_ctx *sysdb,
+                                       struct sdap_domain *sdom,
                                        struct sdap_options *opts,
-                                       struct sdap_search_base **search_bases,
                                        struct sdap_handle *sh,
                                        const char **attrs,
                                        const char *filter,
@@ -1495,9 +1502,10 @@ struct tevent_req *sdap_get_groups_send(TALLOC_CTX *memctx,
 
     state->ev = ev;
     state->opts = opts;
-    state->dom = dom;
+    state->sdom = sdom;
+    state->dom = sdom->dom;
     state->sh = sh;
-    state->sysdb = sysdb;
+    state->sysdb = sdom->dom->sysdb;
     state->attrs = attrs;
     state->higher_usn = NULL;
     state->groups =  NULL;
@@ -1506,9 +1514,9 @@ struct tevent_req *sdap_get_groups_send(TALLOC_CTX *memctx,
     state->enumeration = enumeration;
     state->base_filter = filter;
     state->base_iter = 0;
-    state->search_bases = search_bases;
+    state->search_bases = sdom->group_search_bases;
 
-    if (!search_bases) {
+    if (!state->search_bases) {
         DEBUG(SSSDBG_CRIT_FAILURE,
               ("Group lookup request without a search base\n"));
         ret = EINVAL;
@@ -1653,7 +1661,7 @@ static void sdap_get_groups_process(struct tevent_req *subreq)
         if ((state->opts->schema_type != SDAP_SCHEMA_RFC2307)
                 && (dp_opt_get_int(state->opts->basic, SDAP_NESTING_LEVEL) != 0)
                 && !dp_opt_get_bool(state->opts->basic, SDAP_AD_MATCHING_RULE_GROUPS)) {
-            subreq = sdap_nested_group_send(state, state->ev, state->dom,
+            subreq = sdap_nested_group_send(state, state->ev, state->sdom,
                                             state->opts, state->sh,
                                             state->groups[0]);
             if (!subreq) {
@@ -2052,7 +2060,8 @@ static errno_t sdap_nested_group_populate_users(TALLOC_CTX *mem_ctx,
             ret = EINVAL;
         }
         if (ret != EOK) {
-            DEBUG(1, ("User entry %s has no originalDN attribute\n", i));
+            DEBUG(SSSDBG_CRIT_FAILURE,
+                  ("User entry %d has no originalDN attribute\n", i));
             goto done;
         }
         original_dn = (const char *) el->values[0].data;

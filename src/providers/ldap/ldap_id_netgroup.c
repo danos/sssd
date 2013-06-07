@@ -33,7 +33,9 @@
 struct ldap_netgroup_get_state {
     struct tevent_context *ev;
     struct sdap_id_ctx *ctx;
+    struct sdap_domain *sdom;
     struct sdap_id_op *op;
+    struct sdap_id_conn_ctx *conn;
     struct sysdb_ctx *sysdb;
     struct sss_domain_info *domain;
 
@@ -47,6 +49,8 @@ struct ldap_netgroup_get_state {
     struct sysdb_attrs **netgroups;
 
     int dp_error;
+    int sdap_ret;
+    bool noexist_delete;
 };
 
 static int ldap_netgroup_get_retry(struct tevent_req *req);
@@ -54,9 +58,12 @@ static void ldap_netgroup_get_connect_done(struct tevent_req *subreq);
 static void ldap_netgroup_get_done(struct tevent_req *subreq);
 
 struct tevent_req *ldap_netgroup_get_send(TALLOC_CTX *memctx,
-                                     struct tevent_context *ev,
-                                     struct sdap_id_ctx *ctx,
-                                     const char *name)
+                                          struct tevent_context *ev,
+                                          struct sdap_id_ctx *ctx,
+                                          struct sdap_domain *sdom,
+                                          struct sdap_id_conn_ctx *conn,
+                                          const char *name,
+                                          bool noexist_delete)
 {
     struct tevent_req *req;
     struct ldap_netgroup_get_state *state;
@@ -68,17 +75,20 @@ struct tevent_req *ldap_netgroup_get_send(TALLOC_CTX *memctx,
 
     state->ev = ev;
     state->ctx = ctx;
+    state->sdom = sdom;
+    state->conn = conn;
     state->dp_error = DP_ERR_FATAL;
+    state->noexist_delete = noexist_delete;
 
-    state->op = sdap_id_op_create(state, state->ctx->conn_cache);
+    state->op = sdap_id_op_create(state, state->conn->conn_cache);
     if (!state->op) {
         DEBUG(2, ("sdap_id_op_create failed\n"));
         ret = ENOMEM;
         goto fail;
     }
 
-    state->sysdb = ctx->be->domain->sysdb;
-    state->domain = state->ctx->be->domain;
+    state->domain = sdom->dom;
+    state->sysdb = sdom->dom->sysdb;
     state->name = name;
     state->timeout = dp_opt_get_int(ctx->opts->basic, SDAP_SEARCH_TIMEOUT);
 
@@ -152,7 +162,7 @@ static void ldap_netgroup_get_connect_done(struct tevent_req *subreq)
     subreq = sdap_get_netgroups_send(state, state->ev,
                                      state->domain, state->sysdb,
                                      state->ctx->opts,
-                                     state->ctx->opts->netgroup_search_bases,
+                                     state->sdom->netgroup_search_bases,
                                      sdap_id_op_handle(state->op),
                                      state->attrs, state->filter,
                                      state->timeout);
@@ -189,6 +199,7 @@ static void ldap_netgroup_get_done(struct tevent_req *subreq)
 
         return;
     }
+    state->sdap_ret = ret;
 
     if (ret && ret != ENOENT) {
         state->dp_error = dp_error;
@@ -203,7 +214,7 @@ static void ldap_netgroup_get_done(struct tevent_req *subreq)
         return;
     }
 
-    if (ret == ENOENT) {
+    if (ret == ENOENT && state->noexist_delete == true) {
         ret = sysdb_delete_netgroup(state->sysdb, state->domain, state->name);
         if (ret != EOK && ret != ENOENT) {
             tevent_req_error(req, ret);
@@ -216,13 +227,17 @@ static void ldap_netgroup_get_done(struct tevent_req *subreq)
     return;
 }
 
-int ldap_netgroup_get_recv(struct tevent_req *req, int *dp_error_out)
+int ldap_netgroup_get_recv(struct tevent_req *req, int *dp_error_out, int *sdap_ret)
 {
     struct ldap_netgroup_get_state *state = tevent_req_data(req,
                                                     struct ldap_netgroup_get_state);
 
     if (dp_error_out) {
         *dp_error_out = state->dp_error;
+    }
+
+    if (sdap_ret) {
+        *sdap_ret = state->sdap_ret;
     }
 
     TEVENT_REQ_RETURN_ON_ERROR(req);

@@ -37,6 +37,7 @@
 #include "providers/ad/ad_id.h"
 #include "providers/ad/ad_srv.h"
 #include "providers/dp_dyndns.h"
+#include "providers/ad/ad_subdomains.h"
 
 struct ad_options *ad_options = NULL;
 
@@ -134,36 +135,17 @@ sssm_ad_id_init(struct be_ctx *bectx,
     ad_ctx->ad_options = ad_options;
     ad_options->id_ctx = ad_ctx;
 
-    sdap_ctx = talloc_zero(ad_options, struct sdap_id_ctx);
-    if (!sdap_ctx) {
+    sdap_ctx = sdap_id_ctx_new(ad_options, bectx, ad_options->service->sdap);
+    if (sdap_ctx == NULL) {
         return ENOMEM;
     }
-    sdap_ctx->be = bectx;
-    sdap_ctx->service = ad_options->service->sdap;
     ad_ctx->sdap_id_ctx = sdap_ctx;
+    ad_ctx->ldap_ctx = sdap_ctx->conn;
 
-    ret = ad_get_id_options(ad_options, bectx->cdb,
-                            bectx->conf_path,
-                            &sdap_ctx->opts);
-    if (ret != EOK) {
-        goto done;
+    ad_ctx->gc_ctx = sdap_id_ctx_conn_add(sdap_ctx, ad_options->service->gc);
+    if (sdap_ctx == NULL) {
+        return ENOMEM;
     }
-
-    ret = setup_tls_config(sdap_ctx->opts->basic);
-    if (ret != EOK) {
-        DEBUG(SSSDBG_CRIT_FAILURE,
-              ("setup_tls_config failed [%s]\n", strerror(ret)));
-        goto done;
-    }
-
-    ret = sdap_id_conn_cache_create(sdap_ctx, sdap_ctx, &sdap_ctx->conn_cache);
-    if (ret != EOK) {
-        goto done;
-    }
-
-    /* Set up the ID mapping object */
-    ret = sdap_idmap_init(sdap_ctx, sdap_ctx, &sdap_ctx->opts->idmap_ctx);
-    if (ret != EOK) goto done;
 
     ret = ad_dyndns_init(sdap_ctx->be, ad_options);
     if (ret != EOK) {
@@ -172,16 +154,36 @@ sssm_ad_id_init(struct be_ctx *bectx,
         /* Continue without DNS updates */
     }
 
+    ret = sdap_setup_child();
+    if (ret != EOK) {
+        DEBUG(SSSDBG_FATAL_FAILURE,
+              ("setup_child failed [%d][%s].\n",
+               ret, strerror(ret)));
+        goto done;
+    }
+
+    /* Set up various SDAP options */
+    ret = ad_get_id_options(ad_options, bectx->cdb,
+                            bectx->conf_path,
+                            &sdap_ctx->opts);
+    if (ret != EOK) {
+        goto done;
+    }
+
     ret = sdap_id_setup_tasks(sdap_ctx);
     if (ret != EOK) {
         goto done;
     }
 
-    ret = setup_child(sdap_ctx);
+    /* Set up the ID mapping object */
+    ret = sdap_idmap_init(sdap_ctx, sdap_ctx, &sdap_ctx->opts->idmap_ctx);
+    if (ret != EOK) goto done;
+
+
+    ret = setup_tls_config(sdap_ctx->opts->basic);
     if (ret != EOK) {
-        DEBUG(SSSDBG_FATAL_FAILURE,
-              ("setup_child failed [%d][%s].\n",
-               ret, strerror(ret)));
+        DEBUG(SSSDBG_CRIT_FAILURE,
+              ("setup_tls_config failed [%s]\n", strerror(ret)));
         goto done;
     }
 
@@ -360,4 +362,34 @@ ad_shutdown(struct be_req *req)
 {
     /* TODO: Clean up any internal data */
     sdap_handler_done(req, DP_ERR_OK, EOK, NULL);
+}
+
+int sssm_ad_subdomains_init(struct be_ctx *bectx,
+                            struct bet_ops **ops,
+                            void **pvt_data)
+{
+    int ret;
+    struct ad_id_ctx *id_ctx;
+    const char *ad_domain;
+
+    ret = sssm_ad_id_init(bectx, ops, (void **) &id_ctx);
+    if (ret != EOK) {
+        DEBUG(SSSDBG_CRIT_FAILURE, ("sssm_ad_id_init failed.\n"));
+        return ret;
+    }
+
+    if (ad_options == NULL) {
+        DEBUG(SSSDBG_CRIT_FAILURE, ("Global AD options not available.\n"));
+        return EINVAL;
+    }
+
+    ad_domain = dp_opt_get_string(ad_options->basic, AD_DOMAIN);
+
+    ret = ad_subdom_init(bectx, id_ctx, ad_domain, ops, pvt_data);
+    if (ret != EOK) {
+        DEBUG(SSSDBG_CRIT_FAILURE, ("ad_subdom_init failed.\n"));
+        return ret;
+    }
+
+    return EOK;
 }

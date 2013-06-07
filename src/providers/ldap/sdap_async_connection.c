@@ -850,8 +850,8 @@ static void simple_bind_done(struct sdap_op *op,
                 talloc_zfree(nval);
                 if (ret != EOK) {
                     DEBUG(SSSDBG_MINOR_FAILURE,
-                          ("Could not convert control response to an integer. ",
-                           "[%s]\n", strerror(ret)));
+                          ("Couldn't convert control response "
+                           "to an integer [%s].\n", strerror(ret)));
                     goto done;
                 }
 
@@ -1666,7 +1666,8 @@ static errno_t sdap_cli_use_rootdse(struct sdap_cli_connect_state *state)
             return ret;
         }
 
-        ret = sdap_set_config_options_with_rootdse(state->rootdse, state->opts);
+        ret = sdap_set_config_options_with_rootdse(state->rootdse, state->opts,
+                                                   state->opts->sdom);
         if (ret) {
             DEBUG(SSSDBG_OP_FAILURE,
                   ("sdap_set_config_options_with_rootdse failed.\n"));

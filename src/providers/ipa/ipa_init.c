@@ -38,6 +38,7 @@
 #include "providers/ipa/ipa_dyndns.h"
 #include "providers/ipa/ipa_selinux.h"
 #include "providers/ldap/sdap_access.h"
+#include "providers/ldap/sdap_idmap.h"
 #include "providers/ipa/ipa_subdomains.h"
 #include "providers/ipa/ipa_srv.h"
 #include "providers/dp_dyndns.h"
@@ -137,12 +138,10 @@ int sssm_ipa_id_init(struct be_ctx *bectx,
     ipa_options->id_ctx = ipa_ctx;
     ipa_ctx->ipa_options = ipa_options;
 
-    sdap_ctx = talloc_zero(ipa_options, struct sdap_id_ctx);
-    if (!sdap_ctx) {
+    sdap_ctx = sdap_id_ctx_new(ipa_options, bectx, ipa_options->service->sdap);
+    if (sdap_ctx == NULL) {
         return ENOMEM;
     }
-    sdap_ctx->be = bectx;
-    sdap_ctx->service = ipa_options->service->sdap;
     ipa_ctx->sdap_id_ctx = sdap_ctx;
 
     ret = ipa_get_id_options(ipa_options, bectx->cdb,
@@ -187,17 +186,17 @@ int sssm_ipa_id_init(struct be_ctx *bectx,
         goto done;
     }
 
-    ret = sdap_id_conn_cache_create(sdap_ctx, sdap_ctx, &sdap_ctx->conn_cache);
-    if (ret != EOK) {
-        goto done;
-    }
+
+    /* Set up the ID mapping object */
+    ret = sdap_idmap_init(sdap_ctx, sdap_ctx, &sdap_ctx->opts->idmap_ctx);
+    if (ret != EOK) goto done;
 
     ret = sdap_id_setup_tasks(sdap_ctx);
     if (ret != EOK) {
         goto done;
     }
 
-    ret = setup_child(sdap_ctx);
+    ret = sdap_setup_child();
     if (ret != EOK) {
         DEBUG(1, ("setup_child failed [%d][%s].\n",
                   ret, strerror(ret)));
@@ -306,13 +305,14 @@ int sssm_ipa_auth_init(struct be_ctx *bectx,
     }
     sdap_auth_ctx->be =  bectx;
     sdap_auth_ctx->service = ipa_options->service->sdap;
-    ipa_options->auth_ctx->sdap_auth_ctx = sdap_auth_ctx;
 
-    ret = ipa_get_id_options(ipa_options, bectx->cdb, bectx->conf_path,
-                             &sdap_auth_ctx->opts);
-    if (ret != EOK) {
+    if (ipa_options->id == NULL) {
+        ret = EINVAL;
         goto done;
     }
+    sdap_auth_ctx->opts = ipa_options->id;
+
+    ipa_options->auth_ctx->sdap_auth_ctx = sdap_auth_ctx;
 
     ret = setup_tls_config(sdap_auth_ctx->opts->basic);
     if (ret != EOK) {

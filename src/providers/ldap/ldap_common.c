@@ -39,8 +39,75 @@
 /* a fd the child process would log into */
 int ldap_child_debug_fd = -1;
 
+int
+sdap_domain_destructor(void *mem)
+{
+    struct sdap_domain *dom =
+            talloc_get_type(mem, struct sdap_domain);
+    DLIST_REMOVE(*(dom->head), dom);
+    return 0;
+}
+
+struct sdap_domain *
+sdap_domain_get(struct sdap_options *opts,
+                struct sss_domain_info *dom)
+{
+    struct sdap_domain *sditer = NULL;
+
+    DLIST_FOR_EACH(sditer, opts->sdom) {
+        if (sditer->dom == dom) {
+            break;
+        }
+    }
+
+    return sditer;
+}
+
+errno_t
+sdap_domain_add(struct sdap_options *opts,
+                struct sss_domain_info *dom,
+                struct sdap_domain **_sdom)
+{
+    struct sdap_domain *sdom;
+
+    sdom = talloc_zero(opts, struct sdap_domain);
+    if (sdom == NULL) {
+        return ENOMEM;
+    }
+    sdom->dom = dom;
+    sdom->head = &opts->sdom;
+
+    if (opts->sdom) {
+        /* Only allow subdomains of the parent domain */
+        if (dom->parent == NULL ||
+            dom->parent != opts->sdom->dom) {
+            DEBUG(SSSDBG_OP_FAILURE, ("Domain %s is not a subdomain of %s\n",
+                  dom->name, opts->sdom->dom->name));
+            return EINVAL;
+        }
+    }
+
+    talloc_set_destructor((TALLOC_CTX *)sdom, sdap_domain_destructor);
+    DLIST_ADD_END(opts->sdom, sdom, struct sdap_domain *);
+
+    if (_sdom) *_sdom = sdom;
+    return EOK;
+}
+
+void
+sdap_domain_remove(struct sdap_options *opts,
+                   struct sss_domain_info *dom)
+{
+    struct sdap_domain *sdom;
+
+    sdom = sdap_domain_get(opts, dom);
+    if (sdom == NULL) return;
+
+    DLIST_REMOVE(*(sdom->head), sdom);
+}
 
 int ldap_get_options(TALLOC_CTX *memctx,
+                     struct sss_domain_info *dom,
                      struct confdb_ctx *cdb,
                      const char *conf_path,
                      struct sdap_options **_opts)
@@ -71,6 +138,11 @@ int ldap_get_options(TALLOC_CTX *memctx,
 
     opts = talloc_zero(memctx, struct sdap_options);
     if (!opts) return ENOMEM;
+
+    ret = sdap_domain_add(opts, dom, NULL);
+    if (ret != EOK) {
+        goto done;
+    }
 
     ret = dp_get_options(opts, cdb, conf_path,
                          default_basic_opts,
@@ -105,31 +177,31 @@ int ldap_get_options(TALLOC_CTX *memctx,
     /* Default search */
     ret = sdap_parse_search_base(opts, opts->basic,
                                  SDAP_SEARCH_BASE,
-                                 &opts->search_bases);
+                                 &opts->sdom->search_bases);
     if (ret != EOK && ret != ENOENT) goto done;
 
     /* User search */
     ret = sdap_parse_search_base(opts, opts->basic,
                                  SDAP_USER_SEARCH_BASE,
-                                 &opts->user_search_bases);
+                                 &opts->sdom->user_search_bases);
     if (ret != EOK && ret != ENOENT) goto done;
 
     /* Group search base */
     ret = sdap_parse_search_base(opts, opts->basic,
                                  SDAP_GROUP_SEARCH_BASE,
-                                 &opts->group_search_bases);
+                                 &opts->sdom->group_search_bases);
     if (ret != EOK && ret != ENOENT) goto done;
 
     /* Netgroup search */
     ret = sdap_parse_search_base(opts, opts->basic,
                                  SDAP_NETGROUP_SEARCH_BASE,
-                                 &opts->netgroup_search_bases);
+                                 &opts->sdom->netgroup_search_bases);
     if (ret != EOK && ret != ENOENT) goto done;
 
     /* Service search */
     ret = sdap_parse_search_base(opts, opts->basic,
                                  SDAP_SERVICE_SEARCH_BASE,
-                                 &opts->service_search_bases);
+                                 &opts->sdom->service_search_bases);
     if (ret != EOK && ret != ENOENT) goto done;
 
     pwd_policy = dp_opt_get_string(opts->basic, SDAP_PWD_POLICY);
@@ -377,7 +449,7 @@ int ldap_get_sudo_options(TALLOC_CTX *memctx,
 
     ret = sdap_parse_search_base(opts, opts->basic,
                                  SDAP_SUDO_SEARCH_BASE,
-                                 &opts->sudo_search_bases);
+                                 &opts->sdom->sudo_search_bases);
     if (ret != EOK && ret != ENOENT) {
         DEBUG(SSSDBG_OP_FAILURE, ("Could not parse SUDO search base\n"));
         return ret;
@@ -435,7 +507,7 @@ int ldap_get_autofs_options(TALLOC_CTX *memctx,
 
     ret = sdap_parse_search_base(opts, opts->basic,
                                  SDAP_AUTOFS_SEARCH_BASE,
-                                 &opts->autofs_search_bases);
+                                 &opts->sdom->autofs_search_bases);
     if (ret != EOK && ret != ENOENT) {
         DEBUG(SSSDBG_OP_FAILURE, ("Could not parse autofs search base\n"));
         return ret;
@@ -531,6 +603,69 @@ errno_t sdap_parse_search_base(TALLOC_CTX *mem_ctx,
                                     _search_bases);
 }
 
+errno_t
+sdap_create_search_base(TALLOC_CTX *mem_ctx,
+                        const char *unparsed_base,
+                        int scope,
+                        const char *filter,
+                        struct sdap_search_base **_base)
+{
+    struct sdap_search_base *base;
+    TALLOC_CTX *tmp_ctx;
+    errno_t ret;
+    struct ldb_dn *ldn;
+    struct ldb_context *ldb;
+
+    tmp_ctx = talloc_new(NULL);
+    if (!tmp_ctx) {
+        ret = ENOMEM;
+        goto done;
+    }
+
+    /* Create a throwaway LDB context for validating the DN */
+    ldb = ldb_init(tmp_ctx, NULL);
+    if (!ldb) {
+        ret = ENOMEM;
+        goto done;
+    }
+
+    base = talloc_zero(tmp_ctx, struct sdap_search_base);
+    if (base == NULL) {
+        ret = ENOMEM;
+        goto done;
+    }
+
+    base->basedn = talloc_strdup(base, unparsed_base);
+    if (base->basedn == NULL) {
+        ret = ENOMEM;
+        goto done;
+    }
+
+    /* Validate the basedn */
+    ldn = ldb_dn_new(tmp_ctx, ldb, unparsed_base);
+    if (!ldn) {
+        ret = ENOMEM;
+        goto done;
+    }
+
+    if (!ldb_dn_validate(ldn)) {
+        DEBUG(SSSDBG_CRIT_FAILURE,
+                ("Invalid base DN [%s]\n",
+                 unparsed_base));
+        ret = EINVAL;
+        goto done;
+    }
+
+    base->scope = scope;
+    base->filter = filter;
+
+    *_base = talloc_steal(mem_ctx, base);
+    ret = EOK;
+done:
+    talloc_free(tmp_ctx);
+    return ret;
+}
+
 errno_t common_parse_search_base(TALLOC_CTX *mem_ctx,
                                  const char *unparsed_base,
                                  const char *class_name,
@@ -583,39 +718,14 @@ errno_t common_parse_search_base(TALLOC_CTX *mem_ctx,
             ret = ENOMEM;
             goto done;
         }
-        search_bases[0] = talloc_zero(search_bases, struct sdap_search_base);
+
+        ret = sdap_create_search_base(search_bases, unparsed_base,
+                                      LDAP_SCOPE_SUBTREE, old_filter,
+                                      &search_bases[0]);
         if (!search_bases[0]) {
             ret = ENOMEM;
             goto done;
         }
-
-        search_bases[0]->basedn = talloc_strdup(search_bases[0],
-                                                unparsed_base);
-        if (!search_bases[0]->basedn) {
-            ret = ENOMEM;
-            goto done;
-        }
-
-        /* Validate the basedn */
-        ldn = ldb_dn_new(tmp_ctx, ldb, unparsed_base);
-        if (!ldn) {
-            ret = ENOMEM;
-            goto done;
-        }
-
-        if (!ldb_dn_validate(ldn)) {
-            DEBUG(SSSDBG_CRIT_FAILURE,
-                  ("Invalid base DN [%s]\n",
-                   unparsed_base));
-            ret = EINVAL;
-            goto done;
-        }
-        talloc_zfree(ldn);
-
-        search_bases[0]->scope = LDAP_SCOPE_SUBTREE;
-
-        /* Use a search filter specified in the old style if available */
-        search_bases[0]->filter = old_filter;
 
         DEBUG(SSSDBG_CONF_SETTINGS,
               ("Search base added: [%s][%s][%s][%s]\n",
@@ -1194,12 +1304,12 @@ done:
     return ret;
 }
 
-errno_t sdap_urls_init(struct be_ctx *ctx,
-                       struct sdap_service *service,
-                       const char *service_name,
-                       const char *dns_service_name,
-                       const char *urls,
-                       bool primary)
+static errno_t _sdap_urls_init(struct be_ctx *ctx,
+                               struct sdap_service *service,
+                               const char *service_name,
+                               const char *dns_service_name,
+                               const char *urls,
+                               bool primary)
 {
     TALLOC_CTX *tmp_ctx;
     char *srv_user_data;
@@ -1294,6 +1404,25 @@ done:
     return ret;
 }
 
+
+static inline errno_t
+sdap_primary_urls_init(struct be_ctx *ctx, struct sdap_service *service,
+                       const char *service_name, const char *dns_service_name,
+                       const char *urls)
+{
+    return _sdap_urls_init(ctx, service, service_name,
+                           dns_service_name, urls, true);
+}
+
+static inline errno_t
+sdap_backup_urls_init(struct be_ctx *ctx, struct sdap_service *service,
+                      const char *service_name, const char *dns_service_name,
+                      const char *urls)
+{
+    return _sdap_urls_init(ctx, service, service_name,
+                           dns_service_name, urls, false);
+}
+
 static int ldap_user_data_cmp(void *ud1, void *ud2)
 {
     return strcasecmp((char*) ud1, (char*) ud2);
@@ -1337,15 +1466,15 @@ int sdap_service_init(TALLOC_CTX *memctx, struct be_ctx *ctx,
         urls = BE_SRV_IDENTIFIER;
     }
 
-    ret = sdap_urls_init(ctx, service, service_name, dns_service_name,
-                         urls, true);
+    ret = sdap_primary_urls_init(ctx, service, service_name, dns_service_name,
+                                 urls);
     if (ret != EOK) {
         goto done;
     }
 
     if (backup_urls) {
-        ret = sdap_urls_init(ctx, service, service_name, dns_service_name,
-                             backup_urls, false);
+        ret = sdap_backup_urls_init(ctx, service, service_name,
+                                    dns_service_name, backup_urls);
         if (ret != EOK) {
             goto done;
         }
@@ -1583,18 +1712,76 @@ sdap_attrs_get_sid_str(TALLOC_CTX *mem_ctx,
         return ENOENT;
     }
 
-    err = sss_idmap_bin_sid_to_sid(idmap_ctx->map,
-                                   el->values[0].data,
-                                   el->values[0].length,
-                                   &sid_str);
-    if (err != IDMAP_SUCCESS) {
-        DEBUG(SSSDBG_MINOR_FAILURE,
-              ("Could not convert SID: [%s]\n",
-               idmap_error_string(err)));
-        return EIO;
+    if (el->values[0].length > 2 &&
+        el->values[0].data[0] == 'S' &&
+        el->values[0].data[1] == '-') {
+        sid_str = talloc_strndup(mem_ctx, (char *) el->values[0].data,
+                                 el->values[0].length);
+        if (sid_str == NULL) {
+            DEBUG(SSSDBG_OP_FAILURE, ("talloc_strndup failed.\n"));
+            return ENOMEM;
+        }
+    } else {
+        err = sss_idmap_bin_sid_to_sid(idmap_ctx->map,
+                                       el->values[0].data,
+                                       el->values[0].length,
+                                       &sid_str);
+        if (err != IDMAP_SUCCESS) {
+            DEBUG(SSSDBG_MINOR_FAILURE,
+                  ("Could not convert SID: [%s]\n",
+                   idmap_error_string(err)));
+            return EIO;
+        }
     }
 
     *_sid_str = talloc_steal(mem_ctx, sid_str);
 
     return EOK;
+}
+
+struct sdap_id_conn_ctx *
+sdap_id_ctx_conn_add(struct sdap_id_ctx *id_ctx,
+                     struct sdap_service *sdap_service)
+{
+    struct sdap_id_conn_ctx *conn;
+    errno_t ret;
+
+    conn = talloc_zero(id_ctx, struct sdap_id_conn_ctx);
+    if (conn == NULL) {
+        return NULL;
+    }
+    conn->service = talloc_steal(conn, sdap_service);
+    conn->id_ctx = id_ctx;
+
+    /* Create a connection cache */
+    ret = sdap_id_conn_cache_create(conn, id_ctx, conn, &conn->conn_cache);
+    if (ret != EOK) {
+        talloc_free(conn);
+        return NULL;
+    }
+    DLIST_ADD_END(id_ctx->conn, conn, struct sdap_id_conn_ctx *);
+
+    return conn;
+}
+
+struct sdap_id_ctx *
+sdap_id_ctx_new(TALLOC_CTX *mem_ctx, struct be_ctx *bectx,
+                struct sdap_service *sdap_service)
+{
+    struct sdap_id_ctx *sdap_ctx;
+
+    sdap_ctx = talloc_zero(mem_ctx, struct sdap_id_ctx);
+    if (sdap_ctx == NULL) {
+        return NULL;
+    }
+    sdap_ctx->be = bectx;
+
+    /* There should be at least one connection context */
+    sdap_ctx->conn = sdap_id_ctx_conn_add(sdap_ctx, sdap_service);
+    if (sdap_ctx->conn == NULL) {
+        talloc_free(sdap_ctx);
+        return NULL;
+    }
+
+    return sdap_ctx;
 }

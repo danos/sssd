@@ -219,15 +219,10 @@ static errno_t update_filter(struct cache_tool_ctx *tctx,
     }
 
     if (parsed_domain) {
-        if (IS_SUBDOMAIN(dinfo)) {
-            /* Use fqdn for subdomains */
-            use_name = talloc_asprintf(tmp_ctx, tctx->nctx->fq_fmt, use_name,
-                                       dinfo->name);
-            if (use_name == NULL) {
-                DEBUG(SSSDBG_CRIT_FAILURE, ("Out of memory\n"));
-                ret = ENOMEM;
-                goto done;
-            }
+        use_name = sss_get_domain_name(tmp_ctx, use_name, dinfo);
+        if (!use_name) {
+            ret = ENOMEM;
+            goto done;
         }
 
         if (!strcasecmp(dinfo->name, parsed_domain)) {

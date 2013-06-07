@@ -81,10 +81,11 @@ sdap_idmap_init(TALLOC_CTX *mem_ctx,
             || idmap_upper <= idmap_lower
             || (idmap_upper-idmap_lower) < rangesize)
     {
-        DEBUG(SSSDBG_CRIT_FAILURE,
+        DEBUG(SSSDBG_FATAL_FAILURE,
               ("Invalid settings for range selection: [%d][%d][%d]\n",
                idmap_lower, idmap_upper, rangesize));
         ret = EINVAL;
+        goto done;
     }
 
     if (((idmap_upper - idmap_lower) % rangesize) != 0) {
@@ -242,6 +243,8 @@ sdap_idmap_add_domain(struct sdap_idmap_ctx *idmap_ctx,
         ret = EIO;
         goto done;
     }
+    DEBUG(SSSDBG_TRACE_LIBS,
+          ("Adding domain [%s] as slice [%llu]\n", dom_sid, slice));
 
     if (range.max > idmap_upper) {
         /* This should never happen */

@@ -216,6 +216,9 @@ static errno_t ipa_subdom_store(struct sss_domain_info *domain,
     int ret;
 
     tmp_ctx = talloc_new(domain);
+    if (tmp_ctx == NULL) {
+        return ENOMEM;
+    }
 
     ret = sysdb_attrs_get_string(attrs, IPA_CN, &name);
     if (ret != EOK) {
@@ -555,7 +558,7 @@ static void ipa_subdomains_retrieve(struct ipa_subdomains_ctx *ctx, struct be_re
     req_ctx->reply = NULL;
 
     req_ctx->sdap_op = sdap_id_op_create(req_ctx,
-                                         ctx->sdap_id_ctx->conn_cache);
+                                         ctx->sdap_id_ctx->conn->conn_cache);
     if (req_ctx->sdap_op == NULL) {
         DEBUG(SSSDBG_OP_FAILURE, ("sdap_id_op_create failed.\n"));
         ret = ENOMEM;

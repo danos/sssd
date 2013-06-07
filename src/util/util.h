@@ -43,8 +43,10 @@
 #include <ldb.h>
 #include <dhash.h>
 
+#include "confdb/confdb.h"
 #include "util/atomic_io.h"
 #include "util/util_errors.h"
+#include "util/util_safealign.h"
 
 #define _(STRING) gettext (STRING)
 
@@ -270,67 +272,6 @@ errno_t set_debug_file_from_fd(const int fd);
 #define OUT_OF_ID_RANGE(id, min, max) \
     (id == 0 || (min && (id < min)) || (max && (id > max)))
 
-#define SIZE_T_MAX ((size_t) -1)
-
-#define SIZE_T_OVERFLOW(current, add) \
-                        (((size_t)(add)) > (SIZE_T_MAX - ((size_t)(current))))
-
-static inline void
-safealign_memcpy(void *dest, const void *src, size_t n, size_t *counter)
-{
-    memcpy(dest, src, n);
-    if (counter) {
-        *counter += n;
-    }
-}
-
-#define SAFEALIGN_SET_VALUE(dest, value, type, pctr) do { \
-    type CV_MACRO_val = (type)(value); \
-    safealign_memcpy(dest, &CV_MACRO_val, sizeof(type), pctr); \
-} while(0)
-
-#define SAFEALIGN_COPY_INT64(dest, src, pctr) \
-    safealign_memcpy(dest, src, sizeof(int64_t), pctr)
-
-#define SAFEALIGN_SET_INT64(dest, value, pctr) \
-    SAFEALIGN_SET_VALUE(dest, value, int64_t, pctr)
-
-#define SAFEALIGN_COPY_UINT32(dest, src, pctr) \
-    safealign_memcpy(dest, src, sizeof(uint32_t), pctr)
-
-#define SAFEALIGN_SET_UINT32(dest, value, pctr) \
-    SAFEALIGN_SET_VALUE(dest, value, uint32_t, pctr)
-
-#define SAFEALIGN_COPY_INT32(dest, src, pctr) \
-    safealign_memcpy(dest, src, sizeof(int32_t), pctr)
-
-#define SAFEALIGN_SET_INT32(dest, value, pctr) \
-    SAFEALIGN_SET_VALUE(dest, value, int32_t, pctr)
-
-#define SAFEALIGN_COPY_UINT16(dest, src, pctr) \
-    safealign_memcpy(dest, src, sizeof(uint16_t), pctr)
-
-#define SAFEALIGN_SET_UINT16(dest, value, pctr) \
-    SAFEALIGN_SET_VALUE(dest, value, uint16_t, pctr)
-
-#define SAFEALIGN_COPY_UINT32_CHECK(dest, src, len, pctr) do { \
-    if ((*(pctr) + sizeof(uint32_t)) > (len) || \
-        SIZE_T_OVERFLOW(*(pctr), sizeof(uint32_t))) return EINVAL; \
-    safealign_memcpy(dest, src, sizeof(uint32_t), pctr); \
-} while(0)
-
-#define SAFEALIGN_COPY_INT32_CHECK(dest, src, len, pctr) do { \
-    if ((*(pctr) + sizeof(int32_t)) > (len) || \
-        SIZE_T_OVERFLOW(*(pctr), sizeof(int32_t))) return EINVAL; \
-    safealign_memcpy(dest, src, sizeof(int32_t), pctr); \
-} while(0)
-
-#define SAFEALIGN_COPY_UINT16_CHECK(dest, src, len, pctr) do { \
-    if ((*(pctr) + sizeof(uint16_t)) > (len) || \
-        SIZE_T_OVERFLOW(*(pctr), sizeof(uint16_t))) return EINVAL; \
-    safealign_memcpy(dest, src, sizeof(uint16_t), pctr); \
-} while(0)
-
 #include "util/dlinklist.h"
 
 /* From debug.c */
@@ -394,13 +335,25 @@ char *get_username_from_uid(TALLOC_CTX *mem_ctx, uid_t uid);
 
 char *get_uppercase_realm(TALLOC_CTX *memctx, const char *name);
 
+#define FQ_FMT_NAME         0x01
+#define FQ_FMT_DOMAIN       0x02
+#define FQ_FMT_FLAT_NAME    0x04
+
 struct sss_names_ctx {
     char *re_pattern;
     char *fq_fmt;
+    uint8_t fq_flags;
 
     pcre *re;
 };
 
+/* initialize sss_names_ctx directly from arguments */
+int sss_names_init_from_args(TALLOC_CTX *mem_ctx,
+                             const char *re_pattern,
+                             const char *fq_fmt,
+                             struct sss_names_ctx **out);
+
+/* initialize sss_names_ctx from domain configuration */
 int sss_names_init(TALLOC_CTX *mem_ctx,
                    struct confdb_ctx *cdb,
                    const char *domain,
@@ -417,6 +370,32 @@ sss_get_cased_name(TALLOC_CTX *mem_ctx, const char *orig_name,
 errno_t
 sss_get_cased_name_list(TALLOC_CTX *mem_ctx, const char * const *orig,
                         bool case_sensitive, const char ***_cased);
+
+/* Return fully-qualified name according to the fq_fmt. The name is allocated using
+ * talloc on top of mem_ctx
+ */
+char *
+sss_tc_fqname(TALLOC_CTX *mem_ctx, struct sss_names_ctx *nctx,
+              struct sss_domain_info *domain, const char *name);
+
+/* Return fully-qualified name formatted according to the fq_fmt. The buffer in "str" is
+ * "size" bytes long. Returns the number of bytes written on success or a negative
+ * value of failure.
+ */
+int
+sss_fqname(char *str, size_t size, struct sss_names_ctx *nctx,
+           struct sss_domain_info *domain, const char *name);
+
+size_t
+sss_fqdom_len(struct sss_names_ctx *nctx,
+              struct sss_domain_info *domain);
+
+/* Subdomains use fully qualified names in the cache while primary domains use
+ * just the name. Return either of these for a specified domain or subdomain
+ */
+char *
+sss_get_domain_name(TALLOC_CTX *mem_ctx, const char *orig_name,
+                    struct sss_domain_info *dom);
 
 /* from backup-file.c */
 int backup_file(const char *src, int dbglvl);
@@ -543,6 +522,18 @@ bool string_in_list(const char *string, char **list, bool case_sensitive);
  * @param s      Size of the buffer
  */
 void safezero(void *data, size_t size);
+
+int domain_to_basedn(TALLOC_CTX *memctx, const char *domain, char **basedn);
+
+/* from nscd.c */
+enum nscd_db {
+    NSCD_DB_PASSWD,
+    NSCD_DB_GROUP
+};
+
+int flush_nscd_cache(enum nscd_db flush_db);
+
+errno_t sss_nscd_parse_conf(const char *conf_path);
 
 /* from sss_tc_utf8.c */
 char *

@@ -33,9 +33,11 @@
 struct sdap_services_get_state {
     struct tevent_context *ev;
     struct sdap_id_ctx *id_ctx;
+    struct sdap_domain *sdom;
     struct sdap_id_op *op;
     struct sysdb_ctx *sysdb;
     struct sss_domain_info *domain;
+    struct sdap_id_conn_ctx *conn;
 
     const char *name;
     const char *protocol;
@@ -46,6 +48,8 @@ struct sdap_services_get_state {
     int filter_type;
 
     int dp_error;
+    int sdap_ret;
+    bool noexist_delete;
 };
 
 static errno_t
@@ -59,9 +63,12 @@ struct tevent_req *
 services_get_send(TALLOC_CTX *mem_ctx,
                   struct tevent_context *ev,
                   struct sdap_id_ctx *id_ctx,
+                  struct sdap_domain *sdom,
+                  struct sdap_id_conn_ctx *conn,
                   const char *name,
                   const char *protocol,
-                  int filter_type)
+                  int filter_type,
+                  bool noexist_delete)
 {
     errno_t ret;
     struct tevent_req *req;
@@ -75,14 +82,17 @@ services_get_send(TALLOC_CTX *mem_ctx,
 
     state->ev = ev;
     state->id_ctx = id_ctx;
+    state->sdom = sdom;
+    state->conn = conn;
     state->dp_error = DP_ERR_FATAL;
-    state->sysdb = id_ctx->be->domain->sysdb;
-    state->domain = state->id_ctx->be->domain;
+    state->domain = sdom->dom;
+    state->sysdb = sdom->dom->sysdb;
     state->name = name;
     state->protocol = protocol;
     state->filter_type = filter_type;
+    state->noexist_delete = noexist_delete;
 
-    state->op = sdap_id_op_create(state, state->id_ctx->conn_cache);
+    state->op = sdap_id_op_create(state, state->conn->conn_cache);
     if (!state->op) {
         DEBUG(SSSDBG_MINOR_FAILURE, ("sdap_id_op_create failed\n"));
         ret = ENOMEM;
@@ -189,7 +199,7 @@ services_get_connect_done(struct tevent_req *subreq)
     subreq = sdap_get_services_send(state, state->ev,
                                     state->domain, state->sysdb,
                                     state->id_ctx->opts,
-                                    state->id_ctx->opts->service_search_bases,
+                                    state->sdom->service_search_bases,
                                     sdap_id_op_handle(state->op),
                                     state->attrs, state->filter,
                                     dp_opt_get_int(state->id_ctx->opts->basic,
@@ -231,6 +241,7 @@ services_get_done(struct tevent_req *subreq)
         /* Return to the mainloop to retry */
         return;
     }
+    state->sdap_ret = ret;
 
     /* An error occurred. */
     if (ret && ret != ENOENT) {
@@ -239,7 +250,7 @@ services_get_done(struct tevent_req *subreq)
         return;
     }
 
-    if (ret == ENOENT) {
+    if (ret == ENOENT && state->noexist_delete == true) {
         /* Ensure that this entry is removed from the sysdb */
         switch(state->filter_type) {
         case BE_FILTER_NAME:
@@ -277,13 +288,17 @@ services_get_done(struct tevent_req *subreq)
 }
 
 errno_t
-services_get_recv(struct tevent_req *req, int *dp_error_out)
+services_get_recv(struct tevent_req *req, int *dp_error_out, int *sdap_ret)
 {
     struct sdap_services_get_state *state =
             tevent_req_data(req, struct sdap_services_get_state);
 
     if (dp_error_out) {
         *dp_error_out = state->dp_error;
+    }
+
+    if (sdap_ret) {
+        *sdap_ret = state->sdap_ret;
     }
 
     TEVENT_REQ_RETURN_ON_ERROR(req);

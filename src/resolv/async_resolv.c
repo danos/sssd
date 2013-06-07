@@ -645,7 +645,8 @@ resolv_copy_hostent_ares(TALLOC_CTX *mem_ctx, struct hostent *src,
                                 &((struct ares_addr6ttl *) ares_ttl_data)[i]);
                 break;
             default:
-                DEBUG(1, ("Unknown address family %d\n"));
+                DEBUG(SSSDBG_CRIT_FAILURE,
+                      ("Unknown address family %d\n", family));
                 goto fail;
             }
 
@@ -1453,8 +1454,9 @@ resolv_get_string_ptr_address(TALLOC_CTX *mem_ctx,
 }
 
 struct sockaddr_storage *
-resolv_get_sockaddr_address_index(TALLOC_CTX *mem_ctx, struct resolv_hostent *hostent,
-                                  int port, int index)
+resolv_get_sockaddr_address_index(TALLOC_CTX *mem_ctx,
+                                  struct resolv_hostent *hostent,
+                                  int port, int addrindex)
 {
     struct sockaddr_storage *sockaddr;
 
@@ -1470,18 +1472,21 @@ resolv_get_sockaddr_address_index(TALLOC_CTX *mem_ctx, struct resolv_hostent *ho
         case AF_INET:
             sockaddr->ss_family = AF_INET;
             memcpy(&((struct sockaddr_in *) sockaddr)->sin_addr,
-                   hostent->addr_list[0]->ipaddr, sizeof(struct in_addr));
+                   hostent->addr_list[addrindex]->ipaddr,
+                   sizeof(struct in_addr));
             ((struct sockaddr_in *) sockaddr)->sin_port = (in_port_t) htons(port);
 
             break;
         case AF_INET6:
             sockaddr->ss_family = AF_INET6;
             memcpy(&((struct sockaddr_in6 *) sockaddr)->sin6_addr,
-                   hostent->addr_list[0]->ipaddr, sizeof(struct in6_addr));
+                   hostent->addr_list[addrindex]->ipaddr,
+                   sizeof(struct in6_addr));
             ((struct sockaddr_in6 *) sockaddr)->sin6_port = (in_port_t) htons(port);
             break;
         default:
-            DEBUG(1, ("Unknown address family %d\n"));
+            DEBUG(SSSDBG_CRIT_FAILURE,
+                  ("Unknown address family %d\n", hostent->family));
             return NULL;
     }
 

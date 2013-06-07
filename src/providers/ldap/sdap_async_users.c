@@ -31,6 +31,68 @@
 
 /* ==Save-User-Entry====================================================== */
 
+static errno_t
+sdap_get_idmap_primary_gid(struct sdap_options *opts,
+                           struct sysdb_attrs *attrs,
+                           char *sid_str,
+                           char *dom_sid_str,
+                           gid_t *_gid)
+{
+    errno_t ret;
+    TALLOC_CTX *tmpctx = NULL;
+    gid_t gid, primary_gid;
+    char *group_sid_str;
+
+    tmpctx = talloc_new(NULL);
+    if (!tmpctx) {
+        ret = ENOMEM;
+        goto done;
+    }
+
+    ret = sysdb_attrs_get_uint32_t(attrs,
+                opts->user_map[SDAP_AT_USER_PRIMARY_GROUP].sys_name,
+                &primary_gid);
+    if (ret != EOK) {
+        DEBUG(SSSDBG_MINOR_FAILURE, ("no primary group ID provided\n"));
+        ret = EINVAL;
+        goto done;
+    }
+
+    /* The primary group ID is just the RID part of the objectSID
+     * of the group. Generate the GID by adding this to the domain
+     * SID value.
+     */
+
+    /* First, get the domain SID if we didn't do so above */
+    if (!dom_sid_str) {
+        ret = sdap_idmap_get_dom_sid_from_object(tmpctx, sid_str,
+                                                 &dom_sid_str);
+        if (ret != EOK) {
+            DEBUG(SSSDBG_MINOR_FAILURE,
+                  ("Could not parse domain SID from [%s]\n", sid_str));
+            goto done;
+        }
+    }
+
+    /* Add the RID to the end */
+    group_sid_str = talloc_asprintf(tmpctx, "%s-%lu", dom_sid_str,
+                                   (unsigned long) primary_gid);
+    if (!group_sid_str) {
+        ret = ENOMEM;
+        goto done;
+    }
+
+    /* Convert the SID into a UNIX group ID */
+    ret = sdap_idmap_sid_to_unix(opts->idmap_ctx, group_sid_str, &gid);
+    if (ret != EOK) goto done;
+
+    ret = EOK;
+    *_gid = gid;
+done:
+    talloc_free(tmpctx);
+    return ret;
+}
+
 /* FIXME: support storing additional attributes */
 int sdap_save_user(TALLOC_CTX *memctx,
                    struct sysdb_ctx *ctx,
@@ -44,6 +106,7 @@ int sdap_save_user(TALLOC_CTX *memctx,
     struct ldb_message_element *el;
     int ret;
     const char *name = NULL;
+    const char *user_name = NULL;
     const char *fullname = NULL;
     const char *pwd;
     const char *gecos;
@@ -51,7 +114,7 @@ int sdap_save_user(TALLOC_CTX *memctx,
     const char *shell;
     const char *orig_dn = NULL;
     uid_t uid;
-    gid_t gid, primary_gid;
+    gid_t gid;
     struct sysdb_attrs *user_attrs;
     char *upn = NULL;
     size_t i;
@@ -62,7 +125,6 @@ int sdap_save_user(TALLOC_CTX *memctx,
     bool use_id_mapping = dp_opt_get_bool(opts->basic, SDAP_ID_MAPPING);
     char *sid_str;
     char *dom_sid_str = NULL;
-    char *group_sid_str;
 
     DEBUG(9, ("Save user\n"));
 
@@ -205,50 +267,25 @@ int sdap_save_user(TALLOC_CTX *memctx,
     }
 
     if (use_id_mapping) {
-        ret = sysdb_attrs_get_uint32_t(
-                attrs,
-                opts->user_map[SDAP_AT_USER_PRIMARY_GROUP].sys_name,
-                &primary_gid);
-        if (ret != EOK) {
-            DEBUG(SSSDBG_MINOR_FAILURE,
-                  ("no primary group ID provided for [%s] in domain [%s].\n",
-                   name, dom->name));
-            ret = EINVAL;
-            goto done;
-        }
-
-        /* The primary group ID is just the RID part of the objectSID
-         * of the group. Generate the GID by adding this to the domain
-         * SID value.
-         */
-
-        /* First, get the domain SID if we didn't do so above */
-        if (!dom_sid_str) {
-            ret = sdap_idmap_get_dom_sid_from_object(tmpctx, sid_str,
-                                                     &dom_sid_str);
-            if (ret != EOK) {
-                DEBUG(SSSDBG_MINOR_FAILURE,
-                      ("Could not parse domain SID from [%s]\n", sid_str));
+        if (IS_SUBDOMAIN(dom) == false) {
+            ret = sdap_get_idmap_primary_gid(opts, attrs, sid_str, dom_sid_str,
+                                             &gid);
+            if (ret) {
+                DEBUG(SSSDBG_CRIT_FAILURE,
+                    ("Cannot get the GID for [%s] in domain [%s].\n",
+                    name, dom->name));
                 goto done;
             }
+        } else {
+            /* For subdomain users, only create the private group as
+             * the subdomain is an MPG domain
+             */
+            gid = 0;
         }
-
-        /* Add the RID to the end */
-        group_sid_str = talloc_asprintf(tmpctx, "%s-%lu",
-                                        dom_sid_str,
-                                        (unsigned long)primary_gid);
-        if (!group_sid_str) {
-            ret = ENOMEM;
-            goto done;
-        }
-
-        /* Convert the SID into a UNIX group ID */
-        ret = sdap_idmap_sid_to_unix(opts->idmap_ctx, group_sid_str, &gid);
-        if (ret != EOK) goto done;
 
         /* Store the GID in the ldap_attrs so it doesn't get
-         * treated as a missing attribute from LDAP and removed.
-         */
+        * treated as a missing attribute from LDAP and removed.
+        */
         ret = sysdb_attrs_add_uint32(attrs, SYSDB_GIDNUM, gid);
         if (ret != EOK) goto done;
     } else {
@@ -264,9 +301,10 @@ int sdap_save_user(TALLOC_CTX *memctx,
     }
 
     /* check that the gid is valid for this domain */
-    if (OUT_OF_ID_RANGE(gid, dom->id_min, dom->id_max)) {
-            DEBUG(2, ("User [%s] filtered out! (primary gid out of range)\n",
-                      name));
+    if (IS_SUBDOMAIN(dom) == false &&
+            OUT_OF_ID_RANGE(gid, dom->id_min, dom->id_max)) {
+        DEBUG(SSSDBG_CRIT_FAILURE,
+              ("User [%s] filtered out! (primary gid out of range)\n", name));
         ret = EINVAL;
         goto done;
     }
@@ -381,7 +419,7 @@ int sdap_save_user(TALLOC_CTX *memctx,
         }
     }
 
-    ret = sdap_save_all_names(name, attrs, !dom->case_sensitive, user_attrs);
+    ret = sdap_save_all_names(name, attrs, dom, user_attrs);
     if (ret != EOK) {
         DEBUG(1, ("Failed to save user names\n"));
         goto done;
@@ -398,7 +436,14 @@ int sdap_save_user(TALLOC_CTX *memctx,
 
     DEBUG(6, ("Storing info for user %s\n", name));
 
-    ret = sysdb_store_user(ctx, dom, name, pwd, uid, gid,
+    user_name = sss_get_domain_name(tmpctx, name, dom);
+    if (!user_name) {
+        DEBUG(SSSDBG_OP_FAILURE, ("failed to format user name,\n"));
+        ret = ENOMEM;
+        goto done;
+    }
+
+    ret = sysdb_store_user(ctx, dom, user_name, pwd, uid, gid,
                            gecos, homedir, shell, orig_dn,
                            user_attrs, missing, cache_timeout, now);
     if (ret) goto done;

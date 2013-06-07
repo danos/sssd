@@ -42,17 +42,26 @@
 /* a fd the child process would log into */
 extern int ldap_child_debug_fd;
 
+struct sdap_id_ctx;
+
+struct sdap_id_conn_ctx {
+    struct sdap_id_ctx *id_ctx;
+
+    struct sdap_service *service;
+    /* LDAP connection cache */
+    struct sdap_id_conn_cache *conn_cache;
+    /* dlinklist pointers */
+    struct sdap_id_conn_ctx *prev, *next;
+};
+
 struct sdap_id_ctx {
     struct be_ctx *be;
     struct sdap_options *opts;
-    struct fo_service *fo_service;
-    struct sdap_service *service;
 
     /* If using GSSAPI */
     struct krb5_service *krb5_service;
-
-    /* LDAP connection cache */
-    struct sdap_id_conn_cache *conn_cache;
+    /* connection to a server */
+    struct sdap_id_conn_ctx *conn;
 
     /* enumeration loop timer */
     struct timeval last_enum;
@@ -84,8 +93,22 @@ errno_t sdap_reinit_cleanup_recv(struct tevent_req *req);
 
 /* id */
 void sdap_account_info_handler(struct be_req *breq);
-void sdap_handle_account_info(struct be_req *breq, struct sdap_id_ctx *ctx);
+void sdap_handle_account_info(struct be_req *breq, struct sdap_id_ctx *ctx,
+                              struct sdap_id_conn_ctx *conn);
 int sdap_id_setup_tasks(struct sdap_id_ctx *ctx);
+
+struct tevent_req *
+sdap_handle_acct_req_send(TALLOC_CTX *mem_ctx,
+                          struct be_req *breq,
+                          struct be_acct_req *ar,
+                          struct sdap_id_ctx *id_ctx,
+                          struct sdap_domain *sdom,
+                          struct sdap_id_conn_ctx *conn,
+                          bool noexist_delete);
+errno_t
+sdap_handle_acct_req_recv(struct tevent_req *req,
+                          int *_dp_error, const char **_err,
+                          int *sdap_ret);
 
 /* auth */
 void sdap_pam_auth_handler(struct be_req *breq);
@@ -126,6 +149,7 @@ void sdap_remove_kdcinfo_files_callback(void *pvt);
 
 /* options parser */
 int ldap_get_options(TALLOC_CTX *memctx,
+                     struct sss_domain_info *dom,
                      struct confdb_ctx *cdb,
                      const char *conf_path,
                      struct sdap_options **_opts);
@@ -151,42 +175,42 @@ struct tevent_req *ldap_id_enumerate_send(struct tevent_context *ev,
 
 void sdap_mark_offline(struct sdap_id_ctx *ctx);
 
-struct tevent_req *users_get_send(TALLOC_CTX *memctx,
-                                  struct tevent_context *ev,
-                                  struct sdap_id_ctx *ctx,
-                                  const char *name,
-                                  int filter_type,
-                                  int attrs_type);
-int users_get_recv(struct tevent_req *req, int *dp_error_out);
-
 struct tevent_req *groups_get_send(TALLOC_CTX *memctx,
                                    struct tevent_context *ev,
                                    struct sdap_id_ctx *ctx,
+                                   struct sdap_domain *sdom,
+                                   struct sdap_id_conn_ctx *conn,
                                    const char *name,
                                    int filter_type,
-                                   int attrs_type);
-int groups_get_recv(struct tevent_req *req, int *dp_error_out);
-
+                                   int attrs_type,
+                                   bool noexist_delete);
+int groups_get_recv(struct tevent_req *req, int *dp_error_out, int *sdap_ret);
 
 struct tevent_req *ldap_netgroup_get_send(TALLOC_CTX *memctx,
                                           struct tevent_context *ev,
                                           struct sdap_id_ctx *ctx,
-                                          const char *name);
-int ldap_netgroup_get_recv(struct tevent_req *req, int *dp_error_out);
+                                          struct sdap_domain *sdom,
+                                          struct sdap_id_conn_ctx *conn,
+                                          const char *name,
+                                          bool noexist_delete);
+int ldap_netgroup_get_recv(struct tevent_req *req, int *dp_error_out, int *sdap_ret);
 
 struct tevent_req *
 services_get_send(TALLOC_CTX *mem_ctx,
                   struct tevent_context *ev,
                   struct sdap_id_ctx *id_ctx,
+                  struct sdap_domain *sdom,
+                  struct sdap_id_conn_ctx *conn,
                   const char *name,
                   const char *protocol,
-                  int filter_type);
+                  int filter_type,
+                  bool noexist_delete);
 
 errno_t
-services_get_recv(struct tevent_req *req, int *dp_error_out);
+services_get_recv(struct tevent_req *req, int *dp_error_out, int *sdap_ret);
 
 /* setup child logging */
-int setup_child(struct sdap_id_ctx *ctx);
+int sdap_setup_child(void);
 
 
 errno_t string_to_shadowpw_days(const char *s, long *d);
@@ -213,6 +237,23 @@ errno_t msgs2attrs_array(TALLOC_CTX *mem_ctx, size_t count,
                          struct ldb_message **msgs,
                          struct sysdb_attrs ***attrs);
 
+errno_t sdap_domain_add(struct sdap_options *opts,
+                        struct sss_domain_info *dom,
+                        struct sdap_domain **_sdom);
+
+void
+sdap_domain_remove(struct sdap_options *opts,
+                   struct sss_domain_info *dom);
+
+struct sdap_domain *sdap_domain_get(struct sdap_options *opts,
+                                    struct sss_domain_info *dom);
+errno_t
+sdap_create_search_base(TALLOC_CTX *mem_ctx,
+                        const char *unparsed_base,
+                        int scope,
+                        const char *filter,
+                        struct sdap_search_base **_base);
+
 errno_t sdap_parse_search_base(TALLOC_CTX *mem_ctx,
                                struct dp_option *opts, int class,
                                struct sdap_search_base ***_search_bases);
@@ -234,5 +275,13 @@ sdap_set_sasl_options(struct sdap_options *id_opts,
                       char *default_primary,
                       char *default_realm,
                       const char *keytab_path);
+
+struct sdap_id_conn_ctx *
+sdap_id_ctx_conn_add(struct sdap_id_ctx *id_ctx,
+                     struct sdap_service *sdap_service);
+
+struct sdap_id_ctx *
+sdap_id_ctx_new(TALLOC_CTX *mem_ctx, struct be_ctx *bectx,
+                struct sdap_service *sdap_service);
 
 #endif /* _LDAP_COMMON_H_ */

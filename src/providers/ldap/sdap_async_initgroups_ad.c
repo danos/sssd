@@ -82,7 +82,7 @@ sdap_get_ad_match_rule_initgroups_send(TALLOC_CTX *mem_ctx,
     state->name = name;
     state->orig_dn = orig_dn;
     state->base_iter = 0;
-    state->search_bases = opts->group_search_bases;
+    state->search_bases = opts->sdom->group_search_bases;
 
     /* Request all of the group attributes that we know
      * about, except for 'member' because that wastes a
@@ -569,7 +569,7 @@ done:
         sret = sysdb_transaction_cancel(state->sysdb);
         DEBUG(SSSDBG_FATAL_FAILURE,
               ("Could not cancel transaction! [%s]\n",
-               sret));
+               strerror(sret)));
     }
 
     if (ret == EOK) {

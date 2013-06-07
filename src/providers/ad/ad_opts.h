@@ -122,6 +122,7 @@ struct dp_option ad_def_ldap_opts[] = {
     { "ldap_groups_use_matching_rule_in_chain", DP_OPT_BOOL, BOOL_FALSE, BOOL_FALSE },
     { "ldap_initgroups_use_matching_rule_in_chain", DP_OPT_BOOL, BOOL_FALSE, BOOL_FALSE },
     { "ldap_rfc2307_fallback_to_local_users", DP_OPT_BOOL, BOOL_FALSE, BOOL_FALSE },
+    { "ldap_disable_range_retrieval", DP_OPT_BOOL, BOOL_FALSE, BOOL_FALSE },
     DP_OPTION_TERMINATOR
 };
 
@@ -239,7 +240,7 @@ struct sdap_attr_map ad_autofs_entry_map[] = {
 };
 
 struct dp_option ad_dyndns_opts[] = {
-    { "dyndns_update", DP_OPT_BOOL, BOOL_FALSE, BOOL_FALSE },
+    { "dyndns_update", DP_OPT_BOOL, BOOL_TRUE, BOOL_FALSE },
     { "dyndns_refresh_interval", DP_OPT_NUMBER, { .number = 86400 }, NULL_NUMBER },
     { "dyndns_iface", DP_OPT_STRING, NULL_STRING, NULL_STRING },
     { "dyndns_ttl", DP_OPT_NUMBER, { .number = 3600 }, NULL_NUMBER },

@@ -146,6 +146,7 @@ struct dp_option ipa_def_ldap_opts[] = {
     { "ldap_groups_use_matching_rule_in_chain", DP_OPT_BOOL, BOOL_FALSE, BOOL_FALSE },
     { "ldap_initgroups_use_matching_rule_in_chain", DP_OPT_BOOL, BOOL_FALSE, BOOL_FALSE },
     { "ldap_rfc2307_fallback_to_local_users", DP_OPT_BOOL, BOOL_FALSE, BOOL_FALSE },
+    { "ldap_disable_range_retrieval", DP_OPT_BOOL, BOOL_FALSE, BOOL_FALSE },
     DP_OPTION_TERMINATOR
 };
 
@@ -168,7 +169,7 @@ struct sdap_attr_map ipa_user_map[] = {
     { "ldap_user_fullname", "cn", SYSDB_FULLNAME, NULL },
     { "ldap_user_member_of", "memberOf", SYSDB_MEMBEROF, NULL },
     { "ldap_user_uuid", "nsUniqueId", SYSDB_UUID, NULL },
-    { "ldap_user_objectsid", NULL, SYSDB_SID, NULL },
+    { "ldap_user_objectsid", "ipaNTSecurityIdentifier", SYSDB_SID_STR, NULL },
     { "ldap_user_primary_group", NULL, SYSDB_PRIMARY_GROUP, NULL },
     { "ldap_user_modify_timestamp", "modifyTimestamp", SYSDB_ORIG_MODSTAMP, NULL },
     { "ldap_user_entry_usn", NULL, SYSDB_USN, NULL },
@@ -201,7 +202,7 @@ struct sdap_attr_map ipa_group_map[] = {
     { "ldap_group_gid_number", "gidNumber", SYSDB_GIDNUM, NULL },
     { "ldap_group_member", "member", SYSDB_MEMBER, NULL },
     { "ldap_group_uuid", "nsUniqueId", SYSDB_UUID, NULL },
-    { "ldap_group_objectsid", NULL, SYSDB_SID, NULL },
+    { "ldap_group_objectsid", "ipaNTSecurityIdentifier", SYSDB_SID_STR, NULL },
     { "ldap_group_modify_timestamp", "modifyTimestamp", SYSDB_ORIG_MODSTAMP, NULL },
     { "ldap_group_entry_usn", NULL, SYSDB_USN, NULL },
     SDAP_ATTR_MAP_TERMINATOR

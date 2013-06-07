@@ -121,7 +121,7 @@ static errno_t sdap_save_netgroup(TALLOC_CTX *memctx,
 
     DEBUG(6, ("Storing info for netgroup %s\n", name));
 
-    ret = sdap_save_all_names(name, attrs, !dom->case_sensitive,
+    ret = sdap_save_all_names(name, attrs, dom,
                               netgroup_attrs);
     if (ret != EOK) {
         DEBUG(1, ("Failed to save netgroup names\n"));
@@ -420,7 +420,7 @@ static errno_t netgr_translate_members_ldap_step(struct tevent_req *req)
     }
 
     if (!sss_ldap_dn_in_search_bases(state, state->dn_item->dn,
-                                     state->opts->netgroup_search_bases,
+                                     state->opts->sdom->netgroup_search_bases,
                                      &filter)) {
         /* not in search base, skip it */
         state->dn_idx = state->dn_item->next;

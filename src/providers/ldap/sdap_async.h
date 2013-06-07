@@ -74,10 +74,8 @@ int sdap_get_users_recv(struct tevent_req *req,
 
 struct tevent_req *sdap_get_groups_send(TALLOC_CTX *memctx,
                                        struct tevent_context *ev,
-                                       struct sss_domain_info *dom,
-                                       struct sysdb_ctx *sysdb,
+                                       struct sdap_domain *sdom,
                                        struct sdap_options *opts,
-                                       struct sdap_search_base **search_bases,
                                        struct sdap_handle *sh,
                                        const char **attrs,
                                        const char *filter,
@@ -115,8 +113,10 @@ errno_t sdap_auth_recv(struct tevent_req *req,
 
 struct tevent_req *sdap_get_initgr_send(TALLOC_CTX *memctx,
                                         struct tevent_context *ev,
+                                        struct sdap_domain *sdom,
                                         struct sdap_handle *sh,
                                         struct sdap_id_ctx *id_ctx,
+                                        struct sdap_id_conn_ctx *conn,
                                         const char *name,
                                         const char **grp_attrs);
 int sdap_get_initgr_recv(struct tevent_req *req);
@@ -210,10 +210,11 @@ sdap_attrs_add_ldap_attr(struct sysdb_attrs *ldap_attrs,
     sdap_attrs_add_ldap_attr(ldap_attrs, attr_name, attr_desc,   \
                              true, name, attrs)
 
-errno_t sdap_save_all_names(const char *name,
-                            struct sysdb_attrs *ldap_attrs,
-                            bool lowercase,
-                            struct sysdb_attrs *attrs);
+errno_t
+sdap_save_all_names(const char *name,
+                    struct sysdb_attrs *ldap_attrs,
+                    struct sss_domain_info *dom,
+                    struct sysdb_attrs *attrs);
 
 struct tevent_req *
 sdap_get_services_send(TALLOC_CTX *memctx,

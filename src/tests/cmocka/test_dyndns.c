@@ -311,8 +311,12 @@ void dyndns_test_interval(void **state)
     check_leaks_push(tmp_ctx);
 
     ret = be_nsupdate_init(tmp_ctx, dyndns_test_ctx->be_ctx, NULL,
-                           dyndns_test_timer, dyndns_test_ctx,
                            &dyndns_test_ctx->update_ctx);
+    assert_int_equal(ret, EOK);
+
+    ret = be_nsupdate_init_timer(dyndns_test_ctx->update_ctx,
+                                 dyndns_test_ctx->be_ctx->ev,
+                                 dyndns_test_timer, dyndns_test_ctx);
     assert_int_equal(ret, EOK);
 
     /* Wait until the timer hits */
@@ -414,7 +418,6 @@ int main(int argc, const char *argv[])
     test_dom_suite_cleanup(TESTS_PATH, TEST_CONF_DB, TEST_SYSDB_FILE);
     test_dom_suite_setup(TESTS_PATH);
 
-    tests_set_cwd();
     rv = run_tests(tests);
     if (rv == 0 && !no_cleanup) {
         test_dom_suite_cleanup(TESTS_PATH, TEST_CONF_DB, TEST_SYSDB_FILE);

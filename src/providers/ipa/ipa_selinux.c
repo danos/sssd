@@ -21,7 +21,6 @@
     You should have received a copy of the GNU General Public License
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
-#include <selinux/selinux.h>
 #include <security/pam_modules.h>
 
 #include "db/sysdb_selinux.h"
@@ -38,7 +37,8 @@
 #include "providers/ipa/ipa_selinux_maps.h"
 #include "providers/ipa/ipa_subdomains.h"
 
-#ifdef HAVE_SELINUX_LOGIN_DIR
+#if defined HAVE_SELINUX && defined HAVE_SELINUX_LOGIN_DIR
+#include <selinux/selinux.h>
 
 static struct tevent_req *
 ipa_get_selinux_send(TALLOC_CTX *mem_ctx,
@@ -864,7 +864,8 @@ ipa_get_selinux_send(TALLOC_CTX *mem_ctx,
     }
 
     if (!offline) {
-        state->op = sdap_id_op_create(state, selinux_ctx->id_ctx->sdap_id_ctx->conn_cache);
+        state->op = sdap_id_op_create(state,
+                        selinux_ctx->id_ctx->sdap_id_ctx->conn->conn_cache);
         if (!state->op) {
             DEBUG(SSSDBG_OP_FAILURE, ("sdap_id_op_create failed\n"));
             ret = ENOMEM;
@@ -1298,6 +1299,7 @@ ipa_get_selinux_recv(struct tevent_req *req,
     return EOK;
 }
 
+/*end of #if defined HAVE_SELINUX && defined HAVE_SELINUX_LOGIN_DIR */
 #else
 /* Simply return success if HAVE_SELINUX_LOGIN_DIR is not defined. */
 void ipa_selinux_handler(struct be_req *be_req)
