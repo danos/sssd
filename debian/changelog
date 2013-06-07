@@ -1,18 +1,7 @@
 sssd (1.10.0~beta1-1) UNRELEASED; urgency=low
 
-  * New upstream release.
-  * Add packaging for libsss-nss-idmap0, libsss-nss-idmap-dev,
-    python-libsss-nss-idmap.
-  * watch: Updated to work with alpha/beta releases.
-  * control: Migrate to libnl-3 now that it's supported.
-  * Added patch from upstream to fix linking with our libtool.
-
- -- Timo Aaltonen <tjaalton@ubuntu.com>  Mon, 13 May 2013 10:42:46 +0300
-
-sssd (1.9.5-1) UNRELEASED; urgency=low
-
   [ Timo Aaltonen ]
-  * New upstream release 1.9.4.
+  * New upstream release
   * Update the packaging for the new version, thanks Esko Järnfors!
     - Add libsss-idmap0, libsss-idmap-dev packages
     - Add sssd Depends on libsss-idmap0
@@ -56,6 +45,11 @@ sssd (1.9.5-1) UNRELEASED; urgency=low
   * fix-linking.diff: simple_access_tests need -ldl.
   * apparmor-profile: Fix the profile to use the multiarch path for it's
     helper location (LP: #1175317).
+  * Add packaging for libsss-nss-idmap0, libsss-nss-idmap-dev,
+    python-libsss-nss-idmap.
+  * watch: Updated to work with alpha/beta releases.
+  * control: Migrate to libnl-3 now that it's supported.
+  * Added patch from upstream to fix linking with our libtool.
 
   [ Stéphane Graber ]
   * Add postinst/postrm script for libsss-sudo. Those will add a "sudoers"
@@ -64,7 +58,7 @@ sssd (1.9.5-1) UNRELEASED; urgency=low
   * Set CK_DEFAULT_TIMEOUT to 30 so that slower buildds (armhf at least) can
     run the tests without hitting the default 4s timeout.
 
- -- Timo Aaltonen <tjaalton@ubuntu.com>  Thu, 24 May 2012 14:46:39 +0300
+ -- Timo Aaltonen <tjaalton@ubuntu.com>  Mon, 13 May 2013 10:42:46 +0300
 
 sssd (1.8.4-2) unstable; urgency=low
 
