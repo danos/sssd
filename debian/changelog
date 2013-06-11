@@ -1,8 +1,7 @@
-sssd (1.10.0~beta1-1) UNRELEASED; urgency=low
+sssd (1.10.0~beta2-1) UNRELEASED; urgency=low
 
   [ Timo Aaltonen ]
   * New upstream release
-    - snapshot of e293fba4f5
   * Update the packaging for the new version, thanks Esko Järnfors!
     - Add libsss-idmap0, libsss-idmap-dev packages
     - Add sssd Depends on libsss-idmap0
