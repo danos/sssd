@@ -504,6 +504,7 @@ class SSSDConfigTestSSSDDomain(unittest.TestCase):
             'entry_cache_service_timeout',
             'entry_cache_autofs_timeout',
             'entry_cache_sudo_timeout',
+            'refresh_expired_interval',
             'lookup_family_order',
             'account_cache_expiration',
             'dns_resolver_timeout',
@@ -613,7 +614,8 @@ class SSSDConfigTestSSSDDomain(unittest.TestCase):
              'krb5_use_fast',
              'krb5_fast_principal',
              'krb5_canonicalize',
-             'krb5_use_enterprise_principal'])
+             'krb5_use_enterprise_principal',
+             'krb5_use_kdcinfo'])
 
         options = domain.list_options()
 
@@ -772,7 +774,8 @@ class SSSDConfigTestSSSDDomain(unittest.TestCase):
             'krb5_use_fast',
             'krb5_fast_principal',
             'krb5_canonicalize',
-            'krb5_use_enterprise_principal']
+            'krb5_use_enterprise_principal',
+            'krb5_use_kdcinfo']
 
         self.assertTrue(type(options) == dict,
                         "Options should be a dictionary")
@@ -855,6 +858,7 @@ class SSSDConfigTestSSSDDomain(unittest.TestCase):
             'entry_cache_service_timeout',
             'entry_cache_autofs_timeout',
             'entry_cache_sudo_timeout',
+            'refresh_expired_interval',
             'account_cache_expiration',
             'lookup_family_order',
             'dns_resolver_timeout',
@@ -965,7 +969,8 @@ class SSSDConfigTestSSSDDomain(unittest.TestCase):
              'krb5_use_fast',
              'krb5_fast_principal',
              'krb5_canonicalize',
-             'krb5_use_enterprise_principal'])
+             'krb5_use_enterprise_principal',
+             'krb5_use_kdcinfo'])
 
         options = domain.list_options()
 
