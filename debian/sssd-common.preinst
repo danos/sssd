@@ -49,7 +49,7 @@ upgrade)
         rm_conffile sssd "/etc/sssd/sssd.api.d/sssd-krb5.conf"
         rm_conffile sssd "/etc/sssd/sssd.api.d/sssd-ldap.conf"
     fi
-    if dpkg --compare-versions "$2" lt "1.8.4-2"; then
+    if dpkg --compare-versions "$2" lt "1.10.0~beta2-1"; then
 	    inst_complain_profile
         if [ -e "$APP_DISABLE" ]; then
             rm -f "$APP_DISABLE"

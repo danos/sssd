@@ -49,6 +49,9 @@ sssd (1.10.0~beta2-1) UNRELEASED; urgency=low
   * control: Migrate to libnl-3 now that it's supported. (Closes: #688174)
   * Split authentication providers to separate packages and make sssd
     a metapackage.
+  * sssd-common.{preinst,postrm}: Install the apparmor profile in force-complain
+    mode on install, and remove the profile directory on purge (if empty). Also
+    migrate from previous setup which installed it as disabled. (Closes: #676140)
 
   [ Stéphane Graber ]
   * Add postinst/postrm script for libsss-sudo. Those will add a "sudoers"
