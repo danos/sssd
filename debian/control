@@ -49,6 +49,7 @@ Vcs-Browser: http://git.debian.org/?p=pkg-sssd/sssd.git
 Homepage: https://fedorahosted.org/sssd/
 
 Package: sssd
+Section: metapackages
 Architecture: any
 Depends: ${misc:Depends},
  sssd-common (= ${binary:Version}),
