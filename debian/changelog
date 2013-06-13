@@ -1,7 +1,7 @@
 sssd (1.10.0~beta2-1) UNRELEASED; urgency=low
 
   [ Timo Aaltonen ]
-  * New upstream release
+  * New upstream release (Closes: #693054, #705357, #711101)
   * Update the packaging for the new version, thanks Esko Järnfors!
     - Add libsss-idmap0, libsss-idmap-dev packages
     - Add sssd Depends on libsss-idmap0
@@ -46,7 +46,7 @@ sssd (1.10.0~beta2-1) UNRELEASED; urgency=low
   * Add packaging for libsss-nss-idmap0, libsss-nss-idmap-dev,
     python-libsss-nss-idmap.
   * watch: Updated to work with alpha/beta releases.
-  * control: Migrate to libnl-3 now that it's supported.
+  * control: Migrate to libnl-3 now that it's supported. (Closes: #688174)
   * Split authentication providers to separate packages and make sssd
     a metapackage.
 
