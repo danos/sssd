@@ -24,9 +24,6 @@ sssd (1.10.0~beta2-1) UNRELEASED; urgency=low
   * watch: Add a comment about the upstream git tree.
   * Replace perl snippet from libnss-sss.post* with sed, drop perl from
     Depends. (Closes: #686237)
-  * libpam-sss.pam-auth-update*: Add a separate file for the password stack,
-    and drop it from the main file. It needs to have a higher priority
-    from the rest so that password changes work with pam_cracklib installed.
   * compat: Bump compat to 9.
   * rules: Set DEB_HOST_MULTIARCH, drop --libdir and remnants of cdbs.
   * sssd-common.install: Install the support binaries under the multiarch path.

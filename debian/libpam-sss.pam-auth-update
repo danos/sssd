@@ -15,3 +15,8 @@ Session-Type: Additional
 Session-Interactive-Only: yes
 Session:
 	optional					pam_sss.so
+Password-Type: Primary
+Password:
+	sufficient			pam_sss.so use_authtok
+Password-Initial:
+	sufficient			pam_sss.so
