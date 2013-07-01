@@ -215,7 +215,8 @@ Description: Nss library for the System Security Services Daemon
 
 Package: libpam-sss
 Architecture: any
-Depends: ${shlibs:Depends}, ${misc:Depends}, libpam-runtime (>= 1.0.1-6)
+Depends: ${shlibs:Depends}, ${misc:Depends}, libpam-runtime (>= 1.0.1-6),
+ libpam-pwquality (>= 1.2.2-1),
 Recommends: sssd
 Multi-Arch: same
 Breaks: sssd (<< 1.8.0~beta3-1)
