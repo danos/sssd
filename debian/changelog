@@ -58,7 +58,6 @@ sssd (1.10.0-1) UNRELEASED; urgency=low
     run the tests without hitting the default 4s timeout.
 
   [ Timo Aaltonen ]
-  * change-order-of-libs-in-linking.diff: Fix linking order.
   * control: Bump policy to 3.9.4, no changes.
 
  -- Timo Aaltonen <tjaalton@ubuntu.com>  Mon, 13 May 2013 10:42:46 +0300
