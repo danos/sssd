@@ -120,7 +120,7 @@ ads_store_sdap_subdom(struct ad_subdomains_ctx *ctx,
         }
 
         /* Convert the domain name into search base */
-        ret = domain_to_basedn(sdom, sditer->dom->name, &basedn);
+        ret = domain_to_basedn(sditer, sditer->dom->name, &basedn);
         if (ret != EOK) {
             DEBUG(SSSDBG_OP_FAILURE,
                 ("Cannot convert domain name [%s] to base DN [%d]: %s\n",
@@ -735,6 +735,13 @@ static void ad_subdomains_get_slave_domain_done(struct tevent_req *req)
         if (ret != EOK) {
             DEBUG(SSSDBG_OP_FAILURE, ("ads_store_sdap_subdom failed.\n"));
             goto done;
+        }
+
+        ret = sss_write_domain_mappings(ctx->sd_ctx->be_ctx->domain);
+        if (ret != EOK) {
+            DEBUG(SSSDBG_MINOR_FAILURE,
+                  ("sss_krb5_write_mappings failed.\n"));
+            /* Just continue */
         }
     }
 

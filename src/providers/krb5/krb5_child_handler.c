@@ -106,7 +106,7 @@ static errno_t pack_authtok(struct io_buffer *buf, size_t *rp,
         auth_token_length = len + 1;
         break;
     case SSS_AUTHTOK_TYPE_CCFILE:
-        ret = sss_authtok_get_password(tok, &data, &len);
+        ret = sss_authtok_get_ccfile(tok, &data, &len);
         auth_token_length = len + 1;
         break;
     default:
@@ -129,7 +129,7 @@ static errno_t create_send_buffer(struct krb5child_req *kr,
     size_t rp;
     const char *keytab;
     uint32_t validate;
-    uint32_t different_realm;
+    uint32_t send_pac;
     uint32_t use_enterprise_principal;
     size_t username_len = 0;
     errno_t ret;
@@ -141,9 +141,20 @@ static errno_t create_send_buffer(struct krb5child_req *kr,
     }
 
     validate = dp_opt_get_bool(kr->krb5_ctx->opts, KRB5_VALIDATE) ? 1 : 0;
-    different_realm = kr->upn_from_different_realm ? 1 : 0;
-    use_enterprise_principal = dp_opt_get_bool(kr->krb5_ctx->opts,
+
+    /* Always send PAC except for local IPA users */
+    if (kr->krb5_ctx->is_ipa) {
+        send_pac = kr->upn_from_different_realm ? 1 : 0;
+    } else {
+        send_pac = 1;
+    }
+
+    if (kr->pd->cmd == SSS_CMD_RENEW) {
+        use_enterprise_principal = false;
+    } else {
+        use_enterprise_principal = dp_opt_get_bool(kr->krb5_ctx->opts,
                                          KRB5_USE_ENTERPRISE_PRINCIPAL) ? 1 : 0;
+    }
 
     buf = talloc(kr, struct io_buffer);
     if (buf == NULL) {
@@ -184,7 +195,7 @@ static errno_t create_send_buffer(struct krb5child_req *kr,
     SAFEALIGN_COPY_UINT32(&buf->data[rp], &kr->gid, &rp);
     SAFEALIGN_COPY_UINT32(&buf->data[rp], &validate, &rp);
     SAFEALIGN_COPY_UINT32(&buf->data[rp], &kr->is_offline, &rp);
-    SAFEALIGN_COPY_UINT32(&buf->data[rp], &different_realm, &rp);
+    SAFEALIGN_COPY_UINT32(&buf->data[rp], &send_pac, &rp);
     SAFEALIGN_COPY_UINT32(&buf->data[rp], &use_enterprise_principal, &rp);
 
     SAFEALIGN_SET_UINT32(&buf->data[rp], strlen(kr->upn), &rp);

@@ -216,10 +216,11 @@ int fo_is_srv_lookup(struct fo_server *s)
 }
 
 static struct fo_server *
-collapse_srv_lookup(struct fo_server *server)
+collapse_srv_lookup(struct fo_server **_server)
 {
-    struct fo_server *tmp, *meta;
+    struct fo_server *tmp, *meta, *server;
 
+    server = *_server;
     meta = server->srv_data->meta;
     DEBUG(4, ("Need to refresh SRV lookup for domain %s\n",
               meta->srv_data->dns_domain));
@@ -251,6 +252,8 @@ collapse_srv_lookup(struct fo_server *server)
 
     meta->srv_data->srv_lookup_status = SRV_NEUTRAL;
     meta->srv_data->last_status_change.tv_sec = 0;
+
+    *_server = NULL;
 
     return meta;
 }
@@ -733,6 +736,7 @@ static errno_t fo_add_server_list(struct fo_service *service,
                                   struct fo_server **_last_server)
 {
     struct fo_server *server = NULL;
+    struct fo_server *last_server = NULL;
     struct fo_server *srv_list = NULL;
     size_t i;
     errno_t ret;
@@ -750,8 +754,11 @@ static errno_t fo_add_server_list(struct fo_service *service,
         ret = fo_add_server_to_list(&srv_list, service->server_list,
                                     server, service->name);
         if (ret != EOK) {
-            talloc_free(server);
+            talloc_zfree(server);
+            continue;
         }
+
+        last_server = server;
     }
 
     if (srv_list != NULL) {
@@ -760,7 +767,7 @@ static errno_t fo_add_server_list(struct fo_service *service,
     }
 
     if (_last_server != NULL) {
-        *_last_server = server;
+        *_last_server = last_server == NULL ? after_server : last_server;
     }
 
     return EOK;
@@ -1185,12 +1192,19 @@ resolve_srv_send(TALLOC_CTX *mem_ctx, struct tevent_context *ev,
           str_srv_data_status(status)));
     switch(status) {
     case SRV_EXPIRED: /* Need a refresh */
-        state->meta = collapse_srv_lookup(server);
+        state->meta = collapse_srv_lookup(&server);
         /* FALLTHROUGH.
          * "server" might be invalid now if the SRV
          * query collapsed
          * */
     case SRV_NEUTRAL: /* Request SRV lookup */
+        if (server != NULL && server != state->meta) {
+            /* A server created by expansion of meta server was marked as
+             * neutral. We have to collapse the servers and issue new
+             * SRV resolution. */
+            state->meta = collapse_srv_lookup(&server);
+        }
+
         if (ctx->srv_send_fn == NULL || ctx->srv_recv_fn == NULL) {
             DEBUG(SSSDBG_OP_FAILURE, ("No SRV lookup plugin is set\n"));
             ret = ENOTSUP;
@@ -1198,15 +1212,20 @@ resolve_srv_send(TALLOC_CTX *mem_ctx, struct tevent_context *ev,
         }
 
         subreq = ctx->srv_send_fn(state, ev,
-                                  server->srv_data->srv,
-                                  server->srv_data->proto,
-                                  server->srv_data->discovery_domain,
+                                  state->meta->srv_data->srv,
+                                  state->meta->srv_data->proto,
+                                  state->meta->srv_data->discovery_domain,
                                   ctx->srv_pvt);
+        if (subreq == NULL) {
+            ret = ENOMEM;
+            goto done;
+        }
 
         tevent_req_set_callback(subreq, resolve_srv_done, req);
         break;
     case SRV_RESOLVE_ERROR: /* query could not be resolved but don't retry yet */
         ret = EIO;
+        state->out = server;
         goto done;
     case SRV_RESOLVED:  /* The query is resolved and valid. Return. */
         state->out = server;
@@ -1279,21 +1298,40 @@ resolve_srv_done(struct tevent_req *subreq)
                                      backup_servers, num_backup_servers,
                                      state->meta->srv_data,
                                      state->meta->user_data,
-                                     false, NULL);
+                                     false, &last_server);
             if (ret != EOK) {
                 goto done;
             }
         }
 
+        if (last_server == state->meta) {
+            /* SRV lookup returned only those servers
+             * that are already present. */
+            DEBUG(SSSDBG_TRACE_FUNC, ("SRV lookup did not return "
+                                      "any new server.\n"));
+            ret = ERR_SRV_DUPLICATES;
+            goto done;
+        }
+
+        /* At least one new server was inserted.
+         * We will return the first new server. */
+        if (state->meta->next == NULL) {
+            DEBUG(SSSDBG_CRIT_FAILURE,
+                 ("BUG: state->meta->next is NULL\n"));
+            ret = ERR_INTERNAL;
+            goto done;
+        }
+
         state->out = state->meta->next;
 
+        /* And remove meta server from the server list. It will be
+         * inserted again during srv collapse. */
         DLIST_REMOVE(state->service->server_list, state->meta);
         if (state->service->last_tried_server == state->meta) {
             state->service->last_tried_server = state->out;
         }
 
         set_srv_data_status(state->meta->srv_data, SRV_RESOLVED);
-
         ret = EOK;
         break;
     case ERR_SRV_NOT_FOUND:

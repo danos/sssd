@@ -53,7 +53,7 @@ struct krb5_req {
     char *ccname;
     char *keytab;
     bool validate;
-    bool upn_from_different_realm;
+    bool send_pac;
     bool use_enterprise_princ;
     char *fast_ccname;
 
@@ -436,6 +436,69 @@ done:
     return kerr;
 }
 
+#ifdef HAVE_KRB5_DIRCACHE
+static bool need_switch_to_principal(krb5_context ctx, krb5_principal princ)
+{
+    krb5_error_code kerr;
+    krb5_ccache default_cc = NULL;
+    krb5_principal default_princ = NULL;
+    char *default_full_name = NULL;
+    char *full_name = NULL;
+    bool ret = false;
+
+    kerr = krb5_cc_default(ctx, &default_cc);
+    if (kerr !=0) {
+        KRB5_CHILD_DEBUG(SSSDBG_TRACE_INTERNAL, kerr);
+        goto done;
+    }
+
+    kerr = krb5_cc_get_principal(ctx, default_cc, &default_princ);
+    if (kerr == KRB5_FCC_NOFILE) {
+        /* There is not any default cache. */
+        ret = true;
+        goto done;
+    } else if (kerr != 0) {
+        KRB5_CHILD_DEBUG(SSSDBG_TRACE_INTERNAL, kerr);
+        goto done;
+    }
+
+    kerr = krb5_unparse_name(ctx, default_princ, &default_full_name);
+    if (kerr !=0) {
+        KRB5_CHILD_DEBUG(SSSDBG_TRACE_INTERNAL, kerr);
+        goto done;
+    }
+
+    kerr = krb5_unparse_name(ctx, princ, &full_name);
+    if (kerr !=0) {
+        KRB5_CHILD_DEBUG(SSSDBG_TRACE_INTERNAL, kerr);
+        goto done;
+    }
+
+    DEBUG(SSSDBG_FUNC_DATA,
+          ("Comparing default principal [%s] and new principal [%s].\n",
+           default_full_name, full_name));
+    if (0 == strcmp(default_full_name, full_name)) {
+        ret = true;
+    }
+
+done:
+    if (default_cc != NULL) {
+        kerr = krb5_cc_close(ctx, default_cc);
+        if (kerr != 0) {
+            KRB5_CHILD_DEBUG(SSSDBG_OP_FAILURE, kerr);
+            goto done;
+        }
+    }
+
+    /* all functions can be safely called with NULL. */
+    krb5_free_principal(ctx, default_princ);
+    krb5_free_unparsed_name(ctx, default_full_name);
+    krb5_free_unparsed_name(ctx, full_name);
+
+    return ret;
+}
+#endif /* HAVE_KRB5_DIRCACHE */
+
 static krb5_error_code
 store_creds_in_ccache(krb5_context ctx, krb5_principal princ,
                       krb5_ccache cc, krb5_creds *creds)
@@ -466,10 +529,12 @@ store_creds_in_ccache(krb5_context ctx, krb5_principal princ,
     }
 
 #ifdef HAVE_KRB5_DIRCACHE
-    kerr = krb5_cc_switch(ctx, cc);
-    if (kerr != 0) {
-        KRB5_CHILD_DEBUG(SSSDBG_OP_FAILURE, kerr);
-        goto done;
+    if (need_switch_to_principal(ctx, princ)) {
+        kerr = krb5_cc_switch(ctx, cc);
+        if (kerr != 0) {
+            KRB5_CHILD_DEBUG(SSSDBG_OP_FAILURE, kerr);
+            goto done;
+        }
     }
 #endif /* HAVE_KRB5_DIRCACHE */
 
@@ -931,7 +996,7 @@ static krb5_error_code validate_tgt(struct krb5_req *kr)
         }
         memset(&entry, 0, sizeof(entry));
 
-        if (krb5_realm_compare(kr->ctx, validation_princ, kr->princ)) {
+        if (krb5_realm_compare(kr->ctx, validation_princ, kr->creds->client)) {
             DEBUG(SSSDBG_TRACE_INTERNAL,
                   ("Found keytab entry with the realm of the credential.\n"));
             realm_entry_found = true;
@@ -989,23 +1054,25 @@ static krb5_error_code validate_tgt(struct krb5_req *kr)
 
     /* Try to find and send the PAC to the PAC responder.
      * Failures are not critical. */
-    kerr = sss_extract_pac(kr->ctx, validation_ccache, validation_princ,
-                           kr->creds->client, keytab, &pac_authdata);
-    if (kerr != 0) {
-        DEBUG(SSSDBG_MINOR_FAILURE, ("sss_extract_and_send_pac failed, group " \
-                                     "membership for user with principal [%s] " \
-                                     "might not be correct.\n", kr->name));
-        kerr = 0;
-        goto done;
-    }
+    if (kr->send_pac) {
+        kerr = sss_extract_pac(kr->ctx, validation_ccache, validation_princ,
+                               kr->creds->client, keytab, &pac_authdata);
+        if (kerr != 0) {
+            DEBUG(SSSDBG_OP_FAILURE, ("sss_extract_and_send_pac failed, group " \
+                                      "membership for user with principal [%s] " \
+                                      "might not be correct.\n", kr->name));
+            kerr = 0;
+            goto done;
+        }
 
-    kerr = sss_send_pac(pac_authdata);
-    krb5_free_authdata(kr->ctx, pac_authdata);
-    if (kerr != 0) {
-        DEBUG(SSSDBG_MINOR_FAILURE, ("sss_send_pac failed, group " \
-                                     "membership for user with principal [%s] " \
-                                     "might not be correct.\n", kr->name));
-        kerr = 0;
+        kerr = sss_send_pac(pac_authdata);
+        krb5_free_authdata(kr->ctx, pac_authdata);
+        if (kerr != 0) {
+            DEBUG(SSSDBG_OP_FAILURE, ("sss_send_pac failed, group " \
+                                      "membership for user with principal [%s] " \
+                                      "might not be correct.\n", kr->name));
+            kerr = 0;
+        }
     }
 
 done:
@@ -1080,13 +1147,59 @@ done:
 
 }
 
+static char * get_ccache_name_by_principal(TALLOC_CTX *mem_ctx,
+                                           krb5_context ctx,
+                                           krb5_principal principal,
+                                           const char *ccname)
+{
+    krb5_error_code kerr;
+    krb5_ccache tmp_cc = NULL;
+    char *tmp_ccname = NULL;
+    char *ret_ccname = NULL;
+
+    kerr = krb5_cc_set_default_name(ctx, ccname);
+    if (kerr != 0) {
+        KRB5_CHILD_DEBUG(SSSDBG_MINOR_FAILURE, kerr);
+        return NULL;
+    }
+
+    kerr = krb5_cc_cache_match(ctx, principal, &tmp_cc);
+    if (kerr != 0) {
+        KRB5_CHILD_DEBUG(SSSDBG_TRACE_INTERNAL, kerr);
+        return NULL;
+    }
+
+    kerr = krb5_cc_get_full_name(ctx, tmp_cc, &tmp_ccname);
+    if (kerr !=0) {
+        KRB5_CHILD_DEBUG(SSSDBG_MINOR_FAILURE, kerr);
+        goto done;
+    }
+
+    ret_ccname = talloc_strdup(mem_ctx, tmp_ccname);
+    if (ret_ccname == NULL) {
+        DEBUG(SSSDBG_OP_FAILURE, ("talloc_strdup failed (ENOMEM).\n"));
+    }
+
+done:
+    if (tmp_cc != NULL) {
+        kerr = krb5_cc_close(ctx, tmp_cc);
+        if (kerr != 0) {
+            KRB5_CHILD_DEBUG(SSSDBG_MINOR_FAILURE, kerr);
+        }
+    }
+    krb5_free_string(ctx, tmp_ccname);
+
+    return ret_ccname;
+}
+
 static krb5_error_code get_and_save_tgt(struct krb5_req *kr,
                                         const char *password)
 {
     const char *realm_name;
     int realm_length;
     krb5_error_code kerr;
-
+    char *cc_name;
+    krb5_principal principal;
 
     kerr = sss_krb5_get_init_creds_opt_set_expire_callback(kr->ctx, kr->options,
                                                   sss_krb5_expire_callback_func,
@@ -1131,10 +1244,21 @@ static krb5_error_code get_and_save_tgt(struct krb5_req *kr,
         }
     }
 
+    principal = kr->creds ? kr->creds->client : kr->princ;
+
+    /* If kr->ccname is cache collection (DIR:/...), we want to work
+     * directly with file ccache (DIR::/...), but cache collection
+     * should be returned back to back end.
+     */
+    cc_name = get_ccache_name_by_principal(kr->pd, kr->ctx, principal,
+                                           kr->ccname);
+    if (cc_name == NULL) {
+        cc_name = kr->ccname;
+    }
+
     /* Use the updated principal in the creds in case canonicalized */
     kerr = create_ccache(kr->uid, kr->gid, kr->ctx,
-                         kr->creds ? kr->creds->client : kr->princ,
-                         kr->ccname, kr->creds);
+                         principal, cc_name, kr->creds);
     if (kerr != 0) {
         KRB5_CHILD_DEBUG(SSSDBG_CRIT_FAILURE, kerr);
         goto done;
@@ -1172,9 +1296,11 @@ static errno_t map_krb5_error(krb5_error_code kerr)
         return ERR_CREDS_EXPIRED;
 
     case KRB5KRB_AP_ERR_BAD_INTEGRITY:
+        return ERR_AUTH_FAILED;
+
     case KRB5_PREAUTH_FAILED:
     case KRB5KDC_ERR_PREAUTH_FAILED:
-        return ERR_AUTH_FAILED;
+        return ERR_CREDS_INVALID;
 
     default:
         return ERR_INTERNAL;
@@ -1547,7 +1673,7 @@ static errno_t unpack_buffer(uint8_t *buf, size_t size,
     size_t p = 0;
     uint32_t len;
     uint32_t validate;
-    uint32_t different_realm;
+    uint32_t send_pac;
     uint32_t use_enterprise_princ;
     struct pam_data *pd;
     errno_t ret;
@@ -1569,8 +1695,8 @@ static errno_t unpack_buffer(uint8_t *buf, size_t size,
     SAFEALIGN_COPY_UINT32_CHECK(&validate, buf + p, size, &p);
     kr->validate = (validate == 0) ? false : true;
     SAFEALIGN_COPY_UINT32_CHECK(offline, buf + p, size, &p);
-    SAFEALIGN_COPY_UINT32_CHECK(&different_realm, buf + p, size, &p);
-    kr->upn_from_different_realm = (different_realm == 0) ? false : true;
+    SAFEALIGN_COPY_UINT32_CHECK(&send_pac, buf + p, size, &p);
+    kr->send_pac = (send_pac == 0) ? false : true;
     SAFEALIGN_COPY_UINT32_CHECK(&use_enterprise_princ, buf + p, size, &p);
     kr->use_enterprise_princ = (use_enterprise_princ == 0) ? false : true;
     SAFEALIGN_COPY_UINT32_CHECK(&len, buf + p, size, &p);
@@ -1938,6 +2064,18 @@ static int k5c_setup(struct krb5_req *kr, uint32_t offline)
         if (kerr) {
             KRB5_CHILD_DEBUG(SSSDBG_MINOR_FAILURE, kerr);
             return EIO;
+        }
+    }
+
+    /* Enterprise principals require that a default realm is available. To
+     * make SSSD more robust in the case that the default realm option is
+     * missing in krb5.conf or to allow SSSD to work with multiple unconnected
+     * realms (e.g. AD domains without trust between them) the default realm
+     * will be set explicitly. */
+    if (kr->use_enterprise_princ) {
+        kerr = krb5_set_default_realm(kr->ctx, kr->realm);
+        if (kerr != 0) {
+            DEBUG(SSSDBG_CRIT_FAILURE, ("krb5_set_default_realm failed.\n"));
         }
     }
 

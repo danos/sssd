@@ -31,6 +31,7 @@ struct err_string error_to_str[] = {
     { "Invalid credential type" },  /* ERR_INVALID_CRED_TYPE */
     { "No credentials available" }, /* ERR_NO_CREDS */
     { "Credentials are expired" }, /* ERR_CREDS_EXPIRED */
+    { "Failure setting user credentials"}, /* ERR_CREDS_INVALID */
     { "No cached credentials available" }, /* ERR_NO_CACHED_CREDS */
     { "Cached credentials are expired" }, /* ERR_CACHED_CREDS_EXPIRED */
     { "Authentication Denied" }, /* ERR_AUTH_DENIED */
@@ -43,6 +44,7 @@ struct err_string error_to_str[] = {
     { "Host Access Denied" }, /* ERR_ACCESS_DENIED */
     { "SRV record not found" }, /* ERR_SRV_NOT_FOUND */
     { "SRV lookup error" }, /* ERR_SRV_LOOKUP_ERROR */
+    { "SRV lookup did not return any new server "}, /* ERR_SRV_DUPLICATES */
     { "Dynamic DNS update failed" }, /* ERR_DYNDNS_FAILED */
     { "Dynamic DNS update timed out" }, /* ERR_DYNDNS_TIMEOUT */
     { "Dynamic DNS update not possible while offline" }, /* ERR_DYNDNS_OFFLINE */

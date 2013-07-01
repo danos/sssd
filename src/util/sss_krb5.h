@@ -191,4 +191,5 @@ krb5_error_code sss_extract_pac(krb5_context ctx,
                                 krb5_principal client_principal,
                                 krb5_keytab keytab,
                                 krb5_authdata ***_pac_authdata);
+
 #endif /* __SSS_KRB5_H__ */

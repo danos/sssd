@@ -152,6 +152,19 @@ AC_DEFUN([WITH_INITSCRIPT],
   AC_MSG_NOTICE([Will use init script type: $initscript])
   ])
 
+AC_DEFUN([WITH_ENVIRONMENT_FILE],
+  [ AC_ARG_WITH([environment_file],
+                [AC_HELP_STRING([--with-environment-file=PATH], [Path to environment file [/etc/sysconfig/sssd]])
+                ]
+               )
+
+    ENVIRONMENT_FILE_PATH="${sysconfdir}/sysconfig/sssd"
+    if test x"$with_environment_file" != x; then
+        ENVIRONMENT_FILE_PATH=$with_environment_file
+    fi
+    AC_SUBST(environment_file, [$ENVIRONMENT_FILE_PATH])
+  ])
+
 AC_DEFUN([WITH_INIT_DIR],
   [ AC_ARG_WITH([init-dir],
                 [AC_HELP_STRING([--with-init-dir=DIR],
@@ -289,6 +302,19 @@ AC_DEFUN([WITH_KRB5AUTHDATA_PLUGIN_PATH],
         krb5authdatapluginpath=$with_krb5authdata_plugin_path
     fi
     AC_SUBST(krb5authdatapluginpath)
+  ])
+
+AC_DEFUN([WITH_KRB5_CONF],
+  [ AC_ARG_WITH([krb5_conf],
+                [AC_HELP_STRING([--with-krb5-conf=PATH], [Path to krb5.conf file [/etc/krb5.conf]])
+                ]
+               )
+
+    KRB5_CONF_PATH="${sysconfdir}/krb5.conf"
+    if test x"$with_krb5_conf" != x; then
+        KRB5_CONF_PATH=$with_krb5_conf
+    fi
+    AC_DEFINE_UNQUOTED([KRB5_CONF_PATH], ["$KRB5_CONF_PATH"], [KRB5 configuration file])
   ])
 
 AC_DEFUN([WITH_PYTHON_BINDINGS],

@@ -32,7 +32,7 @@
 
 errno_t find_or_guess_upn(TALLOC_CTX *mem_ctx, struct ldb_message *msg,
                           struct krb5_ctx *krb5_ctx,
-                          const char *domain_name, const char *user,
+                          struct sss_domain_info *dom, const char *user,
                           const char *user_dom, char **_upn)
 {
     const char *upn;
@@ -40,7 +40,7 @@ errno_t find_or_guess_upn(TALLOC_CTX *mem_ctx, struct ldb_message *msg,
 
     upn = ldb_msg_find_attr_as_string(msg, SYSDB_UPN, NULL);
     if (upn == NULL) {
-        ret = krb5_get_simple_upn(mem_ctx, krb5_ctx, domain_name, user,
+        ret = krb5_get_simple_upn(mem_ctx, krb5_ctx, dom, user,
                                   user_dom, _upn);
         if (ret != EOK) {
             DEBUG(SSSDBG_OP_FAILURE, ("krb5_get_simple_upn failed.\n"));
@@ -1164,6 +1164,9 @@ cc_dir_cache_for_princ(TALLOC_CTX *mem_ctx, const char *location,
         return NULL;
     }
 
+    /* This function is called only as a way to validate that,
+     * we have the right cache
+     */
     krberr = krb5_cc_get_full_name(context, ccache, &name);
     if (ccache) krb5_cc_close(context, ccache);
     krb5_free_context(context);
@@ -1173,7 +1176,7 @@ cc_dir_cache_for_princ(TALLOC_CTX *mem_ctx, const char *location,
         return NULL;
     }
 
-    return talloc_strdup(mem_ctx, name);
+    return talloc_strdup(mem_ctx, location);
 }
 
 errno_t

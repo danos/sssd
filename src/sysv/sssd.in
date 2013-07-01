@@ -31,10 +31,14 @@ prog="sssd"
 # Source function library.
 . /etc/init.d/functions
 
-SSSD=/usr/sbin/sssd
+if [ -f @environment_file@ ]; then
+    . @environment_file@
+fi
 
-LOCK_FILE=/var/lock/subsys/sssd
-PID_FILE=/var/run/sssd.pid
+SSSD=@sbindir@/sssd
+
+LOCK_FILE=@localstatedir@/lock/subsys/sssd
+PID_FILE=@localstatedir@/run/sssd.pid
 
 start() {
     [ -x $SSSD ] || exit 5
@@ -127,4 +131,3 @@ case "$1" in
     exit 2
 esac
 exit $?
-
