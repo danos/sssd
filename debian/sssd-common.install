@@ -9,7 +9,12 @@ usr/lib/*/sssd/libsss_debug.so
 usr/lib/*/sssd/libsss_ldap_common.so
 usr/lib/*/sssd/libsss_simple.so
 usr/lib/*/sssd/libsss_util.so
-usr/lib/*/sssd/sssd_*
+usr/lib/*/sssd/sssd_autofs
+usr/lib/*/sssd/sssd_be
+usr/lib/*/sssd/sssd_nss
+usr/lib/*/sssd/sssd_pam
+usr/lib/*/sssd/sssd_sudo
+usr/lib/*/sssd/sssd_ssh
 usr/lib/*/sssd/modules/libsss_autofs.so
 usr/share/locale/*/LC_MESSAGES/*
 usr/share/sssd/*

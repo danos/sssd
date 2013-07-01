@@ -5,5 +5,4 @@ var/lib/sss/mc
 var/lib/sss/pipes
 var/lib/sss/pipes/private
 var/lib/sss/pubconf
-var/lib/sss/pubconf/krb5.include.d
 var/log/sssd
