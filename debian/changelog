@@ -16,7 +16,7 @@ sssd (1.10.0-1) UNRELEASED; urgency=low
     1.16.1~.
   * rules: Install the apparmor profile with -m644.
   * python-sss: Add pysss_murmur.so.
-  * rules, control, sssd-krb5-common.install: PAC responder support.
+  * rules, control, sssd-ad-common.install: PAC responder support.
     - Add libndr-dev, libndr-standard-dev, libsamba-util-dev, samba4-dev,
       libdcerpc-dev to build-depends
     - Add -I/usr/include/samba-4.0 to CFLAGS
