@@ -1,4 +1,4 @@
-sssd (1.10.0-1) UNRELEASED; urgency=low
+sssd (1.10.0-1) unstable; urgency=low
 
   [ Timo Aaltonen ]
   * New upstream release (Closes: #693054, #705357, #711101)
@@ -62,7 +62,7 @@ sssd (1.10.0-1) UNRELEASED; urgency=low
   * Set CK_DEFAULT_TIMEOUT to 30 so that slower buildds (armhf at least) can
     run the tests without hitting the default 4s timeout.
 
- -- Timo Aaltonen <tjaalton@ubuntu.com>  Mon, 13 May 2013 10:42:46 +0300
+ -- Timo Aaltonen <tjaalton@ubuntu.com>  Fri, 05 Jul 2013 14:53:06 +0300
 
 sssd (1.8.4-2) unstable; urgency=low
 
