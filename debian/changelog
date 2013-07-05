@@ -52,6 +52,8 @@ sssd (1.10.0-1) UNRELEASED; urgency=low
   * control: Bump policy to 3.9.4, no changes.
   * control: Add libpam-pwquality (>= 1.2.2-1) to libpam-sss depends, which
     makes the password stack work in all cases. (LP: #1159983)
+  * control: Drop check from build-depends for now, to work around a linking bug
+    in check (#712140) that makes the tests fail on (at least) i386.
 
   [ Stéphane Graber ]
   * Add postinst/postrm script for libsss-sudo. Those will add a "sudoers"
