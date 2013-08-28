@@ -1,6 +1,6 @@
 #!/usr/bin/make -f
 %:
-	dh $@ --with quilt,autoreconf,python2 --builddirectory=build
+	dh $@ --with quilt,autoreconf,python2,systemd --builddirectory=build
 
 DPKG_EXPORT_BUILDFLAGS = 1
 include /usr/share/dpkg/buildflags.mk
@@ -35,6 +35,7 @@ override_dh_auto_configure:
 	--disable-rpath \
 	--with-autofs \
 	--with-ssh \
+	--with-initscript=systemd --with-systemdunitdir=/lib/systemd/ \
 	--with-sudo
 
 override_dh_install:
