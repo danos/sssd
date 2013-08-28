@@ -1,6 +1,6 @@
 #!/usr/bin/make -f
 %:
-	dh $@ --with quilt,autoreconf,python2,systemd --builddirectory=build
+	dh $@ --with quilt,autoreconf,python2,systemd --parallel --builddirectory=build
 
 DPKG_EXPORT_BUILDFLAGS = 1
 include /usr/share/dpkg/buildflags.mk
