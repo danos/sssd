@@ -1,6 +1,6 @@
-sssd (1.10.1-1) UNRELEASED; urgency=low
+sssd (1.11.0-1) UNRELEASED; urgency=low
 
-  * New upstream bugfix release.
+  * New upstream release.
   * sssd-common.postinst, generate-config: Don't create a config on install,
     drop generate-config. (Closes: #717587)
   * sssd-common.postinst: Remove /etc/apparmor.d too, if empty.
