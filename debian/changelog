@@ -3,7 +3,7 @@ sssd (1.11.0-1) UNRELEASED; urgency=low
   * New upstream release.
   * sssd-common.postinst, generate-config: Don't create a config on install,
     drop generate-config. (Closes: #717587)
-  * sssd-common.postinst: Remove /etc/apparmor.d too, if empty.
+  * sssd-common.postrm: Remove /etc/apparmor.d too, if empty.
   * control, rules, sssd-common.install: Install the systemd service
     file provided by upstream.
   * rules: Enable parallel build.
