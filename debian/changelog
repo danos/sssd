@@ -6,7 +6,6 @@ sssd (1.11.0-1) UNRELEASED; urgency=low
   * sssd-common.postrm: Remove /etc/apparmor.d too, if empty.
   * control, rules, sssd-common.install: Install the systemd service
     file provided by upstream.
-  * rules: Enable parallel build.
 
  -- Timo Aaltonen <tjaalton@ubuntu.com>  Tue, 06 Aug 2013 17:04:28 +0300
 
