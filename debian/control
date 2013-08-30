@@ -52,6 +52,8 @@ Homepage: https://fedorahosted.org/sssd/
 Package: sssd
 Section: metapackages
 Architecture: any
+Multi-Arch: foreign
+Pre-Depends: ${misc:Pre-Depends}
 Depends: ${misc:Depends},
  sssd-common (= ${binary:Version}),
  sssd-ad (= ${binary:Version}),
@@ -72,11 +74,9 @@ Description: System Security Services Daemon -- metapackage
 
 Package: sssd-common
 Architecture: any
-Multi-Arch: foreign
 Depends: ${shlibs:Depends}, ${misc:Depends},
  python,
  python-sss,
-Pre-Depends: ${misc:Pre-Depends}
 Recommends:
  bind9-host,
  libnss-sss,
@@ -99,8 +99,6 @@ Description: System Security Services Daemon -- common files
 
 Package: sssd-ad
 Architecture: any
-Multi-Arch: foreign
-Pre-Depends: ${misc:Pre-Depends}
 Depends: ${shlibs:Depends}, ${misc:Depends},
  sssd-common (= ${binary:Version}),
  sssd-ad-common (= ${binary:Version}),
@@ -114,8 +112,6 @@ Description: System Security Services Daemon -- Active Directory back end
 
 Package: sssd-ad-common
 Architecture: any
-Multi-Arch: foreign
-Pre-Depends: ${misc:Pre-Depends}
 Depends: ${shlibs:Depends}, ${misc:Depends},
  sssd-common (= ${binary:Version}),
 Breaks: sssd (<< 1.10.0~beta2-1),
@@ -126,8 +122,6 @@ Description: System Security Services Daemon -- PAC responder
 
 Package: sssd-ipa
 Architecture: any
-Multi-Arch: foreign
-Pre-Depends: ${misc:Pre-Depends}
 Depends: ${shlibs:Depends}, ${misc:Depends},
  sssd-common (= ${binary:Version}),
  sssd-ad-common (= ${binary:Version}),
@@ -142,8 +136,6 @@ Description: System Security Services Daemon -- IPA back end
 
 Package: sssd-krb5
 Architecture: any
-Multi-Arch: foreign
-Pre-Depends: ${misc:Pre-Depends}
 Depends: ${shlibs:Depends}, ${misc:Depends},
  sssd-common (= ${binary:Version}),
  sssd-krb5-common (= ${binary:Version}),
@@ -155,8 +147,6 @@ Description: System Security Services Daemon -- Kerberos back end
 
 Package: sssd-krb5-common
 Architecture: any
-Multi-Arch: foreign
-Pre-Depends: ${misc:Pre-Depends}
 Depends: ${shlibs:Depends}, ${misc:Depends},
  sssd-common (= ${binary:Version}),
 Recommends:
@@ -169,8 +159,6 @@ Description: System Security Services Daemon -- Kerberos helpers
 
 Package: sssd-ldap
 Architecture: any
-Multi-Arch: foreign
-Pre-Depends: ${misc:Pre-Depends}
 Depends: ${shlibs:Depends}, ${misc:Depends},
  sssd-common (= ${binary:Version}),
  sssd-krb5-common (= ${binary:Version}),
@@ -186,8 +174,6 @@ Description: System Security Services Daemon -- LDAP back end
 
 Package: sssd-proxy
 Architecture: any
-Multi-Arch: foreign
-Pre-Depends: ${misc:Pre-Depends}
 Depends: ${shlibs:Depends}, ${misc:Depends},
  sssd-common (= ${binary:Version}),
 Breaks: sssd (<< 1.10.0~beta2-1),
