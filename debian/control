@@ -187,8 +187,6 @@ Architecture: any
 Depends: ${shlibs:Depends}, ${misc:Depends},
  sssd-common (= ${binary:Version}),
  python,
-Breaks: sssd (<< 1.8.0~beta3-1)
-Replaces: sssd (<< 1.8.0~beta3-1)
 Description: System Security Services Daemon -- tools
  Provides a set of daemons to manage access to remote directories and
  authentication mechanisms. It provides an NSS and PAM interface toward
@@ -220,8 +218,6 @@ Depends: ${shlibs:Depends}, ${misc:Depends}, libpam-runtime (>= 1.0.1-6),
  libpam-pwquality (>= 1.2.2-1),
 Recommends: sssd
 Multi-Arch: same
-Breaks: sssd (<< 1.8.0~beta3-1)
-Replaces: sssd (<< 1.8.0~beta3-1)
 Description: Pam module for the System Security Services Daemon 
  Provides a set of daemons to manage access to remote directories and
  authentication mechanisms. It provides an NSS and PAM interface toward
@@ -235,8 +231,6 @@ Package: libipa-hbac0
 Section: libs
 Architecture: any
 Depends: ${shlibs:Depends}, ${misc:Depends},
-Conflicts: sssd (<< 1.5.15)
-Replaces: sssd (<< 1.5.15)
 Description: FreeIPA HBAC Evaluator library
  Utility library to validate FreeIPA HBAC rules for authorization requests.
 
@@ -244,8 +238,6 @@ Package: libipa-hbac-dev
 Section: libdevel
 Architecture: any
 Depends: ${misc:Depends}, libipa-hbac0 (= ${binary:Version})
-Conflicts: sssd (<< 1.5.15)
-Replaces: sssd (<< 1.5.15)
 Description: FreeIPA HBAC Evaluator library
  Utility library to validate FreeIPA HBAC rules for authorization requests.
  .
@@ -300,8 +292,6 @@ Section: python
 Architecture: any
 Depends: ${shlibs:Depends}, ${misc:Depends}, ${python:Depends},
  libipa-hbac0 (= ${binary:Version})
-Conflicts: python-sss (<< 1.5.15)
-Replaces: python-sss (<< 1.5.15)
 Description: Python bindings for the FreeIPA HBAC Evaluator library
  The libipa_hbac-python contains the bindings so that libipa_hbac can be
  used by Python applications.

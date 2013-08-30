@@ -9,6 +9,7 @@ sssd (1.11.0-1) UNRELEASED; urgency=low
   * control: Drop M-A: foreign from sssd-* and add back to sssd instead.
   * control: Don't hardcode 'multiarch-support'.
   * control: Drop unnecessary multiarch declarations.
+  * control: Drop obsolete Breaks/Conflicts.
 
  -- Timo Aaltonen <tjaalton@ubuntu.com>  Tue, 06 Aug 2013 17:04:28 +0300
 
