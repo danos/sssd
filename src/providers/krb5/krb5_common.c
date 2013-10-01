@@ -144,6 +144,19 @@ static errno_t sss_get_system_ccname_template(TALLOC_CTX *mem_ctx,
 }
 #endif
 
+static void sss_check_cc_template(const char *cc_template)
+{
+    size_t template_len;
+
+    template_len = strlen(cc_template);
+    if (template_len >= 6 &&
+        strcmp(cc_template + (template_len - 6), "XXXXXX") != 0) {
+        DEBUG(SSSDBG_CONF_SETTINGS, ("ccache file name template [%s] doesn't "
+                   "contain randomizing characters (XXXXXX), file might not "
+                   "be rewritable\n", cc_template));
+    }
+}
+
 errno_t check_and_export_options(struct dp_option *opts,
                                  struct sss_domain_info *dom,
                                  struct krb5_ctx *krb5_ctx)
@@ -154,7 +167,6 @@ errno_t check_and_export_options(struct dp_option *opts,
     const char *dummy;
     char *use_fast_str;
     char *fast_principal;
-    enum sss_krb5_cc_type cc_be;
     char *ccname;
 
     tmp_ctx = talloc_new(NULL);
@@ -278,49 +290,30 @@ errno_t check_and_export_options(struct dp_option *opts,
         }
     }
 
-    cc_be = sss_krb5_get_type(ccname);
-    switch (cc_be) {
-    case SSS_KRB5_TYPE_FILE:
+    if ((ccname[0] == '/') || (strncmp(ccname, "FILE:", 5) == 0)) {
         DEBUG(SSSDBG_CONF_SETTINGS, ("ccache is of type FILE\n"));
-        krb5_ctx->cc_be = &file_cc;
-        if (ccname[0] != '/') {
-            /* FILE:/path/to/cc */
-            break;
-        }
+        /* warn if the file type (which is usally created in a sticky bit
+         * laden directory) does not have randomizing chracters */
+        sss_check_cc_template(ccname);
 
-        DEBUG(SSSDBG_CONF_SETTINGS, ("The ccname template was "
+        if (ccname[0] == '/') {
+            /* /path/to/cc  prepend FILE: */
+            DEBUG(SSSDBG_CONF_SETTINGS, ("The ccname template was "
               "missing an explicit type, but is an absolute "
               "path specifier. Assuming FILE:\n"));
 
-        ccname = talloc_asprintf(tmp_ctx, "FILE:%s", ccname);
-        if (!ccname) {
-            ret = ENOMEM;
-            goto done;
+            ccname = talloc_asprintf(tmp_ctx, "FILE:%s", ccname);
+            if (!ccname) {
+                ret = ENOMEM;
+                goto done;
+            }
+
+            ret = dp_opt_set_string(opts, KRB5_CCNAME_TMPL, ccname);
+            if (ret != EOK) {
+                DEBUG(SSSDBG_CRIT_FAILURE, ("dp_opt_set_string failed.\n"));
+                goto done;
+            }
         }
-
-        ret = dp_opt_set_string(opts, KRB5_CCNAME_TMPL, ccname);
-        if (ret != EOK) {
-            DEBUG(SSSDBG_CRIT_FAILURE, ("dp_opt_set_string failed.\n"));
-            goto done;
-        }
-        break;
-
-#ifdef HAVE_KRB5_CC_COLLECTION
-    case SSS_KRB5_TYPE_DIR:
-        DEBUG(SSSDBG_CONF_SETTINGS, ("ccache is of type DIR\n"));
-        krb5_ctx->cc_be = &dir_cc;
-        break;
-
-    case SSS_KRB5_TYPE_KEYRING:
-        DEBUG(SSSDBG_CONF_SETTINGS, ("ccache is of type KEYRING\n"));
-        krb5_ctx->cc_be = &keyring_cc;
-        break;
-#endif /* HAVE_KRB5_CC_COLLECTION */
-
-    default:
-        DEBUG(SSSDBG_OP_FAILURE, ("Unknown ccname database\n"));
-        ret = EINVAL;
-        goto done;
     }
 
     ret = EOK;
@@ -417,7 +410,7 @@ errno_t write_krb5info_file(const char *realm, const char *server,
     char *krb5info_name = NULL;
     TALLOC_CTX *tmp_ctx = NULL;
     const char *name_tmpl = NULL;
-    int server_len;
+    size_t server_len;
     ssize_t written;
     mode_t old_umask;
 
@@ -478,7 +471,7 @@ errno_t write_krb5info_file(const char *realm, const char *server,
 
     if (written != server_len) {
         DEBUG(SSSDBG_CRIT_FAILURE,
-              ("Write error, wrote [%d] bytes, expected [%d]\n",
+              ("Write error, wrote [%zd] bytes, expected [%zu]\n",
                written, server_len));
         ret = EIO;
         goto done;
@@ -660,7 +653,7 @@ static errno_t _krb5_servers_init(struct be_ctx *ctx,
                 }
 
                 if (port < 1 || port > 65535) {
-                    DEBUG(SSSDBG_CRIT_FAILURE, ("Illegal port number [%d].\n", port));
+                    DEBUG(SSSDBG_CRIT_FAILURE, ("Illegal port number [%ld].\n", port));
                     ret = EINVAL;
                     goto done;
                 }

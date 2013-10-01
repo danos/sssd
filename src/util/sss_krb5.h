@@ -70,10 +70,6 @@ void KRB5_CALLCONV sss_krb5_get_init_creds_opt_free (krb5_context context,
 
 void KRB5_CALLCONV sss_krb5_free_unparsed_name(krb5_context context, char *name);
 
-krb5_error_code check_for_valid_tgt(krb5_context context,
-                                    krb5_ccache ccache, const char *realm,
-                                    const char *client_princ_str, bool *result);
-
 int sss_krb5_verify_keytab_ex(const char *principal, const char *keytab_name,
                               krb5_context context, krb5_keytab keytab);
 
@@ -152,16 +148,6 @@ enum sss_krb5_cc_type {
 
     SSS_KRB5_TYPE_UNKNOWN
 };
-
-enum sss_krb5_cc_type
-sss_krb5_get_type(const char *full_location);
-const char *
-sss_krb5_residual_by_type(const char *full_location, enum sss_krb5_cc_type type);
-const char *
-sss_krb5_cc_file_path(const char *full_location);
-const char *
-sss_krb5_residual_check_type(const char *full_location,
-                             enum sss_krb5_cc_type expected_type);
 
 /* === Compatibility routines for the Heimdal Kerberos implementation === */
 

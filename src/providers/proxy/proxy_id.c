@@ -22,6 +22,9 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
+#include "config.h"
+
+#include "util/sss_format.h"
 #include "util/strtonum.h"
 #include "providers/proxy/proxy.h"
 
@@ -166,7 +169,7 @@ handle_getpw_result(enum nss_status status, struct passwd *pwd,
 
     case NSS_STATUS_SUCCESS:
 
-        DEBUG(SSSDBG_TRACE_FUNC, ("User found: (%s, %d, %d)\n",
+        DEBUG(SSSDBG_TRACE_FUNC, ("User found: (%s, %"SPRIuid", %"SPRIgid")\n",
               pwd->pw_name, pwd->pw_uid, pwd->pw_gid));
 
         /* uid=0 or gid=0 are invalid values */
@@ -219,6 +222,7 @@ static int save_user(struct sysdb_ctx *sysdb, struct sss_domain_info *domain,
                      const char *alias, uint64_t cache_timeout)
 {
     const char *shell;
+    const char *gecos;
     char *lower;
     struct sysdb_attrs *attrs = NULL;
     errno_t ret;
@@ -228,6 +232,12 @@ static int save_user(struct sysdb_ctx *sysdb, struct sss_domain_info *domain,
         shell = pwd->pw_shell;
     } else {
         shell = NULL;
+    }
+
+    if (pwd->pw_gecos && pwd->pw_gecos[0] != '\0') {
+        gecos = pwd->pw_gecos;
+    } else {
+        gecos = NULL;
     }
 
     if (lowercase || alias) {
@@ -274,7 +284,7 @@ static int save_user(struct sysdb_ctx *sysdb, struct sss_domain_info *domain,
                            pwd->pw_passwd,
                            pwd->pw_uid,
                            pwd->pw_gid,
-                           pwd->pw_gecos,
+                           gecos,
                            pwd->pw_dir,
                            shell,
                            NULL,
@@ -307,7 +317,7 @@ static int get_pw_uid(TALLOC_CTX *mem_ctx,
     bool del_user = false;
     int ret;
 
-    DEBUG(SSSDBG_TRACE_FUNC, ("Searching user by uid (%d)\n", uid));
+    DEBUG(SSSDBG_TRACE_FUNC, ("Searching user by uid (%"SPRIuid")\n", uid));
 
     tmpctx = talloc_new(NULL);
     if (!tmpctx) {
@@ -347,7 +357,7 @@ done:
     talloc_zfree(tmpctx);
     if (ret) {
         DEBUG(SSSDBG_CRIT_FAILURE,
-              ("proxy -> getpwuid_r failed for '%d' <%d>: %s\n",
+              ("proxy -> getpwuid_r failed for '%"SPRIuid"' <%d>: %s\n",
                uid, ret, strerror(ret)));
     }
     return ret;
@@ -446,8 +456,9 @@ static int enum_users(TALLOC_CTX *mem_ctx,
 
             case NSS_STATUS_SUCCESS:
 
-                DEBUG(SSSDBG_TRACE_LIBS, ("User found (%s, %d, %d)\n",
-                            pwd->pw_name, pwd->pw_uid, pwd->pw_gid));
+                DEBUG(SSSDBG_TRACE_LIBS,
+                      ("User found (%s, %"SPRIuid", %"SPRIgid")\n",
+                       pwd->pw_name, pwd->pw_uid, pwd->pw_gid));
 
                 /* uid=0 or gid=0 are invalid values */
                 /* also check that the id is in the valid range for this domain
@@ -742,7 +753,7 @@ handle_getgr_result(enum nss_status status, struct group *grp,
         break;
 
     case NSS_STATUS_SUCCESS:
-        DEBUG(SSSDBG_FUNC_DATA, ("Group found: (%s, %d)\n",
+        DEBUG(SSSDBG_FUNC_DATA, ("Group found: (%s, %"SPRIgid")\n",
               grp->gr_name, grp->gr_gid));
 
         /* gid=0 is an invalid value */
@@ -912,7 +923,7 @@ static int get_gr_gid(TALLOC_CTX *mem_ctx,
     bool delete_group = false;
     int ret;
 
-    DEBUG(SSSDBG_TRACE_FUNC, ("Searching group by gid (%d)\n", gid));
+    DEBUG(SSSDBG_TRACE_FUNC, ("Searching group by gid (%"SPRIgid")\n", gid));
 
     tmpctx = talloc_new(mem_ctx);
     if (!tmpctx) {
@@ -947,8 +958,8 @@ static int get_gr_gid(TALLOC_CTX *mem_ctx,
 
     if (delete_group) {
         DEBUG(SSSDBG_TRACE_FUNC,
-              ("Group %d does not exist (or is invalid) on remote server,"
-               " deleting!\n", gid));
+              ("Group %"SPRIgid" does not exist (or is invalid) on remote "
+               "server, deleting!\n", gid));
 
         ret = sysdb_delete_group(sysdb, dom, NULL, gid);
         if (ret == ENOENT) {
@@ -968,7 +979,7 @@ done:
     talloc_zfree(tmpctx);
     if (ret) {
         DEBUG(SSSDBG_OP_FAILURE,
-              ("proxy -> getgrgid_r failed for '%d' <%d>: %s\n",
+              ("proxy -> getgrgid_r failed for '%"SPRIgid"' <%d>: %s\n",
                gid, ret, strerror(ret)));
     }
     return ret;
@@ -1067,7 +1078,7 @@ static int enum_groups(TALLOC_CTX *mem_ctx,
 
             case NSS_STATUS_SUCCESS:
 
-                DEBUG(SSSDBG_OP_FAILURE, ("Group found (%s, %d)\n",
+                DEBUG(SSSDBG_OP_FAILURE, ("Group found (%s, %"SPRIgid")\n",
                             grp->gr_name, grp->gr_gid));
 
                 /* gid=0 is an invalid value */
@@ -1324,7 +1335,7 @@ static int get_initgr_groups_process(TALLOC_CTX *memctx,
     case NSS_STATUS_NOTFOUND:
         DEBUG(SSSDBG_FUNC_DATA, ("The initgroups call returned 'NOTFOUND'. "
                                  "Assume the user is only member of its "
-                                 "primary group (%d)\n", pwd->pw_gid));
+                                 "primary group (%"SPRIgid")\n", pwd->pw_gid));
         /* fall through */
     case NSS_STATUS_SUCCESS:
         DEBUG(SSSDBG_CONF_SETTINGS, ("User [%s] appears to be member of %lu"

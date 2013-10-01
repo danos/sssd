@@ -20,6 +20,7 @@ m4_ifdef([AM_PROG_AR], [AM_PROG_AR])
 AC_DISABLE_STATIC
 AC_PROG_INSTALL
 AC_PROG_LIBTOOL
+LT_LIB_DLLOAD
 AC_CONFIG_MACRO_DIR([m4])
 AM_GNU_GETTEXT([external])
 AM_GNU_GETTEXT_VERSION([0.14])
@@ -152,20 +153,20 @@ m4_include([src/external/libnl.m4])
 m4_include([src/external/systemd.m4])
 m4_include([src/external/pac_responder.m4])
 m4_include([src/external/signal.m4])
+m4_include([src/external/inotify.m4])
 m4_include([src/external/libndr_nbt.m4])
 
 WITH_UNICODE_LIB
 if test x$unicode_lib = xlibunistring; then
-	m4_include([src/external/libunistring.m4])
-	        AC_DEFINE_UNQUOTED(HAVE_LIBUNISTRING, 1, [Using libunistring for unicode])
-	        UNICODE_LIBS=-lunistring
-	        AC_SUBST(UNICODE_LIBS)
+    m4_include([src/external/libunistring.m4])
+    AC_DEFINE_UNQUOTED(HAVE_LIBUNISTRING, 1, [Using libunistring for unicode])
+    UNICODE_LIBS=$UNISTRING_LIBS
 else
-	m4_include([src/external/glib.m4])
-	        AC_DEFINE_UNQUOTED(HAVE_GLIB2, 1, [Using libunistring for unicode])
-	        UNICODE_LIBS=$GLIB2_LIBS
-	        AC_SUBST(UNICODE_LIBS)
+    m4_include([src/external/glib.m4])
+    AC_DEFINE_UNQUOTED(HAVE_GLIB2, 1, [Using glib2 for unicode])
+    UNICODE_LIBS=$GLIB2_LIBS
 fi
+AC_SUBST(UNICODE_LIBS)
 
 WITH_LIBNL
 
@@ -251,7 +252,7 @@ if test x$cryptolib = xlibcrypto; then
     AM_CHECK_LIBCRYPTO
 fi
 
-AC_CHECK_HEADERS([sys/inotify.h])
+AM_CHECK_INOTIFY
 
 AC_CHECK_HEADERS([sasl/sasl.h],,AC_MSG_ERROR([Could not find SASL headers]))
 
@@ -265,6 +266,24 @@ AC_CACHE_CHECK([whether compiler supports __attribute__((destructor))],
 if test x"$sss_client_cv_attribute_destructor" = xyes ; then
    AC_DEFINE(HAVE_FUNCTION_ATTRIBUTE_DESTRUCTOR, 1,
              [whether compiler supports __attribute__((destructor))])
+fi
+
+AC_CACHE_CHECK([whether compiler supports __attribute__((format))],
+               sss_cv_attribute_format,
+               [AC_COMPILE_IFELSE(
+                    [AC_LANG_SOURCE(
+                        [void debug_fn(const char *format, ...) __attribute__ ((format (printf, 1, 2)));]
+                    )],
+                    [sss_cv_attribute_format=yes],
+                    [
+                        AC_MSG_RESULT([no])
+                        AC_MSG_WARN([compiler does NOT support __attribute__((format))])
+                    ])
+               ])
+
+if test x"$sss_cv_attribute_format" = xyes ; then
+   AC_DEFINE(HAVE_FUNCTION_ATTRIBUTE_FORMAT, 1,
+             [whether compiler supports __attribute__((format))])
 fi
 
 PKG_CHECK_MODULES([CHECK], [check >= 0.9.5], [have_check=1], [have_check=])

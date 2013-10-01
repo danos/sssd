@@ -108,8 +108,8 @@ errno_t sss_nss_mc_get_ctx(const char *name, struct sss_cli_mc_ctx *ctx)
     char *envval;
     int ret;
 
-    envval = getenv("_SSS_MC_SPECIAL");
-    if (envval && strcmp(envval, "NO") == 0) {
+    envval = getenv("SSS_NSS_USE_MEMCACHE");
+    if (envval && strcasecmp(envval, "NO") == 0) {
         return EPERM;
     }
 
@@ -189,6 +189,10 @@ errno_t sss_nss_mc_get_record(struct sss_cli_mc_ctx *ctx,
     bool copy_ok;
     int count;
     int ret;
+
+    if (!MC_SLOT_WITHIN_BOUNDS(slot, ctx->dt_size)) {
+        return EINVAL;
+    }
 
     /* try max 5 times */
     for (count = 5; count > 0; count--) {

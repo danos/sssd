@@ -114,6 +114,7 @@ endif
 
 if HAVE_CHECK
     non_interactive_check_based_tests = \
+        dlopen-tests \
         sysdb-tests \
         strtonum-tests \
         resolv-tests \
@@ -357,6 +358,7 @@ PYTHON_BINDINGS_LIBS = \
     $(TDB_LIBS)
 
 TOOLS_LIBS = \
+    $(LTLIBINTL) \
     $(TALLOC_LIBS) \
     $(TEVENT_LIBS) \
     $(POPT_LIBS) \
@@ -395,6 +397,7 @@ dist_noinst_HEADERS = \
     src/util/sss_utf8.h \
     src/util/sss_ssh.h \
     src/util/sss_ini.h \
+    src/util/sss_format.h \
     src/util/refcount.h \
     src/util/find_uid.h \
     src/util/user_info_msg.h \
@@ -404,6 +407,7 @@ dist_noinst_HEADERS = \
     src/util/auth_utils.h \
     src/util/authtok.h \
     src/util/util_safealign.h \
+    src/util/util_sss_idmap.h \
     src/monitor/monitor.h \
     src/monitor/monitor_interfaces.h \
     src/responder/common/responder.h \
@@ -507,8 +511,10 @@ if BUILD_SUDO
     SSSD_DOCS += libsss_sudo_doc
 endif
 
+CLIENT_LIBS = $(LTLIBINTL)
+
 if HAVE_PTHREAD
-CLIENT_LIBS = -lpthread
+CLIENT_LIBS += -lpthread
 endif
 
 #####################
@@ -566,7 +572,8 @@ libsss_util_la_SOURCES = \
     src/util/util_lock.c \
     src/util/util_errors.c \
     src/util/sss_ini.c \
-    src/util/io.c
+    src/util/io.c \
+    src/util/util_sss_idmap.c
 libsss_util_la_LIBADD = \
     $(SSSD_LIBS) \
     $(UNICODE_LIBS)
@@ -627,6 +634,7 @@ sssd_SOURCES = \
     src/util/nscd.c
 sssd_LDADD = \
     $(SSSD_LIBS) \
+    $(INOTIFY_LIBS) \
     $(LIBNL_LIBS) \
     $(KEYUTILS_LIBS) \
     $(SSSD_INTERNAL_LTLIBS)
@@ -718,14 +726,14 @@ sssd_be_SOURCES = \
     src/providers/dp_refresh.c \
     $(SSSD_FAILOVER_OBJ)
 sssd_be_LDADD = \
-    -ldl \
+    $(LIBADD_DL) \
     $(SSSD_LIBS) \
     $(CARES_LIBS) \
+    $(PAM_LIBS) \
     $(SSSD_INTERNAL_LTLIBS)
 sssd_be_LDFLAGS = \
     -Wl,--version-script,$(srcdir)/src/providers/sssd_be.exports \
-    -export-dynamic \
-    $(PAM_LIBS)
+    -export-dynamic
 
 if BUILD_PYTHON_BINDINGS
 sss_obfuscate_pythondir = $(sbindir)
@@ -886,6 +894,36 @@ if HAVE_CHECK
 libsss_test_common_la_SOURCES += \
     src/tests/common_check.c
 
+check_LTLIBRARIES = \
+    libdlopen_test_providers.la
+
+libdlopen_test_providers_la_SOURCES = \
+    $(sssd_be_SOURCES)
+libdlopen_test_providers_la_CFLAGS = \
+    $(AM_CFLAGS) \
+    $(CHECK_CFLAGS) \
+    -DUNIT_TESTING
+libdlopen_test_providers_la_LIBADD = \
+    $(PAM_LIBS) \
+    $(SSSD_LIBS) \
+    $(CARES_LIBS) \
+    $(SSSD_INTERNAL_LTLIBS)
+libdlopen_test_providers_la_LDFLAGS = \
+    -module \
+    -avoid-version \
+    -Wl,--version-script,$(srcdir)/src/providers/sssd_be.exports \
+    -rpath $(abs_top_builddir) \
+    -export-dynamic
+
+dlopen_tests_SOURCES = \
+    src/tests/dlopen-tests.c
+dlopen_tests_CFLAGS = \
+    $(AM_CFLAGS) \
+    $(CHECK_CFLAGS)
+dlopen_tests_LDADD = \
+    $(LIBADD_DL) \
+    $(CHECK_LIBS)
+
 sysdb_tests_DEPENDENCIES = \
     $(ldblib_LTLIBRARIES)
 sysdb_tests_SOURCES = \
@@ -927,6 +965,7 @@ strtonum_tests_LDADD = \
 krb5_utils_tests_SOURCES = \
     src/tests/krb5_utils-tests.c \
     src/providers/krb5/krb5_utils.c \
+    src/providers/krb5/krb5_become_user.c \
     src/providers/krb5/krb5_common.c \
     src/util/sss_krb5.c \
     src/util/find_uid.c \
@@ -1095,7 +1134,7 @@ simple_access_tests_CFLAGS = \
     $(CHECK_CFLAGS) \
     -DUNIT_TESTING
 simple_access_tests_LDADD = \
-    -ldl \
+    $(LIBADD_DL) \
     $(SSSD_LIBS) \
     $(CARES_LIBS) \
     $(CHECK_LIBS) \
@@ -1497,6 +1536,7 @@ libsss_ldap_la_SOURCES = \
     src/providers/ldap/ldap_access.c \
     src/providers/krb5/krb5_common.c \
     src/providers/krb5/krb5_utils.c \
+    src/providers/krb5/krb5_become_user.c \
     src/util/user_info_msg.c \
     src/util/sss_ldap.c \
     src/util/sss_krb5.c
@@ -1587,6 +1627,7 @@ libsss_ipa_la_SOURCES = \
     src/providers/ad/ad_dyndns.c \
     src/providers/ad/ad_id.c \
     src/providers/ad/ad_srv.c \
+    src/providers/ad/ad_domain_info.c \
     src/util/user_info_msg.c \
     src/util/find_uid.c \
     src/util/sss_ldap.c \
@@ -1595,7 +1636,7 @@ libsss_ipa_la_CFLAGS = \
     $(AM_CFLAGS) \
     $(LDAP_CFLAGS) \
     $(DHASH_CFLAGS) \
-    $(NDR_NBT_CFLAGS)
+    $(NDR_NBT_CFLAGS) \
     $(KRB5_CFLAGS)
 libsss_ipa_la_LIBADD = \
     $(OPENLDAP_LIBS) \
@@ -1638,6 +1679,8 @@ libsss_ad_la_SOURCES = \
     src/providers/ad/ad_srv.c \
     src/providers/ad/ad_subdomains.c \
     src/providers/ad/ad_subdomains.h \
+    src/providers/ad/ad_domain_info.c \
+    src/providers/ad/ad_domain_info.h \
     src/util/find_uid.c \
     src/util/user_info_msg.c \
     src/util/sss_krb5.c \

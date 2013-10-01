@@ -204,7 +204,7 @@ static errno_t find_ipa_ext_memberships(TALLOC_CTX *mem_ctx,
     }
 
     if (result->count == 0) {
-        DEBUG(SSSDBG_MINOR_FAILURE, ("User [%d] not found in cache.\n",
+        DEBUG(SSSDBG_MINOR_FAILURE, ("User [%s] not found in cache.\n",
                                      user_name));
         ret = EOK;
         goto done;
@@ -594,7 +594,7 @@ static void ipa_get_ext_groups_done(struct tevent_req *subreq)
         return;
     }
 
-    DEBUG(SSSDBG_TRACE_FUNC, ("[%d] external groups found.\n",
+    DEBUG(SSSDBG_TRACE_FUNC, ("[%zu] external groups found.\n",
                               state->reply_count));
 
     ret = process_ext_groups(state->server_mode->ext_groups,
@@ -874,7 +874,7 @@ static void ipa_add_ad_memberships_get_next(struct tevent_req *req)
                                  BE_FILTER_NAME, BE_ATTR_CORE,
                                  false);
     if (subreq == NULL) {
-        DEBUG(SSSDBG_OP_FAILURE, ("sdap_get_generic_send failed: %d(%s).\n"));
+        DEBUG(SSSDBG_OP_FAILURE, ("groups_get_send failed.\n"));
         ret = ENOMEM;
         goto fail;
     }

@@ -196,12 +196,10 @@ create_dummy_req(TALLOC_CTX *mem_ctx, const char *user,
                  const char *ccname, const char *ccname_template,
                  int timeout)
 {
-    enum sss_krb5_cc_type cc_be;
     struct krb5child_req *kr;
     struct passwd *pwd;
     bool private = false;
     errno_t ret;
-    const char *tmpl;
 
     /* The top level child request */
     kr = talloc_zero(mem_ctx, struct krb5child_req);
@@ -234,9 +232,6 @@ create_dummy_req(TALLOC_CTX *mem_ctx, const char *user,
         ret = dp_opt_set_string(kr->krb5_ctx->opts, KRB5_CCNAME_TMPL,
                                 ccname_template);
         if (ret != EOK) goto fail;
-        tmpl = ccname_template;
-    } else {
-        tmpl = dp_opt_get_cstring(kr->krb5_ctx->opts, KRB5_CCNAME_TMPL);
     }
 
     if (timeout) {
@@ -262,34 +257,12 @@ create_dummy_req(TALLOC_CTX *mem_ctx, const char *user,
     }
     if (!kr->ccname) goto fail;
 
-    cc_be = sss_krb5_get_type(kr->ccname);
-    switch (cc_be) {
-    case SSS_KRB5_TYPE_FILE:
-        kr->krb5_ctx->cc_be = &file_cc;
-        break;
-#ifdef HAVE_KRB5_CC_COLLECTION
-    case SSS_KRB5_TYPE_DIR:
-        kr->krb5_ctx->cc_be = &dir_cc;
-        break;
-#endif /* HAVE_KRB5_CC_COLLECTION */
-    default:
-        if (tmpl[0] != '/') {
-            DEBUG(SSSDBG_OP_FAILURE, ("Unkown ccname database\n"));
-            ret = EINVAL;
-            goto fail;
-        }
-        DEBUG(SSSDBG_CONF_SETTINGS, ("The ccname template was "
-              "missing an explicit type, but looks like an absolute "
-              "path specifier. Assuming FILE:\n"));
-        kr->krb5_ctx->cc_be = &file_cc;
-        break;
-    }
-    DEBUG(SSSDBG_FUNC_DATA, ("ccname [%s] uid [%llu] gid [%llu]\n",
+    DEBUG(SSSDBG_FUNC_DATA, ("ccname [%s] uid [%u] gid [%u]\n",
             kr->ccname, kr->uid, kr->gid));
 
-    ret = kr->krb5_ctx->cc_be->create(kr->ccname,
-                                      kr->krb5_ctx->illegal_path_re,
-                                      kr->uid, kr->gid, private);
+    ret = sss_krb5_precreate_ccache(kr->ccname,
+                                    kr->krb5_ctx->illegal_path_re,
+                                    kr->uid, kr->gid, private);
     if (ret != EOK) {
         DEBUG(SSSDBG_OP_FAILURE, ("create_ccache_dir failed.\n"));
         goto fail;
@@ -561,7 +534,7 @@ done:
     if (rm_ccache && ctx->res
             && ctx->res->ccname
             && ctx->kr) {
-        ctx->kr->krb5_ctx->cc_be->remove(ctx->res->ccname);
+        sss_krb5_cc_destroy(ctx->res->ccname, ctx->kr->uid, ctx->kr->gid);
     }
     free(password);
     talloc_free(ctx);

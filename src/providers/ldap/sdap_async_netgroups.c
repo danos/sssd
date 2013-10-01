@@ -33,6 +33,8 @@ bool is_dn(const char *str)
     LDAPDN dn;
 
     ret = ldap_str2dn(str, &dn, LDAP_DN_FORMAT_LDAPV3);
+    ldap_dnfree(dn);
+
     return (ret == LDAP_SUCCESS ? true : false);
 }
 
@@ -51,15 +53,13 @@ static errno_t sdap_save_netgroup(TALLOC_CTX *memctx,
     char *timestamp = NULL;
     char **missing = NULL;
 
-    ret = sysdb_attrs_get_el(attrs,
-                             opts->netgroup_map[SDAP_AT_NETGROUP_NAME].sys_name,
-                             &el);
-    if (ret) goto fail;
-    if (el->num_values == 0) {
-        ret = EINVAL;
+    ret = sdap_get_netgroup_primary_name(memctx, opts, attrs, dom, &name);
+    if (ret != EOK) {
+        DEBUG(SSSDBG_OP_FAILURE, ("Failed to get netgroup name\n"));
         goto fail;
     }
-    name = (const char *)el->values[0].data;
+
+    DEBUG(SSSDBG_TRACE_FUNC, ("Processing netgroup %s\n", name));
 
     netgroup_attrs = sysdb_new_attrs(memctx);
     if (!netgroup_attrs) {
@@ -490,8 +490,9 @@ static void netgr_translate_members_ldap_done(struct tevent_req *subreq)
             }
             break;
         default:
-            DEBUG(1, ("Unexpected number of results [%d] for base search.\n",
-                      count));
+            DEBUG(SSSDBG_CRIT_FAILURE,
+                  ("Unexpected number of results [%zu] for base search.\n",
+                   count));
     }
 
     if (state->dn_item->cn == NULL) {
@@ -659,7 +660,8 @@ static void sdap_get_netgroups_process(struct tevent_req *subreq)
         return;
     }
 
-    DEBUG(6, ("Search for netgroups, returned %d results.\n", state->count));
+    DEBUG(SSSDBG_TRACE_FUNC,
+          ("Search for netgroups, returned %zu results.\n", state->count));
 
     if (state->count == 0) {
         /* No netgroups found in this search */
@@ -723,7 +725,7 @@ static void netgr_translate_members_done(struct tevent_req *subreq)
         }
     }
 
-    DEBUG(9, ("Saving %d Netgroups - Done\n", state->count));
+    DEBUG(SSSDBG_TRACE_ALL, ("Saving %zu Netgroups - Done\n", state->count));
 
     tevent_req_done(req);
 }

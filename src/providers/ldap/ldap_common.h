@@ -95,7 +95,9 @@ void sdap_handle_account_info(struct be_req *breq, struct sdap_id_ctx *ctx,
 int ldap_id_setup_tasks(struct sdap_id_ctx *ctx);
 int sdap_id_setup_tasks(struct sdap_id_ctx *ctx,
                         struct sdap_id_conn_ctx *conn,
-                        struct sdap_domain *sdom);
+                        struct sdap_domain *sdom,
+                        be_ptask_send_t send_fn,
+                        be_ptask_recv_t recv_fn);
 
 struct tevent_req *
 sdap_handle_acct_req_send(TALLOC_CTX *mem_ctx,
@@ -167,11 +169,32 @@ int ldap_get_autofs_options(TALLOC_CTX *memctx,
                             const char *conf_path,
                             struct sdap_options *opts);
 
+/* Calling ldap_setup_enumeration will set up a periodic task
+ * that would periodically call send_fn/recv_fn request. The
+ * send_fn's pvt parameter will be a pointer to ldap_enum_ctx
+ * structure that contains the request data
+ */
+struct ldap_enum_ctx {
+    struct sdap_id_ctx *ctx;
+    struct sdap_domain *sdom;
+    struct sdap_id_conn_ctx *conn;
+};
+
 errno_t ldap_setup_enumeration(struct sdap_id_ctx *ctx,
                                struct sdap_id_conn_ctx *conn,
-                               struct sdap_domain *sdom);
+                               struct sdap_domain *sdom,
+                               be_ptask_send_t send_fn,
+                               be_ptask_recv_t recv_fn);
+struct tevent_req *
+ldap_enumeration_send(TALLOC_CTX *mem_ctx,
+                      struct tevent_context *ev,
+                      struct be_ctx *be_ctx,
+                      struct be_ptask *be_ptask,
+                      void *pvt);
+errno_t ldap_enumeration_recv(struct tevent_req *req);
+
 errno_t ldap_id_cleanup(struct sdap_options *opts,
-                        struct sss_domain_info *dom);
+                        struct sdap_domain *sdom);
 int ldap_id_cleanup_create_timer(struct sdap_id_ctx *ctx,
                                  struct sdap_domain *sdom,
                                  struct timeval tv);

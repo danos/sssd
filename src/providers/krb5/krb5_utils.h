@@ -42,60 +42,34 @@ errno_t check_if_cached_upn_needs_update(struct sysdb_ctx *sysdb,
                                          const char *user,
                                          const char *upn);
 
-/* Operations on a credential cache */
-typedef errno_t (*cc_be_create_fn)(const char *location, pcre *illegal_re,
-                                   uid_t uid, gid_t gid, bool private_path);
-typedef errno_t (*cc_be_check_existing)(const char *location, uid_t uid,
-                                        const char *realm, const char *princ,
-                                        const char *cc_template, bool *active,
-                                        bool *valid);
-typedef const char * (*cc_be_ccache_for_princ)(TALLOC_CTX *mem_ctx,
-                                               const char *location,
-                                               const char *princ);
-typedef errno_t (*cc_be_remove)(const char *location);
-
-/* A ccache back end */
-struct sss_krb5_cc_be {
-    enum sss_krb5_cc_type type;
-
-    cc_be_create_fn create;
-    cc_be_check_existing check_existing;
-    cc_be_ccache_for_princ ccache_for_princ;
-    cc_be_remove remove;
-};
-
-extern struct sss_krb5_cc_be file_cc;
-
 errno_t create_ccache_dir(const char *dirname, pcre *illegal_re,
                           uid_t uid, gid_t gid, bool private_path);
-
-errno_t cc_file_create(const char *filename, pcre *illegal_re,
-                       uid_t uid, gid_t gid, bool private_path);
-
-struct sss_krb5_cc_be *get_cc_be_ops(enum sss_krb5_cc_type type);
-struct sss_krb5_cc_be *get_cc_be_ops_ccache(const char *ccache);
 
 char *expand_ccname_template(TALLOC_CTX *mem_ctx, struct krb5child_req *kr,
                              const char *template, bool file_mode,
                              bool case_sensitive, bool *private_path);
 
 errno_t become_user(uid_t uid, gid_t gid);
+struct sss_creds;
+errno_t switch_creds(TALLOC_CTX *mem_ctx,
+                     uid_t uid, gid_t gid,
+                     int num_gids, gid_t *gids,
+                     struct sss_creds **saved_creds);
+errno_t restore_creds(struct sss_creds *saved_creds);
+
+errno_t sss_krb5_precreate_ccache(const char *ccname, pcre *illegal_re,
+                                  uid_t uid, gid_t gid, bool private_path);
+errno_t sss_krb5_cc_destroy(const char *ccname, uid_t uid, gid_t gid);
+errno_t sss_krb5_check_ccache_princ(uid_t uid, gid_t gid,
+                                    const char *ccname, const char *principal);
+errno_t sss_krb5_cc_verify_ccache(const char *ccname, uid_t uid, gid_t gid,
+                                  const char *realm, const char *principal);
 
 errno_t get_ccache_file_data(const char *ccache_file, const char *client_name,
                              struct tgt_times *tgtt);
 
-#ifdef HAVE_KRB5_CC_COLLECTION
 
-extern struct sss_krb5_cc_be dir_cc;
-extern struct sss_krb5_cc_be keyring_cc;
-
-errno_t cc_dir_create(const char *location, pcre *illegal_re,
-                      uid_t uid, gid_t gid, bool private_path);
-
-#endif /* HAVE_KRB5_CC_COLLECTION */
-
-
-errno_t get_domain_or_subdomain(TALLOC_CTX *mem_ctx, struct be_ctx *be_ctx,
+errno_t get_domain_or_subdomain(struct be_ctx *be_ctx,
                                 char *domain_name,
                                 struct sss_domain_info **dom);
 #endif /* __KRB5_UTILS_H__ */

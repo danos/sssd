@@ -338,8 +338,9 @@ static errno_t sdap_account_expired_ad(struct pam_data *pd,
 
     expiration_time = ldb_msg_find_attr_as_uint64(user_entry,
                                                   SYSDB_AD_ACCOUNT_EXPIRES, 0);
-    DEBUG(9, ("Expiration time for user [%s] is [%lld].\n",
-              pd->user, expiration_time));
+    DEBUG(SSSDBG_TRACE_ALL,
+          ("Expiration time for user [%s] is [%"PRIu64"].\n",
+           pd->user, expiration_time));
 
     if (uac & UAC_ACCOUNTDISABLE) {
 
@@ -433,9 +434,10 @@ static bool nds_check_expired(const char *exp_time_str)
     tzset();
     expire_time -= timezone;
     now = time(NULL);
-    DEBUG(9, ("Time info: tzname[0] [%s] tzname[1] [%s] timezone [%d] "
-              "daylight [%d] now [%d] expire_time [%d].\n", tzname[0],
-              tzname[1], timezone, daylight, now, expire_time));
+    DEBUG(SSSDBG_TRACE_ALL,
+          ("Time info: tzname[0] [%s] tzname[1] [%s] timezone [%ld] "
+           "daylight [%d] now [%ld] expire_time [%ld].\n", tzname[0],
+           tzname[1], timezone, daylight, now, expire_time));
 
     if (difftime(now, expire_time) > 0.0) {
         DEBUG(4, ("NDS account expired.\n"));
@@ -463,8 +465,9 @@ static bool nds_check_time_map(const struct ldb_val *time_map)
     }
 
     if (time_map->length != 42) {
-        DEBUG(4, ("Allowed time map has the wrong size, "
-                  "got [%d], expected 42.\n", time_map->length));
+        DEBUG(SSSDBG_FUNC_DATA,
+              ("Allowed time map has the wrong size, "
+               "got [%zu], expected 42.\n", time_map->length));
         return true;
     }
 
@@ -476,7 +479,7 @@ static bool nds_check_time_map(const struct ldb_val *time_map)
 
     if (map_index > 335) {
         DEBUG(SSSDBG_CRIT_FAILURE,
-              ("Unexpected index value [%d] for time map.\n", map_index));
+              ("Unexpected index value [%zu] for time map.\n", map_index));
         return true;
     }
 
@@ -484,7 +487,7 @@ static bool nds_check_time_map(const struct ldb_val *time_map)
 
     if (q.quot > 41 || q.quot < 0 || q.rem > 7 || q.rem < 0) {
         DEBUG(SSSDBG_CRIT_FAILURE,
-              ("Unexpected result of div(), [%d][%d][%d].\n",
+              ("Unexpected result of div(), [%zu][%d][%d].\n",
                map_index, q.quot, q.rem));
         return true;
     }

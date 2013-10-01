@@ -44,13 +44,22 @@ static errno_t
 simple_check_users(struct simple_ctx *ctx, const char *username,
                    bool *access_granted)
 {
+    struct sss_domain_info *domain = NULL;
     int i;
-    bool cs = ctx->domain->case_sensitive;
 
     /* First, check whether the user is in the allowed users list */
     if (ctx->allow_users != NULL) {
         for(i = 0; ctx->allow_users[i] != NULL; i++) {
-            if (sss_string_equal(cs, username, ctx->allow_users[i])) {
+            domain = find_subdomain_by_object_name(ctx->domain,
+                                                   ctx->allow_users[i]);
+            if (domain == NULL) {
+                DEBUG(SSSDBG_CRIT_FAILURE, ("Invalid user %s!\n",
+                                            ctx->allow_users[i]));
+                return EINVAL;
+            }
+
+            if (sss_string_equal(domain->case_sensitive, username,
+                                 ctx->allow_users[i])) {
                 DEBUG(SSSDBG_TRACE_LIBS,
                       ("User [%s] found in allow list, access granted.\n",
                       username));
@@ -74,10 +83,19 @@ simple_check_users(struct simple_ctx *ctx, const char *username,
     /* Next check whether this user has been specifically denied */
     if (ctx->deny_users != NULL) {
         for(i = 0; ctx->deny_users[i] != NULL; i++) {
-            if (sss_string_equal(cs, username, ctx->deny_users[i])) {
+            domain = find_subdomain_by_object_name(ctx->domain,
+                                                   ctx->deny_users[i]);
+            if (domain == NULL) {
+                DEBUG(SSSDBG_CRIT_FAILURE, ("Invalid user %s!\n",
+                                            ctx->deny_users[i]));
+                return EINVAL;
+            }
+
+            if (sss_string_equal(domain->case_sensitive, username,
+                                 ctx->deny_users[i])) {
                 DEBUG(SSSDBG_TRACE_LIBS,
                       ("User [%s] found in deny list, access denied.\n",
-                      username));
+                        ctx->deny_users[i]));
 
                 /* Return immediately on explicit denial */
                 *access_granted = false;
@@ -93,9 +111,9 @@ static errno_t
 simple_check_groups(struct simple_ctx *ctx, const char **group_names,
                     bool *access_granted)
 {
+    struct sss_domain_info *domain = NULL;
     bool matched;
     int i, j;
-    bool cs = ctx->domain->case_sensitive;
 
     /* Now process allow and deny group rules
      * If access was already granted above, we'll skip
@@ -104,8 +122,17 @@ simple_check_groups(struct simple_ctx *ctx, const char **group_names,
     if (ctx->allow_groups && !*access_granted) {
         matched = false;
         for (i = 0; ctx->allow_groups[i]; i++) {
+            domain = find_subdomain_by_object_name(ctx->domain,
+                                                   ctx->allow_groups[i]);
+            if (domain == NULL) {
+                DEBUG(SSSDBG_CRIT_FAILURE, ("Invalid group %s!\n",
+                                            ctx->allow_groups[i]));
+                return EINVAL;
+            }
+
             for(j = 0; group_names[j]; j++) {
-                if (sss_string_equal(cs, group_names[j], ctx->allow_groups[i])) {
+                if (sss_string_equal(domain->case_sensitive,
+                                     group_names[j], ctx->allow_groups[i])) {
                     matched = true;
                     break;
                 }
@@ -128,8 +155,17 @@ simple_check_groups(struct simple_ctx *ctx, const char **group_names,
     if (ctx->deny_groups) {
         matched = false;
         for (i = 0; ctx->deny_groups[i]; i++) {
+            domain = find_subdomain_by_object_name(ctx->domain,
+                                                   ctx->deny_groups[i]);
+            if (domain == NULL) {
+                DEBUG(SSSDBG_CRIT_FAILURE, ("Invalid group %s!\n",
+                                            ctx->deny_groups[i]));
+                return EINVAL;
+            }
+
             for(j = 0; group_names[j]; j++) {
-                if (sss_string_equal(cs, group_names[j], ctx->deny_groups[i])) {
+                if (sss_string_equal(domain->case_sensitive,
+                                     group_names[j], ctx->deny_groups[i])) {
                     matched = true;
                     break;
                 }
@@ -152,6 +188,7 @@ simple_check_groups(struct simple_ctx *ctx, const char **group_names,
 }
 
 struct simple_resolve_group_state {
+    struct sss_domain_info *domain;
     gid_t gid;
     struct simple_ctx *ctx;
 
@@ -166,6 +203,7 @@ static struct tevent_req *
 simple_resolve_group_send(TALLOC_CTX *mem_ctx,
                           struct tevent_context *ev,
                           struct simple_ctx *ctx,
+                          struct sss_domain_info *domain,
                           gid_t gid)
 {
     errno_t ret;
@@ -178,6 +216,7 @@ simple_resolve_group_send(TALLOC_CTX *mem_ctx,
                             struct simple_resolve_group_state);
     if (!req) return NULL;
 
+    state->domain = domain;
     state->gid = gid;
     state->ctx = ctx;
 
@@ -206,7 +245,7 @@ simple_resolve_group_send(TALLOC_CTX *mem_ctx,
     ar->attr_type = BE_ATTR_CORE;
     ar->filter_type = BE_FILTER_IDNUM;
     ar->filter_value = talloc_asprintf(ar, "%llu", (unsigned long long) gid);
-    ar->domain = talloc_strdup(ar, ctx->domain->name);
+    ar->domain = talloc_strdup(ar, state->domain->name);
     if (!ar->domain || !ar->filter_value) {
         ret = ENOMEM;
         goto done;
@@ -240,12 +279,15 @@ simple_resolve_group_check(struct simple_resolve_group_state *state)
                                   SYSDB_GIDNUM, NULL };
 
     /* Check the cache by GID again and fetch the name */
-    ret = sysdb_search_group_by_gid(state, state->ctx->domain->sysdb,
-                                    state->ctx->domain, state->gid,
+    ret = sysdb_search_group_by_gid(state, state->domain->sysdb,
+                                    state->domain, state->gid,
                                     group_attrs, &group);
-    if (ret != EOK) {
+    if (ret == ENOENT) {
+        /* The group is missing, we will try to update it. */
+        return EAGAIN;
+    } else if (ret != EOK) {
         DEBUG(SSSDBG_OP_FAILURE,
-               ("Could not look up group by gid [%lu]: [%d][%s]\n",
+               ("Could not look up group by gid [%"SPRIgid"]: [%d][%s]\n",
                state->gid, ret, sss_strerror(ret)));
         return ret;
     }
@@ -321,12 +363,18 @@ simple_resolve_group_recv(struct tevent_req *req,
     return EOK;
 }
 
+struct simple_group {
+    struct sss_domain_info *domain;
+    gid_t gid;
+};
+
 struct simple_check_groups_state {
     struct tevent_context *ev;
     struct simple_ctx *ctx;
+    struct sss_domain_info *domain;
 
-    gid_t *lookup_gids;
-    size_t num_gids;
+    struct simple_group *lookup_groups;
+    size_t num_groups;
     size_t giter;
 
     const char **group_names;
@@ -352,7 +400,8 @@ simple_check_get_groups_send(TALLOC_CTX *mem_ctx,
     struct tevent_req *req;
     struct tevent_req *subreq;
     struct simple_check_groups_state *state;
-    const char *attrs[] = { SYSDB_NAME, SYSDB_POSIX, SYSDB_GIDNUM, NULL };
+    const char *attrs[] = { SYSDB_NAME, SYSDB_POSIX, SYSDB_GIDNUM,
+                            SYSDB_SID_STR, NULL };
     size_t group_count;
     struct ldb_message *user;
     struct ldb_message **groups;
@@ -368,7 +417,15 @@ simple_check_get_groups_send(TALLOC_CTX *mem_ctx,
 
     DEBUG(SSSDBG_TRACE_LIBS, ("Looking up groups for user %s\n", username));
 
-    ret = sysdb_search_user_by_name(state, ctx->domain->sysdb, ctx->domain,
+    /* get domain from username */
+    state->domain = find_subdomain_by_object_name(ctx->domain, username);
+    if (state->domain == NULL) {
+        DEBUG(SSSDBG_CRIT_FAILURE, ("Invalid user %s!\n", username));
+        ret = EINVAL;
+        goto done;
+    }
+
+    ret = sysdb_search_user_by_name(state, state->domain->sysdb, state->domain,
                                     username, attrs, &user);
     if (ret == ENOENT) {
         DEBUG(SSSDBG_MINOR_FAILURE, ("No such user %s\n", username));
@@ -381,7 +438,7 @@ simple_check_get_groups_send(TALLOC_CTX *mem_ctx,
         goto done;
     }
 
-    ret = sysdb_asq_search(state, ctx->domain->sysdb,
+    ret = sysdb_asq_search(state, state->domain->sysdb,
                            user->dn, NULL, SYSDB_MEMBEROF,
                            attrs, &group_count, &groups);
     if (ret != EOK) {
@@ -389,13 +446,14 @@ simple_check_get_groups_send(TALLOC_CTX *mem_ctx,
     }
 
     DEBUG(SSSDBG_TRACE_FUNC,
-          ("User %s is a member of %d supplemental groups\n",
+          ("User %s is a member of %zu supplemental groups\n",
            username, group_count));
 
     /* One extra space for terminator, one extra space for private group */
     state->group_names = talloc_zero_array(state, const char *, group_count + 2);
-    state->lookup_gids = talloc_zero_array(state, gid_t, group_count + 2);
-    if (!state->group_names || !state->lookup_gids) {
+    state->lookup_groups = talloc_zero_array(state, struct simple_group,
+                                             group_count + 2);
+    if (!state->group_names || !state->lookup_groups) {
         ret = ENOMEM;
         goto done;
     }
@@ -426,7 +484,7 @@ simple_check_get_groups_send(TALLOC_CTX *mem_ctx,
         goto done;
     }
 
-    if (state->num_gids == 0) {
+    if (state->num_groups == 0) {
         /* If all groups could have been resolved by name, we are
          * done
          */
@@ -435,10 +493,12 @@ simple_check_get_groups_send(TALLOC_CTX *mem_ctx,
         goto done;
     }
 
-    DEBUG(SSSDBG_TRACE_FUNC, ("Need to resolve %d groups\n", state->num_gids));
+    DEBUG(SSSDBG_TRACE_FUNC, ("Need to resolve %zu groups\n",
+                              state->num_groups));
     state->giter = 0;
     subreq = simple_resolve_group_send(req, state->ev, state->ctx,
-                                       state->lookup_gids[state->giter]);
+                                       state->lookup_groups[state->giter].domain,
+                                       state->lookup_groups[state->giter].gid);
     if (!subreq) {
         ret = ENOMEM;
         goto done;
@@ -470,8 +530,8 @@ static void simple_check_get_groups_next(struct tevent_req *subreq)
     talloc_zfree(subreq);
     if (ret != EOK) {
         DEBUG(SSSDBG_OP_FAILURE,
-              ("Could not resolve name of group with GID %llu\n",
-              state->lookup_gids[state->giter]));
+              ("Could not resolve name of group with GID %"SPRIgid"\n",
+              state->lookup_groups[state->giter].gid));
         tevent_req_error(req, ret);
         return;
     }
@@ -479,9 +539,10 @@ static void simple_check_get_groups_next(struct tevent_req *subreq)
     state->num_names++;
     state->giter++;
 
-    if (state->giter < state->num_gids) {
+    if (state->giter < state->num_groups) {
         subreq = simple_resolve_group_send(req, state->ev, state->ctx,
-                                           state->lookup_gids[state->giter]);
+                                   state->lookup_groups[state->giter].domain,
+                                   state->lookup_groups[state->giter].gid);
         if (!subreq) {
             tevent_req_error(req, ENOMEM);
             return;
@@ -499,6 +560,8 @@ simple_check_process_group(struct simple_check_groups_state *state,
                            struct ldb_message *group)
 {
     const char *name;
+    const char *group_sid;
+    struct sss_domain_info *domain;
     gid_t gid;
     bool posix;
 
@@ -543,10 +606,25 @@ simple_check_process_group(struct simple_check_groups_state *state,
         return EOK;
     }
 
-    /* Non-posix group with a GID. Needs resolving */
-    state->lookup_gids[state->num_gids] = gid;
-    DEBUG(SSSDBG_TRACE_INTERNAL, ("Adding GID %llu\n", gid));
-    state->num_gids++;
+    /* Try to get group SID and assign it a domain */
+    group_sid = ldb_msg_find_attr_as_string(group, SYSDB_SID_STR, NULL);
+    if (group_sid == NULL) {
+        /* We will look it up in main domain. */
+        domain = state->ctx->domain;
+    } else {
+        domain = find_subdomain_by_sid(state->ctx->domain, group_sid);
+        if (domain == NULL) {
+            DEBUG(SSSDBG_CRIT_FAILURE, ("There is no domain information for "
+                                        "SID %s\n", group_sid));
+            return ENOENT;
+        }
+    }
+
+    /* It is a non-posix group with a GID. Needs resolving */
+    state->lookup_groups[state->num_groups].domain = domain;
+    state->lookup_groups[state->num_groups].gid = gid;
+    DEBUG(SSSDBG_TRACE_INTERNAL, ("Adding GID %"SPRIgid"\n", gid));
+    state->num_groups++;
     return EOK;
 }
 
@@ -556,15 +634,14 @@ simple_check_get_groups_primary(struct simple_check_groups_state *state,
 {
     errno_t ret;
     const char *group_attrs[] = { SYSDB_NAME, SYSDB_POSIX,
-                                  SYSDB_GIDNUM, NULL };
+                                  SYSDB_GIDNUM, SYSDB_SID_STR, NULL };
     struct ldb_message *msg;
 
-    ret = sysdb_search_group_by_gid(state, state->ctx->domain->sysdb,
-                                    state->ctx->domain,
+    ret = sysdb_search_group_by_gid(state, state->domain->sysdb, state->domain,
                                     gid, group_attrs, &msg);
     if (ret != EOK) {
         DEBUG(SSSDBG_OP_FAILURE,
-               ("Could not look up primary group [%lu]: [%d][%s]\n",
+              ("Could not look up primary group [%"SPRIgid"]: [%d][%s]\n",
                gid, ret, sss_strerror(ret)));
         /* We have to treat this as non-fatal, because the primary
          * group may be local to the machine and not available in

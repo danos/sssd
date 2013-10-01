@@ -1,6 +1,6 @@
 /*
     Authors:
-        Pavel B??ezina <pbrezina@redhat.com>
+        Pavel Březina <pbrezina@redhat.com>
 
     Copyright (C) 2013 Red Hat
 
@@ -33,10 +33,81 @@
 #include "providers/ldap/sdap.h"
 #include "providers/ldap/sdap_async.h"
 
-#define AD_SITE_DOMAIN "%s._sites.%s"
+#define AD_SITE_DOMAIN_FMT "%s._sites.%s"
 #define AD_AT_DNS_DOMAIN "DnsDomain"
 #define AD_AT_NT_VERSION "NtVer"
 #define AD_AT_NETLOGON "netlogon"
+
+static errno_t ad_sort_servers_by_dns(TALLOC_CTX *mem_ctx,
+                                      const char *domain,
+                                      struct fo_server_info **_srv,
+                                      size_t num)
+{
+    struct fo_server_info *out = NULL;
+    struct fo_server_info *srv = NULL;
+    struct fo_server_info in_domain[num];
+    struct fo_server_info out_domain[num];
+    size_t srv_index = 0;
+    size_t in_index = 0;
+    size_t out_index = 0;
+    size_t i, j;
+
+    if (_srv == NULL) {
+        return EINVAL;
+    }
+
+    srv = *_srv;
+
+    if (num <= 1) {
+        return EOK;
+    }
+
+    out = talloc_zero_array(mem_ctx, struct fo_server_info, num);
+    if (out == NULL) {
+        return ENOMEM;
+    }
+
+    /* When several servers share priority, we will prefer the one that
+     * is located in the same domain as client (e.g. child domain instead
+     * of forest root) but obey their weight. We will use the fact that
+     * the servers are already sorted by priority. */
+
+    for (i = 0; i < num; i++) {
+        if (is_host_in_domain(srv[i].host, domain)) {
+            /* this is a preferred server, push it to the in domain list */
+            in_domain[in_index] = srv[i];
+            in_index++;
+        } else {
+            /* this is a normal server, push it to the out domain list */
+            out_domain[out_index] = srv[i];
+            out_index++;
+        }
+
+        if (i + 1 == num || srv[i].priority != srv[i + 1].priority) {
+            /* priority has changed or we have reached the end of the srv list,
+             * we will merge the list into final list and start over with
+             * next priority */
+            for (j = 0; j < in_index; j++) {
+                out[srv_index] = in_domain[j];
+                talloc_steal(out, out[srv_index].host);
+                srv_index++;
+            }
+
+            for (j = 0; j < out_index; j++) {
+                out[srv_index] = out_domain[j];
+                talloc_steal(out, out[srv_index].host);
+                srv_index++;
+            }
+
+            in_index = 0;
+            out_index = 0;
+        }
+    }
+
+    talloc_free(*_srv);
+    *_srv = out;
+    return EOK;
+}
 
 struct ad_get_dc_servers_state {
     struct fo_server_info *servers;
@@ -113,7 +184,7 @@ static void ad_get_dc_servers_done(struct tevent_req *subreq)
         goto done;
     }
 
-    DEBUG(SSSDBG_TRACE_FUNC, ("Found %lu domain controllers in domain %s\n",
+    DEBUG(SSSDBG_TRACE_FUNC, ("Found %zu domain controllers in domain %s\n",
                               state->num_servers, domain));
 
 done:
@@ -688,7 +759,7 @@ static void ad_srv_plugin_site_done(struct tevent_req *subreq)
     talloc_zfree(subreq);
     if (ret == EOK) {
         if (strcmp(state->service, "gc") == 0) {
-            primary_domain = talloc_asprintf(state, AD_SITE_DOMAIN,
+            primary_domain = talloc_asprintf(state, AD_SITE_DOMAIN_FMT,
                                              state->site, state->forest);
             if (primary_domain == NULL) {
                 ret = ENOMEM;
@@ -697,7 +768,7 @@ static void ad_srv_plugin_site_done(struct tevent_req *subreq)
 
             backup_domain = state->forest;
         } else {
-            primary_domain = talloc_asprintf(state, AD_SITE_DOMAIN,
+            primary_domain = talloc_asprintf(state, AD_SITE_DOMAIN_FMT,
                                              state->site, state->discovery_domain);
             if (primary_domain == NULL) {
                 ret = ENOMEM;
@@ -759,8 +830,26 @@ static void ad_srv_plugin_servers_done(struct tevent_req *subreq)
         return;
     }
 
-    DEBUG(SSSDBG_TRACE_FUNC, ("Got %lu primary and %lu backup servers\n",
+    DEBUG(SSSDBG_TRACE_FUNC, ("Got %zu primary and %zu backup servers\n",
           state->num_primary_servers, state->num_backup_servers));
+
+    ret = ad_sort_servers_by_dns(state, state->discovery_domain,
+                                 &state->primary_servers,
+                                 state->num_primary_servers);
+    if (ret != EOK) {
+        DEBUG(SSSDBG_MINOR_FAILURE, ("Unable to sort primary servers by DNS"
+                                     "[%d]: %s\n", ret, sss_strerror(ret)));
+        /* continue */
+    }
+
+    ret = ad_sort_servers_by_dns(state, state->discovery_domain,
+                                 &state->backup_servers,
+                                 state->num_backup_servers);
+    if (ret != EOK) {
+        DEBUG(SSSDBG_MINOR_FAILURE, ("Unable to sort backup servers by DNS"
+                                     "[%d]: %s\n", ret, sss_strerror(ret)));
+        /* continue */
+    }
 
     tevent_req_done(req);
 }

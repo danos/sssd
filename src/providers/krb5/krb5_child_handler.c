@@ -155,7 +155,7 @@ static errno_t create_send_buffer(struct krb5child_req *kr,
             break;
     }
 
-    if (kr->pd->cmd == SSS_CMD_RENEW) {
+    if (kr->pd->cmd == SSS_CMD_RENEW || kr->is_offline) {
         use_enterprise_principal = false;
     } else {
         use_enterprise_principal = dp_opt_get_bool(kr->krb5_ctx->opts,
@@ -538,7 +538,7 @@ parse_krb5_child_response(TALLOC_CTX *mem_ctx, uint8_t *buf, ssize_t len,
               msg_status, msg_type, msg_len));
 
         if ((p + msg_len) > len) {
-            DEBUG(SSSDBG_CRIT_FAILURE, ("message format error [%d] > [%d].\n",
+            DEBUG(SSSDBG_CRIT_FAILURE, ("message format error [%zu] > [%zd].\n",
                   p+msg_len, len));
             return EINVAL;
         }
@@ -564,7 +564,7 @@ parse_krb5_child_response(TALLOC_CTX *mem_ctx, uint8_t *buf, ssize_t len,
             tgtt.endtime = int64_to_time_t(time_data);
             SAFEALIGN_COPY_INT64(&time_data, buf+p+3*sizeof(int64_t), NULL);
             tgtt.renew_till = int64_to_time_t(time_data);
-            DEBUG(SSSDBG_TRACE_LIBS, ("TGT times are [%d][%d][%d][%d].\n",
+            DEBUG(SSSDBG_TRACE_LIBS, ("TGT times are [%ld][%ld][%ld][%ld].\n",
                   tgtt.authtime, tgtt.starttime, tgtt.endtime, tgtt.renew_till));
         }
 

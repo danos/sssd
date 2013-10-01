@@ -294,7 +294,7 @@ static void sdap_sys_connect_done(struct tevent_req *subreq)
                                    &ber_sasl_minssf);
             if (lret != LDAP_OPT_SUCCESS) {
                 DEBUG(SSSDBG_CRIT_FAILURE, ("Failed to set LDAP MIN SSF option "
-                                            "to %lu\n", sasl_minssf));
+                                            "to %d\n", sasl_minssf));
                 goto fail;
             }
         }
@@ -1773,7 +1773,7 @@ static void sdap_cli_auth_step(struct tevent_req *req)
             || (state->sh->expire_time > (now + expire_timeout))) {
         state->sh->expire_time = now + expire_timeout;
         DEBUG(SSSDBG_TRACE_LIBS,
-              ("the connection will expire at %d\n", state->sh->expire_time));
+              ("the connection will expire at %ld\n", state->sh->expire_time));
     }
 
     if (!state->do_auth ||
@@ -1987,8 +1987,9 @@ static int synchronous_tls_setup(LDAP *ldap)
 
     lret = ldap_result(ldap, msgid, 1, NULL, &result);
     if (lret != LDAP_RES_EXTENDED) {
-        DEBUG(2, ("Unexpected ldap_result, expected [%d] got [%d].\n",
-                  LDAP_RES_EXTENDED, lret));
+        DEBUG(SSSDBG_OP_FAILURE,
+              ("Unexpected ldap_result, expected [%lu] got [%d].\n",
+               LDAP_RES_EXTENDED, lret));
         lret = LDAP_PARAM_ERROR;
         goto done;
     }

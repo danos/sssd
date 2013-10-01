@@ -16,8 +16,9 @@ if test -x "$KRB5_CONFIG"; then
   KRB5_LIBS="`$KRB5_CONFIG --libs`"
   AC_MSG_RESULT(yes)
 else
+    AC_MSG_RESULT([no])
     if test x$KRB5_PASSED_LIBS = x; then
-        AC_MSG_ERROR(no. Please install MIT kerberos devel package)
+        AC_MSG_ERROR([Please install MIT kerberos devel package])
     fi
 fi
 
@@ -90,4 +91,5 @@ AC_CHECK_HEADER([krb5/locate_plugin.h],
                 ])
 AM_CONDITIONAL([BUILD_KRB5_LOCATOR_PLUGIN],
                [test x$have_locate_plugin = xyes -a x$build_locator = xyes])
-
+AM_COND_IF([BUILD_KRB5_LOCATOR_PLUGIN],
+           [AC_DEFINE_UNQUOTED(HAVE_KRB5_LOCATOR_PLUGIN, 1, [Build with krb5 locator plugin])])

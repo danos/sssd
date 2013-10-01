@@ -1,6 +1,6 @@
 /*
     Authors:
-        Pavel B??ezina <pbrezina@redhat.com>
+        Pavel Březina <pbrezina@redhat.com>
 
     Copyright (C) 2013 Red Hat
 
@@ -98,7 +98,7 @@ static void fo_discover_srv_done(struct tevent_req *subreq)
     DEBUG(SSSDBG_TRACE_FUNC, ("Got answer. Processing...\n"));
 
     /* sort and store the answer */
-    ret = resolv_sort_srv_reply(state, &reply_list);
+    ret = resolv_sort_srv_reply(&reply_list);
     if (ret != EOK) {
         DEBUG(SSSDBG_CRIT_FAILURE, ("Could not sort the answers from DNS "
                                     "[%d]: %s\n", ret, strerror(ret)));
@@ -110,7 +110,7 @@ static void fo_discover_srv_done(struct tevent_req *subreq)
         state->num_servers++;
     }
 
-    DEBUG(SSSDBG_TRACE_FUNC, ("Got %lu servers\n", state->num_servers));
+    DEBUG(SSSDBG_TRACE_FUNC, ("Got %zu servers\n", state->num_servers));
 
     state->servers = talloc_array(state, struct fo_server_info,
                                   state->num_servers);
@@ -124,6 +124,7 @@ static void fo_discover_srv_done(struct tevent_req *subreq)
          record = record->next, i++) {
         state->servers[i].host = talloc_steal(state->servers, record->host);
         state->servers[i].port = record->port;
+        state->servers[i].priority = record->priority;
     }
 
     talloc_zfree(reply_list);

@@ -954,8 +954,9 @@ static void sdap_initgr_nested_search(struct tevent_req *subreq)
                                                         groups[0]);
         state->groups_cur++;
     } else {
-        DEBUG(2, ("Search for group %s, returned %d results. Skipping\n",
-                  state->group_dns[state->cur], count));
+        DEBUG(SSSDBG_OP_FAILURE,
+              ("Search for group %s, returned %zu results. Skipping\n",
+               state->group_dns[state->cur], count));
     }
 
     state->cur++;
@@ -1441,7 +1442,7 @@ struct sdap_initgr_rfc2307bis_state {
     struct sss_domain_info *dom;
     struct sdap_handle *sh;
     const char *name;
-    const char *base_filter;
+    char *base_filter;
     char *filter;
     const char **attrs;
     const char *orig_dn;
@@ -1481,8 +1482,7 @@ static struct tevent_req *sdap_initgr_rfc2307bis_send(
         TALLOC_CTX *memctx,
         struct tevent_context *ev,
         struct sdap_options *opts,
-        struct sysdb_ctx *sysdb,
-        struct sss_domain_info *dom,
+        struct sdap_domain *sdom,
         struct sdap_handle *sh,
         const char *name,
         const char *orig_dn)
@@ -1492,14 +1492,15 @@ static struct tevent_req *sdap_initgr_rfc2307bis_send(
     struct sdap_initgr_rfc2307bis_state *state;
     const char **attr_filter;
     char *clean_orig_dn;
+    bool use_id_mapping;
 
     req = tevent_req_create(memctx, &state, struct sdap_initgr_rfc2307bis_state);
     if (!req) return NULL;
 
     state->ev = ev;
     state->opts = opts;
-    state->sysdb = sysdb;
-    state->dom = dom;
+    state->sysdb = sdom->dom->sysdb;
+    state->dom = sdom->dom;
     state->sh = sh;
     state->op = NULL;
     state->name = name;
@@ -1507,7 +1508,7 @@ static struct tevent_req *sdap_initgr_rfc2307bis_send(
     state->num_direct_parents = 0;
     state->timeout = dp_opt_get_int(state->opts->basic, SDAP_SEARCH_TIMEOUT);
     state->base_iter = 0;
-    state->search_bases = opts->sdom->group_search_bases;
+    state->search_bases = sdom->group_search_bases;
     state->orig_dn = orig_dn;
 
     if (!state->search_bases) {
@@ -1539,8 +1540,12 @@ static struct tevent_req *sdap_initgr_rfc2307bis_send(
     ret = sss_filter_sanitize(state, orig_dn, &clean_orig_dn);
     if (ret != EOK) goto done;
 
+    use_id_mapping = sdap_idmap_domain_has_algorithmic_mapping(
+                                                        opts->idmap_ctx,
+                                                        sdom->dom->domain_id);
+
     state->base_filter =
-            talloc_asprintf(state, "(&(%s=%s)(objectclass=%s)(%s=*))",
+            talloc_asprintf(state, "(&(%s=%s)(objectclass=%s)(%s=*)",
                             opts->group_map[SDAP_AT_GROUP_MEMBER].name,
                             clean_orig_dn,
                             opts->group_map[SDAP_OC_GROUP].name,
@@ -1549,6 +1554,28 @@ static struct tevent_req *sdap_initgr_rfc2307bis_send(
         ret = ENOMEM;
         goto done;
     }
+
+    if (use_id_mapping) {
+        /* When mapping IDs or looking for SIDs, we don't want to limit
+         * ourselves to groups with a GID value. But there must be a SID to map
+         * from.
+         */
+        state->base_filter = talloc_asprintf_append(state->base_filter,
+                                        "(%s=*))",
+                                        opts->group_map[SDAP_AT_GROUP_OBJECTSID].name);
+    } else {
+        /* When not ID-mapping, make sure there is a non-NULL UID */
+        state->base_filter = talloc_asprintf_append(state->base_filter,
+                                        "(&(%s=*)(!(%s=0))))",
+                                        opts->group_map[SDAP_AT_GROUP_GID].name,
+                                        opts->group_map[SDAP_AT_GROUP_GID].name);
+    }
+    if (!state->base_filter) {
+        talloc_zfree(req);
+        return NULL;
+    }
+
+
     talloc_zfree(clean_orig_dn);
 
     ret = sdap_initgr_rfc2307bis_next_base(req);
@@ -1619,7 +1646,7 @@ static void sdap_initgr_rfc2307bis_process(struct tevent_req *subreq)
         return;
     }
     DEBUG(SSSDBG_TRACE_LIBS,
-          ("Found %d parent groups for user [%s]\n", count, state->name));
+          ("Found %zu parent groups for user [%s]\n", count, state->name));
 
     /* Add this batch of groups to the list */
     if (count > 0) {
@@ -2128,7 +2155,8 @@ struct tevent_req *rfc2307bis_nested_groups_send(
     struct sdap_rfc2307bis_nested_ctx *state;
 
     DEBUG(SSSDBG_TRACE_INTERNAL,
-          ("About to process %d groups in nesting level %d\n", num_groups, nesting));
+          ("About to process %zu groups in nesting level %zu\n",
+           num_groups, nesting));
 
     req = tevent_req_create(mem_ctx, &state,
                             struct sdap_rfc2307bis_nested_ctx);
@@ -2376,7 +2404,7 @@ static void rfc2307bis_nested_groups_process(struct tevent_req *subreq)
     }
 
     DEBUG(SSSDBG_TRACE_LIBS,
-          ("Found %d parent groups of [%s]\n", count, state->orig_dn));
+          ("Found %zu parent groups of [%s]\n", count, state->orig_dn));
     ngr = state->processed_groups[state->group_iter];
 
     /* Add this batch of groups to the list */
@@ -2405,7 +2433,7 @@ static void rfc2307bis_nested_groups_process(struct tevent_req *subreq)
 
         ngr->ldap_parents[ngr->parents_count] = NULL;
         DEBUG(SSSDBG_TRACE_INTERNAL,
-              ("Total of %d direct parents after this iteration\n",
+              ("Total of %zu direct parents after this iteration\n",
                ngr->parents_count));
     }
 
@@ -2543,13 +2571,14 @@ struct sdap_get_initgr_state {
     struct sysdb_ctx *sysdb;
     struct sdap_options *opts;
     struct sss_domain_info *dom;
+    struct sdap_domain *sdom;
     struct sdap_handle *sh;
     struct sdap_id_ctx *id_ctx;
     struct sdap_id_conn_ctx *conn;
     const char *name;
     const char **grp_attrs;
     const char **user_attrs;
-    const char *user_base_filter;
+    char *user_base_filter;
     char *filter;
     int timeout;
 
@@ -2578,6 +2607,7 @@ struct tevent_req *sdap_get_initgr_send(TALLOC_CTX *memctx,
     struct sdap_get_initgr_state *state;
     int ret;
     char *clean_name;
+    bool use_id_mapping;
 
     DEBUG(9, ("Retrieving info for initgroups call\n"));
 
@@ -2588,6 +2618,7 @@ struct tevent_req *sdap_get_initgr_send(TALLOC_CTX *memctx,
     state->opts = id_ctx->opts;
     state->dom = sdom->dom;
     state->sysdb = sdom->dom->sysdb;
+    state->sdom = sdom;
     state->sh = sh;
     state->id_ctx = id_ctx;
     state->conn = conn;
@@ -2604,6 +2635,10 @@ struct tevent_req *sdap_get_initgr_send(TALLOC_CTX *memctx,
         goto done;
     }
 
+    use_id_mapping = sdap_idmap_domain_has_algorithmic_mapping(
+                                                          id_ctx->opts->idmap_ctx,
+                                                          sdom->dom->domain_id);
+
     ret = sss_filter_sanitize(state, name, &clean_name);
     if (ret != EOK) {
         talloc_zfree(req);
@@ -2611,10 +2646,30 @@ struct tevent_req *sdap_get_initgr_send(TALLOC_CTX *memctx,
     }
 
     state->user_base_filter =
-            talloc_asprintf(state, "(&(%s=%s)(objectclass=%s))",
+            talloc_asprintf(state, "(&(%s=%s)(objectclass=%s)",
                             state->opts->user_map[SDAP_AT_USER_NAME].name,
                             clean_name,
                             state->opts->user_map[SDAP_OC_USER].name);
+    if (!state->user_base_filter) {
+        talloc_zfree(req);
+        return NULL;
+    }
+
+    if (use_id_mapping) {
+        /* When mapping IDs or looking for SIDs, we don't want to limit
+         * ourselves to users with a UID value. But there must be a SID to map
+         * from.
+         */
+        state->user_base_filter = talloc_asprintf_append(state->user_base_filter,
+                                        "(%s=*))",
+                                        id_ctx->opts->user_map[SDAP_AT_USER_OBJECTSID].name);
+    } else {
+        /* When not ID-mapping, make sure there is a non-NULL UID */
+        state->user_base_filter = talloc_asprintf_append(state->user_base_filter,
+                                        "(&(%s=*)(!(%s=0))))",
+                                        id_ctx->opts->user_map[SDAP_AT_USER_UID].name,
+                                        id_ctx->opts->user_map[SDAP_AT_USER_UID].name);
+    }
     if (!state->user_base_filter) {
         talloc_zfree(req);
         return NULL;
@@ -2727,7 +2782,8 @@ static void sdap_get_initgr_user(struct tevent_req *subreq)
             return;
         }
     } else if (count != 1) {
-        DEBUG(2, ("Expected one user entry and got %d\n", count));
+        DEBUG(SSSDBG_OP_FAILURE,
+              ("Expected one user entry and got %zu\n", count));
         tevent_req_error(req, EINVAL);
         return;
     }
@@ -2819,8 +2875,8 @@ static void sdap_get_initgr_user(struct tevent_req *subreq)
                                                             state->timeout);
         } else {
             subreq = sdap_initgr_rfc2307bis_send(
-                    state, state->ev, state->opts, state->sysdb,
-                    state->dom, state->sh,
+                    state, state->ev, state->opts,
+                    state->sdom, state->sh,
                     cname, orig_dn);
         }
         if (!subreq) {
@@ -3032,11 +3088,12 @@ int sdap_get_initgr_recv(struct tevent_req *req)
     return EOK;
 }
 
-errno_t get_sysdb_grouplist(TALLOC_CTX *mem_ctx,
-                            struct sysdb_ctx *sysdb,
-                            struct sss_domain_info *domain,
-                            const char *name,
-                            char ***grouplist)
+static errno_t get_sysdb_grouplist_ex(TALLOC_CTX *mem_ctx,
+                                      struct sysdb_ctx *sysdb,
+                                      struct sss_domain_info *domain,
+                                      const char *name,
+                                      char ***grouplist,
+                                      bool get_dn)
 {
     errno_t ret;
     const char *attrs[2];
@@ -3072,19 +3129,32 @@ errno_t get_sysdb_grouplist(TALLOC_CTX *mem_ctx,
             goto done;
         }
 
-        /* Get a list of the groups by groupname only */
-        for (i=0; i < groups->num_values; i++) {
-            ret = sysdb_group_dn_name(sysdb,
-                                      sysdb_grouplist,
-                                      (const char *)groups->values[i].data,
-                                      &sysdb_grouplist[i]);
-            if (ret != EOK) {
-                DEBUG(SSSDBG_MINOR_FAILURE,
-                      ("Could not determine group name from [%s]: [%s]\n",
-                       (const char *)groups->values[i].data, strerror(ret)));
-                goto done;
+        if (get_dn) {
+            /* Get distinguish name */
+            for (i=0; i < groups->num_values; i++) {
+                sysdb_grouplist[i] = talloc_strdup(sysdb_grouplist,
+                                       (const char *)groups->values[i].data);
+                if (sysdb_grouplist[i] == NULL) {
+                    ret = ENOMEM;
+                    goto done;
+                }
+            }
+        } else {
+            /* Get a list of the groups by groupname only */
+            for (i=0; i < groups->num_values; i++) {
+                ret = sysdb_group_dn_name(sysdb,
+                                          sysdb_grouplist,
+                                          (const char *)groups->values[i].data,
+                                          &sysdb_grouplist[i]);
+                if (ret != EOK) {
+                    DEBUG(SSSDBG_MINOR_FAILURE,
+                          ("Could not determine group name from [%s]: [%s]\n",
+                           (const char *)groups->values[i].data, strerror(ret)));
+                    goto done;
+                }
             }
         }
+
         sysdb_grouplist[groups->num_values] = NULL;
     }
 
@@ -3095,3 +3165,22 @@ done:
     return ret;
 }
 
+errno_t get_sysdb_grouplist(TALLOC_CTX *mem_ctx,
+                            struct sysdb_ctx *sysdb,
+                            struct sss_domain_info *domain,
+                            const char *name,
+                            char ***grouplist)
+{
+    return get_sysdb_grouplist_ex(mem_ctx, sysdb, domain,
+                                  name, grouplist, false);
+}
+
+errno_t get_sysdb_grouplist_dn(TALLOC_CTX *mem_ctx,
+                               struct sysdb_ctx *sysdb,
+                               struct sss_domain_info *domain,
+                               const char *name,
+                               char ***grouplist)
+{
+    return get_sysdb_grouplist_ex(mem_ctx, sysdb, domain,
+                                  name, grouplist, true);
+}

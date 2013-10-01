@@ -377,7 +377,7 @@ sdap_process_ghost_members(struct sysdb_attrs *attrs,
     ghostel->num_values = gh->num_values;
 
     cnt = ghostel->num_values + memberel->num_values;
-    DEBUG(SSSDBG_TRACE_FUNC, ("Group has %d members\n", cnt));
+    DEBUG(SSSDBG_TRACE_FUNC, ("Group has %zu members\n", cnt));
 
     /* Now process RFC2307bis ghost hash table */
     if (ghosts && cnt > 0) {
@@ -1056,7 +1056,7 @@ done:
 static int
 sdap_process_missing_member_2307bis(struct tevent_req *req,
                                     char *user_dn,
-                                    int num_users)
+                                    unsigned num_users)
 {
     struct sdap_process_group_state *grp_state =
         tevent_req_data(req, struct sdap_process_group_state);
@@ -1072,8 +1072,9 @@ sdap_process_missing_member_2307bis(struct tevent_req *req,
     if (grp_state->check_count > GROUPMEMBER_REQ_PARALLEL) {
         DEBUG(7, (" queueing search for: %s\n", user_dn));
         if (!grp_state->queued_members) {
-            DEBUG(7, ("Allocating queue for %d members\n",
-                      num_users - grp_state->check_count));
+            DEBUG(SSSDBG_TRACE_LIBS,
+                  ("Allocating queue for %zu members\n",
+                   num_users - grp_state->check_count));
 
             grp_state->queued_members = talloc_array(grp_state, char *,
                     num_users - grp_state->check_count + 1);
@@ -1349,7 +1350,7 @@ static void sdap_process_group_members(struct tevent_req *subreq)
     uint8_t* name_string;
 
     state->check_count--;
-    DEBUG(9, ("Members remaining: %d\n", state->check_count));
+    DEBUG(SSSDBG_TRACE_ALL, ("Members remaining: %zu\n", state->check_count));
 
     ret = sdap_get_generic_recv(subreq, state, &count, &usr_attrs);
     talloc_zfree(subreq);
@@ -1358,7 +1359,8 @@ static void sdap_process_group_members(struct tevent_req *subreq)
     }
     if (count != 1) {
         ret = EINVAL;
-        DEBUG(7, ("Expected one user entry and got %d\n", count));
+        DEBUG(SSSDBG_TRACE_LIBS,
+              ("Expected one user entry and got %zu\n", count));
         goto next;
     }
     ret = sysdb_attrs_get_el(usr_attrs[0],
@@ -1380,7 +1382,9 @@ static void sdap_process_group_members(struct tevent_req *subreq)
 
 next:
     if (ret) {
-        DEBUG(7, ("Error reading group member. Skipping\n", ret));
+        DEBUG(SSSDBG_TRACE_FUNC,
+              ("Error reading group member[%d]: %s. Skipping\n",
+               ret, strerror(ret)));
         state->count--;
     }
     /* Are there more searches for uncached users to submit ? */
@@ -1584,7 +1588,8 @@ static void sdap_get_groups_process(struct tevent_req *subreq)
         return;
     }
 
-    DEBUG(6, ("Search for groups, returned %d results.\n", count));
+    DEBUG(SSSDBG_TRACE_FUNC,
+          ("Search for groups, returned %zu results.\n", count));
 
     if (!state->enumeration && count > 1) {
         DEBUG(SSSDBG_MINOR_FAILURE,
@@ -1747,7 +1752,7 @@ static void sdap_get_groups_done(struct tevent_req *subreq)
     }
 
     state->check_count--;
-    DEBUG(9, ("Groups remaining: %d\n", state->check_count));
+    DEBUG(SSSDBG_TRACE_ALL, ("Groups remaining: %zu\n", state->check_count));
 
 
     if (state->check_count == 0) {
@@ -1765,7 +1770,7 @@ static void sdap_get_groups_done(struct tevent_req *subreq)
             tevent_req_error(req, ret);
             return;
         }
-        DEBUG(9, ("Saving %d Groups - Done\n", state->count));
+        DEBUG(SSSDBG_TRACE_ALL, ("Saving %zu Groups - Done\n", state->count));
         sysret = sysdb_transaction_commit(state->sysdb);
         if (sysret != EOK) {
             DEBUG(0, ("Couldn't commit transaction\n"));
@@ -2061,7 +2066,8 @@ static errno_t sdap_nested_group_populate_users(TALLOC_CTX *mem_ctx,
         ret = sss_filter_sanitize(tmp_ctx, original_dn,
                                   &clean_orig_dn);
         if (ret != EOK) {
-            DEBUG(1, ("Cannot sanitize originalDN\n", i));
+            DEBUG(SSSDBG_CRIT_FAILURE,
+                  ("Cannot sanitize originalDN [%s]\n", original_dn));
             goto done;
         }
 

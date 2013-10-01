@@ -6,6 +6,9 @@ AC_CHECK_SIZEOF(char)
 AC_CHECK_SIZEOF(short)
 AC_CHECK_SIZEOF(long)
 AC_CHECK_SIZEOF(long long)
+AC_CHECK_SIZEOF(uid_t)
+AC_CHECK_SIZEOF(gid_t)
+AC_CHECK_SIZEOF(id_t)
 
 if test $ac_cv_sizeof_long_long -lt 8 ; then
 AC_MSG_ERROR([SSSD requires long long of 64-bits])
@@ -37,8 +40,11 @@ AC_CHECK_SIZEOF(off_t)
 AC_CHECK_SIZEOF(size_t)
 AC_CHECK_SIZEOF(ssize_t)
 
-AC_CHECK_TYPE(intptr_t, long long)
+
+AC_CHECK_TYPES([intptr_t],
+               [],
+               [AC_DEFINE_UNQUOTED([intptr_t], [long long],
+                                   [Define to `long long'
+                                    if <stdint.h> does not define.])])
 AC_CHECK_TYPE(uintptr_t, unsigned long long)
 AC_CHECK_TYPE(ptrdiff_t, unsigned long long)
-
-

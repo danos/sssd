@@ -47,6 +47,7 @@
 #include "util/atomic_io.h"
 #include "util/util_errors.h"
 #include "util/util_safealign.h"
+#include "util/sss_format.h"
 
 #define _(STRING) gettext (STRING)
 
@@ -54,13 +55,19 @@
 
 #define CLEAR_MC_FLAG "clear_mc_flag"
 
+#ifdef HAVE_FUNCTION_ATTRIBUTE_FORMAT
+#define SSS_ATTRIBUTE_PRINTF(a1, a2) __attribute__ ((format (printf, a1, a2)))
+#else
+#define SSS_ATTRIBUTE_PRINTF(a1, a2)
+#endif
+
 extern const char *debug_prg_name;
 extern int debug_level;
 extern int debug_timestamps;
 extern int debug_microseconds;
 extern int debug_to_file;
 extern const char *debug_log_file;
-void debug_fn(const char *format, ...);
+void debug_fn(const char *format, ...) SSS_ATTRIBUTE_PRINTF(1, 2);
 int debug_get_level(int old_level);
 int debug_convert_old_level(int old_level);
 errno_t set_debug_file_from_fd(const int fd);
@@ -128,7 +135,7 @@ errno_t set_debug_file_from_fd(const int fd);
             memcpy(__debug_macro_datetime, ctime(&__debug_macro_tv.tv_sec), 19); \
             __debug_macro_datetime[19] = '\0'; \
             if (debug_microseconds) { \
-                debug_fn("(%s:%.6d %d) [%s] [%s] (%#.4x): ", \
+                debug_fn("(%s:%.6ld %d) [%s] [%s] (%#.4x): ", \
                          __debug_macro_datetime, __debug_macro_tv.tv_usec, \
                          __debug_macro_year, debug_prg_name, \
                          __FUNCTION__, __debug_macro_newlevel); \
@@ -169,7 +176,7 @@ errno_t set_debug_file_from_fd(const int fd);
             memcpy(__debug_macro_datetime, ctime(&__debug_macro_tv.tv_sec), 19); \
             __debug_macro_datetime[19] = '\0'; \
             if (debug_microseconds) { \
-                debug_fn("(%s:%.6d %d) [%s] [%s] (%#.4x): %s\n", \
+                debug_fn("(%s:%.6ld %d) [%s] [%s] (%#.4x): %s\n", \
                          __debug_macro_datetime, __debug_macro_tv.tv_usec, \
                          __debug_macro_year, debug_prg_name, \
                          function, __debug_macro_newlevel, message); \
@@ -273,7 +280,7 @@ void talloc_log_fn(const char *msg);
 #define SSS_LOG_INFO    6   /* informational */
 #define SSS_LOG_DEBUG   7   /* debug-level messages */
 
-void sss_log(int priority, const char *format, ...);
+void sss_log(int priority, const char *format, ...) SSS_ATTRIBUTE_PRINTF(2, 3);
 
 /* from server.c */
 struct main_context {
@@ -506,6 +513,8 @@ void safezero(void *data, size_t size);
 
 int domain_to_basedn(TALLOC_CTX *memctx, const char *domain, char **basedn);
 
+bool is_host_in_domain(const char *host, const char *domain);
+
 /* from nscd.c */
 enum nscd_db {
     NSCD_DB_PASSWD,
@@ -532,11 +541,19 @@ struct sized_string {
 void to_sized_string(struct sized_string *out, const char *in);
 
 /* from domain_info.c */
+struct sss_domain_info *get_domains_head(struct sss_domain_info *domain);
+
 struct sss_domain_info *get_next_domain(struct sss_domain_info *domain,
                                         bool descend);
 struct sss_domain_info *find_subdomain_by_name(struct sss_domain_info *domain,
                                                const char *name,
                                                bool match_any);
+struct sss_domain_info *find_subdomain_by_sid(struct sss_domain_info *domain,
+                                              const char *sid);
+struct sss_domain_info *
+find_subdomain_by_object_name(struct sss_domain_info *domain,
+                              const char *object_name);
+
 bool subdomain_enumerates(struct sss_domain_info *parent,
                           const char *sd_name);
 
@@ -547,7 +564,8 @@ struct sss_domain_info *new_subdomain(TALLOC_CTX *mem_ctx,
                                       const char *flat_name,
                                       const char *id,
                                       bool mpg,
-                                      bool enumerate);
+                                      bool enumerate,
+                                      const char *forest);
 
 errno_t sssd_domain_init(TALLOC_CTX *mem_ctx,
                          struct confdb_ctx *cdb,
@@ -557,7 +575,8 @@ errno_t sssd_domain_init(TALLOC_CTX *mem_ctx,
 
 #define IS_SUBDOMAIN(dom) ((dom)->parent != NULL)
 
-errno_t sss_write_domain_mappings(struct sss_domain_info *domain);
+errno_t sss_write_domain_mappings(struct sss_domain_info *domain,
+                                  bool add_capaths);
 
 /* from util_lock.c */
 errno_t sss_br_lock_file(int fd, size_t start, size_t len,

@@ -127,6 +127,21 @@ void setup_simple(void)
     test_ctx->sysdb = test_ctx->ctx->domain->sysdb;
     test_ctx->ctx->domain->case_sensitive = true;
     test_ctx->ctx->domain->mpg = false; /* Simulate an LDAP domain better */
+
+    /* be_ctx */
+    test_ctx->be_ctx = talloc_zero(test_ctx, struct be_ctx);
+    fail_if(test_ctx->be_ctx == NULL, "Unable to setup be_ctx");
+
+    test_ctx->be_ctx->cdb = test_ctx->confdb;
+    test_ctx->be_ctx->ev = test_ctx->ev;
+    test_ctx->be_ctx->conf_path = "config/domain/LOCAL";
+    test_ctx->be_ctx->domain = test_ctx->ctx->domain;
+
+    test_ctx->ctx->be_ctx = test_ctx->be_ctx;
+
+    ret = sss_names_init(test_ctx->ctx->domain, test_ctx->confdb,
+                         "LOCAL", &test_ctx->be_ctx->domain->names);
+    fail_if(ret != EOK, "Unable to setup domain names (%d)", ret);
 }
 
 void teardown_simple(void)
@@ -135,7 +150,7 @@ void teardown_simple(void)
     fail_unless(test_ctx != NULL, "Simple context already freed.");
     ret = talloc_free(test_ctx);
     test_ctx = NULL;
-    fail_unless(ret == 0, "Connot free simple context.");
+    fail_unless(ret == 0, "Cannot free simple context.");
 }
 
 void setup_simple_group(void)
@@ -148,7 +163,7 @@ void setup_simple_group(void)
      * g1 and g2 respectively */
     ret = sysdb_add_group(test_ctx->sysdb, test_ctx->ctx->domain,
                           "pvt", 999, NULL, 0, 0);
-    fail_if(ret != EOK, "Could not add private group");
+    fail_if(ret != EOK, "Could not add private group %s", strerror(ret));
 
     ret = sysdb_store_user(test_ctx->sysdb, test_ctx->ctx->domain,
                            "u1", NULL, 123, 999, "u1", "/home/u1",
@@ -174,11 +189,11 @@ void setup_simple_group(void)
     fail_if(ret != EOK, "Could not add g2");
 
     ret = sysdb_add_group_member(test_ctx->sysdb, test_ctx->ctx->domain,
-                                 "g1", "u1", SYSDB_MEMBER_USER);
+                                 "g1", "u1", SYSDB_MEMBER_USER, false);
     fail_if(ret != EOK, "Could not add u1 to g1");
 
     ret = sysdb_add_group_member(test_ctx->sysdb, test_ctx->ctx->domain,
-                                 "g2", "u2", SYSDB_MEMBER_USER);
+                                 "g2", "u2", SYSDB_MEMBER_USER, false);
     fail_if(ret != EOK, "Could not add u2 to g2");
 }
 
@@ -204,21 +219,7 @@ void teardown_simple_group(void)
 
 void setup_simple_init(void)
 {
-    errno_t ret;
-
     setup_simple();
-
-    test_ctx->be_ctx = talloc_zero(test_ctx, struct be_ctx);
-    fail_if(test_ctx->be_ctx == NULL, "Unable to setup be_ctx");
-
-    test_ctx->be_ctx->cdb = test_ctx->confdb;
-    test_ctx->be_ctx->ev = test_ctx->ev;
-    test_ctx->be_ctx->conf_path = "config/domain/LOCAL";
-    test_ctx->be_ctx->domain = test_ctx->ctx->domain;
-
-    ret = sss_names_init(test_ctx->ctx->domain, test_ctx->confdb,
-                         "LOCAL", &test_ctx->be_ctx->domain->names);
-    fail_if(ret != EOK, "Unable to setup domain names (%d)", ret);
 }
 
 void teardown_simple_init(void)
@@ -568,22 +569,22 @@ START_TEST(test_provider_init)
     /* allow users */
     ret = confdb_add_param(test_ctx->confdb, true, "config/domain/LOCAL",
                            "simple_allow_users", val);
-    fail_if(ret != EOK, "Could setup allow users list");
+    fail_if(ret != EOK, "Could not setup allow users list");
 
     /* deny users */
     ret = confdb_add_param(test_ctx->confdb, true, "config/domain/LOCAL",
                            "simple_deny_users", val);
-    fail_if(ret != EOK, "Could setup deny users list");
+    fail_if(ret != EOK, "Could not setup deny users list");
 
     /* allow groups */
     ret = confdb_add_param(test_ctx->confdb, true, "config/domain/LOCAL",
                            "simple_allow_groups", val);
-    fail_if(ret != EOK, "Could setup allow groups list");
+    fail_if(ret != EOK, "Could not setup allow groups list");
 
     /* deny groups */
     ret = confdb_add_param(test_ctx->confdb, true, "config/domain/LOCAL",
                            "simple_deny_groups", val);
-    fail_if(ret != EOK, "Could setup deny groups list");
+    fail_if(ret != EOK, "Could not setup deny groups list");
 
     ret = sssm_simple_access_init(test_ctx->be_ctx, &bet_ops, (void**)&ctx);
     fail_if(ret != EOK);

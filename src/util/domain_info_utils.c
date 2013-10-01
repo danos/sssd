@@ -27,6 +27,19 @@
 /* the directory domain - realm mappings are written to */
 #define KRB5_MAPPING_DIR PUBCONF_PATH"/krb5.include.d"
 
+struct sss_domain_info *get_domains_head(struct sss_domain_info *domain)
+{
+    struct sss_domain_info *dom = NULL;
+
+    /* get to the top level domain */
+    for (dom = domain; dom->parent != NULL; dom = dom->parent);
+
+    /* proceed to the list head */
+    for (; dom->prev != NULL; dom = dom->prev);
+
+    return dom;
+}
+
 struct sss_domain_info *get_next_domain(struct sss_domain_info *domain,
                                         bool descend)
 {
@@ -95,6 +108,74 @@ struct sss_domain_info *find_subdomain_by_name(struct sss_domain_info *domain,
     return NULL;
 }
 
+struct sss_domain_info *find_subdomain_by_sid(struct sss_domain_info *domain,
+                                              const char *sid)
+{
+    struct sss_domain_info *dom = domain;
+    size_t sid_len = strlen(sid);
+    size_t dom_sid_len;
+
+    while (dom && dom->disabled) {
+        dom = get_next_domain(dom, true);
+    }
+
+    while (dom) {
+        dom_sid_len = strlen(dom->domain_id);
+
+        if (strncasecmp(dom->domain_id, sid, dom_sid_len) == 0) {
+            if (dom_sid_len == sid_len) {
+                /* sid is domain sid */
+                return dom;
+            }
+
+            /* sid is object sid, check if domain sid is align with
+             * sid first subauthority component */
+            if (sid[dom_sid_len] == '-') {
+                return dom;
+            }
+        }
+
+        dom = get_next_domain(dom, true);
+    }
+
+    return NULL;
+}
+
+struct sss_domain_info *
+find_subdomain_by_object_name(struct sss_domain_info *domain,
+                              const char *object_name)
+{
+    TALLOC_CTX *tmp_ctx;
+    struct sss_domain_info *dom = NULL;
+    char *domainname = NULL;
+    char *name = NULL;
+    errno_t ret;
+
+    tmp_ctx = talloc_new(NULL);
+    if (tmp_ctx == NULL) {
+        DEBUG(SSSDBG_CRIT_FAILURE, ("talloc_new() failed\n"));
+        return NULL;
+    }
+
+    ret = sss_parse_name(tmp_ctx, domain->names, object_name,
+                         &domainname, &name);
+    if (ret != EOK) {
+        DEBUG(SSSDBG_CRIT_FAILURE, ("Unable to parse name '%s' [%d]: %s\n",
+                                    object_name, ret, sss_strerror(ret)));
+        goto done;
+    }
+
+    if (domainname == NULL) {
+        dom = domain;
+    } else {
+        dom = find_subdomain_by_name(domain, domainname, true);
+    }
+
+done:
+    talloc_free(tmp_ctx);
+    return dom;
+}
+
 struct sss_domain_info *new_subdomain(TALLOC_CTX *mem_ctx,
                                       struct sss_domain_info *parent,
                                       const char *name,
@@ -102,7 +183,8 @@ struct sss_domain_info *new_subdomain(TALLOC_CTX *mem_ctx,
                                       const char *flat_name,
                                       const char *id,
                                       bool mpg,
-                                      bool enumerate)
+                                      bool enumerate,
+                                      const char *forest)
 {
     struct sss_domain_info *dom;
 
@@ -154,6 +236,14 @@ struct sss_domain_info *new_subdomain(TALLOC_CTX *mem_ctx,
         dom->domain_id = talloc_strdup(dom, id);
         if (dom->domain_id == NULL) {
             DEBUG(SSSDBG_OP_FAILURE, ("Failed to copy id.\n"));
+            goto fail;
+        }
+    }
+
+    if (forest != NULL) {
+        dom->forest = talloc_strdup(dom, forest);
+        if (dom->forest == NULL) {
+            DEBUG(SSSDBG_OP_FAILURE, ("Failed to copy forest.\n"));
             goto fail;
         }
     }
@@ -246,9 +336,10 @@ sss_krb5_touch_config(void)
 }
 
 errno_t
-sss_write_domain_mappings(struct sss_domain_info *domain)
+sss_write_domain_mappings(struct sss_domain_info *domain, bool add_capaths)
 {
     struct sss_domain_info *dom;
+    struct sss_domain_info *parent_dom;
     errno_t ret;
     errno_t err;
     TALLOC_CTX *tmp_ctx;
@@ -259,6 +350,9 @@ sss_write_domain_mappings(struct sss_domain_info *domain)
     mode_t old_mode;
     FILE *fstream = NULL;
     int i;
+    bool capaths_started;
+    char *uc_forest;
+    char *uc_parent;
 
     if (domain == NULL || domain->name == NULL) {
         DEBUG(SSSDBG_CRIT_FAILURE, ("No domain name provided\n"));
@@ -341,6 +435,51 @@ sss_write_domain_mappings(struct sss_domain_info *domain)
         if (ret < 0) {
             DEBUG(SSSDBG_CRIT_FAILURE, ("fprintf failed\n"));
             goto done;
+        }
+    }
+
+    if (add_capaths) {
+        capaths_started = false;
+        parent_dom = domain;
+        uc_parent = get_uppercase_realm(tmp_ctx, parent_dom->name);
+        if (uc_parent == NULL) {
+            DEBUG(SSSDBG_OP_FAILURE, ("get_uppercase_realm failed.\n"));
+            ret = ENOMEM;
+            goto done;
+        }
+
+        for (dom = get_next_domain(domain, true);
+             dom && IS_SUBDOMAIN(dom); /* if we get back to a parent, stop */
+             dom = get_next_domain(dom, false)) {
+
+            if (dom->forest == NULL) {
+                continue;
+            }
+
+            uc_forest = get_uppercase_realm(tmp_ctx, dom->forest);
+            if (uc_forest == NULL) {
+                DEBUG(SSSDBG_OP_FAILURE, ("get_uppercase_realm failed.\n"));
+                ret = ENOMEM;
+                goto done;
+            }
+
+            if (!capaths_started) {
+                ret = fprintf(fstream, "[capaths]\n");
+                if (ret < 0) {
+                    DEBUG(SSSDBG_OP_FAILURE, ("fprintf failed\n"));
+                    ret = EIO;
+                    goto done;
+                }
+                capaths_started = true;
+            }
+
+            ret = fprintf(fstream, "%s = {\n  %s = %s\n}\n%s = {\n  %s = %s\n}\n",
+                                   dom->realm, uc_parent, uc_forest,
+                                   uc_parent, dom->realm, uc_forest);
+            if (ret < 0) {
+                DEBUG(SSSDBG_CRIT_FAILURE, ("fprintf failed\n"));
+                goto done;
+            }
         }
     }
 

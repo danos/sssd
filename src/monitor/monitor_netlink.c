@@ -472,8 +472,9 @@ static int event_msg_recv(struct nl_msg *msg, void *arg)
 
     creds = nlmsg_get_creds(msg);
     if (!creds || creds->uid != 0) {
-        DEBUG(9, ("Ignoring netlink message from UID %d",
-                  creds ? creds->uid : -1));
+        DEBUG(SSSDBG_TRACE_ALL,
+              ("Ignoring netlink message from UID %"SPRIuid,
+                  creds ? creds->uid : (uid_t)-1));
         return NL_SKIP;
     }
 
@@ -609,7 +610,7 @@ static bool route_is_multicast(struct rtnl_route *route_obj)
             return false;
         }
 
-        return IN_MULTICAST(addr4->s_addr);
+        return IN_MULTICAST(ntohl(addr4->s_addr));
     } else if (nl_addr_get_family(nl) == AF_INET6) {
         addr6 = nl_addr_get_binary_addr(nl);
         if (!addr6) {

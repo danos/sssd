@@ -108,6 +108,7 @@
 #define SYSDB_PRIMARY_GROUP_GIDNUM "origPrimaryGroupGidNumber"
 #define SYSDB_SID_STR "objectSIDString"
 #define SYSDB_UPN "userPrincipalName"
+#define SYSDB_CANONICAL_UPN "canonicalUserPrincipalName"
 #define SYSDB_CCACHE_FILE "ccacheFile"
 
 #define SYSDB_ORIG_DN "originalDN"
@@ -127,6 +128,7 @@
 #define SYSDB_SUBDOMAIN_ID "domainID"
 #define SYSDB_SUBDOMAIN_MPG "mpg"
 #define SYSDB_SUBDOMAIN_ENUM "enumerate"
+#define SYSDB_SUBDOMAIN_FOREST "memberOfForest"
 
 #define SYSDB_BASE_ID "baseID"
 #define SYSDB_ID_RANGE_SIZE "idRangeSize"
@@ -144,10 +146,12 @@
 
 #define SYSDB_PWNAM_FILTER "(&("SYSDB_UC")(|("SYSDB_NAME_ALIAS"=%s)("SYSDB_NAME"=%s)))"
 #define SYSDB_PWUID_FILTER "(&("SYSDB_UC")("SYSDB_UIDNUM"=%lu))"
+#define SYSDB_PWSID_FILTER "(&("SYSDB_UC")("SYSDB_SID_STR"=%s))"
 #define SYSDB_PWENT_FILTER "("SYSDB_UC")"
 
 #define SYSDB_GRNAM_FILTER "(&("SYSDB_GC")(|("SYSDB_NAME_ALIAS"=%s)("SYSDB_NAME"=%s)))"
 #define SYSDB_GRGID_FILTER "(&("SYSDB_GC")("SYSDB_GIDNUM"=%lu))"
+#define SYSDB_GRSID_FILTER "(&("SYSDB_GC")("SYSDB_SID_STR"=%s))"
 #define SYSDB_GRENT_FILTER "("SYSDB_GC")"
 #define SYSDB_GRNAM_MPG_FILTER "(&("SYSDB_MPGC")(|("SYSDB_NAME_ALIAS"=%s)("SYSDB_NAME"=%s)))"
 #define SYSDB_GRGID_MPG_FILTER "(&("SYSDB_MPGC")("SYSDB_GIDNUM"=%lu))"
@@ -372,7 +376,7 @@ errno_t sysdb_domain_create(struct sysdb_ctx *sysdb, const char *domain_name);
 errno_t sysdb_subdomain_store(struct sysdb_ctx *sysdb,
                               const char *name, const char *realm,
                               const char *flat_name, const char *domain_id,
-                              bool mpg, bool enumerate);
+                              bool mpg, bool enumerate, const char *forest);
 
 errno_t sysdb_update_subdomains(struct sss_domain_info *domain);
 
@@ -506,7 +510,7 @@ int sysdb_search_entry(TALLOC_CTX *mem_ctx,
                        size_t *msgs_count,
                        struct ldb_message ***msgs);
 
-/* Search User (by uid or name) */
+/* Search User (by uid, sid or name) */
 int sysdb_search_user_by_name(TALLOC_CTX *mem_ctx,
                               struct sysdb_ctx *sysdb,
                               struct sss_domain_info *domain,
@@ -521,7 +525,14 @@ int sysdb_search_user_by_uid(TALLOC_CTX *mem_ctx,
                              const char **attrs,
                              struct ldb_message **msg);
 
-/* Search Group (by gid or name) */
+int sysdb_search_user_by_sid_str(TALLOC_CTX *mem_ctx,
+                                 struct sysdb_ctx *sysdb,
+                                 struct sss_domain_info *domain,
+                                 const char *sid_str,
+                                 const char **attrs,
+                                 struct ldb_message **msg);
+
+/* Search Group (by gid, sid or name) */
 int sysdb_search_group_by_name(TALLOC_CTX *mem_ctx,
                                struct sysdb_ctx *sysdb,
                                struct sss_domain_info *domain,
@@ -535,6 +546,13 @@ int sysdb_search_group_by_gid(TALLOC_CTX *mem_ctx,
                               gid_t gid,
                               const char **attrs,
                               struct ldb_message **msg);
+
+int sysdb_search_group_by_sid_str(TALLOC_CTX *mem_ctx,
+                                  struct sysdb_ctx *sysdb,
+                                  struct sss_domain_info *domain,
+                                  const char *sid_str,
+                                  const char **attrs,
+                                  struct ldb_message **msg);
 
 /* Search Netgroup (by name) */
 int sysdb_search_netgroup_by_name(TALLOC_CTX *mem_ctx,
@@ -673,13 +691,15 @@ int sysdb_add_group_member(struct sysdb_ctx *sysdb,
                            struct sss_domain_info *domain,
                            const char *group,
                            const char *member,
-                           enum sysdb_member_type type);
+                           enum sysdb_member_type type,
+                           bool is_dn);
 
 int sysdb_remove_group_member(struct sysdb_ctx *sysdb,
                               struct sss_domain_info *domain,
                               const char *group,
                               const char *member,
-                              enum sysdb_member_type type);
+                              enum sysdb_member_type type,
+                              bool is_dn);
 
 errno_t sysdb_update_members(struct sysdb_ctx *sysdb,
                              struct sss_domain_info *domain,
@@ -687,6 +707,13 @@ errno_t sysdb_update_members(struct sysdb_ctx *sysdb,
                              enum sysdb_member_type type,
                              const char *const *add_groups,
                              const char *const *del_groups);
+
+errno_t sysdb_update_members_dn(struct sysdb_ctx *sysdb,
+                                struct sss_domain_info *member_domain,
+                                const char *member,
+                                enum sysdb_member_type type,
+                                const char *const *add_groups,
+                                const char *const *del_groups);
 
 /* Password caching function.
  * If you are in a transaction ignore sysdb and pass in the handle.

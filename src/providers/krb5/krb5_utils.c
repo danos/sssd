@@ -35,18 +35,36 @@ errno_t find_or_guess_upn(TALLOC_CTX *mem_ctx, struct ldb_message *msg,
                           struct sss_domain_info *dom, const char *user,
                           const char *user_dom, char **_upn)
 {
-    const char *upn;
+    const char *upn = NULL;
     int ret;
 
-    upn = ldb_msg_find_attr_as_string(msg, SYSDB_UPN, NULL);
-    if (upn == NULL) {
-        ret = krb5_get_simple_upn(mem_ctx, krb5_ctx, dom, user,
-                                  user_dom, _upn);
-        if (ret != EOK) {
-            DEBUG(SSSDBG_OP_FAILURE, ("krb5_get_simple_upn failed.\n"));
-            return ret;
+    if (krb5_ctx == NULL || dom == NULL || user == NULL || _upn == NULL) {
+        return EINVAL;
+    }
+
+    if (msg != NULL) {
+        upn = ldb_msg_find_attr_as_string(msg, SYSDB_CANONICAL_UPN, NULL);
+        if (upn != NULL) {
+            ret = EOK;
+            goto done;
         }
-    } else {
+
+        upn = ldb_msg_find_attr_as_string(msg, SYSDB_UPN, NULL);
+        if (upn != NULL) {
+            ret = EOK;
+            goto done;
+        }
+    }
+
+    ret = krb5_get_simple_upn(mem_ctx, krb5_ctx, dom, user,
+                              user_dom, _upn);
+    if (ret != EOK) {
+        DEBUG(SSSDBG_OP_FAILURE, ("krb5_get_simple_upn failed.\n"));
+        return ret;
+    }
+
+done:
+    if (ret == EOK && upn != NULL) {
         *_upn = talloc_strdup(mem_ctx, upn);
         if (*_upn == NULL) {
             DEBUG(SSSDBG_OP_FAILURE, ("talloc_strdup failed.\n"));
@@ -54,7 +72,7 @@ errno_t find_or_guess_upn(TALLOC_CTX *mem_ctx, struct ldb_message *msg,
         }
     }
 
-    return EOK;
+    return ret;
 }
 
 errno_t check_if_cached_upn_needs_update(struct sysdb_ctx *sysdb,
@@ -65,11 +83,12 @@ errno_t check_if_cached_upn_needs_update(struct sysdb_ctx *sysdb,
     TALLOC_CTX *tmp_ctx;
     int ret;
     int sret;
-    const char *attrs[] = {SYSDB_UPN, NULL};
+    const char *attrs[] = {SYSDB_UPN, SYSDB_CANONICAL_UPN, NULL};
     struct sysdb_attrs *new_attrs;
     struct ldb_result *res;
     bool in_transaction = false;
     const char *cached_upn;
+    const char *cached_canonical_upn;
 
     if (sysdb == NULL || user == NULL || upn == NULL) {
         return EINVAL;
@@ -103,8 +122,23 @@ errno_t check_if_cached_upn_needs_update(struct sysdb_ctx *sysdb,
         goto done;
     }
 
-    DEBUG(SSSDBG_TRACE_LIBS, ("Replacing UPN [%s] with [%s] for user [%s].\n",
-                              cached_upn, upn, user));
+    cached_canonical_upn = ldb_msg_find_attr_as_string(res->msgs[0],
+                                                       SYSDB_CANONICAL_UPN,
+                                                       NULL);
+
+    if (cached_canonical_upn != NULL
+            && strcmp(cached_canonical_upn, upn) == 0) {
+        DEBUG(SSSDBG_TRACE_ALL, ("Cached canonical UPN and new one match, "
+                                 "nothing to do.\n"));
+        ret = EOK;
+        goto done;
+    }
+
+    DEBUG(SSSDBG_TRACE_LIBS, ("Replacing canonical UPN [%s] with [%s] " \
+                              "for user [%s].\n",
+                              cached_canonical_upn == NULL ?
+                                                 "empty" : cached_canonical_upn,
+                              upn, user));
 
     new_attrs = sysdb_new_attrs(tmp_ctx);
     if (new_attrs == NULL) {
@@ -113,7 +147,7 @@ errno_t check_if_cached_upn_needs_update(struct sysdb_ctx *sysdb,
         goto done;
     }
 
-    ret = sysdb_attrs_add_string(new_attrs, SYSDB_UPN, upn);
+    ret = sysdb_attrs_add_string(new_attrs, SYSDB_CANONICAL_UPN, upn);
     if (ret != EOK) {
         DEBUG(SSSDBG_OP_FAILURE, ("sysdb_attrs_add_string failed.\n"));
         goto done;
@@ -128,7 +162,8 @@ errno_t check_if_cached_upn_needs_update(struct sysdb_ctx *sysdb,
     in_transaction = true;
 
     ret = sysdb_set_entry_attr(sysdb, res->msgs[0]->dn, new_attrs,
-                               SYSDB_MOD_REP);
+                               cached_canonical_upn == NULL ? SYSDB_MOD_ADD :
+                                                              SYSDB_MOD_REP);
     if (ret != EOK) {
         DEBUG(SSSDBG_OP_FAILURE, ("sysdb_set_entry_attr failed [%d][%s].\n",
                                   ret, strerror(ret)));
@@ -157,24 +192,14 @@ done:
     return ret;
 }
 
-#define S_EXP_TEMP "{TEMP}"
-#define L_EXP_TEMP (sizeof(S_EXP_TEMP) - 1)
 #define S_EXP_UID "{uid}"
 #define L_EXP_UID (sizeof(S_EXP_UID) - 1)
 #define S_EXP_USERID "{USERID}"
 #define L_EXP_USERID (sizeof(S_EXP_USERID) - 1)
 #define S_EXP_EUID "{euid}"
 #define L_EXP_EUID (sizeof(S_EXP_EUID) - 1)
-#define S_EXP_NULL "{null}"
-#define L_EXP_NULL (sizeof(S_EXP_NULL) - 1)
 #define S_EXP_USERNAME "{username}"
 #define L_EXP_USERNAME (sizeof(S_EXP_USERNAME) - 1)
-#define S_EXP_LIBDIR "{LIBDIR}"
-#define L_EXP_LIBDIR (sizeof(S_EXP_LIBDIR) - 1)
-#define S_EXP_BINDIR "{BINDIR}"
-#define L_EXP_BINDIR (sizeof(S_EXP_BINDIR) - 1)
-#define S_EXP_SBINDIR "{SBINDIR}"
-#define L_EXP_SBINDIR (sizeof(S_EXP_SBINDIR) - 1)
 
 char *expand_ccname_template(TALLOC_CTX *mem_ctx, struct krb5child_req *kr,
                              const char *template, bool file_mode,
@@ -190,7 +215,7 @@ char *expand_ccname_template(TALLOC_CTX *mem_ctx, struct krb5child_req *kr,
     const char *cache_dir_tmpl;
     TALLOC_CTX *tmp_ctx = NULL;
     char action;
-    bool rewind;
+    bool rerun;
 
     *private_path = false;
 
@@ -223,10 +248,10 @@ char *expand_ccname_template(TALLOC_CTX *mem_ctx, struct krb5child_req *kr,
             goto done;
         }
 
-        rewind = true;
+        rerun = true;
         action = *n;
-        while (rewind) {
-            rewind = false;
+        while (rerun) {
+            rerun = false;
             switch (action) {
             case 'u':
                 if (kr->pd->user == NULL) {
@@ -252,7 +277,7 @@ char *expand_ccname_template(TALLOC_CTX *mem_ctx, struct krb5child_req *kr,
                               "because uid is invalid.\n"));
                     goto done;
                 }
-                result = talloc_asprintf_append(result, "%s%d", p,
+                result = talloc_asprintf_append(result, "%s%"SPRIuid, p,
                                                 kr->uid);
                 if (!file_mode) *private_path = true;
                 break;
@@ -325,47 +350,42 @@ char *expand_ccname_template(TALLOC_CTX *mem_ctx, struct krb5child_req *kr,
 
             /* Additional syntax from krb5.conf default_ccache_name */
             case '{':
-                if (strncmp(n, S_EXP_TEMP, L_EXP_TEMP) == 0) {
-                    /* let the libkrb5 library resolve this */
-                    result = talloc_asprintf_append(result, "%%"S_EXP_TEMP);
-                    n += L_EXP_TEMP - 1;
-                } else if (strncmp(n , S_EXP_UID, L_EXP_UID) == 0) {
+                if (strncmp(n , S_EXP_UID, L_EXP_UID) == 0) {
                     action = 'U';
                     n += L_EXP_UID - 1;
-                    rewind = true;
+                    rerun = true;
                     continue;
                 } else if (strncmp(n , S_EXP_USERID, L_EXP_USERID) == 0) {
                     action = 'U';
                     n += L_EXP_USERID - 1;
-                    rewind = true;
+                    rerun = true;
                     continue;
                 } else if (strncmp(n , S_EXP_EUID, L_EXP_EUID) == 0) {
                     /* SSSD does not distinguish betwen uid and euid,
                      * so we treat both the same way */
                     action = 'U';
                     n += L_EXP_EUID - 1;
-                    rewind = true;
+                    rerun = true;
                     continue;
-                } else if (strncmp(n , S_EXP_NULL, L_EXP_NULL) == 0) {
-                    /* skip immediately */
-                    n += L_EXP_NULL - 1;
                 } else if (strncmp(n , S_EXP_USERNAME, L_EXP_USERNAME) == 0) {
                     action = 'u';
                     n += L_EXP_USERNAME - 1;
-                    rewind = true;
+                    rerun = true;
                     continue;
-                } else if (strncmp(n , S_EXP_LIBDIR, L_EXP_LIBDIR) == 0) {
-                    /* skip, only the libkrb5 library can resolve this */
-                    result = talloc_asprintf_append(result, "%%"S_EXP_LIBDIR);
-                    n += L_EXP_LIBDIR - 1;
-                } else if (strncmp(n , S_EXP_BINDIR, L_EXP_BINDIR) == 0) {
-                    /* skip, only the libkrb5 library can resolve this */
-                    result = talloc_asprintf_append(result, "%%"S_EXP_BINDIR);
-                    n += L_EXP_BINDIR - 1;
-                } else if (strncmp(n , S_EXP_SBINDIR, L_EXP_SBINDIR) == 0) {
-                    /* skip, only the libkrb5 library can resolve this */
-                    result = talloc_asprintf_append(result, "%%"S_EXP_SBINDIR);
-                    n += L_EXP_SBINDIR - 1;
+                } else {
+                    /* ignore any expansion variable we do not understand and
+                     * let libkrb5 hndle it or fail */
+                    name = n;
+                    n = strchr(name, '}');
+                    if (!n) {
+                        DEBUG(SSSDBG_CRIT_FAILURE, (
+                              "Invalid substitution sequence in cache "
+                              "template. Missing closing '}' in [%s].\n",
+                              template));
+                        goto done;
+                    }
+                    result = talloc_asprintf_append(result, "%s%%%.*s", p,
+                                                    (int)(n - name + 1), name);
                 }
                 break;
             default:
@@ -401,8 +421,8 @@ static errno_t check_parent_stat(bool private_path, struct stat *parent_stat,
         if (!((parent_stat->st_uid == 0 && parent_stat->st_gid == 0) ||
                parent_stat->st_uid == uid)) {
             DEBUG(1, ("Private directory can only be created below a "
-                      "directory belonging to root or to [%d][%d].\n",
-                      uid, gid));
+                      "directory belonging to root or to "
+                      "[%"SPRIuid"][%"SPRIgid"].\n", uid, gid));
             return EINVAL;
         }
 
@@ -737,19 +757,31 @@ done:
     return EOK;
 }
 
-static errno_t
-create_ccache_dir_head(const char *parent, pcre *illegal_re,
-                       uid_t uid, gid_t gid, bool private_path)
+errno_t sss_krb5_precreate_ccache(const char *ccname, pcre *illegal_re,
+                                  uid_t uid, gid_t gid, bool private_path)
 {
-    char *ccdirname;
     TALLOC_CTX *tmp_ctx = NULL;
+    const char *filename;
+    char *ccdirname;
     char *end;
     errno_t ret;
+
+    if (ccname[0] == '/') {
+        filename = ccname;
+    } else if (strncmp(ccname, "FILE:", 5) == 0) {
+        filename = ccname + 5;
+    } else if (strncmp(ccname, "DIR:", 4) == 0) {
+        filename = ccname + 4;
+    } else {
+        /* only FILE and DIR types need precreation so far, we ignore any
+         * other type */
+        return EOK;
+    }
 
     tmp_ctx = talloc_new(NULL);
     if (!tmp_ctx) return ENOMEM;
 
-    ccdirname = talloc_strdup(tmp_ctx, parent);
+    ccdirname = talloc_strdup(tmp_ctx, filename);
     if (ccdirname == NULL) {
         DEBUG(SSSDBG_CRIT_FAILURE, ("talloc_strdup failed.\n"));
         ret = ENOMEM;
@@ -776,345 +808,99 @@ done:
     return ret;
 }
 
-static errno_t
-check_cc_validity(const char *location,
-                  const char *realm,
-                  const char *princ,
-                  bool *_valid)
+
+struct sss_krb5_ccache {
+    struct sss_creds *creds;
+    krb5_context context;
+    krb5_ccache ccache;
+};
+
+static int sss_free_krb5_ccache(void *mem)
 {
+    struct sss_krb5_ccache *cc = talloc_get_type(mem, struct sss_krb5_ccache);
+
+    if (cc->ccache) {
+        krb5_cc_close(cc->context, cc->ccache);
+    }
+    krb5_free_context(cc->context);
+    restore_creds(cc->creds);
+    return 0;
+}
+
+static errno_t sss_open_ccache_as_user(TALLOC_CTX *mem_ctx,
+                                       const char *ccname,
+                                       uid_t uid, gid_t gid,
+                                       struct sss_krb5_ccache **ccache)
+{
+    struct sss_krb5_ccache *cc;
+    krb5_error_code kerr;
     errno_t ret;
-    bool valid = false;
-    krb5_ccache ccache = NULL;
-    krb5_context context = NULL;
-    krb5_error_code krberr;
 
-    krberr = krb5_init_context(&context);
-    if (krberr) {
-        DEBUG(SSSDBG_CRIT_FAILURE, ("Failed to init kerberos context\n"));
-        return EIO;
+    cc = talloc_zero(mem_ctx, struct sss_krb5_ccache);
+    if (!cc) {
+        return ENOMEM;
+    }
+    talloc_set_destructor((TALLOC_CTX *)cc, sss_free_krb5_ccache);
+
+    ret = switch_creds(cc, uid, gid, 0, NULL, &cc->creds);
+    if (ret) {
+        goto done;
     }
 
-    krberr = krb5_cc_resolve(context, location, &ccache);
-    if (krberr == KRB5_FCC_NOFILE || ccache == NULL) {
-        /* KRB5_FCC_NOFILE would be returned if the directory components
-         * of the DIR cache do not exist, which is the case in /run
-         * after a reboot
-         */
-        DEBUG(SSSDBG_TRACE_FUNC,
-              ("ccache %s is missing or empty\n", location));
-        valid = false;
-        ret = EOK;
+    kerr = krb5_init_context(&cc->context);
+    if (kerr) {
+        ret = EIO;
         goto done;
-    } else if (krberr != 0) {
-        KRB5_DEBUG(SSSDBG_OP_FAILURE, context, krberr);
+    }
+
+    kerr = krb5_cc_resolve(cc->context, ccname, &cc->ccache);
+    if (kerr == KRB5_FCC_NOFILE || cc->ccache == NULL) {
+        DEBUG(SSSDBG_TRACE_FUNC, ("ccache %s is missing or empty\n", ccname));
+        ret = ERR_NOT_FOUND;
+        goto done;
+    } else if (kerr != 0) {
+        KRB5_DEBUG(SSSDBG_OP_FAILURE, cc->context, kerr);
         DEBUG(SSSDBG_CRIT_FAILURE, ("krb5_cc_resolve failed.\n"));
-        ret = EIO;
-        goto done;
-    }
-
-    krberr = check_for_valid_tgt(context, ccache, realm, princ, &valid);
-    if (krberr != EOK) {
-        KRB5_DEBUG(SSSDBG_OP_FAILURE, context, krberr);
-        DEBUG(SSSDBG_CRIT_FAILURE,
-              ("Could not check if ccache contains a valid principal\n"));
-        ret = EIO;
+        ret = ERR_INTERNAL;
         goto done;
     }
 
     ret = EOK;
 
 done:
-    if (ret == EOK) {
-        *_valid = valid;
+    if (ret) {
+        talloc_free(cc);
+    } else {
+        *ccache = cc;
     }
-    if (ccache) krb5_cc_close(context, ccache);
-    krb5_free_context(context);
     return ret;
 }
 
-
-
-/*======== ccache back end utilities ========*/
-struct sss_krb5_cc_be *
-get_cc_be_ops(enum sss_krb5_cc_type type)
+static errno_t sss_destroy_ccache(struct sss_krb5_ccache *cc)
 {
-    struct sss_krb5_cc_be *be = NULL;
+    krb5_error_code kerr;
+    errno_t ret;
 
-    switch (type) {
-        case SSS_KRB5_TYPE_FILE:
-            be = &file_cc;
-            break;
-
-#ifdef HAVE_KRB5_CC_COLLECTION
-        case SSS_KRB5_TYPE_DIR:
-            be = &dir_cc;
-            break;
-
-        case SSS_KRB5_TYPE_KEYRING:
-            be = &keyring_cc;
-            break;
-#endif /* HAVE_KRB5_CC_COLLECTION */
-
-        case SSS_KRB5_TYPE_UNKNOWN:
-            be = NULL;
-            break;
-    }
-
-    return be;
-}
-
-struct sss_krb5_cc_be *
-get_cc_be_ops_ccache(const char *ccache)
-{
-    enum sss_krb5_cc_type type;
-
-    type = sss_krb5_get_type(ccache);
-    return get_cc_be_ops(type);
-}
-
-/*======== Operations on the FILE: back end ========*/
-errno_t
-cc_file_create(const char *location, pcre *illegal_re,
-               uid_t uid, gid_t gid, bool private_path)
-{
-    const char *filename;
-
-    filename = sss_krb5_residual_check_type(location, SSS_KRB5_TYPE_FILE);
-    if (filename == NULL) {
-        DEBUG(SSSDBG_OP_FAILURE, ("Bad ccache type %s\n", location));
-        return EINVAL;
-    }
-
-    return create_ccache_dir_head(filename, illegal_re, uid, gid, private_path);
-}
-
-static errno_t
-cc_residual_is_used(uid_t uid, const char *ccname,
-                    enum sss_krb5_cc_type type, bool *result)
-{
-    int ret;
-    struct stat stat_buf;
-    bool active;
-
-    *result = false;
-
-    if (ccname == NULL || *ccname == '\0') {
-        return EINVAL;
-    }
-
-    ret = lstat(ccname, &stat_buf);
-
-    if (ret == -1) {
-        ret = errno;
-        if (ret == ENOENT) {
-            DEBUG(SSSDBG_FUNC_DATA, ("Cache file [%s] does not exist, "
-                                     "it will be recreated\n", ccname));
-            *result = false;
-            return ENOENT;
-        }
-
-        DEBUG(SSSDBG_OP_FAILURE,
-              ("stat failed [%d][%s].\n", ret, strerror(ret)));
-        return ret;
-    }
-
-    if (stat_buf.st_uid != uid) {
-        DEBUG(SSSDBG_OP_FAILURE,
-              ("Cache file [%s] exists, but is owned by [%d] instead of "
-               "[%d].\n", ccname, stat_buf.st_uid, uid));
-        return EINVAL;
-    }
-
-    switch (type) {
-#ifdef HAVE_KRB5_CC_COLLECTION
-        case SSS_KRB5_TYPE_DIR:
-            ret = S_ISDIR(stat_buf.st_mode);
-            break;
-#endif /* HAVE_KRB5_CC_COLLECTION */
-        case SSS_KRB5_TYPE_FILE:
-            ret = S_ISREG(stat_buf.st_mode);
-            break;
-        default:
-            DEBUG(SSSDBG_CRIT_FAILURE, ("Unsupported ccache type\n"));
-            return EINVAL;
-    }
-
-    if (ret == 0) {
-        DEBUG(SSSDBG_OP_FAILURE,
-              ("Cache file [%s] exists, but is not the expected type\n",
-              ccname));
-        return EINVAL;
-    }
-
-    ret = check_if_uid_is_active(uid, &active);
-    if (ret != EOK) {
-        DEBUG(SSSDBG_OP_FAILURE, ("check_if_uid_is_active failed.\n"));
-        return ret;
-    }
-
-    if (!active) {
-        DEBUG(SSSDBG_TRACE_FUNC, ("User [%d] is not active\n", uid));
+    kerr = krb5_cc_destroy(cc->context, cc->ccache);
+    if (kerr) {
+        KRB5_DEBUG(SSSDBG_OP_FAILURE, cc->context, kerr);
+        DEBUG(SSSDBG_CRIT_FAILURE, ("krb5_cc_destroy failed.\n"));
+        ret = EIO;
     } else {
-        DEBUG(SSSDBG_TRACE_LIBS,
-              ("User [%d] is still active, reusing ccache [%s].\n",
-              uid, ccname));
-        *result = true;
+        ret = EOK;
     }
-    return EOK;
+
+    /* krb5_cc_destroy frees cc->ccache in all events */
+    cc->ccache = NULL;
+
+    return ret;
 }
 
-static void
-cc_check_template(const char *cc_template)
+errno_t sss_krb5_cc_destroy(const char *ccname, uid_t uid, gid_t gid)
 {
-    size_t template_len;
-
-    template_len = strlen(cc_template);
-    if (template_len >= 6 &&
-        strcmp(cc_template + (template_len - 6), "XXXXXX") != 0) {
-        DEBUG(SSSDBG_CONF_SETTINGS, ("ccache file name template [%s] doesn't "
-                   "contain randomizing characters (XXXXXX), file might not "
-                   "be rewritable\n", cc_template));
-    }
-}
-
-errno_t
-cc_file_check_existing(const char *location, uid_t uid,
-                       const char *realm, const char *princ,
-                       const char *cc_template, bool *_active, bool *_valid)
-{
-    errno_t ret;
-    bool active;
-    bool valid;
-    const char *filename;
-
-    filename = sss_krb5_residual_check_type(location, SSS_KRB5_TYPE_FILE);
-    if (!filename) {
-        DEBUG(SSSDBG_CRIT_FAILURE, ("%s is not of type FILE:\n", location));
-        return EINVAL;
-    }
-
-    if (filename[0] != '/') {
-        DEBUG(SSSDBG_OP_FAILURE, ("Only absolute path names are allowed.\n"));
-        return EINVAL;
-    }
-
-    ret = cc_residual_is_used(uid, filename, SSS_KRB5_TYPE_FILE, &active);
-    if (ret != EOK) {
-        if (ret != ENOENT) {
-            DEBUG(SSSDBG_OP_FAILURE,
-                  ("Could not check if ccache is active.\n"));
-        }
-        cc_check_template(cc_template);
-        active = false;
-        return ret;
-    }
-
-    ret = check_cc_validity(location, realm, princ, &valid);
-    if (ret != EOK) {
-        return ret;
-    }
-
-    *_active = active;
-    *_valid = valid;
-    return EOK;
-}
-
-const char *
-cc_file_cache_for_princ(TALLOC_CTX *mem_ctx, const char *location,
-                        const char *princ)
-{
-    return talloc_strdup(mem_ctx, location);
-}
-
-errno_t
-cc_file_remove(const char *location)
-{
-    errno_t ret;
-    const char *filename;
-
-    filename = sss_krb5_residual_check_type(location, SSS_KRB5_TYPE_FILE);
-    if (!filename) {
-        DEBUG(SSSDBG_CRIT_FAILURE, ("%s is not of type FILE:\n", location));
-        return EINVAL;
-    }
-
-    if (filename[0] != '/') {
-        DEBUG(SSSDBG_CRIT_FAILURE,
-              ("Ccache file name [%s] is not an absolute path.\n", filename));
-        return EINVAL;
-    }
-
-    errno = 0;
-    ret = unlink(filename);
-    if (ret == -1 && errno != ENOENT) {
-        ret = errno;
-        DEBUG(SSSDBG_CRIT_FAILURE,
-              ("unlink [%s] failed [%d][%s].\n", filename, ret,
-                                                 strerror(ret)));
-        return ret;
-    }
-    return EOK;
-}
-
-struct sss_krb5_cc_be file_cc = {
-    .type               = SSS_KRB5_TYPE_FILE,
-    .create             = cc_file_create,
-    .check_existing     = cc_file_check_existing,
-    .ccache_for_princ   = cc_file_cache_for_princ,
-    .remove             = cc_file_remove,
-};
-
-#ifdef HAVE_KRB5_CC_COLLECTION
-/*======== Operations on the DIR: back end ========*/
-errno_t
-cc_dir_create(const char *location, pcre *illegal_re,
-              uid_t uid, gid_t gid, bool private_path)
-{
-    const char *dir_name;
-
-    dir_name = sss_krb5_residual_check_type(location, SSS_KRB5_TYPE_DIR);
-    if (dir_name == NULL) {
-        DEBUG(SSSDBG_CRIT_FAILURE, ("Bad residual type\n"));
-        return EINVAL;
-    }
-
-    return create_ccache_dir_head(dir_name, illegal_re, uid, gid, private_path);
-}
-
-errno_t
-cc_dir_check_existing(const char *location, uid_t uid,
-                      const char *realm, const char *princ,
-                      const char *cc_template, bool *_active, bool *_valid)
-{
-    bool active;
-    bool active_primary = false;
-    bool valid;
-    enum sss_krb5_cc_type type;
-    const char *filename;
-    const char *dir;
-    char *tmp;
-    char *primary_file;
-    errno_t ret;
+    struct sss_krb5_ccache *cc = NULL;
     TALLOC_CTX *tmp_ctx;
-
-    type = sss_krb5_get_type(location);
-    if (type != SSS_KRB5_TYPE_DIR) {
-        DEBUG(SSSDBG_CRIT_FAILURE, ("%s is not of type DIR:\n", location));
-        return EINVAL;
-    }
-
-    filename = sss_krb5_cc_file_path(location);
-    if (!filename) {
-        DEBUG(SSSDBG_CRIT_FAILURE,
-              ("Existing ccname does not contain path into the collection"));
-        return EINVAL;
-    }
-
-    if (filename[0] != '/') {
-        DEBUG(SSSDBG_CRIT_FAILURE,
-              ("Only absolute path names are allowed.\n"));
-        return EINVAL;
-    }
+    errno_t ret;
 
     tmp_ctx = talloc_new(NULL);
     if (tmp_ctx == NULL) {
@@ -1122,304 +908,209 @@ cc_dir_check_existing(const char *location, uid_t uid,
         return ENOMEM;
     }
 
-    tmp = talloc_strdup(tmp_ctx, filename);
-    if (!tmp) {
-        DEBUG(SSSDBG_CRIT_FAILURE, ("talloc_strdup failed.\n"));
-        ret = ENOMEM;
+    ret = sss_open_ccache_as_user(tmp_ctx, ccname, uid, gid, &cc);
+    if (ret) {
         goto done;
     }
 
-    if (0 == strncmp(location, "DIR::", 5)) {
-        dir = dirname(tmp);
-        if (!dir) {
-            DEBUG(SSSDBG_CRIT_FAILURE,
-                  ("Cannot get base directory of %s.\n", tmp));
-            ret = EINVAL;
-            goto done;
-        }
-    } else {
-        dir = tmp;
-    }
-
-    ret = cc_residual_is_used(uid, dir, SSS_KRB5_TYPE_DIR, &active);
-    if (ret != EOK) {
-        if (ret != ENOENT) {
-            DEBUG(SSSDBG_OP_FAILURE,
-                  ("Could not check if ccache is active.\n"));
-        }
-        cc_check_template(cc_template);
-        goto done;
-    }
-
-    /* If primary file isn't in ccache dir, we will ignore it.
-     * But if primary file has wrong permissions, we will fail.
-     */
-    primary_file = talloc_asprintf(tmp_ctx, "%s/primary", dir);
-    if (!primary_file) {
-        DEBUG(SSSDBG_CRIT_FAILURE, ("talloc_asprintf failed.\n"));
-        ret = ENOMEM;
-        goto done;
-    }
-    ret = cc_residual_is_used(uid, primary_file, SSS_KRB5_TYPE_FILE,
-                              &active_primary);
-    if (ret != EOK && ret != ENOENT) {
-        DEBUG(SSSDBG_OP_FAILURE,
-              ("Could not check if file 'primary' [%s] in dir ccache"
-               " is active.\n", primary_file));
-        goto done;
-    }
-
-    ret = check_cc_validity(location, realm, princ, &valid);
-    if (ret != EOK) {
-        goto done;
-    }
-
-    *_active = active;
-    *_valid = valid;
-    ret = EOK;
+    ret = sss_destroy_ccache(cc);
 
 done:
     talloc_free(tmp_ctx);
     return ret;
 }
 
-const char *
-cc_dir_cache_for_princ(TALLOC_CTX *mem_ctx, const char *location,
-                       const char *princ)
+
+/* This function is called only as a way to validate that we have the
+ * right cache */
+errno_t sss_krb5_check_ccache_princ(uid_t uid, gid_t gid,
+                                    const char *ccname, const char *principal)
 {
-    krb5_context context = NULL;
-    krb5_error_code krberr;
-    char *name = NULL;
-    const char *ccname;
-    krb5_principal client_principal = NULL;
-
-    ccname = sss_krb5_residual_check_type(location, SSS_KRB5_TYPE_DIR);
-    if (!ccname) {
-        DEBUG(SSSDBG_CRIT_FAILURE, ("Cannot get ccname file from %s\n",
-              location));
-        return NULL;
-    }
-
-    /* ccname already points to a subsidiary cache */
-    if (ccname[0] == ':' && ccname[1] && ccname[1] == '/') {
-        return talloc_strdup(mem_ctx, location);
-    }
-
-    krberr = krb5_init_context(&context);
-    if (krberr) {
-        DEBUG(SSSDBG_OP_FAILURE, ("Failed to init kerberos context\n"));
-        return NULL;
-    }
-
-    krberr = krb5_parse_name(context, princ, &client_principal);
-    if (krberr != 0) {
-        KRB5_DEBUG(SSSDBG_OP_FAILURE, context, krberr);
-        DEBUG(SSSDBG_CRIT_FAILURE, ("krb5_parse_name failed.\n"));
-        goto done;
-    }
-
-    /* This function is called only as a way to validate that,
-     * we have the right cache
-     */
-    name = sss_get_ccache_name_for_principal(mem_ctx, context,
-                                             client_principal, location);
-    if (name == NULL) {
-        DEBUG(SSSDBG_CRIT_FAILURE, ("Could not get full name of ccache\n"));
-        goto done;
-    }
-
-    talloc_zfree(name);
-    /* everytime return location for dir_cache */
-    name = talloc_strdup(mem_ctx, location);
-
-done:
-    krb5_free_principal(context, client_principal);
-    krb5_free_context(context);
-
-    return name;
-}
-
-errno_t
-cc_dir_remove(const char *location)
-{
-    const char *subsidiary;
-
-    if (sss_krb5_get_type(location) != SSS_KRB5_TYPE_DIR) {
-        DEBUG(SSSDBG_CRIT_FAILURE, ("%s is not of type DIR\n", location));
-        return EINVAL;
-    }
-
-    subsidiary = sss_krb5_cc_file_path(location);
-    if (!subsidiary) {
-        DEBUG(SSSDBG_CRIT_FAILURE, ("Cannot get subsidiary cache from %s\n",
-              location));
-        return EINVAL;
-    }
-
-    return cc_file_remove(subsidiary);
-}
-
-struct sss_krb5_cc_be dir_cc = {
-    .type               = SSS_KRB5_TYPE_DIR,
-    .create             = cc_dir_create,
-    .check_existing     = cc_dir_check_existing,
-    .ccache_for_princ   = cc_dir_cache_for_princ,
-    .remove             = cc_dir_remove
-};
-
-
-/*======== Operations on the KEYRING: back end ========*/
-
-errno_t
-cc_keyring_create(const char *location, pcre *illegal_re,
-                  uid_t uid, gid_t gid, bool private_path)
-{
-    const char *residual;
-
-    residual = sss_krb5_residual_check_type(location, SSS_KRB5_TYPE_KEYRING);
-    if (residual == NULL) {
-        DEBUG(SSSDBG_OP_FAILURE, ("Bad ccache type %s\n", location));
-        return EINVAL;
-    }
-
-    /* No special steps are needed to create a kernel keyring.
-     * Everything is handled in libkrb5.
-     */
-    return EOK;
-}
-
-errno_t
-cc_keyring_check_existing(const char *location, uid_t uid,
-                          const char *realm, const char *princ,
-                          const char *cc_template, bool *_active,
-                          bool *_valid)
-{
+    struct sss_krb5_ccache *cc = NULL;
+    krb5_principal ccprinc = NULL;
+    krb5_principal kprinc = NULL;
+    krb5_error_code kerr;
+    const char *cc_type;
+    TALLOC_CTX *tmp_ctx;
     errno_t ret;
-    bool active;
-    bool valid;
-    const char *residual;
 
-    residual = sss_krb5_residual_check_type(location, SSS_KRB5_TYPE_KEYRING);
-    if (!residual) {
-        DEBUG(SSSDBG_CRIT_FAILURE,
-              ("%s is not of type KEYRING:\n", location));
-        return EINVAL;
+    tmp_ctx = talloc_new(NULL);
+    if (tmp_ctx == NULL) {
+        DEBUG(SSSDBG_OP_FAILURE, ("talloc_new failed.\n"));
+        return ENOMEM;
     }
 
-    /* The keyring cache is always active */
-    active = true;
-
-    /* Check if any user is actively using this cache */
-    ret = check_cc_validity(location, realm, princ, &valid);
-    if (ret != EOK) {
-        return ret;
+    ret = sss_open_ccache_as_user(tmp_ctx, ccname, uid, gid, &cc);
+    if (ret) {
+        goto done;
     }
 
-    *_active = active;
-    *_valid = valid;
-    return EOK;
-}
+    cc_type = krb5_cc_get_type(cc->context, cc->ccache);
 
-const char *
-cc_keyring_cache_for_princ(TALLOC_CTX *mem_ctx, const char *location,
-                           const char *princ)
-{
-    krb5_context context = NULL;
-    krb5_error_code krberr;
-    char *name = NULL;
-    const char *residual;
-    size_t i;
-    size_t count;
-    krb5_principal client_principal = NULL;
+    DEBUG(SSSDBG_TRACE_INTERNAL,
+          ("Searching for [%s] in cache of type [%s]\n", principal, cc_type));
 
-    residual = sss_krb5_residual_check_type(location, SSS_KRB5_TYPE_KEYRING);
-    if (!residual) {
-        DEBUG(SSSDBG_CRIT_FAILURE, ("Cannot get residual from %s\n",
-              location));
-        return NULL;
-    }
-
-    /* residual already points to a subsidiary cache if it of the
-     * form "KEYRING:<type>:<UID>:krb5_cc_XXXXXXX"
-     * For simplicity, we'll count the colons, up to three.
-     */
-    i = count = 0;
-    while (residual[i] && count < 3) {
-        if (residual[i] == ':') {
-            count ++;
-        }
-        i++;
-    }
-
-    if (count >= 3) {
-        return talloc_strdup(mem_ctx, location);
-    }
-
-    krberr = krb5_init_context(&context);
-    if (krberr) {
-        DEBUG(SSSDBG_OP_FAILURE, ("Failed to init kerberos context\n"));
-        return NULL;
-    }
-
-    krberr = krb5_parse_name(context, princ, &client_principal);
-    if (krberr != 0) {
-        KRB5_DEBUG(SSSDBG_OP_FAILURE, context, krberr);
+    kerr = krb5_parse_name(cc->context, principal, &kprinc);
+    if (kerr != 0) {
+        KRB5_DEBUG(SSSDBG_OP_FAILURE, cc->context, kerr);
         DEBUG(SSSDBG_CRIT_FAILURE, ("krb5_parse_name failed.\n"));
+        ret = ERR_INTERNAL;
         goto done;
     }
 
-    name = sss_get_ccache_name_for_principal(mem_ctx, context,
-                                             client_principal, location);
-    if (name == NULL) {
-        DEBUG(SSSDBG_CRIT_FAILURE, ("Could not get full name of ccache\n"));
-        goto done;
+    kerr = krb5_cc_get_principal(cc->context, cc->ccache, &ccprinc);
+    if (kerr != 0) {
+        KRB5_DEBUG(SSSDBG_OP_FAILURE, cc->context, kerr);
+        DEBUG(SSSDBG_CRIT_FAILURE, ("krb5_cc_get_principal failed.\n"));
     }
 
-    talloc_zfree(name);
-
-    /* Always return the master name here.
-     * We do the above only to ensure that the
-     * principal-specific name exists and can
-     * be found.
-     */
-    name = talloc_strdup(mem_ctx, location);
-
-done:
-    krb5_free_principal(context, client_principal);
-    krb5_free_context(context);
-
-    return name;
-}
-
-errno_t
-cc_keyring_remove(const char *location)
-{
-    const char *residual;
-
-    residual = sss_krb5_residual_check_type(location, SSS_KRB5_TYPE_KEYRING);
-    if (!residual) {
-        DEBUG(SSSDBG_CRIT_FAILURE,
-              ("%s is not of type KEYRING:\n", location));
-        return EINVAL;
+    if (ccprinc) {
+        if (krb5_principal_compare(cc->context, kprinc, ccprinc) == TRUE) {
+            /* found in the primary ccache */
+            ret = EOK;
+            goto done;
+        }
     }
 
-    /* No special steps are needed to create a kernel keyring.
-     * Everything is handled in libkrb5.
-     */
-    return EOK;
-}
+#ifdef HAVE_KRB5_CC_COLLECTION
 
-struct sss_krb5_cc_be keyring_cc = {
-    .type               = SSS_KRB5_TYPE_KEYRING,
-    .create             = cc_keyring_create,
-    .check_existing     = cc_keyring_check_existing,
-    .ccache_for_princ   = cc_keyring_cache_for_princ,
-    .remove             = cc_keyring_remove
-};
+    if (krb5_cc_support_switch(cc->context, cc_type)) {
+
+        krb5_cc_close(cc->context, cc->ccache);
+        cc->ccache = NULL;
+
+        kerr = krb5_cc_set_default_name(cc->context, ccname);
+        if (kerr != 0) {
+            KRB5_DEBUG(SSSDBG_MINOR_FAILURE, cc->context, kerr);
+            /* try to continue despite failure */
+        }
+
+        kerr = krb5_cc_cache_match(cc->context, kprinc, &cc->ccache);
+        if (kerr == 0) {
+            ret = EOK;
+            goto done;
+        }
+        KRB5_DEBUG(SSSDBG_TRACE_INTERNAL, cc->context, kerr);
+    }
 
 #endif /* HAVE_KRB5_CC_COLLECTION */
 
-errno_t get_domain_or_subdomain(TALLOC_CTX *mem_ctx, struct be_ctx *be_ctx,
+    ret = ERR_NOT_FOUND;
+
+done:
+    krb5_free_principal(cc->context, ccprinc);
+    krb5_free_principal(cc->context, kprinc);
+    talloc_free(tmp_ctx);
+    return ret;
+}
+
+static errno_t sss_low_level_path_check(const char *ccname)
+{
+    const char *filename;
+    struct stat buf;
+    int ret;
+
+    if (ccname[0] == '/') {
+        filename = ccname;
+    } else if (strncmp(ccname, "FILE:", 5) == 0) {
+        filename = ccname + 5;
+    } else if (strncmp(ccname, "DIR:", 4) == 0) {
+        filename = ccname + 4;
+        if (filename[0] == ':') filename += 1;
+    } else {
+        /* only FILE and DIR types need file checks so far, we ignore any
+         * other type */
+        return EOK;
+    }
+
+    ret = stat(filename, &buf);
+    if (ret == -1) return errno;
+    return EOK;
+}
+
+errno_t sss_krb5_cc_verify_ccache(const char *ccname, uid_t uid, gid_t gid,
+                                  const char *realm, const char *principal)
+{
+    struct sss_krb5_ccache *cc = NULL;
+    TALLOC_CTX *tmp_ctx = NULL;
+    krb5_principal tgt_princ = NULL;
+    krb5_principal princ = NULL;
+    char *tgt_name;
+    krb5_creds mcred = { 0 };
+    krb5_creds cred = { 0 };
+    krb5_error_code kerr;
+    errno_t ret;
+
+    /* first of all verify if the old ccache file/dir exists as we may be
+     * trying to verify if an old ccache exists at all. If no file/dir
+     * exists bail out immediately otherwise a following krb5_cc_resolve()
+     * call may actually create paths and files we do not want to have
+     * around */
+    ret = sss_low_level_path_check(ccname);
+    if (ret) {
+        return ret;
+    }
+
+    tmp_ctx = talloc_new(NULL);
+    if (tmp_ctx == NULL) {
+        DEBUG(SSSDBG_CRIT_FAILURE, ("talloc_new failed.\n"));
+        return ENOMEM;
+    }
+
+    ret = sss_open_ccache_as_user(tmp_ctx, ccname, uid, gid, &cc);
+    if (ret) {
+        goto done;
+    }
+
+    tgt_name = talloc_asprintf(tmp_ctx, "krbtgt/%s@%s", realm, realm);
+    if (!tgt_name) {
+        DEBUG(SSSDBG_CRIT_FAILURE, ("talloc_new failed.\n"));
+        ret = ENOMEM;
+        goto done;
+    }
+
+    kerr = krb5_parse_name(cc->context, tgt_name, &tgt_princ);
+    if (kerr) {
+        KRB5_DEBUG(SSSDBG_CRIT_FAILURE, cc->context, kerr);
+        if (kerr == KRB5_PARSE_MALFORMED) ret = EINVAL;
+        else ret = ERR_INTERNAL;
+        goto done;
+    }
+
+    kerr = krb5_parse_name(cc->context, principal, &princ);
+    if (kerr) {
+        KRB5_DEBUG(SSSDBG_CRIT_FAILURE, cc->context, kerr);
+        if (kerr == KRB5_PARSE_MALFORMED) ret = EINVAL;
+        else ret = ERR_INTERNAL;
+        goto done;
+    }
+
+    mcred.client = princ;
+    mcred.server = tgt_princ;
+    mcred.times.endtime = time(NULL);
+
+    kerr = krb5_cc_retrieve_cred(cc->context, cc->ccache,
+                                 KRB5_TC_MATCH_TIMES, &mcred, &cred);
+    if (kerr) {
+        if (kerr == KRB5_CC_NOTFOUND || kerr == KRB5_FCC_NOFILE) {
+            DEBUG(SSSDBG_TRACE_INTERNAL, ("TGT not found or expired.\n"));
+            ret = EINVAL;
+        } else {
+            KRB5_DEBUG(SSSDBG_CRIT_FAILURE, cc->context, kerr);
+            ret = ERR_INTERNAL;
+        }
+    }
+    krb5_free_cred_contents(cc->context, &cred);
+
+done:
+    if (tgt_princ) krb5_free_principal(cc->context, tgt_princ);
+    if (princ) krb5_free_principal(cc->context, princ);
+    talloc_free(tmp_ctx);
+    return ret;
+}
+
+
+errno_t get_domain_or_subdomain(struct be_ctx *be_ctx,
                                 char *domain_name,
                                 struct sss_domain_info **dom)
 {

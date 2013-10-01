@@ -77,16 +77,6 @@ sdap_domain_add(struct sdap_options *opts,
     sdom->dom = dom;
     sdom->head = &opts->sdom;
 
-    if (opts->sdom) {
-        /* Only allow subdomains of the parent domain */
-        if (dom->parent == NULL ||
-            dom->parent != opts->sdom->dom) {
-            DEBUG(SSSDBG_OP_FAILURE, ("Domain %s is not a subdomain of %s\n",
-                  dom->name, opts->sdom->dom->name));
-            return EINVAL;
-        }
-    }
-
     talloc_set_destructor((TALLOC_CTX *)sdom, sdap_domain_destructor);
     DLIST_ADD_END(opts->sdom, sdom, struct sdap_domain *);
 
@@ -938,12 +928,16 @@ void sdap_mark_offline(struct sdap_id_ctx *ctx)
 
 int ldap_id_setup_tasks(struct sdap_id_ctx *ctx)
 {
-    return sdap_id_setup_tasks(ctx, ctx->conn, ctx->opts->sdom);
+    return sdap_id_setup_tasks(ctx, ctx->conn, ctx->opts->sdom,
+                               ldap_enumeration_send,
+                               ldap_enumeration_recv);
 }
 
 int sdap_id_setup_tasks(struct sdap_id_ctx *ctx,
                         struct sdap_id_conn_ctx *conn,
-                        struct sdap_domain *sdom)
+                        struct sdap_domain *sdom,
+                        be_ptask_send_t send_fn,
+                        be_ptask_recv_t recv_fn)
 {
     struct timeval tv;
     int ret = EOK;
@@ -952,7 +946,7 @@ int sdap_id_setup_tasks(struct sdap_id_ctx *ctx,
     /* set up enumeration task */
     if (sdom->dom->enumerate) {
         DEBUG(SSSDBG_TRACE_FUNC, ("Setting up enumeration for %s\n", sdom->dom->name));
-        ret = ldap_setup_enumeration(ctx, conn, sdom);
+        ret = ldap_setup_enumeration(ctx, conn, sdom, send_fn, recv_fn);
     } else {
         /* the enumeration task, runs the cleanup process by itself,
          * but if enumeration is not running we need to schedule it */
@@ -1578,8 +1572,9 @@ errno_t string_to_shadowpw_days(const char *s, long *d)
     }
 
     if (l < -1) {
-        DEBUG(1, ("Input string contains not allowed negative value [%d].\n",
-                  l));
+        DEBUG(SSSDBG_CRIT_FAILURE,
+              ("Input string contains not allowed negative value [%ld].\n",
+               l));
         return EINVAL;
     }
 

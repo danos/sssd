@@ -375,7 +375,7 @@ static errno_t check_ccache_files(struct renew_tgt_ctx *renew_tgt_ctx)
     const char *ccache_filter = "(&("SYSDB_CCACHE_FILE"=*)" \
                                   "("SYSDB_OBJECTCLASS"="SYSDB_USER_CLASS"))";
     const char *ccache_attrs[] = { SYSDB_CCACHE_FILE, SYSDB_UPN, SYSDB_NAME,
-                                   NULL };
+                                   SYSDB_CANONICAL_UPN, NULL };
     size_t msgs_count = 0;
     struct ldb_message **msgs = NULL;
     size_t c;
@@ -412,7 +412,8 @@ static errno_t check_ccache_files(struct renew_tgt_ctx *renew_tgt_ctx)
         ret = EOK;
         goto done;
     }
-    DEBUG(9, ("Found [%d] entries with ccache file in cache.\n", msgs_count));
+    DEBUG(SSSDBG_TRACE_ALL,
+          ("Found [%zu] entries with ccache file in cache.\n", msgs_count));
 
     for (c = 0; c < msgs_count; c++) {
         user_name = ldb_msg_find_attr_as_string(msgs[c], SYSDB_NAME, NULL);
