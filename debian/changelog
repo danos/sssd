@@ -12,6 +12,8 @@ sssd (1.11.1-1) UNRELEASED; urgency=low
   * control: Drop obsolete Breaks/Conflicts.
   * rules: Enable parallel build.
   * control: Add libltdl-dev to build-depends.
+  * control: Prepare for new unified samba package, adjust build-
+    dependencies. Thanks, Ivo De Decker! (Closes: #725992)
 
  -- Timo Aaltonen <tjaalton@ubuntu.com>  Tue, 06 Aug 2013 17:04:28 +0300
 
