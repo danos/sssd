@@ -1,4 +1,4 @@
-lib/systemd/sssd.service
+lib/systemd/system/sssd.service
 usr/bin/sss_ssh_authorizedkeys
 usr/bin/sss_ssh_knownhostsproxy
 usr/lib/*/ldb/modules/ldb/memberof.so
