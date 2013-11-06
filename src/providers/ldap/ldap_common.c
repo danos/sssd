@@ -63,12 +63,37 @@ sdap_domain_get(struct sdap_options *opts,
     return sditer;
 }
 
+struct sdap_domain *
+sdap_domain_get_by_dn(struct sdap_options *opts,
+                      const char *dn)
+{
+    struct sdap_domain *sditer = NULL;
+    char *dc = NULL;
+
+    dc = strstr(dn, "dc=");
+    if (dc == NULL) {
+        dc = strstr(dn, "DC=");
+        if (dc == NULL) {
+            return NULL;
+        }
+    }
+
+    DLIST_FOR_EACH(sditer, opts->sdom) {
+        if (strcasecmp(sditer->basedn, dc) == 0) {
+            return sditer;
+        }
+    }
+
+    return NULL;
+}
+
 errno_t
 sdap_domain_add(struct sdap_options *opts,
                 struct sss_domain_info *dom,
                 struct sdap_domain **_sdom)
 {
     struct sdap_domain *sdom;
+    errno_t ret;
 
     sdom = talloc_zero(opts, struct sdap_domain);
     if (sdom == NULL) {
@@ -77,11 +102,27 @@ sdap_domain_add(struct sdap_options *opts,
     sdom->dom = dom;
     sdom->head = &opts->sdom;
 
+    /* Convert the domain name into search base */
+    ret = domain_to_basedn(sdom, sdom->dom->name, &sdom->basedn);
+    if (ret != EOK) {
+        DEBUG(SSSDBG_OP_FAILURE,
+            ("Cannot convert domain name [%s] to base DN [%d]: %s\n",
+            dom->name, ret, strerror(ret)));
+        goto done;
+    }
+
     talloc_set_destructor((TALLOC_CTX *)sdom, sdap_domain_destructor);
     DLIST_ADD_END(opts->sdom, sdom, struct sdap_domain *);
 
     if (_sdom) *_sdom = sdom;
-    return EOK;
+    ret = EOK;
+
+done:
+    if (ret != EOK) {
+        talloc_free(sdom);
+    }
+
+    return ret;
 }
 
 errno_t
@@ -91,7 +132,6 @@ sdap_domain_subdom_add(struct sdap_id_ctx *sdap_id_ctx,
 {
     struct sss_domain_info *dom;
     struct sdap_domain *sdom, *sditer;
-    char *basedn;
     errno_t ret;
 
     for (dom = get_next_domain(parent, true);
@@ -120,27 +160,16 @@ sdap_domain_subdom_add(struct sdap_id_ctx *sdap_id_ctx,
             sdom = sditer;
         }
 
-        /* Convert the domain name into search base */
-        ret = domain_to_basedn(sdom, sdom->dom->name, &basedn);
-        if (ret != EOK) {
-            DEBUG(SSSDBG_OP_FAILURE,
-                ("Cannot convert domain name [%s] to base DN [%d]: %s\n",
-                dom->name, ret, strerror(ret)));
-            talloc_free(basedn);
-            return ret;
-        }
-
         /* Update search bases */
         talloc_zfree(sdom->search_bases);
         sdom->search_bases = talloc_array(sdom, struct sdap_search_base *, 2);
         if (sdom->search_bases == NULL) {
-            return ret;
+            return ENOMEM;
         }
         sdom->search_bases[1] = NULL;
 
-        ret = sdap_create_search_base(sdom, basedn, LDAP_SCOPE_SUBTREE, NULL,
-                                      &sdom->search_bases[0]);
-        talloc_free(basedn);
+        ret = sdap_create_search_base(sdom, sdom->basedn, LDAP_SCOPE_SUBTREE,
+                                      NULL, &sdom->search_bases[0]);
         if (ret) {
             DEBUG(SSSDBG_OP_FAILURE, ("Cannot create new sdap search base\n"));
             return ret;
@@ -939,29 +968,19 @@ int sdap_id_setup_tasks(struct sdap_id_ctx *ctx,
                         be_ptask_send_t send_fn,
                         be_ptask_recv_t recv_fn)
 {
-    struct timeval tv;
-    int ret = EOK;
-    int delay;
+    int ret;
 
     /* set up enumeration task */
     if (sdom->dom->enumerate) {
-        DEBUG(SSSDBG_TRACE_FUNC, ("Setting up enumeration for %s\n", sdom->dom->name));
+        DEBUG(SSSDBG_TRACE_FUNC, ("Setting up enumeration for %s\n",
+                                  sdom->dom->name));
         ret = ldap_setup_enumeration(ctx, conn, sdom, send_fn, recv_fn);
     } else {
         /* the enumeration task, runs the cleanup process by itself,
          * but if enumeration is not running we need to schedule it */
-        delay = dp_opt_get_int(ctx->opts->basic, SDAP_CACHE_PURGE_TIMEOUT);
-        if (delay == 0) {
-            /* Cleanup has been explicitly disabled, so we won't
-             * schedule any cleanup tasks.
-             */
-            return EOK;
-        }
-
-        /* run the first one in a couple of seconds so that we have time to
-         * finish initializations first*/
-        tv = tevent_timeval_current_ofs(10, 0);
-        ret = ldap_id_cleanup_create_timer(ctx, sdom, tv);
+        DEBUG(SSSDBG_TRACE_FUNC, ("Setting up cleanup task for %s\n",
+                                  sdom->dom->name));
+        ret = ldap_setup_cleanup(ctx, sdom);
     }
 
     return ret;
@@ -1743,6 +1762,25 @@ char *sdap_get_id_specific_filter(TALLOC_CTX *mem_ctx,
                                  base_filter, extra_filter);
     }
     return filter; /* NULL or not */
+}
+
+char *sdap_get_access_filter(TALLOC_CTX *mem_ctx,
+                             const char *base_filter)
+{
+    char *filter = NULL;
+
+    if (base_filter == NULL) return NULL;
+
+    if (base_filter[0] == '(') {
+        /* This filter is wrapped in parentheses.
+         * Pass it as-is to the openldap libraries.
+         */
+        filter = talloc_strdup(mem_ctx, base_filter);
+    } else {
+        filter = talloc_asprintf(mem_ctx, "(%s)", base_filter);
+    }
+
+    return filter;
 }
 
 errno_t

@@ -47,8 +47,6 @@
 /* do not refresh more often than every 5 seconds for now */
 #define IPA_SUBDOMAIN_REFRESH_LIMIT 5
 
-/* refresh automatically every 4 hours */
-#define IPA_SUBDOMAIN_REFRESH_PERIOD (3600 * 4)
 #define IPA_SUBDOMAIN_DISABLED_PERIOD 3600
 
 enum ipa_subdomains_req_type {
@@ -291,12 +289,17 @@ ipa_ad_subdom_remove(struct ipa_subdomains_ctx *ctx,
         return;
     }
 
-    sdap_domain_remove(iter->ad_id_ctx->sdap_id_ctx->opts, subdom);
-    DLIST_REMOVE(ctx->id_ctx->server_mode->trusts, iter);
-
     sdom = sdap_domain_get(iter->ad_id_ctx->sdap_id_ctx->opts, subdom);
     if (sdom == NULL) return;
     be_ptask_destroy(&sdom->enum_task);
+    be_ptask_destroy(&sdom->cleanup_task);
+
+    sdap_domain_remove(iter->ad_id_ctx->sdap_id_ctx->opts, subdom);
+    DLIST_REMOVE(ctx->id_ctx->server_mode->trusts, iter);
+
+    /* terminate all requests for this subdomain so we can free it */
+    be_terminate_domain_requests(ctx->be_ctx, subdom->name);
+    talloc_zfree(sdom);
 }
 
 const char *get_flat_name_from_subdomain_name(struct be_ctx *be_ctx,
@@ -577,7 +580,7 @@ static errno_t ipa_subdom_store(struct sss_domain_info *parent,
         goto done;
     }
 
-    mpg = sdap_idmap_domain_has_algorithmic_mapping(sdap_idmap_ctx, id);
+    mpg = sdap_idmap_domain_has_algorithmic_mapping(sdap_idmap_ctx, name, id);
 
     ret = ipa_subdom_get_forest(tmp_ctx, sysdb_ctx_get_ldb(parent->sysdb),
                                 attrs, &forest);
@@ -1106,11 +1109,27 @@ static void ipa_subdom_be_req_callback(struct be_req *be_req,
     talloc_free(be_req);
 }
 
+static void ipa_subdom_reset_timeouts_cb(void *pvt)
+{
+    struct ipa_subdomains_ctx *ctx;
+
+    ctx = talloc_get_type(pvt, struct ipa_subdomains_ctx);
+    if (ctx == NULL) {
+        DEBUG(SSSDBG_CRIT_FAILURE, ("Bad private pointer\n"));
+        return;
+    }
+
+    DEBUG(SSSDBG_TRACE_ALL, ("Resetting last_refreshed and disabled_until.\n"));
+    ctx->last_refreshed = 0;
+    ctx->disabled_until = 0;
+}
+
 static void ipa_subdom_online_cb(void *pvt)
 {
     struct ipa_subdomains_ctx *ctx;
     struct be_req *be_req;
     struct timeval tv;
+    uint32_t refresh_interval;
 
     ctx = talloc_get_type(pvt, struct ipa_subdomains_ctx);
     if (!ctx) {
@@ -1119,6 +1138,8 @@ static void ipa_subdom_online_cb(void *pvt)
     }
 
     ctx->disabled_until = 0;
+
+    refresh_interval = ctx->be_ctx->domain->subdomain_refresh_interval;
 
     be_req = be_req_create(ctx, NULL, ctx->be_ctx,
                            ipa_subdom_be_req_callback, NULL);
@@ -1129,7 +1150,7 @@ static void ipa_subdom_online_cb(void *pvt)
 
     ipa_subdomains_retrieve(ctx, be_req);
 
-    tv = tevent_timeval_current_ofs(IPA_SUBDOMAIN_REFRESH_PERIOD, 0);
+    tv = tevent_timeval_current_ofs(refresh_interval, 0);
     ctx->timer_event = tevent_add_timer(ctx->be_ctx->ev, ctx, tv,
                                         ipa_subdom_timer_refresh, ctx);
     if (!ctx->timer_event) {
@@ -1252,6 +1273,14 @@ int ipa_subdom_init(struct be_ctx *be_ctx,
     *ops = &ipa_subdomains_ops;
     *pvt_data = ctx;
 
+    ret = be_add_unconditional_online_cb(ctx, be_ctx,
+                                         ipa_subdom_reset_timeouts_cb, ctx,
+                                         NULL);
+    if (ret != EOK) {
+        DEBUG(SSSDBG_MINOR_FAILURE,
+              ("Failed to add subdom reset timeouts callback"));
+    }
+
     ret = be_add_online_cb(ctx, be_ctx, ipa_subdom_online_cb, ctx, NULL);
     if (ret != EOK) {
         DEBUG(SSSDBG_MINOR_FAILURE, ("Failed to add subdom online callback"));
@@ -1305,13 +1334,14 @@ int ipa_ad_subdom_init(struct be_ctx *be_ctx,
         return EINVAL;
     }
 
-    id_ctx->server_mode = talloc(id_ctx, struct ipa_server_mode_ctx);
+    id_ctx->server_mode = talloc_zero(id_ctx, struct ipa_server_mode_ctx);
     if (id_ctx->server_mode == NULL) {
         return ENOMEM;
     }
     id_ctx->server_mode->realm = realm;
     id_ctx->server_mode->hostname = hostname;
     id_ctx->server_mode->trusts = NULL;
+    id_ctx->server_mode->ext_groups = NULL;
 
     return EOK;
 }

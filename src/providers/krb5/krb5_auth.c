@@ -292,7 +292,6 @@ static errno_t krb5_auth_prepare_ccache_name(struct krb5child_req *kr,
                                              struct be_ctx *be_ctx)
 {
     const char *ccname_template;
-    bool private_path = false;
     errno_t ret;
 
     if (!kr->is_offline) {
@@ -317,8 +316,7 @@ static errno_t krb5_auth_prepare_ccache_name(struct krb5child_req *kr,
             ccname_template = dp_opt_get_cstring(kr->krb5_ctx->opts,
                                                  KRB5_CCNAME_TMPL);
             kr->ccname = expand_ccname_template(kr, kr, ccname_template, true,
-                                                be_ctx->domain->case_sensitive,
-                                                &private_path);
+                                                be_ctx->domain->case_sensitive);
             if (kr->ccname == NULL) {
                 DEBUG(1, ("expand_ccname_template failed.\n"));
                 return ENOMEM;
@@ -326,7 +324,7 @@ static errno_t krb5_auth_prepare_ccache_name(struct krb5child_req *kr,
 
             ret = sss_krb5_precreate_ccache(kr->ccname,
                                             kr->krb5_ctx->illegal_path_re,
-                                            kr->uid, kr->gid, private_path);
+                                            kr->uid, kr->gid);
             if (ret != EOK) {
                 DEBUG(SSSDBG_OP_FAILURE, ("ccache creation failed.\n"));
                 return ret;
@@ -1008,6 +1006,12 @@ static void krb5_auth_done(struct tevent_req *subreq)
         ret = EOK;
         goto done;
 
+    case ERR_ACCOUNT_EXPIRED:
+        state->pam_status = PAM_ACCT_EXPIRED;
+        state->dp_err = DP_ERR_OK;
+        ret = EOK;
+        goto done;
+
     case ERR_NO_CREDS:
         state->pam_status = PAM_CRED_UNAVAIL;
         state->dp_err = DP_ERR_OK;
@@ -1016,6 +1020,12 @@ static void krb5_auth_done(struct tevent_req *subreq)
 
     case ERR_AUTH_FAILED:
         state->pam_status = PAM_AUTH_ERR;
+        state->dp_err = DP_ERR_OK;
+        ret = EOK;
+        goto done;
+
+    case ERR_CHPASS_FAILED:
+        state->pam_status = PAM_AUTHTOK_ERR;
         state->dp_err = DP_ERR_OK;
         ret = EOK;
         goto done;

@@ -175,7 +175,8 @@ sdap_dn_by_primary_gid(TALLOC_CTX *mem_ctx, struct sysdb_attrs *ldap_attrs,
     return EOK;
 }
 
-static int sdap_fill_memberships(struct sysdb_attrs *group_attrs,
+static int sdap_fill_memberships(struct sdap_options *opts,
+                                 struct sysdb_attrs *group_attrs,
                                  struct sysdb_ctx *ctx,
                                  struct sss_domain_info *domain,
                                  hash_table_t *ghosts,
@@ -190,6 +191,9 @@ static int sdap_fill_memberships(struct sysdb_attrs *group_attrs,
     errno_t hret;
     hash_key_t key;
     hash_value_t value;
+    struct sdap_domain *sdom;
+    struct sysdb_ctx *member_sysdb;
+    struct sss_domain_info *member_dom;
 
     ret = sysdb_attrs_get_el(group_attrs, SYSDB_MEMBER, &el);
     if (ret) {
@@ -215,9 +219,20 @@ static int sdap_fill_memberships(struct sysdb_attrs *group_attrs,
         }
 
         if (hret == HASH_ERROR_KEY_NOT_FOUND) {
+            sdom = sdap_domain_get_by_dn(opts, (char *)values[i].data);
+            if (sdom == NULL) {
+                DEBUG(SSSDBG_MINOR_FAILURE, ("Member [%s] is it out of domain "
+                      "scope?\n", (char *)values[i].data));
+                member_sysdb = ctx;
+                member_dom = domain;
+            } else {
+                member_sysdb = sdom->dom->sysdb;
+                member_dom = sdom->dom;
+            }
+
             /* sync search entry with this as origDN */
-            ret = sdap_find_entry_by_origDN(el->values, ctx, domain,
-                                            (char *)values[i].data,
+            ret = sdap_find_entry_by_origDN(el->values, member_sysdb,
+                                            member_dom, (char *)values[i].data,
                                             (char **)&el->values[j].data);
             if (ret == ENOENT) {
                 /* member may be outside of the configured search bases
@@ -449,13 +464,6 @@ static int sdap_save_group(TALLOC_CTX *memctx,
         goto done;
     }
 
-    ret = sdap_get_group_primary_name(tmpctx, opts, attrs, dom, &group_name);
-    if (ret != EOK) {
-        DEBUG(SSSDBG_OP_FAILURE, ("Failed to get group name\n"));
-        goto done;
-    }
-    DEBUG(SSSDBG_TRACE_FUNC, ("Processing group %s\n", group_name));
-
     /* Always store SID string if available */
     ret = sdap_attrs_get_sid_str(tmpctx, opts->idmap_ctx, attrs,
                               opts->group_map[SDAP_AT_GROUP_OBJECTSID].sys_name,
@@ -477,7 +485,26 @@ static int sdap_save_group(TALLOC_CTX *memctx,
         sid_str = NULL;
     }
 
+    /* If this object has a SID available, we will determine the correct
+     * domain by its SID. */
+    if (sid_str != NULL) {
+        dom = find_subdomain_by_sid(get_domains_head(dom), sid_str);
+        if (dom == NULL) {
+            DEBUG(SSSDBG_OP_FAILURE, ("SID %s does not belong to any known "
+                                      "domain\n", sid_str));
+            return ERR_DOMAIN_NOT_FOUND;
+        }
+    }
+
+    ret = sdap_get_group_primary_name(tmpctx, opts, attrs, dom, &group_name);
+    if (ret != EOK) {
+        DEBUG(SSSDBG_OP_FAILURE, ("Failed to get group name\n"));
+        goto done;
+    }
+    DEBUG(SSSDBG_TRACE_FUNC, ("Processing group %s\n", group_name));
+
     use_id_mapping = sdap_idmap_domain_has_algorithmic_mapping(opts->idmap_ctx,
+                                                               dom->name,
                                                                sid_str);
     if (use_id_mapping) {
         posix_group = true;
@@ -708,7 +735,7 @@ static int sdap_save_grpmem(TALLOC_CTX *memctx,
             goto fail;
         }
 
-        ret = sdap_fill_memberships(group_attrs, ctx, dom, ghosts,
+        ret = sdap_fill_memberships(opts, group_attrs, ctx, dom, ghosts,
                                     el->values, el->num_values,
                                     userdns, nuserdns);
         if (ret) {
@@ -2004,6 +2031,8 @@ static errno_t sdap_nested_group_populate_users(TALLOC_CTX *mem_ctx,
     const char *username;
     char *clean_orig_dn;
     const char *original_dn;
+    struct sss_domain_info *user_dom;
+    struct sdap_domain *sdap_dom;
 
     TALLOC_CTX *tmp_ctx;
     struct ldb_message **msgs;
@@ -2044,14 +2073,6 @@ static errno_t sdap_nested_group_populate_users(TALLOC_CTX *mem_ctx,
     in_transaction = true;
 
     for (i = 0; i < num_users; i++) {
-        ret = sdap_get_user_primary_name(tmp_ctx, opts, users[i],
-                                         domain, &username);
-        if (ret != EOK) {
-            DEBUG(SSSDBG_MINOR_FAILURE,
-                  ("User entry %d has no name attribute. Skipping\n", i));
-            continue;
-        }
-
         ret = sysdb_attrs_get_el(users[i], SYSDB_ORIG_DN, &el);
         if (el->num_values == 0) {
             ret = EINVAL;
@@ -2071,6 +2092,17 @@ static errno_t sdap_nested_group_populate_users(TALLOC_CTX *mem_ctx,
             goto done;
         }
 
+        sdap_dom = sdap_domain_get_by_dn(opts, original_dn);
+        user_dom = sdap_dom == NULL ? domain : sdap_dom->dom;
+
+        ret = sdap_get_user_primary_name(tmp_ctx, opts, users[i],
+                                         user_dom, &username);
+        if (ret != EOK) {
+            DEBUG(SSSDBG_MINOR_FAILURE,
+                  ("User entry %d has no name attribute. Skipping\n", i));
+            continue;
+        }
+
         /* Check for the specified origDN in the sysdb */
         filter = talloc_asprintf(tmp_ctx, "(%s=%s)",
                                  SYSDB_ORIG_DN,
@@ -2079,7 +2111,7 @@ static errno_t sdap_nested_group_populate_users(TALLOC_CTX *mem_ctx,
             ret = ENOMEM;
             goto done;
         }
-        ret = sysdb_search_users(tmp_ctx, sysdb, domain, filter,
+        ret = sysdb_search_users(tmp_ctx, user_dom->sysdb, user_dom, filter,
                                  search_attrs, &count, &msgs);
         talloc_zfree(filter);
         talloc_zfree(clean_orig_dn);
@@ -2108,7 +2140,7 @@ static errno_t sdap_nested_group_populate_users(TALLOC_CTX *mem_ctx,
 
             ret = sysdb_attrs_add_string(attrs, SYSDB_NAME, username);
             if (ret) goto done;
-            ret = sysdb_set_user_attr(sysdb, domain, sysdb_name,
+            ret = sysdb_set_user_attr(user_dom->sysdb, user_dom, sysdb_name,
                                       attrs, SYSDB_MOD_REP);
             if (ret != EOK) goto done;
         } else {

@@ -424,7 +424,8 @@ static krb5_error_code create_empty_cred(krb5_context ctx, krb5_principal princ,
 
 done:
     if (kerr != 0) {
-        krb5_free_creds(ctx, cred);
+        krb5_free_cred_contents(ctx, cred);
+        free(cred);
     } else {
         *_cred = cred;
     }
@@ -896,7 +897,6 @@ static krb5_error_code get_and_save_tgt(struct krb5_req *kr,
     int realm_length;
     krb5_error_code kerr;
     char *cc_name;
-    krb5_principal principal;
 
     kerr = sss_krb5_get_init_creds_opt_set_expire_callback(kr->ctx, kr->options,
                                                   sss_krb5_expire_callback_func,
@@ -941,13 +941,12 @@ static krb5_error_code get_and_save_tgt(struct krb5_req *kr,
         }
     }
 
-    principal = kr->creds ? kr->creds->client : kr->princ;
-
     /* If kr->ccname is cache collection (DIR:/...), we want to work
      * directly with file ccache (DIR::/...), but cache collection
      * should be returned back to back end.
      */
-    cc_name = sss_get_ccache_name_for_principal(kr->pd, kr->ctx, principal,
+    cc_name = sss_get_ccache_name_for_principal(kr->pd, kr->ctx,
+                                                kr->creds->client,
                                                 kr->ccname);
     if (cc_name == NULL) {
         cc_name = kr->ccname;
@@ -990,6 +989,9 @@ static errno_t map_krb5_error(krb5_error_code kerr)
     case KRB5_KDC_UNREACH:
     case KRB5_REALM_CANT_RESOLVE:
         return ERR_NETWORK_IO;
+
+    case KRB5KDC_ERR_CLIENT_REVOKED:
+        return ERR_ACCOUNT_EXPIRED;
 
     case KRB5KDC_ERR_KEY_EXP:
         return ERR_CREDS_EXPIRED;

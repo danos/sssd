@@ -372,6 +372,8 @@ enum dc_functional_level {
 struct sdap_domain {
     struct sss_domain_info *dom;
 
+    char *basedn;
+
     struct sdap_search_base **search_bases;
     struct sdap_search_base **user_search_bases;
     struct sdap_search_base **group_search_bases;
@@ -386,6 +388,8 @@ struct sdap_domain {
 
     /* Enumeration and cleanup periodic task */
     struct be_ptask *enum_task;
+    struct be_ptask *cleanup_task;
+
     /* enumeration loop timer */
     struct timeval last_enum;
     /* cleanup loop timer */

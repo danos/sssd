@@ -112,26 +112,34 @@ struct sss_domain_info *find_subdomain_by_sid(struct sss_domain_info *domain,
                                               const char *sid)
 {
     struct sss_domain_info *dom = domain;
-    size_t sid_len = strlen(sid);
+    size_t sid_len;
     size_t dom_sid_len;
+
+    if (sid == NULL) {
+        return NULL;
+    }
+
+    sid_len = strlen(sid);
 
     while (dom && dom->disabled) {
         dom = get_next_domain(dom, true);
     }
 
     while (dom) {
-        dom_sid_len = strlen(dom->domain_id);
+        if (dom->domain_id != NULL) {
+            dom_sid_len = strlen(dom->domain_id);
 
-        if (strncasecmp(dom->domain_id, sid, dom_sid_len) == 0) {
-            if (dom_sid_len == sid_len) {
-                /* sid is domain sid */
-                return dom;
-            }
+            if (strncasecmp(dom->domain_id, sid, dom_sid_len) == 0) {
+                if (dom_sid_len == sid_len) {
+                    /* sid is domain sid */
+                    return dom;
+                }
 
-            /* sid is object sid, check if domain sid is align with
-             * sid first subauthority component */
-            if (sid[dom_sid_len] == '-') {
-                return dom;
+                /* sid is object sid, check if domain sid is align with
+                 * sid first subauthority component */
+                if (sid[dom_sid_len] == '-') {
+                    return dom;
+                }
             }
         }
 
@@ -251,9 +259,11 @@ struct sss_domain_info *new_subdomain(TALLOC_CTX *mem_ctx,
     dom->enumerate = enumerate;
     dom->fqnames = true;
     dom->mpg = mpg;
-    /* FIXME: get ranges from the server */
-    dom->id_min = 0;
-    dom->id_max = 0xffffffff;
+    /* If the parent domain explicitly limits ID ranges, the subdomain
+     * should honour the limits as well.
+     */
+    dom->id_min = parent->id_min ? parent->id_min : 0;
+    dom->id_max = parent->id_max ? parent->id_max : 0xffffffff;
     dom->pwd_expiration_warning = parent->pwd_expiration_warning;
     dom->cache_credentials = parent->cache_credentials;
     dom->case_sensitive = false;

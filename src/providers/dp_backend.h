@@ -126,6 +126,11 @@ struct be_ctx {
     bool run_online_cb;
     struct be_cb *offline_cb_list;
     struct be_cb *reconnect_cb_list;
+    /* In contrast to online_cb_list which are only run if the backend is
+     * offline the unconditional_online_cb_list should be run whenever the
+     * backend receives a request to go online. The typical use case is to
+     * reset timers independenly of the state of the backend. */
+    struct be_cb *unconditional_online_cb_list;
 
     struct be_offline_status offstat;
 
@@ -145,6 +150,9 @@ struct be_ctx {
     struct be_refresh_ctx *refresh_ctx;
 
     size_t check_online_ref_count;
+
+    /* List of ongoing requests */
+    struct be_req *active_requests;
 };
 
 struct bet_ops {
@@ -200,6 +208,10 @@ int be_add_online_cb(TALLOC_CTX *mem_ctx,
                      void *pvt,
                      struct be_cb **online_cb);
 void be_run_online_cb(struct be_ctx *be);
+int be_add_unconditional_online_cb(TALLOC_CTX *mem_ctx, struct be_ctx *ctx,
+                                   be_callback_t cb, void *pvt,
+                                   struct be_cb **unconditional_online_cb);
+void be_run_unconditional_online_cb(struct be_ctx *be);
 
 int be_add_offline_cb(TALLOC_CTX *mem_ctx,
                      struct be_ctx *ctx,
@@ -282,6 +294,9 @@ void *be_req_get_data(struct be_req *be_req);
 
 void be_req_terminate(struct be_req *be_req,
                       int dp_err_type, int errnum, const char *errstr);
+
+void be_terminate_domain_requests(struct be_ctx *be_ctx,
+                                  const char *domain);
 
 /* Request account information */
 struct tevent_req *

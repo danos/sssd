@@ -127,6 +127,7 @@ static struct bet_data bet_data[] = {
 struct be_req {
     struct be_client *becli;
     struct be_ctx *be_ctx;
+    struct sss_domain_info *domain;
     void *req_data;
 
     be_async_callback_t fn;
@@ -137,7 +138,17 @@ struct be_req {
      * selinux provider is calling the callback.
      */
     int phase;
+
+    struct be_req *prev;
+    struct be_req *next;
 };
+
+static int be_req_destructor(struct be_req *be_req)
+{
+    DLIST_REMOVE(be_req->be_ctx->active_requests, be_req);
+
+    return 0;
+}
 
 struct be_req *be_req_create(TALLOC_CTX *mem_ctx,
                              struct be_client *becli, struct be_ctx *be_ctx,
@@ -150,10 +161,33 @@ struct be_req *be_req_create(TALLOC_CTX *mem_ctx,
 
     be_req->becli = becli;
     be_req->be_ctx = be_ctx;
+    be_req->domain = be_ctx->domain;
     be_req->fn = fn;
     be_req->pvt = pvt_fn_data;
 
+    /* Add this request to active request list and make sure it is
+     * removed on termination. */
+    DLIST_ADD(be_ctx->active_requests, be_req);
+    talloc_set_destructor(be_req, be_req_destructor);
+
     return be_req;
+}
+
+static errno_t be_req_set_domain(struct be_req *be_req, const char *domain)
+{
+    struct sss_domain_info *dom = NULL;
+
+    dom = find_subdomain_by_name(be_req->be_ctx->domain, domain, true);
+    if (dom == NULL) {
+        DEBUG(SSSDBG_CRIT_FAILURE, ("Unknown domain [%s]!\n", domain));
+        return ERR_DOMAIN_NOT_FOUND;
+    }
+
+    DEBUG(SSSDBG_TRACE_FUNC, ("Changing request domain from [%s] to [%s]\n",
+                              be_req->domain->name, dom->name));
+    be_req->domain = dom;
+
+    return EOK;
 }
 
 struct be_ctx *be_req_get_be_ctx(struct be_req *be_req)
@@ -173,6 +207,26 @@ void be_req_terminate(struct be_req *be_req,
     be_req->fn(be_req, dp_err_type, errnum, errstr);
 }
 
+void be_terminate_domain_requests(struct be_ctx *be_ctx,
+                                  const char *domain)
+{
+    struct be_req *be_req = NULL;
+
+    DEBUG(SSSDBG_TRACE_FUNC, ("Terminating requests for domain [%s]\n",
+                              domain));
+
+    if (domain == NULL) {
+        DEBUG(SSSDBG_CRIT_FAILURE, ("BUG: domain is NULL\n"));
+        return;
+    }
+
+    DLIST_FOR_EACH(be_req, be_ctx->active_requests) {
+        if (strcmp(domain, be_req->domain->name) == 0) {
+            be_req_terminate(be_req, DP_ERR_FATAL, ERR_DOMAIN_NOT_FOUND,
+                             sss_strerror(ERR_DOMAIN_NOT_FOUND));
+        }
+    }
+}
 
 struct be_async_req {
     be_req_fn_t fn;
@@ -221,7 +275,7 @@ static errno_t be_spy_create(TALLOC_CTX *mem_ctx, struct be_req *be_req)
         ret = ENOMEM;
         goto done;
     }
-    cli_spy->freectx = mem_ctx;
+    cli_spy->freectx = be_req;
 
     /* Also create a spy on the be_req so that we
      * can free the other spy when the be_req
@@ -980,6 +1034,13 @@ be_get_account_info_send(TALLOC_CTX *mem_ctx,
         goto done;
     }
 
+    ret = be_req_set_domain(be_req, ar->domain);
+    if (ret != EOK) {
+        DEBUG(SSSDBG_CRIT_FAILURE, ("Unable to set request domain [%d]: %s\n",
+                                    ret, sss_strerror(ret)));
+        goto done;
+    }
+
     ret = be_file_account_request(be_req, ar);
     if (ret != EOK) {
         goto done;
@@ -1126,6 +1187,16 @@ static int be_get_account_info(DBusMessage *message, struct sbus_connection *con
         err_maj = DP_ERR_FATAL;
         err_min = ENOMEM;
         err_msg = "Out of memory";
+        goto done;
+    }
+
+    ret = be_req_set_domain(be_req, domain);
+    if (ret != EOK) {
+        DEBUG(SSSDBG_CRIT_FAILURE, ("Unable to set request domain [%d]: %s\n",
+                                    ret, sss_strerror(ret)));
+        err_maj = DP_ERR_FATAL;
+        err_min = ret;
+        err_msg = sss_strerror(ret);
         goto done;
     }
 
@@ -1344,6 +1415,13 @@ static int be_pam_handler(DBusMessage *message, struct sbus_connection *conn)
         }
     }
 
+    ret = be_req_set_domain(be_req, pd->domain);
+    if (ret != EOK) {
+        DEBUG(SSSDBG_CRIT_FAILURE, ("Unable to set request domain [%d]: %s\n",
+                                    ret, sss_strerror(ret)));
+        pd->pam_status = PAM_SYSTEM_ERR;
+        goto done;
+    }
 
     DEBUG(4, ("Got request with the following data\n"));
     DEBUG_PAM_DATA(4, pd);
@@ -2208,6 +2286,8 @@ static void check_if_online(struct be_ctx *ctx)
 {
     int ret;
     struct be_req *be_req = NULL;
+
+    be_run_unconditional_online_cb(ctx);
 
     if (ctx->offstat.offline == false) {
         DEBUG(8, ("Backend is already online, nothing to do.\n"));

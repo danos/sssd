@@ -106,65 +106,60 @@ static errno_t sysdb_sudo_check_time(struct sysdb_attrs *rule,
     /* check for sudoNotBefore */
     ret = sysdb_attrs_get_string_array(rule, SYSDB_SUDO_CACHE_AT_NOTBEFORE,
                                        tmp_ctx, &values);
-    if (ret == ENOENT) {
-        DEBUG(SSSDBG_TRACE_LIBS,
-              ("notBefore attribute is missing, the rule [%s] is valid\n",
-               name));
-        *result = true;
-        ret = EOK;
-        goto done;
-    } else if (ret != EOK) {
-        goto done;
-    }
+    if (ret == EOK) {
+        for (i=0; values[i] ; i++) {
+            ret = sysdb_sudo_convert_time(values[i], &converted);
+            if (ret != EOK) {
+                DEBUG(SSSDBG_MINOR_FAILURE, ("Invalid time format in rule [%s]!\n",
+                      name));
+                goto done;
+            }
 
-    for (i=0; values[i] ; i++) {
-        ret = sysdb_sudo_convert_time(values[i], &converted);
-        if (ret != EOK) {
-            DEBUG(SSSDBG_MINOR_FAILURE, ("Invalid time format in rule [%s]!\n",
-                  name));
-            goto done;
+            /* Grab the earliest */
+            if (!notBefore) {
+                notBefore = converted;
+            } else if (notBefore > converted) {
+                notBefore = converted;
+            }
         }
-
-        /* Grab the earliest */
-        if (!notBefore) {
-            notBefore = converted;
-        } else if (notBefore > converted) {
-            notBefore = converted;
-        }
+    } else if (ret != ENOENT) {
+        goto done;
     }
 
     /* check for sudoNotAfter */
     ret = sysdb_attrs_get_string_array(rule, SYSDB_SUDO_CACHE_AT_NOTAFTER,
                                        tmp_ctx, &values);
-    if (ret == ENOENT) {
-        DEBUG(SSSDBG_TRACE_LIBS,
-              ("notAfter attribute is missing, the rule [%s] is valid\n",
-               name));
-        *result = true;
-        ret = EOK;
-        goto done;
-    } else if (ret != EOK) {
+    if (ret == EOK) {
+        for (i=0; values[i] ; i++) {
+            ret = sysdb_sudo_convert_time(values[i], &converted);
+            if (ret != EOK) {
+                DEBUG(SSSDBG_MINOR_FAILURE, ("Invalid time format in rule [%s]!\n",
+                      name));
+                goto done;
+            }
+
+            /* Grab the latest */
+            if (!notAfter) {
+                notAfter = converted;
+            } else if (notAfter < converted) {
+                notAfter = converted;
+            }
+        }
+    } else if (ret != ENOENT) {
         goto done;
     }
 
-    for (i=0; values[i] ; i++) {
-        ret = sysdb_sudo_convert_time(values[i], &converted);
-        if (ret != EOK) {
-            DEBUG(SSSDBG_MINOR_FAILURE, ("Invalid time format in rule [%s]!\n",
-                  name));
-            goto done;
-        }
-
-        /* Grab the latest */
-        if (!notAfter) {
-            notAfter = converted;
-        } else if (notAfter < converted) {
-            notAfter = converted;
-        }
+    if ((notBefore == 0 || now >= notBefore)
+        && (notAfter == 0 || now <= notAfter)) {
+        *result = true;
     }
 
-    if (now >= notBefore && now <= notAfter) {
-        *result = true;
+    if (*result) {
+        DEBUG(SSSDBG_TRACE_ALL, ("Rule [%s] matches time restrictions\n",
+                                 name));
+    } else {
+        DEBUG(SSSDBG_TRACE_ALL, ("Rule [%s] does not match time "
+                                 "restrictions\n", name));
     }
 
     ret = EOK;

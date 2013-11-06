@@ -58,9 +58,6 @@
 /* do not refresh more often than every 5 seconds for now */
 #define AD_SUBDOMAIN_REFRESH_LIMIT 5
 
-/* refresh automatically every 4 hours */
-#define AD_SUBDOMAIN_REFRESH_PERIOD (3600 * 4)
-
 struct ad_subdomains_ctx {
     struct be_ctx *be_ctx;
     struct sdap_id_ctx *sdap_id_ctx;
@@ -162,7 +159,8 @@ ad_subdom_store(struct ad_subdomains_ctx *ctx,
 
     mpg = sdap_idmap_domain_has_algorithmic_mapping(
                                              ctx->sdap_id_ctx->opts->idmap_ctx,
-                                             domain->domain_id);
+                                             name,
+                                             sid_str);
 
     /* AD subdomains are currently all mpg and do not enumerate */
     ret = sysdb_subdomain_store(domain->sysdb, name, realm, flat, sid_str,
@@ -182,6 +180,7 @@ static errno_t ad_subdomains_refresh(struct ad_subdomains_ctx *ctx,
                                      int count, struct sysdb_attrs **reply,
                                      bool *changes)
 {
+    struct sdap_domain *sdom;
     struct sss_domain_info *domain, *dom;
     bool handled[count];
     const char *value;
@@ -218,8 +217,21 @@ static errno_t ad_subdomains_refresh(struct ad_subdomains_ctx *ctx,
                 goto done;
             }
 
+            sdom = sdap_domain_get(ctx->sdap_id_ctx->opts, dom);
+            if (sdom == NULL) {
+                DEBUG(SSSDBG_CRIT_FAILURE, ("BUG: Domain does not exist?\n"));
+                continue;
+            }
+
             /* Remove the subdomain from the list of LDAP domains */
             sdap_domain_remove(ctx->sdap_id_ctx->opts, dom);
+
+            be_ptask_destroy(&sdom->enum_task);
+            be_ptask_destroy(&sdom->cleanup_task);
+
+            /* terminate all requests for this subdomain so we can free it */
+            be_terminate_domain_requests(ctx->be_ctx, dom->name);
+            talloc_zfree(sdom);
         } else {
             /* ok let's try to update it */
             ret = ad_subdom_store(ctx, domain, reply[c]);
@@ -527,12 +539,15 @@ static void ad_subdom_online_cb(void *pvt)
     struct ad_subdomains_ctx *ctx;
     struct be_req *be_req;
     struct timeval tv;
+    uint32_t refresh_interval;
 
     ctx = talloc_get_type(pvt, struct ad_subdomains_ctx);
     if (!ctx) {
         DEBUG(SSSDBG_CRIT_FAILURE, ("Bad private pointer\n"));
         return;
     }
+
+    refresh_interval = ctx->be_ctx->domain->subdomain_refresh_interval;
 
     be_req = be_req_create(ctx, NULL, ctx->be_ctx,
                            ad_subdom_be_req_callback, NULL);
@@ -543,7 +558,7 @@ static void ad_subdom_online_cb(void *pvt)
 
     ad_subdomains_retrieve(ctx, be_req);
 
-    tv = tevent_timeval_current_ofs(AD_SUBDOMAIN_REFRESH_PERIOD, 0);
+    tv = tevent_timeval_current_ofs(refresh_interval, 0);
     ctx->timer_event = tevent_add_timer(ctx->be_ctx->ev, ctx, tv,
                                         ad_subdom_timer_refresh, ctx);
     if (!ctx->timer_event) {

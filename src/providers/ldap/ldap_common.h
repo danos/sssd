@@ -52,6 +52,8 @@ struct sdap_id_conn_ctx {
     struct sdap_id_conn_cache *conn_cache;
     /* dlinklist pointers */
     struct sdap_id_conn_ctx *prev, *next;
+    /* do not go offline, try another connection */
+    bool ignore_mark_offline;
 };
 
 struct sdap_id_ctx {
@@ -193,11 +195,11 @@ ldap_enumeration_send(TALLOC_CTX *mem_ctx,
                       void *pvt);
 errno_t ldap_enumeration_recv(struct tevent_req *req);
 
+errno_t ldap_setup_cleanup(struct sdap_id_ctx *id_ctx,
+                           struct sdap_domain *sdom);
+
 errno_t ldap_id_cleanup(struct sdap_options *opts,
                         struct sdap_domain *sdom);
-int ldap_id_cleanup_create_timer(struct sdap_id_ctx *ctx,
-                                 struct sdap_domain *sdom,
-                                 struct timeval tv);
 
 void sdap_mark_offline(struct sdap_id_ctx *ctx);
 
@@ -259,6 +261,9 @@ char *sdap_get_id_specific_filter(TALLOC_CTX *mem_ctx,
                                   const char *base_filter,
                                   const char *extra_filter);
 
+char *sdap_get_access_filter(TALLOC_CTX *mem_ctx,
+                             const char *base_filter);
+
 errno_t msgs2attrs_array(TALLOC_CTX *mem_ctx, size_t count,
                          struct ldb_message **msgs,
                          struct sysdb_attrs ***attrs);
@@ -277,6 +282,10 @@ sdap_domain_remove(struct sdap_options *opts,
 
 struct sdap_domain *sdap_domain_get(struct sdap_options *opts,
                                     struct sss_domain_info *dom);
+
+struct sdap_domain *sdap_domain_get_by_dn(struct sdap_options *opts,
+                                          const char *dn);
+
 errno_t
 sdap_create_search_base(TALLOC_CTX *mem_ctx,
                         const char *unparsed_base,

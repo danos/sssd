@@ -105,6 +105,7 @@ struct tevent_req *users_get_send(TALLOC_CTX *memctx,
 
     use_id_mapping = sdap_idmap_domain_has_algorithmic_mapping(
                                                           ctx->opts->idmap_ctx,
+                                                          sdom->dom->name,
                                                           sdom->dom->domain_id);
     switch (filter_type) {
     case BE_FILTER_NAME:
@@ -138,6 +139,7 @@ struct tevent_req *users_get_send(TALLOC_CTX *memctx,
 
             attr_name = ctx->opts->user_map[SDAP_AT_USER_OBJECTSID].name;
             ret = sss_filter_sanitize(state, sid, &clean_name);
+            talloc_zfree(sid);
             if (ret != EOK) {
                 goto fail;
             }
@@ -365,6 +367,11 @@ static void users_get_done(struct tevent_req *subreq)
             }
             break;
 
+        case BE_FILTER_SECID:
+            /* Since it is not clear if the SID belongs to a user or a group
+             * we have nothing to do here. */
+            break;
+
         default:
             tevent_req_error(req, EINVAL);
             return;
@@ -466,6 +473,7 @@ struct tevent_req *groups_get_send(TALLOC_CTX *memctx,
 
     use_id_mapping = sdap_idmap_domain_has_algorithmic_mapping(
                                                           ctx->opts->idmap_ctx,
+                                                          sdom->dom->name,
                                                           sdom->dom->domain_id);
 
     switch(filter_type) {
@@ -501,6 +509,7 @@ struct tevent_req *groups_get_send(TALLOC_CTX *memctx,
 
             attr_name = ctx->opts->group_map[SDAP_AT_GROUP_OBJECTSID].name;
             ret = sss_filter_sanitize(state, sid, &clean_name);
+            talloc_zfree(sid);
             if (ret != EOK) {
                 goto fail;
             }
@@ -692,6 +701,11 @@ static void groups_get_done(struct tevent_req *subreq)
                 tevent_req_error(req, ret);
                 return;
             }
+            break;
+
+        case BE_FILTER_SECID:
+            /* Since it is not clear if the SID belongs to a user or a group
+             * we have nothing to do here. */
             break;
 
         default:
@@ -1541,12 +1555,28 @@ static void get_user_and_group_users_done(struct tevent_req *subreq)
     ret = users_get_recv(subreq, &state->dp_error, &state->sdap_ret);
     talloc_zfree(subreq);
 
-    if (ret == EOK) { /* Matching user found */
-        tevent_req_done(req);
-    } else {
+    if (ret != EOK) {
         tevent_req_error(req, ret);
+        return;
     }
 
+    if (state->sdap_ret == ENOENT) {
+        /* The search ran to completion, but nothing was found.
+         * Delete the existing entry, if any. */
+        ret = sysdb_delete_by_sid(state->sysdb, state->domain,
+                                  state->filter_val);
+        if (ret != EOK) {
+            DEBUG(SSSDBG_OP_FAILURE, ("Could not delete entry by SID!\n"));
+            tevent_req_error(req, ret);
+            return;
+        }
+    } else if (state->sdap_ret != EOK) {
+        tevent_req_error(req, EIO);
+        return;
+    }
+
+    /* Both ret and sdap->ret are EOK. Matching user found */
+    tevent_req_done(req);
     return;
 }
 

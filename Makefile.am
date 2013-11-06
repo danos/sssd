@@ -149,7 +149,9 @@ if HAVE_CMOCKA
         sss_nss_idmap-tests \
         dyndns-tests \
         fqnames-tests \
-        test_sss_idmap
+        test_sss_idmap \
+        test_utils \
+        ad_access_filter_tests
 endif
 
 check_PROGRAMS = \
@@ -608,7 +610,7 @@ libsss_idmap_la_SOURCES = \
     src/lib/idmap/sss_idmap_conv.c \
     src/util/murmurhash3.c
 libsss_idmap_la_LDFLAGS = \
-    -version-info 1:0:1
+    -version-info 2:0:2
 
 dist_pkgconfig_DATA += src/sss_client/idmap/sss_nss_idmap.pc
 libsss_nss_idmap_la_SOURCES = \
@@ -889,6 +891,8 @@ libsss_test_common_la_SOURCES = \
     src/tests/common_dom.c \
     src/tests/leak_check.c \
     src/tests/common.c
+libsss_test_common_la_LIBADD = \
+    $(TALLOC_LIBS)
 
 if HAVE_CHECK
 libsss_test_common_la_SOURCES += \
@@ -1333,7 +1337,6 @@ dyndns_tests_LDADD = \
     libsss_test_common.la
 
 fqnames_tests_SOURCES = \
-    $(TEST_MOCK_OBJ) \
     src/tests/cmocka/test_fqnames.c
 fqnames_tests_CFLAGS = \
     $(AM_CFLAGS)
@@ -1344,14 +1347,48 @@ fqnames_tests_LDADD = \
     libsss_test_common.la
 
 test_sss_idmap_SOURCES = \
-    $(TEST_MOCK_OBJ) \
     src/tests/cmocka/test_sss_idmap.c
 test_sss_idmap_CFLAGS = \
     $(AM_CFLAGS)
 test_sss_idmap_LDADD = \
     $(CMOCKA_LIBS) \
+    $(POPT_LIBS) \
     libsss_idmap.la \
     $(SSSD_INTERNAL_LTLIBS) \
+    libsss_test_common.la
+
+test_utils_SOURCES = \
+    src/tests/cmocka/test_utils.c
+test_utils_CFLAGS = \
+    $(AM_CFLAGS)
+test_utils_LDADD = \
+    $(CMOCKA_LIBS) \
+    $(POPT_LIBS) \
+    $(SSSD_INTERNAL_LTLIBS) \
+    libsss_test_common.la
+
+ad_access_filter_tests_SOURCES = \
+    $(sssd_be_SOURCES) \
+    src/util/sss_ldap.c \
+    src/util/sss_krb5.c \
+    src/util/find_uid.c \
+    src/util/user_info_msg.c \
+    src/tests/cmocka/test_ad_access_filter.c
+ad_access_filter_tests_CFLAGS = \
+    $(AM_CFLAGS) \
+    $(SYSTEMD_LOGIN_CFLAGS) \
+    -DUNIT_TESTING
+ad_access_filter_tests_LDADD = \
+    $(PAM_LIBS) \
+    $(CMOCKA_LIBS) \
+    $(SSSD_LIBS) \
+    $(CARES_LIBS) \
+    $(KRB5_LIBS) \
+    $(SSSD_INTERNAL_LTLIBS) \
+    $(SYSTEMD_LOGIN_LIBS) \
+    libsss_ldap_common.la \
+    libsss_idmap.la \
+    libsss_krb5_common.la \
     libsss_test_common.la
 
 endif

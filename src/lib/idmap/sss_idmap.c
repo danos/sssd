@@ -213,6 +213,20 @@ enum idmap_error_code sss_idmap_init(idmap_alloc_func *alloc_func,
     return IDMAP_SUCCESS;
 }
 
+static void sss_idmap_free_domain(struct sss_idmap_ctx *ctx,
+                                  struct idmap_domain_info *dom)
+{
+    if (ctx == NULL || dom == NULL) {
+        return;
+    }
+
+    ctx->free_func(dom->range_id, ctx->alloc_pvt);
+    ctx->free_func(dom->range, ctx->alloc_pvt);
+    ctx->free_func(dom->name, ctx->alloc_pvt);
+    ctx->free_func(dom->sid, ctx->alloc_pvt);
+    ctx->free_func(dom, ctx->alloc_pvt);
+}
+
 enum idmap_error_code sss_idmap_free(struct sss_idmap_ctx *ctx)
 {
     struct idmap_domain_info *dom;
@@ -224,10 +238,7 @@ enum idmap_error_code sss_idmap_free(struct sss_idmap_ctx *ctx)
     while (next) {
         dom = next;
         next = dom->next;
-        ctx->free_func(dom->range, ctx->alloc_pvt);
-        ctx->free_func(dom->name, ctx->alloc_pvt);
-        ctx->free_func(dom->sid, ctx->alloc_pvt);
-        ctx->free_func(dom, ctx->alloc_pvt);
+        sss_idmap_free_domain(ctx, dom);
     }
 
     ctx->free_func(ctx, ctx->alloc_pvt);
@@ -346,11 +357,13 @@ static enum idmap_error_code dom_check_collision(
         /* TODO: if both ranges have the same ID check if an update is
          * needed. */
 
-        /* check if ID ranges overlap */
-        if ((new_dom->range->min >= dom->range->min
-                && new_dom->range->min <= dom->range->max)
-            || (new_dom->range->max >= dom->range->min
-                && new_dom->range->max <= dom->range->max)) {
+        /* Check if ID ranges overlap.
+         * ID ranges with external mapping may overlap. */
+        if ((!new_dom->external_mapping && !dom->external_mapping)
+            && ((new_dom->range->min >= dom->range->min
+                    && new_dom->range->min <= dom->range->max)
+                || (new_dom->range->max >= dom->range->min
+                    && new_dom->range->max <= dom->range->max))) {
             return IDMAP_COLLISION;
         }
 
@@ -421,24 +434,28 @@ enum idmap_error_code sss_idmap_add_domain_ex(struct sss_idmap_ctx *ctx,
 
     dom->name = idmap_strdup(ctx, domain_name);
     if (dom->name == NULL) {
+        err = IDMAP_OUT_OF_MEMORY;
         goto fail;
     }
 
     if (domain_sid != NULL) {
         dom->sid = idmap_strdup(ctx, domain_sid);
         if (dom->sid == NULL) {
+            err = IDMAP_OUT_OF_MEMORY;
             goto fail;
         }
     }
 
     dom->range = idmap_range_dup(ctx, range);
     if (dom->range == NULL) {
+        err = IDMAP_OUT_OF_MEMORY;
         goto fail;
     }
 
     if (range_id != NULL) {
         dom->range_id = idmap_strdup(ctx, range_id);
         if (dom->range_id == NULL) {
+            err = IDMAP_OUT_OF_MEMORY;
             goto fail;
         }
     }
@@ -448,8 +465,7 @@ enum idmap_error_code sss_idmap_add_domain_ex(struct sss_idmap_ctx *ctx,
 
     err = dom_check_collision(ctx->idmap_domain_info, dom);
     if (err != IDMAP_SUCCESS) {
-        ctx->free_func(dom, ctx->alloc_pvt);
-        return err;
+        goto fail;
     }
 
     dom->next = ctx->idmap_domain_info;
@@ -458,11 +474,9 @@ enum idmap_error_code sss_idmap_add_domain_ex(struct sss_idmap_ctx *ctx,
     return IDMAP_SUCCESS;
 
 fail:
-    ctx->free_func(dom->sid, ctx->alloc_pvt);
-    ctx->free_func(dom->name, ctx->alloc_pvt);
-    ctx->free_func(dom, ctx->alloc_pvt);
+    sss_idmap_free_domain(ctx, dom);
 
-    return IDMAP_OUT_OF_MEMORY;
+    return err;
 }
 
 enum idmap_error_code sss_idmap_add_domain(struct sss_idmap_ctx *ctx,
@@ -938,4 +952,37 @@ sss_idmap_domain_has_algorithmic_mapping(struct sss_idmap_ctx *ctx,
     }
 
     return IDMAP_SID_UNKNOWN;
+}
+
+enum idmap_error_code
+sss_idmap_domain_by_name_has_algorithmic_mapping(struct sss_idmap_ctx *ctx,
+                                                 const char *dom_name,
+                                                 bool *has_algorithmic_mapping)
+{
+    struct idmap_domain_info *idmap_domain_info;
+
+    if (dom_name == NULL) {
+        return IDMAP_ERROR;
+    }
+
+    CHECK_IDMAP_CTX(ctx, IDMAP_CONTEXT_INVALID);
+
+    if (ctx->idmap_domain_info == NULL) {
+        return IDMAP_NO_DOMAIN;
+    }
+
+    idmap_domain_info = ctx->idmap_domain_info;
+
+    while (idmap_domain_info != NULL) {
+        if (idmap_domain_info->name != NULL
+                && strcmp(dom_name, idmap_domain_info->name) == 0) {
+
+            *has_algorithmic_mapping = !idmap_domain_info->external_mapping;
+            return IDMAP_SUCCESS;
+        }
+
+        idmap_domain_info = idmap_domain_info->next;
+    }
+
+    return IDMAP_NAME_UNKNOWN;
 }
