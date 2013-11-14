@@ -3,6 +3,7 @@ sssd (1.11.2-1) UNRELEASED; urgency=low
   * New upstream release.
   * rules, sssd-common.install: Use the correct path for the systemd
     service file.
+  * control: Build depend on libpam0g-dev | libpam-dev.
 
  -- Timo Aaltonen <tjaalton@ubuntu.com>  Wed, 06 Nov 2013 14:03:36 +0200
 
