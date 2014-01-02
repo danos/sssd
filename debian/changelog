@@ -1,8 +1,9 @@
-sssd (1.11.3-1) UNRELEASED; urgency=low
+sssd (1.11.3-1) unstable; urgency=low
 
   * New upstream release.
+  * control: Update policy to 3.9.5, no changes.
 
- -- Timo Aaltonen <tjaalton@ubuntu.com>  Thu, 02 Jan 2014 23:36:13 +0200
+ -- Timo Aaltonen <tjaalton@ubuntu.com>  Fri, 03 Jan 2014 00:01:29 +0200
 
 sssd (1.11.2-1) unstable; urgency=low
 
