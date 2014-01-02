@@ -214,6 +214,8 @@ sssm_ad_id_init(struct be_ctx *bectx,
         goto done;
     }
 
+    ad_ctx->sdap_id_ctx->opts->sdom->pvt = ad_ctx;
+
     /* Set up the ID mapping object */
     ret = sdap_idmap_init(ad_ctx->sdap_id_ctx, ad_ctx->sdap_id_ctx,
                           &ad_ctx->sdap_id_ctx->opts->idmap_ctx);
@@ -375,8 +377,7 @@ sssm_ad_access_init(struct be_ctx *bectx,
     if (ret != EOK) {
         goto fail;
     }
-    access_ctx->ldap_ctx = ad_id_ctx->ldap_ctx;
-    access_ctx->gc_ctx = ad_id_ctx->gc_ctx;
+    access_ctx->ad_id_ctx = ad_id_ctx;
 
     ret = dp_copy_options(access_ctx, ad_options->basic, AD_OPTS_BASIC,
                           &access_ctx->ad_options);

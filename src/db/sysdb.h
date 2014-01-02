@@ -76,6 +76,7 @@
 #define SYSDB_POSIX "isPosix"
 #define SYSDB_USER_CATEGORY "userCategory"
 #define SYSDB_HOST_CATEGORY "hostCategory"
+#define SYSDB_GROUP_TYPE "groupType"
 
 #define SYSDB_GECOS "gecos"
 #define SYSDB_LAST_LOGIN "lastLogin"
@@ -144,23 +145,23 @@
 #define SYSDB_NC "objectclass="SYSDB_NETGROUP_CLASS
 #define SYSDB_MPGC "|("SYSDB_UC")("SYSDB_GC")"
 
-#define SYSDB_PWNAM_FILTER "(&("SYSDB_UC")(|("SYSDB_NAME_ALIAS"=%s)("SYSDB_NAME"=%s)))"
+#define SYSDB_PWNAM_FILTER "(&("SYSDB_UC")(|("SYSDB_NAME_ALIAS"=%s)("SYSDB_NAME_ALIAS"=%s)("SYSDB_NAME"=%s)))"
 #define SYSDB_PWUID_FILTER "(&("SYSDB_UC")("SYSDB_UIDNUM"=%lu))"
 #define SYSDB_PWSID_FILTER "(&("SYSDB_UC")("SYSDB_SID_STR"=%s))"
 #define SYSDB_PWENT_FILTER "("SYSDB_UC")"
 
-#define SYSDB_GRNAM_FILTER "(&("SYSDB_GC")(|("SYSDB_NAME_ALIAS"=%s)("SYSDB_NAME"=%s)))"
+#define SYSDB_GRNAM_FILTER "(&("SYSDB_GC")(|("SYSDB_NAME_ALIAS"=%s)("SYSDB_NAME_ALIAS"=%s)("SYSDB_NAME"=%s)))"
 #define SYSDB_GRGID_FILTER "(&("SYSDB_GC")("SYSDB_GIDNUM"=%lu))"
 #define SYSDB_GRSID_FILTER "(&("SYSDB_GC")("SYSDB_SID_STR"=%s))"
 #define SYSDB_GRENT_FILTER "("SYSDB_GC")"
-#define SYSDB_GRNAM_MPG_FILTER "(&("SYSDB_MPGC")(|("SYSDB_NAME_ALIAS"=%s)("SYSDB_NAME"=%s)))"
+#define SYSDB_GRNAM_MPG_FILTER "(&("SYSDB_MPGC")(|("SYSDB_NAME_ALIAS"=%s)("SYSDB_NAME_ALIAS"=%s)("SYSDB_NAME"=%s)))"
 #define SYSDB_GRGID_MPG_FILTER "(&("SYSDB_MPGC")("SYSDB_GIDNUM"=%lu))"
 #define SYSDB_GRENT_MPG_FILTER "("SYSDB_MPGC")"
 
 #define SYSDB_INITGR_FILTER "(&("SYSDB_GC")("SYSDB_GIDNUM"=*))"
 
-#define SYSDB_NETGR_FILTER "(&("SYSDB_NC")(|("SYSDB_NAME_ALIAS"=%s)("SYSDB_NAME"=%s)))"
-#define SYSDB_NETGR_TRIPLES_FILTER "(|("SYSDB_NAME"=%s)("SYSDB_NAME_ALIAS"=%s)("SYSDB_MEMBEROF"=%s))"
+#define SYSDB_NETGR_FILTER "(&("SYSDB_NC")(|("SYSDB_NAME_ALIAS"=%s)("SYSDB_NAME_ALIAS"=%s)("SYSDB_NAME"=%s)))"
+#define SYSDB_NETGR_TRIPLES_FILTER "(|("SYSDB_NAME_ALIAS"=%s)("SYSDB_NAME"=%s)("SYSDB_NAME_ALIAS"=%s)("SYSDB_MEMBEROF"=%s))"
 
 #define SYSDB_SID_FILTER "(&(|("SYSDB_UC")("SYSDB_GC"))("SYSDB_SID_STR"=%s))"
 
@@ -274,6 +275,8 @@ int sysdb_attrs_add_uint32(struct sysdb_attrs *attrs,
                            const char *name, uint32_t value);
 int sysdb_attrs_add_time_t(struct sysdb_attrs *attrs,
                            const char *name, time_t value);
+int sysdb_attrs_add_lc_name_alias(struct sysdb_attrs *attrs,
+                                  const char *value);
 int sysdb_attrs_copy_values(struct sysdb_attrs *src,
                             struct sysdb_attrs *dst,
                             const char *name);
@@ -291,6 +294,8 @@ errno_t sysdb_attrs_get_bool(struct sysdb_attrs *attrs, const char *name,
                              bool *value);
 int sysdb_attrs_get_uint16_t(struct sysdb_attrs *attrs, const char *name,
                              uint16_t *value);
+int sysdb_attrs_get_int32_t(struct sysdb_attrs *attrs, const char *name,
+                             int32_t *value);
 int sysdb_attrs_get_uint32_t(struct sysdb_attrs *attrs, const char *name,
                              uint32_t *value);
 

@@ -3558,6 +3558,13 @@ static int fill_initgr(struct sss_packet *packet, struct ldb_result *res)
 
     ((uint32_t *)body)[0] = num-skipped; /* num results */
     ((uint32_t *)body)[1] = 0; /* reserved */
+    blen = (2 + bindex) * sizeof(uint32_t);
+    ret = sss_packet_set_size(packet, blen);
+    if (ret != EOK) {
+        DEBUG(SSSDBG_OP_FAILURE,
+              ("Could not set packet size to value:%zu\n", blen));
+        return ret;
+    }
 
     return EOK;
 }
@@ -4334,7 +4341,7 @@ static int nss_cmd_getbysid(enum sss_cli_command cmd, struct cli_ctx *cctx)
     /* If the body isn't a SID, fail */
     err = sss_idmap_sid_to_bin_sid(nctx->idmap_ctx, sid_str,
                                    &bin_sid, &bin_sid_length);
-    talloc_free(bin_sid);
+    sss_idmap_free_bin_sid(nctx->idmap_ctx, bin_sid);
     if (err != IDMAP_SUCCESS) {
         DEBUG(SSSDBG_OP_FAILURE, ("sss_idmap_sid_to_bin_sid failed for [%s].\n",
                                   body));

@@ -366,6 +366,32 @@ int sysdb_attrs_get_string(struct sysdb_attrs *attrs, const char *name,
     return EOK;
 }
 
+int sysdb_attrs_get_int32_t(struct sysdb_attrs *attrs, const char *name,
+                             int32_t *value)
+{
+    struct ldb_message_element *el;
+    int ret;
+    char *endptr;
+    int32_t val;
+
+    ret = sysdb_attrs_get_el_ext(attrs, name, false, &el);
+    if (ret) {
+        return ret;
+    }
+
+    if (el->num_values != 1) {
+        return ERANGE;
+    }
+
+    errno = 0;
+    val = strtoint32((const char *) el->values[0].data, &endptr, 10);
+    if (errno != 0) return errno;
+    if (*endptr) return EINVAL;
+
+    *value = val;
+    return EOK;
+}
+
 int sysdb_attrs_get_uint32_t(struct sysdb_attrs *attrs, const char *name,
                              uint32_t *value)
 {
@@ -614,6 +640,28 @@ int sysdb_attrs_add_time_t(struct sysdb_attrs *attrs,
 
     ret = sysdb_attrs_add_val(attrs, name, &v);
     talloc_free(str);
+
+    return ret;
+}
+
+int sysdb_attrs_add_lc_name_alias(struct sysdb_attrs *attrs,
+                                  const char *value)
+{
+    char *lc_str;
+    int ret;
+
+    if (attrs == NULL || value == NULL) {
+        return EINVAL;
+    }
+
+    lc_str = sss_tc_utf8_str_tolower(attrs, value);
+    if (lc_str == NULL) {
+        DEBUG(SSSDBG_OP_FAILURE, ("Cannot convert name to lowercase\n"));
+        return ENOMEM;
+    }
+
+    ret = sysdb_attrs_add_string(attrs, SYSDB_NAME_ALIAS, lc_str);
+    talloc_free(lc_str);
 
     return ret;
 }

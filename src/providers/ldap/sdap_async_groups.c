@@ -26,6 +26,7 @@
 #include "providers/ldap/sdap_async_private.h"
 #include "providers/ldap/ldap_common.h"
 #include "providers/ldap/sdap_idmap.h"
+#include "providers/ad/ad_common.h"
 
 /* ==Group-Parsing Routines=============================================== */
 
@@ -451,6 +452,7 @@ static int sdap_save_group(TALLOC_CTX *memctx,
     bool posix_group;
     bool use_id_mapping;
     char *sid_str;
+    int32_t ad_group_type;
 
     tmpctx = talloc_new(NULL);
     if (!tmpctx) {
@@ -503,74 +505,113 @@ static int sdap_save_group(TALLOC_CTX *memctx,
     }
     DEBUG(SSSDBG_TRACE_FUNC, ("Processing group %s\n", group_name));
 
-    use_id_mapping = sdap_idmap_domain_has_algorithmic_mapping(opts->idmap_ctx,
-                                                               dom->name,
-                                                               sid_str);
-    if (use_id_mapping) {
-        posix_group = true;
-
-        if (sid_str == NULL) {
-            DEBUG(SSSDBG_MINOR_FAILURE, ("SID not available, cannot map a " \
-                                         "unix ID to group [%s].\n", group_name));
-            ret = ENOENT;
+    posix_group = true;
+    if (opts->schema_type == SDAP_SCHEMA_AD) {
+        ret = sysdb_attrs_get_int32_t(attrs, SYSDB_GROUP_TYPE, &ad_group_type);
+        if (ret != EOK) {
+            DEBUG(SSSDBG_OP_FAILURE, ("sysdb_attrs_get_int32_t failed.\n"));
             goto done;
         }
 
-        DEBUG(SSSDBG_TRACE_LIBS,
-              ("Mapping group [%s] objectSID [%s] to unix ID\n",
-               group_name, sid_str));
-
-        /* Convert the SID into a UNIX group ID */
-        ret = sdap_idmap_sid_to_unix(opts->idmap_ctx, sid_str, &gid);
-        if (ret == ENOTSUP) {
-            /* ENOTSUP is returned if built-in SID was provided
-             * => do not store the group, but return EOK */
-            DEBUG(SSSDBG_TRACE_FUNC, ("Skipping built-in object.\n"));
-            ret = EOK;
-            goto done;
-        } else if (ret != EOK) {
-            DEBUG(SSSDBG_MINOR_FAILURE,
-                  ("Could not convert SID string: [%s]\n",
-                   strerror(ret)));
-            goto done;
+        DEBUG(SSSDBG_TRACE_ALL, ("AD group [%s] has type flags %#x.",
+                                 group_name, ad_group_type));
+        /* Only security groups from AD are considered for POSIX groups.
+         * Additionally only global and universal group are taken to account
+         * for trusted domains. */
+        if (!(ad_group_type & SDAP_AD_GROUP_TYPE_SECURITY)
+                || (IS_SUBDOMAIN(dom)
+                    && (!((ad_group_type & SDAP_AD_GROUP_TYPE_GLOBAL)
+                        || (ad_group_type & SDAP_AD_GROUP_TYPE_UNIVERSAL))))) {
+            posix_group = false;
+            gid = 0;
+            DEBUG(SSSDBG_TRACE_FUNC, ("Filtering AD group [%s].\n",
+                                      group_name));
+            ret = sysdb_attrs_add_uint32(group_attrs,
+                                         opts->group_map[SDAP_AT_GROUP_GID].sys_name, 0);
+            if (ret != EOK) {
+                DEBUG(SSSDBG_CRIT_FAILURE,
+                      ("Failed to add a GID to non-posix group!\n"));
+                return ret;
+            }
+            ret = sysdb_attrs_add_bool(group_attrs, SYSDB_POSIX, false);
+            if (ret != EOK) {
+                DEBUG(SSSDBG_OP_FAILURE,
+                      ("Error: Failed to mark group as non-posix!\n"));
+                return ret;
+            }
         }
+    }
 
-        /* Store the GID in the ldap_attrs so it doesn't get
-         * treated as a missing attribute from LDAP and removed.
-         */
-        ret = sdap_replace_id(attrs, SYSDB_GIDNUM, gid);
-        if (ret) {
-            DEBUG(SSSDBG_OP_FAILURE, ("Cannot set the id-mapped GID\n"));
-            goto done;
-        }
-    } else {
-        ret = sysdb_attrs_get_bool(attrs, SYSDB_POSIX, &posix_group);
-        if (ret == ENOENT) {
+    if (posix_group) {
+        use_id_mapping = sdap_idmap_domain_has_algorithmic_mapping(opts->idmap_ctx,
+                                                                   dom->name,
+                                                                   sid_str);
+        if (use_id_mapping) {
             posix_group = true;
-        } else if (ret != EOK) {
-            DEBUG(SSSDBG_MINOR_FAILURE,
-                  ("Error reading posix attribute: [%s]\n",
-                   strerror(ret)));
-            goto done;
-        }
 
-        DEBUG(8, ("This is%s a posix group\n", (posix_group)?"":" not"));
-        ret = sysdb_attrs_add_bool(group_attrs, SYSDB_POSIX, posix_group);
-        if (ret != EOK) {
-            DEBUG(SSSDBG_MINOR_FAILURE,
-                  ("Error setting posix attribute: [%s]\n",
-                   strerror(ret)));
-            goto done;
-        }
+            if (sid_str == NULL) {
+                DEBUG(SSSDBG_MINOR_FAILURE, ("SID not available, cannot map a " \
+                                             "unix ID to group [%s].\n", group_name));
+                ret = ENOENT;
+                goto done;
+            }
 
-        ret = sysdb_attrs_get_uint32_t(attrs,
-                                       opts->group_map[SDAP_AT_GROUP_GID].sys_name,
-                                       &gid);
-        if (ret != EOK) {
-            DEBUG(1, ("no gid provided for [%s] in domain [%s].\n",
-                      group_name, dom->name));
-            ret = EINVAL;
-            goto done;
+            DEBUG(SSSDBG_TRACE_LIBS,
+                  ("Mapping group [%s] objectSID [%s] to unix ID\n",
+                   group_name, sid_str));
+
+            /* Convert the SID into a UNIX group ID */
+            ret = sdap_idmap_sid_to_unix(opts->idmap_ctx, sid_str, &gid);
+            if (ret == ENOTSUP) {
+                /* ENOTSUP is returned if built-in SID was provided
+                 * => do not store the group, but return EOK */
+                DEBUG(SSSDBG_TRACE_FUNC, ("Skipping built-in object.\n"));
+                ret = EOK;
+                goto done;
+            } else if (ret != EOK) {
+                DEBUG(SSSDBG_MINOR_FAILURE,
+                      ("Could not convert SID string: [%s]\n",
+                       strerror(ret)));
+                goto done;
+            }
+
+            /* Store the GID in the ldap_attrs so it doesn't get
+             * treated as a missing attribute from LDAP and removed.
+             */
+            ret = sdap_replace_id(attrs, SYSDB_GIDNUM, gid);
+            if (ret) {
+                DEBUG(SSSDBG_OP_FAILURE, ("Cannot set the id-mapped GID\n"));
+                goto done;
+            }
+        } else {
+            ret = sysdb_attrs_get_bool(attrs, SYSDB_POSIX, &posix_group);
+            if (ret == ENOENT) {
+                posix_group = true;
+            } else if (ret != EOK) {
+                DEBUG(SSSDBG_MINOR_FAILURE,
+                      ("Error reading posix attribute: [%s]\n",
+                       strerror(ret)));
+                goto done;
+            }
+
+            DEBUG(8, ("This is%s a posix group\n", (posix_group)?"":" not"));
+            ret = sysdb_attrs_add_bool(group_attrs, SYSDB_POSIX, posix_group);
+            if (ret != EOK) {
+                DEBUG(SSSDBG_MINOR_FAILURE,
+                      ("Error setting posix attribute: [%s]\n",
+                       strerror(ret)));
+                goto done;
+            }
+
+            ret = sysdb_attrs_get_uint32_t(attrs,
+                                           opts->group_map[SDAP_AT_GROUP_GID].sys_name,
+                                           &gid);
+            if (ret != EOK) {
+                DEBUG(1, ("no gid provided for [%s] in domain [%s].\n",
+                          group_name, dom->name));
+                ret = EINVAL;
+                goto done;
+            }
         }
     }
 
@@ -1500,9 +1541,13 @@ struct sdap_get_groups_state {
 
     size_t base_iter;
     struct sdap_search_base **search_bases;
+
+    struct sdap_handle *ldap_sh;
+    struct sdap_id_op *op;
 };
 
 static errno_t sdap_get_groups_next_base(struct tevent_req *req);
+static void sdap_get_groups_ldap_connect_done(struct tevent_req *subreq);
 static void sdap_get_groups_process(struct tevent_req *subreq);
 static void sdap_get_groups_done(struct tevent_req *subreq);
 
@@ -1518,7 +1563,9 @@ struct tevent_req *sdap_get_groups_send(TALLOC_CTX *memctx,
 {
     errno_t ret;
     struct tevent_req *req;
+    struct tevent_req *subreq;
     struct sdap_get_groups_state *state;
+    struct ad_id_ctx *subdom_id_ctx;
 
     req = tevent_req_create(memctx, &state, struct sdap_get_groups_state);
     if (!req) return NULL;
@@ -1546,6 +1593,30 @@ struct tevent_req *sdap_get_groups_send(TALLOC_CTX *memctx,
         goto done;
     }
 
+    /* With AD by default the Global Catalog is used for lookup. But the GC
+     * group object might not have full group membership data. To make sure we
+     * connect to an LDAP server of the group's domain. */
+    if (state->opts->schema_type == SDAP_SCHEMA_AD && sdom->pvt != NULL) {
+        subdom_id_ctx = talloc_get_type(sdom->pvt, struct ad_id_ctx);
+        state->op = sdap_id_op_create(state, subdom_id_ctx->ldap_ctx->conn_cache);
+        if (!state->op) {
+            DEBUG(2, ("sdap_id_op_create failed\n"));
+            ret = ENOMEM;
+            goto done;
+        }
+
+        subreq = sdap_id_op_connect_send(state->op, state, &ret);
+        if (subreq == NULL) {
+            ret = ENOMEM;
+            goto done;
+        }
+
+        tevent_req_set_callback(subreq,
+                                sdap_get_groups_ldap_connect_done,
+                                req);
+        return req;
+    }
+
     ret = sdap_get_groups_next_base(req);
 
 done:
@@ -1555,6 +1626,34 @@ done:
     }
 
     return req;
+}
+
+static void sdap_get_groups_ldap_connect_done(struct tevent_req *subreq)
+{
+    struct tevent_req *req;
+    struct sdap_get_groups_state *state;
+    int ret;
+    int dp_error;
+
+    req = tevent_req_callback_data(subreq, struct tevent_req);
+    state = tevent_req_data(req, struct sdap_get_groups_state);
+
+    ret = sdap_id_op_connect_recv(subreq, &dp_error);
+    talloc_zfree(subreq);
+
+    if (ret != EOK) {
+        tevent_req_error(req, ret);
+        return;
+    }
+
+    state->ldap_sh = sdap_id_op_handle(state->op);
+
+    ret = sdap_get_groups_next_base(req);
+    if (ret != EOK) {
+        tevent_req_error(req, ret);
+    }
+
+    return;
 }
 
 static errno_t sdap_get_groups_next_base(struct tevent_req *req)
@@ -1577,7 +1676,8 @@ static errno_t sdap_get_groups_next_base(struct tevent_req *req)
            state->search_bases[state->base_iter]->basedn));
 
     subreq = sdap_get_generic_send(
-            state, state->ev, state->opts, state->sh,
+            state, state->ev, state->opts,
+            state->ldap_sh != NULL ? state->ldap_sh : state->sh,
             state->search_bases[state->base_iter]->basedn,
             state->search_bases[state->base_iter]->scope,
             state->filter, state->attrs,
@@ -1828,7 +1928,7 @@ static void sdap_ad_match_rule_members_process(struct tevent_req *subreq)
     struct sysdb_attrs *group = state->groups[0];
     struct ldb_message_element *member_el;
     struct ldb_message_element *orig_dn_el;
-    size_t count;
+    size_t count = 0;
     size_t i;
     hash_table_t *ghosts;
 

@@ -36,6 +36,7 @@ struct dp_option ad_basic_opts[] = {
     { "krb5_realm", DP_OPT_STRING, NULL_STRING, NULL_STRING},
     { "ad_enable_dns_sites", DP_OPT_BOOL, BOOL_TRUE, BOOL_TRUE },
     { "ad_access_filter", DP_OPT_STRING, NULL_STRING, NULL_STRING},
+    { "ad_enable_gc", DP_OPT_BOOL, BOOL_TRUE, BOOL_TRUE },
     DP_OPTION_TERMINATOR
 };
 
@@ -208,6 +209,7 @@ struct sdap_attr_map ad_2008r2_group_map[] = {
     { "ldap_group_objectsid", "objectSID", SYSDB_SID, NULL },
     { "ldap_group_modify_timestamp", "whenChanged", SYSDB_ORIG_MODSTAMP, NULL },
     { "ldap_group_entry_usn", SDAP_AD_USN, SYSDB_USN, NULL },
+    { "ldap_group_type", "groupType", SYSDB_GROUP_TYPE, NULL },
     SDAP_ATTR_MAP_TERMINATOR
 };
 

@@ -305,6 +305,7 @@ int sysdb_search_user_by_name(TALLOC_CTX *mem_ctx,
     struct ldb_dn *basedn;
     size_t msgs_count = 0;
     char *sanitized_name;
+    char *lc_sanitized_name;
     char *filter;
     int ret;
 
@@ -320,13 +321,14 @@ int sysdb_search_user_by_name(TALLOC_CTX *mem_ctx,
         goto done;
     }
 
-    ret = sss_filter_sanitize(tmp_ctx, name, &sanitized_name);
+    ret = sss_filter_sanitize_for_dom(tmp_ctx, name, domain, &sanitized_name,
+                                      &lc_sanitized_name);
     if (ret != EOK) {
         goto done;
     }
 
-    filter = talloc_asprintf(tmp_ctx, SYSDB_PWNAM_FILTER, sanitized_name,
-                             sanitized_name);
+    filter = talloc_asprintf(tmp_ctx, SYSDB_PWNAM_FILTER, lc_sanitized_name,
+                             sanitized_name, sanitized_name);
     if (!filter) {
         ret = ENOMEM;
         goto done;
@@ -1091,6 +1093,7 @@ sysdb_remove_ghostattr_from_groups(struct sysdb_ctx *sysdb,
     struct ldb_dn *tmpdn;
     const char *group_attrs[] = {SYSDB_NAME, SYSDB_GHOST, SYSDB_ORIG_MEMBER, NULL};
     const char *userdn;
+    char *sanitized_name;
     char *filter;
     errno_t ret = EOK;
     size_t group_count = 0;
@@ -1101,7 +1104,13 @@ sysdb_remove_ghostattr_from_groups(struct sysdb_ctx *sysdb,
         return ENOENT;
     }
 
-    filter = talloc_asprintf(tmp_ctx, "(|(%s=%s)", SYSDB_GHOST, name);
+    ret = sss_filter_sanitize(tmp_ctx, name, &sanitized_name);
+    if (ret != EOK) {
+        goto done;
+    }
+
+    filter = talloc_asprintf(tmp_ctx, "(|(%s=%s)",
+                                      SYSDB_GHOST, sanitized_name);
     if (!filter) {
         ret = ENOMEM;
         goto done;
@@ -2539,6 +2548,7 @@ int sysdb_delete_user(struct sysdb_ctx *sysdb,
     struct ldb_message *msg;
     int ret;
     int i;
+    char *sanitized_name;
 
     tmp_ctx = talloc_new(NULL);
     if (!tmp_ctx) {
@@ -2578,7 +2588,13 @@ int sysdb_delete_user(struct sysdb_ctx *sysdb,
         }
     } else if (ret == ENOENT && name != NULL) {
         /* Perhaps a ghost user? */
-        filter = talloc_asprintf(tmp_ctx, "(%s=%s)", SYSDB_GHOST, name);
+        ret = sss_filter_sanitize(tmp_ctx, name, &sanitized_name);
+        if (ret != EOK) {
+            goto fail;
+        }
+
+        filter = talloc_asprintf(tmp_ctx, "(%s=%s)",
+                                          SYSDB_GHOST, sanitized_name);
         if (filter == NULL) {
             ret = ENOMEM;
             goto fail;

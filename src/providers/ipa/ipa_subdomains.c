@@ -267,6 +267,29 @@ ipa_ad_subdom_refresh(struct be_ctx *be_ctx,
     return EOK;
 }
 
+static errno_t
+ipa_subdom_reinit(struct ipa_subdomains_ctx *ctx)
+{
+    errno_t ret;
+
+    ret = sysdb_update_subdomains(ctx->be_ctx->domain);
+    if (ret != EOK) {
+        DEBUG(SSSDBG_OP_FAILURE, ("sysdb_update_subdomains failed.\n"));
+        return ret;
+    }
+
+    ret = sss_write_domain_mappings(ctx->be_ctx->domain,
+                    dp_opt_get_bool(ctx->id_ctx->ipa_options->basic,
+                    IPA_SERVER_MODE));
+    if (ret != EOK) {
+        DEBUG(SSSDBG_MINOR_FAILURE,
+                ("sss_krb5_write_mappings failed.\n"));
+        /* Just continue */
+    }
+
+    return EOK;
+}
+
 static void
 ipa_ad_subdom_remove(struct ipa_subdomains_ctx *ctx,
                      struct sss_domain_info *subdom)
@@ -809,8 +832,6 @@ static void ipa_subdomains_get_conn_done(struct tevent_req *req)
             DEBUG(SSSDBG_MINOR_FAILURE,
                   ("No IPA server is available, cannot get the "
                    "subdomain list while offline\n"));
-
-/* FIXME: return saved results ?? */
         } else {
             DEBUG(SSSDBG_OP_FAILURE,
                   ("Failed to connect to IPA server: [%d](%s)\n",
@@ -923,9 +944,9 @@ static void ipa_subdomains_handler_done(struct tevent_req *req)
     }
 
     if (refresh_has_changes) {
-        ret = sysdb_update_subdomains(domain);
+        ret = ipa_subdom_reinit(ctx->sd_ctx);
         if (ret != EOK) {
-            DEBUG(SSSDBG_OP_FAILURE, ("sysdb_update_subdomains failed.\n"));
+            DEBUG(SSSDBG_OP_FAILURE, ("Could not reinitialize subdomains\n"));
             goto done;
         }
 
@@ -934,15 +955,6 @@ static void ipa_subdomains_handler_done(struct tevent_req *req)
         if (ret != EOK) {
             DEBUG(SSSDBG_OP_FAILURE, ("ipa_ad_subdom_refresh failed.\n"));
             goto done;
-        }
-
-        ret = sss_write_domain_mappings(domain,
-                        dp_opt_get_bool(ctx->sd_ctx->id_ctx->ipa_options->basic,
-                        IPA_SERVER_MODE));
-        if (ret != EOK) {
-            DEBUG(SSSDBG_MINOR_FAILURE,
-                  ("sss_krb5_write_mappings failed.\n"));
-            /* Just continue */
         }
     }
 
@@ -1291,6 +1303,12 @@ int ipa_subdom_init(struct be_ctx *be_ctx,
         DEBUG(SSSDBG_MINOR_FAILURE, ("Failed to add subdom offline callback"));
     }
 
+    ret = ipa_subdom_reinit(ctx);
+    if (ret != EOK) {
+        DEBUG(SSSDBG_MINOR_FAILURE, ("Could not load the list of subdomains. "
+              "Users from trusted domains might not be resolved correctly\n"));
+    }
+
     return EOK;
 }
 
@@ -1299,6 +1317,7 @@ int ipa_ad_subdom_init(struct be_ctx *be_ctx,
 {
     char *realm;
     char *hostname;
+    errno_t ret;
 
     if (dp_opt_get_bool(id_ctx->ipa_options->basic,
                         IPA_SERVER_MODE) == false) {
@@ -1342,6 +1361,12 @@ int ipa_ad_subdom_init(struct be_ctx *be_ctx,
     id_ctx->server_mode->hostname = hostname;
     id_ctx->server_mode->trusts = NULL;
     id_ctx->server_mode->ext_groups = NULL;
+
+    ret = ipa_ad_subdom_refresh(be_ctx, id_ctx, be_ctx->domain);
+    if (ret != EOK) {
+        DEBUG(SSSDBG_OP_FAILURE, ("ipa_ad_subdom_refresh failed.\n"));
+        return ret;
+    }
 
     return EOK;
 }

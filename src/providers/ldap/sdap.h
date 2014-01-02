@@ -137,6 +137,14 @@ struct sdap_ppolicy_data {
 #define SDAP_AD_USN "uSNChanged"
 #define SDAP_AD_LAST_USN "highestCommittedUSN"
 
+#define SDAP_AD_GROUP_TYPE_BUILTIN      0x00000001
+#define SDAP_AD_GROUP_TYPE_GLOBAL       0x00000002
+#define SDAP_AD_GROUP_TYPE_DOMAIN_LOCAL 0x00000004
+#define SDAP_AD_GROUP_TYPE_UNIVERSAL    0x00000008
+#define SDAP_AD_GROUP_TYPE_APP_BASIC    0x00000010
+#define SDAP_AD_GROUP_TYPE_APP_QUERY    0x00000020
+#define SDAP_AD_GROUP_TYPE_SECURITY     0x80000000
+
 enum sdap_basic_opt {
     SDAP_URI = 0,
     SDAP_BACKUP_URI,
@@ -288,6 +296,7 @@ enum sdap_group_attrs {
     SDAP_AT_GROUP_OBJECTSID,
     SDAP_AT_GROUP_MODSTAMP,
     SDAP_AT_GROUP_USN,
+    SDAP_AT_GROUP_TYPE,
 
     SDAP_OPTS_GROUP /* attrs counter */
 };
@@ -394,6 +403,8 @@ struct sdap_domain {
     struct timeval last_enum;
     /* cleanup loop timer */
     struct timeval last_purge;
+
+    void *pvt;
 };
 
 struct sdap_options {

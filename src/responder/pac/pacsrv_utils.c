@@ -74,6 +74,7 @@ errno_t get_sids_from_pac(TALLOC_CTX *mem_ctx,
     struct sss_domain_info *user_dom;
     struct sss_domain_info *group_dom;
     char *sid_str = NULL;
+    char *msid_str = NULL;
     char *user_dom_sid_str = NULL;
     size_t user_dom_sid_str_len;
     enum idmap_error_code err;
@@ -81,7 +82,7 @@ errno_t get_sids_from_pac(TALLOC_CTX *mem_ctx,
     hash_key_t key;
     hash_value_t value;
     char *rid_start;
-    struct ldb_result *msg;
+    struct ldb_result *msg = NULL;
     char *user_sid_str = NULL;
     char *primary_group_sid_str = NULL;
 
@@ -153,8 +154,8 @@ errno_t get_sids_from_pac(TALLOC_CTX *mem_ctx,
                                      sid_str, NULL, &msg);
     if (ret == EOK && msg->count == 1) {
         value.ul = ldb_msg_find_attr_as_uint64(msg->msgs[0], SYSDB_UIDNUM, 0);
-        talloc_free(msg);
     }
+    talloc_zfree(msg);
 
     ret = hash_enter(sid_table, &key, &value);
     if (ret != HASH_SUCCESS) {
@@ -188,8 +189,8 @@ errno_t get_sids_from_pac(TALLOC_CTX *mem_ctx,
                                      sid_str, NULL, &msg);
     if (ret == EOK && msg->count == 1) {
         value.ul = ldb_msg_find_attr_as_uint64(msg->msgs[0], SYSDB_GIDNUM, 0);
-        talloc_free(msg);
     }
+    talloc_zfree(msg);
 
     ret = hash_enter(sid_table, &key, &value);
     if (ret != HASH_SUCCESS) {
@@ -218,8 +219,8 @@ errno_t get_sids_from_pac(TALLOC_CTX *mem_ctx,
         if (ret == EOK && msg->count == 1) {
             value.ul = ldb_msg_find_attr_as_uint64(msg->msgs[0],
                                                    SYSDB_GIDNUM, 0);
-            talloc_free(msg);
         }
+        talloc_zfree(msg);
 
         ret = hash_enter(sid_table, &key, &value);
         if (ret != HASH_SUCCESS) {
@@ -231,47 +232,44 @@ errno_t get_sids_from_pac(TALLOC_CTX *mem_ctx,
 
     }
 
-    talloc_zfree(sid_str);
-
     for(s = 0; s < info3->sidcount; s++) {
         err = sss_idmap_smb_sid_to_sid(pac_ctx->idmap_ctx, info3->sids[s].sid,
-                                       &sid_str);
+                                       &msid_str);
         if (err != IDMAP_SUCCESS) {
             DEBUG(SSSDBG_OP_FAILURE, ("sss_idmap_smb_sid_to_sid failed.\n"));
             ret = EFAULT;
             goto done;
         }
 
-        key.str = sid_str;
+        key.str = msid_str;
         value.ul = 0;
 
-        ret = responder_get_domain_by_id(pac_ctx->rctx, sid_str, &group_dom);
+        ret = responder_get_domain_by_id(pac_ctx->rctx, msid_str, &group_dom);
         if (ret == EOK) {
             ret = sysdb_search_object_by_sid(mem_ctx, group_dom->sysdb,
-                                             group_dom, sid_str, NULL, &msg);
+                                             group_dom, msid_str, NULL, &msg);
             if (ret == EOK && msg->count == 1 ) {
                 value.ul = ldb_msg_find_attr_as_uint64(msg->msgs[0],
                                                        SYSDB_GIDNUM, 0);
-                talloc_free(msg);
             }
+            talloc_zfree(msg);
         }
 
         ret = hash_enter(sid_table, &key, &value);
+        sss_idmap_free_sid(pac_ctx->idmap_ctx, msid_str);
         if (ret != HASH_SUCCESS) {
             DEBUG(SSSDBG_OP_FAILURE, ("hash_enter failed [%d][%s].\n",
                                       ret, hash_error_string(ret)));
             ret = EIO;
             goto done;
         }
-
-        talloc_zfree(sid_str);
     }
 
     ret = EOK;
 
 done:
     talloc_free(sid_str);
-    talloc_free(user_dom_sid_str);
+    sss_idmap_free_sid(pac_ctx->idmap_ctx, user_dom_sid_str);
 
     if (ret == EOK) {
         *_sid_table = sid_table;
@@ -483,9 +481,9 @@ errno_t get_pwd_from_pac(TALLOC_CTX *mem_ctx,
         goto done;
     }
 
-    ret = sysdb_attrs_add_string(attrs, SYSDB_NAME_ALIAS, pwd->pw_name);
+    ret = sysdb_attrs_add_lc_name_alias(attrs, pwd->pw_name);
     if (ret != EOK) {
-        DEBUG(SSSDBG_OP_FAILURE, ("sysdb_attrs_add_string failed.\n"));
+        DEBUG(SSSDBG_OP_FAILURE, ("sysdb_attrs_add_lc_name_alias failed.\n"));
         goto done;
     }
 

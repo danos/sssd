@@ -1096,3 +1096,48 @@ ad_id_ctx_init(struct ad_options *ad_opts, struct be_ctx *bectx)
 
     return ad_ctx;
 }
+
+struct sdap_id_conn_ctx *
+ad_get_dom_ldap_conn(struct ad_id_ctx *ad_ctx, struct sss_domain_info *dom)
+{
+    struct sdap_id_conn_ctx *conn;
+    struct sdap_domain *sdom;
+    struct ad_id_ctx *subdom_id_ctx;
+
+    if (IS_SUBDOMAIN(dom)) {
+        sdom = sdap_domain_get(ad_ctx->sdap_id_ctx->opts, dom);
+        if (sdom == NULL || sdom->pvt == NULL) {
+            DEBUG(SSSDBG_CRIT_FAILURE, ("No ID ctx available for [%s].\n",
+                                        dom->name));
+            return NULL;
+        }
+        subdom_id_ctx = talloc_get_type(sdom->pvt, struct ad_id_ctx);
+        conn = subdom_id_ctx->ldap_ctx;
+    } else {
+        conn = ad_ctx->ldap_ctx;
+    }
+
+    return conn;
+}
+
+struct sdap_id_conn_ctx **
+ad_gc_conn_list(TALLOC_CTX *mem_ctx, struct ad_id_ctx *ad_ctx,
+                struct sss_domain_info *dom)
+{
+    struct sdap_id_conn_ctx **clist;
+    int cindex = 0;
+
+    clist = talloc_zero_array(mem_ctx, struct sdap_id_conn_ctx *, 3);
+    if (clist == NULL) return NULL;
+
+    /* Always try GC first */
+    if (dp_opt_get_bool(ad_ctx->ad_options->basic, AD_ENABLE_GC)) {
+        clist[cindex] = ad_ctx->gc_ctx;
+        clist[cindex]->ignore_mark_offline = true;
+        cindex++;
+    }
+
+    clist[cindex] = ad_get_dom_ldap_conn(ad_ctx, dom);
+
+    return clist;
+}

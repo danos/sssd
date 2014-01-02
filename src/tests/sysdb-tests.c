@@ -3900,6 +3900,8 @@ START_TEST(test_odd_characters)
     struct ldb_message *msg;
     const struct ldb_val *val;
     const char odd_username[] = "*(odd)\\user,name";
+    const char odd_username_orig_dn[] =
+        "\\2a\\28odd\\29\\5cuser,name,cn=users,dc=example,dc=com";
     const char odd_groupname[] = "*(odd\\*)\\group,name";
     const char odd_netgroupname[] = "*(odd\\*)\\netgroup,name";
     const char *received_user;
@@ -3998,11 +4000,33 @@ START_TEST(test_odd_characters)
     fail_unless(ret == EOK, "sysdb_delete_user error [%d][%s]",
                             ret, strerror(ret));
 
+    /* Delete non existing User */
+    ret = sysdb_delete_user(test_ctx->sysdb, test_ctx->domain,
+                            odd_username, 10000);
+    fail_unless(ret == ENOENT, "sysdb_delete_user error [%d][%s]",
+                               ret, strerror(ret));
 
     /* Delete Group */
     ret = sysdb_delete_group(test_ctx->sysdb, test_ctx->domain,
                              odd_groupname, 20000);
     fail_unless(ret == EOK, "sysdb_delete_group error [%d][%s]",
+                            ret, strerror(ret));
+
+    /* Add */
+    ret = sysdb_add_user(test_ctx->sysdb,
+                         test_ctx->domain,
+                         odd_username,
+                         10000, 0,
+                         "","","",
+                         odd_username_orig_dn,
+                         NULL, 5400, 0);
+    fail_unless(ret == EOK, "sysdb_add_user error [%d][%s]",
+                            ret, strerror(ret));
+
+    /* Delete User */
+    ret = sysdb_delete_user(test_ctx->sysdb, test_ctx->domain,
+                            odd_username, 10000);
+    fail_unless(ret == EOK, "sysdb_delete_user error [%d][%s]",
                             ret, strerror(ret));
 
     /* ===== Netgroups ===== */
@@ -4395,6 +4419,33 @@ START_TEST(test_sysdb_svc_remove_alias)
     fail_if(ret != EOK, "[%s]", strerror(ret));
 
     talloc_free(test_ctx);
+}
+END_TEST
+
+#define LC_NAME_ALIAS_TEST_VAL "TeSt VaLuE"
+#define LC_NAME_ALIAS_CHECK_VAL "test value"
+START_TEST(test_sysdb_attrs_add_lc_name_alias)
+{
+    int ret;
+    struct sysdb_attrs *attrs;
+    const char *str;
+
+    ret = sysdb_attrs_add_lc_name_alias(NULL, NULL);
+    fail_unless(ret == EINVAL, "EINVAL not returned for NULL input");
+
+    attrs = sysdb_new_attrs(NULL);
+    fail_unless(attrs != NULL, "sysdb_new_attrs failed");
+
+    ret = sysdb_attrs_add_lc_name_alias(attrs, LC_NAME_ALIAS_TEST_VAL);
+    fail_unless(ret == EOK, "sysdb_attrs_add_lc_name_alias failed");
+
+    ret = sysdb_attrs_get_string(attrs, SYSDB_NAME_ALIAS, &str);
+    fail_unless(ret == EOK, "sysdb_attrs_get_string failed");
+    fail_unless(strcmp(str, LC_NAME_ALIAS_CHECK_VAL) == 0,
+                "Unexpected value, expected [%s], got [%s]",
+                LC_NAME_ALIAS_CHECK_VAL, str);
+
+    talloc_free(attrs);
 }
 END_TEST
 
@@ -5163,6 +5214,8 @@ Suite *create_sysdb_suite(void)
     tcase_add_test(tc_sysdb, test_sysdb_add_services);
     tcase_add_test(tc_sysdb, test_sysdb_store_services);
     tcase_add_test(tc_sysdb, test_sysdb_svc_remove_alias);
+
+    tcase_add_test(tc_sysdb, test_sysdb_attrs_add_lc_name_alias);
 
 /* Add all test cases to the test suite */
     suite_add_tcase(s, tc_sysdb);
