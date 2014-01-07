@@ -1,3 +1,11 @@
+sssd (1.11.3-2) UNRELEASED; urgency=low
+
+  * control, rules: Add libcmocka-dev and re-add check to build-depends.
+    Added a patch to disable some obsolete tests. Override dh_auto_test
+    so that it shows the test error log if they fail.
+
+ -- Timo Aaltonen <tjaalton@ubuntu.com>  Tue, 07 Jan 2014 00:39:10 +0200
+
 sssd (1.11.3-1) unstable; urgency=low
 
   * New upstream release.
