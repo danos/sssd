@@ -57,7 +57,8 @@ override_dh_install:
 	find $(CURDIR)/debian/tmp/ -name '*.egg-info' -exec rm '{}' ';'
 	rm -f $(CURDIR)/debian/tmp/etc/rc.d/init.d/sssd
 
-	sed -i 's/${CURDATE}/${PKGDATE}/g' $(CURDIR)/debian/tmp/usr/share/man/man8/pam_sss.8
+	# match nn/nn/nnnn, replace with the date from changelog
+	sed -i 's/[0-1][0-9]\/[0-3][0-9]\/[0-9][0-9][0-9][0-9]/${PKGDATE}/g' $(CURDIR)/debian/tmp/usr/share/man/man*/*
 
 	dh_install --fail-missing
 
