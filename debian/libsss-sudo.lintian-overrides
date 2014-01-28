@@ -1,2 +1,1 @@
-dev-pkg-without-shlib-symlink usr/lib/*/libsss_sudo.so
 shlib-without-versioned-soname usr/lib/*/libsss_sudo.so libsss_sudo.so
