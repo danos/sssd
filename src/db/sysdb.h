@@ -288,6 +288,8 @@ int sysdb_attrs_steal_string(struct sysdb_attrs *attrs,
                              const char *name, char *str);
 int sysdb_attrs_get_string(struct sysdb_attrs *attrs, const char *name,
                            const char **string);
+const char **sss_ldb_el_to_string_list(TALLOC_CTX *mem_ctx,
+                                       struct ldb_message_element *el);
 int sysdb_attrs_get_string_array(struct sysdb_attrs *attrs, const char *name,
                                  TALLOC_CTX *mem_ctx, const char ***string);
 errno_t sysdb_attrs_get_bool(struct sysdb_attrs *attrs, const char *name,
@@ -388,7 +390,8 @@ errno_t sysdb_update_subdomains(struct sss_domain_info *domain);
 errno_t sysdb_master_domain_update(struct sss_domain_info *domain);
 
 errno_t sysdb_master_domain_add_info(struct sss_domain_info *domain,
-                                     const char *flat, const char *id);
+                                     const char *flat, const char *id,
+                                     const char* forest);
 
 errno_t sysdb_subdomain_delete(struct sysdb_ctx *sysdb, const char *name);
 

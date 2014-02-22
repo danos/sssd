@@ -183,14 +183,18 @@ ipa_ad_ctx_new(struct be_ctx *be_ctx,
         return EFAULT;
     }
 
-    ret = sdap_id_setup_tasks(ad_id_ctx->sdap_id_ctx,
-                              ad_id_ctx->ldap_ctx, sdom,
+    ret = sdap_id_setup_tasks(be_ctx,
+                              ad_id_ctx->sdap_id_ctx,
+                              sdom,
                               ldap_enumeration_send,
-                              ldap_enumeration_recv);
+                              ldap_enumeration_recv,
+                              ad_id_ctx->sdap_id_ctx);
     if (ret != EOK) {
         talloc_free(ad_options);
         return ret;
     }
+
+    sdom->pvt = ad_id_ctx;
 
     /* Set up the ID mapping object */
     ad_id_ctx->sdap_id_ctx->opts->idmap_ctx =
@@ -1074,7 +1078,7 @@ static void ipa_subdomains_handler_master_done(struct tevent_req *req)
         }
 
         ret = sysdb_master_domain_add_info(ctx->sd_ctx->be_ctx->domain,
-                                           flat, id);
+                                           flat, id, NULL);
     } else {
         ctx->search_base_iter++;
         ret = ipa_subdomains_handler_get(ctx, IPA_SUBDOMAINS_MASTER);

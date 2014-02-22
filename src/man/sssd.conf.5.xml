@@ -489,7 +489,7 @@
                         <para>
                             example:
                             <programlisting>
-override_homedir = /home/%u
+fallback_homedir = /home/%u
                             </programlisting>
                         </para>
                         <para>
@@ -503,8 +503,9 @@ override_homedir = /home/%u
                     <listitem>
                         <para>
                             Override the login shell for all users. This
-                            option can be specified globally in the [nss]
-                            section or per-domain.
+                            option supersedes any other shell options if
+                            it takes effect and can be set either in the
+                            [nss] section or per-domain.
                         </para>
                         <para>
                             Default: not set (SSSD will use the value
@@ -568,10 +569,10 @@ override_homedir = /home/%u
                     <term>default_shell</term>
                     <listitem>
                         <para>
-                            The default shell to use if the provider does not
-                            return one during lookup. This option supersedes
-                            any other shell options if it takes effect and can
-                            be set either in the [nss] section or per-domain.
+                            The default shell to use if the provider does
+                            not return one during lookup. This option can
+                            be specified globally in the [nss] section
+                            or per-domain.
                         </para>
                         <para>
                             Default: not set (Return NULL if no shell is
@@ -1770,7 +1771,8 @@ override_homedir = /home/%u
                     <listitem>
                         <para>
                             Use this homedir as default value for all subdomains
-                            within this domain. See <emphasis>override_homedir</emphasis>
+                            within this domain in IPA AD trust.
+                            See <emphasis>override_homedir</emphasis>
                             for info about possible values. In addition to those, the
                             expansion below can only be used with
                             <emphasis>subdomain_homedir</emphasis>.

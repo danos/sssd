@@ -254,7 +254,10 @@ static void krb5_child_timeout(struct tevent_context *ev,
         return;
     }
 
-    DEBUG(9, ("timeout for child [%d] reached.\n", state->child_pid));
+    DEBUG(SSSDBG_IMPORTANT_INFO,
+          ("Timeout for child [%d] reached. In case KDC is distant or network "
+           "is slow you may consider increasing value of krb5_auth_timeout.\n",
+           state->child_pid));
 
     ret = kill(state->child_pid, SIGKILL);
     if (ret == -1) {
@@ -548,8 +551,9 @@ parse_krb5_child_response(TALLOC_CTX *mem_ctx, uint8_t *buf, ssize_t len,
          * CCACHE_ENV_NAME"=". pref_len also counts the trailing '=' because
          * sizeof() counts the trailing '\0' of a string. */
         pref_len = sizeof(CCACHE_ENV_NAME);
-        if (msg_len > pref_len &&
-            strncmp((const char *) &buf[p], CCACHE_ENV_NAME"=", pref_len) == 0) {
+        if ((msg_type == SSS_PAM_ENV_ITEM) &&
+            (msg_len > pref_len) &&
+            (strncmp((const char *) &buf[p], CCACHE_ENV_NAME"=", pref_len) == 0)) {
             ccname = (char *) &buf[p+pref_len];
             ccname_len = msg_len-pref_len;
         }
@@ -600,7 +604,7 @@ parse_krb5_child_response(TALLOC_CTX *mem_ctx, uint8_t *buf, ssize_t len,
 
         p += msg_len;
 
-        if ((p < len) && (p + 2*sizeof(int32_t) >= len)) {
+        if ((p < len) && (p + 2*sizeof(int32_t) > len)) {
             DEBUG(SSSDBG_CRIT_FAILURE,
                   ("The remainder of the message is too short.\n"));
             return EINVAL;

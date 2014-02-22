@@ -51,6 +51,8 @@ struct err_string error_to_str[] = {
     { "Entry not found" }, /* ERR_NOT_FOUND */
     { "Domain not found" }, /* ERR_DOMAIN_NOT_FOUND */
     { "Missing configuration file" }, /* ERR_MISSING_CONF */
+    { "Malformed search filter" }, /* ERR_INVALID_FILTER, */
+    { "No POSIX attributes detected" }, /* ERR_NO_POSIX */
 };
 
 

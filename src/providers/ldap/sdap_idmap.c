@@ -522,11 +522,22 @@ bool sdap_idmap_domain_has_algorithmic_mapping(struct sdap_idmap_ctx *ctx,
     int ret;
     TALLOC_CTX *tmp_ctx = NULL;
 
+    if (dp_opt_get_bool(ctx->id_ctx->opts->basic, SDAP_ID_MAPPING)
+        && 0 == strcmp("ldap", ctx->id_ctx->be->bet_info[BET_ID].mod_name)) {
+        return true;
+    }
+
     err = sss_idmap_domain_has_algorithmic_mapping(ctx->map, dom_sid,
                                                    &has_algorithmic_mapping);
-    if (err == IDMAP_SUCCESS) {
+    switch (err){
+    case IDMAP_SUCCESS:
         return has_algorithmic_mapping;
-    } else if (err != IDMAP_SID_UNKNOWN && err != IDMAP_NO_DOMAIN) {
+    case IDMAP_SID_INVALID: /* FALLTHROUGH */
+    case IDMAP_SID_UNKNOWN: /* FALLTHROUGH */
+    case IDMAP_NO_DOMAIN:   /* FALLTHROUGH */
+        /* continue with idmap_domain_by_name */
+        break;
+    default:
         return false;
     }
 
