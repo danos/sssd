@@ -1,8 +1,8 @@
-sssd (1.11.3-2) UNRELEASED; urgency=low
+sssd (1.11.4-1) UNRELEASED; urgency=low
 
+  * New upstream release.
   * control, rules: Add libcmocka-dev and re-add check to build-depends.
-    Added a patch to disable some obsolete tests. Override dh_auto_test
-    so that it shows the test error log if they fail.
+    Override dh_auto_test so that it shows the test error log if they fail.
   * rules: Fix the manpage date handling with a bigger hammer, and
     enable it for all manpages not just pam_sss.8. (Closes: #734083)
   * Drop an obsolete lintian override from libsss-sudo.
