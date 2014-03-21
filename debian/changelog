@@ -1,4 +1,4 @@
-sssd (1.11.4-1) UNRELEASED; urgency=low
+sssd (1.11.4-1) unstable; urgency=low
 
   * New upstream release.
   * control, rules: Add libcmocka-dev and re-add check to build-depends.
@@ -7,7 +7,7 @@ sssd (1.11.4-1) UNRELEASED; urgency=low
     enable it for all manpages not just pam_sss.8. (Closes: #734083)
   * Drop an obsolete lintian override from libsss-sudo.
 
- -- Timo Aaltonen <tjaalton@ubuntu.com>  Tue, 07 Jan 2014 00:39:10 +0200
+ -- Timo Aaltonen <tjaalton@ubuntu.com>  Fri, 21 Mar 2014 13:28:38 +0200
 
 sssd (1.11.3-1) unstable; urgency=low
 
