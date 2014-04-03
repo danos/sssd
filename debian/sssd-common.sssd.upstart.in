@@ -10,7 +10,6 @@ description	"System Security Services Daemon"
 start on (filesystem and net-device-up)
 stop on runlevel [06]
 
-expect fork
 respawn
 
 env DEFAULTFILE=/etc/default/sssd
