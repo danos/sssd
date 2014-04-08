@@ -57,7 +57,8 @@ static errno_t ipa_get_selinux_recv(struct tevent_req *req,
 
 static struct ipa_selinux_op_ctx *
 ipa_selinux_create_op_ctx(TALLOC_CTX *mem_ctx, struct sysdb_ctx *sysdb,
-                          struct sss_domain_info *domain,
+                          struct sss_domain_info *ipa_domain,
+                          struct sss_domain_info *user_domain,
                           struct be_req *be_req, const char *username,
                           const char *hostname,
                           struct ipa_selinux_ctx *selinux_ctx);
@@ -80,7 +81,8 @@ static errno_t ipa_selinux_process_maps(TALLOC_CTX *mem_ctx,
 
 struct ipa_selinux_op_ctx {
     struct be_req *be_req;
-    struct sss_domain_info *domain;
+    struct sss_domain_info *user_domain;
+    struct sss_domain_info *ipa_domain;
     struct ipa_selinux_ctx *selinux_ctx;
 
     struct sysdb_attrs *user;
@@ -131,6 +133,7 @@ void ipa_selinux_handler(struct be_req *be_req)
     }
 
     op_ctx = ipa_selinux_create_op_ctx(be_req, user_domain->sysdb,
+                                       be_ctx->domain,
                                        user_domain,
                                        be_req, pd->user, hostname,
                                        selinux_ctx);
@@ -155,7 +158,8 @@ fail:
 
 static struct ipa_selinux_op_ctx *
 ipa_selinux_create_op_ctx(TALLOC_CTX *mem_ctx, struct sysdb_ctx *sysdb,
-                          struct sss_domain_info *domain,
+                          struct sss_domain_info *ipa_domain,
+                          struct sss_domain_info *user_domain,
                           struct be_req *be_req, const char *username,
                           const char *hostname,
                           struct ipa_selinux_ctx *selinux_ctx)
@@ -175,15 +179,16 @@ ipa_selinux_create_op_ctx(TALLOC_CTX *mem_ctx, struct sysdb_ctx *sysdb,
         return NULL;
     }
     op_ctx->be_req = be_req;
-    op_ctx->domain = domain;
+    op_ctx->ipa_domain = ipa_domain;
+    op_ctx->user_domain = user_domain;
     op_ctx->selinux_ctx = selinux_ctx;
 
-    ret = sss_selinux_extract_user(op_ctx, sysdb, domain, username, &op_ctx->user);
+    ret = sss_selinux_extract_user(op_ctx, sysdb, user_domain, username, &op_ctx->user);
     if (ret != EOK) {
         goto fail;
     }
 
-    host_dn = sysdb_custom_dn(sysdb, op_ctx, domain, hostname, HBAC_HOSTS_SUBDIR);
+    host_dn = sysdb_custom_dn(sysdb, op_ctx, ipa_domain, hostname, HBAC_HOSTS_SUBDIR);
     if (host_dn == NULL) {
         goto fail;
     }
@@ -220,6 +225,7 @@ static errno_t create_order_array(TALLOC_CTX *mem_ctx, const char *map_order,
                                   char ***_order_array, size_t *_order_count);
 static errno_t choose_best_seuser(struct sysdb_attrs **usermaps,
                                   struct pam_data *pd,
+                                  struct sss_domain_info *user_domain,
                                   char **order_array, int order_count,
                                   const char *default_user);
 
@@ -229,7 +235,7 @@ static void ipa_selinux_handler_done(struct tevent_req *req)
     struct ipa_selinux_op_ctx *op_ctx = tevent_req_callback_data(req, struct ipa_selinux_op_ctx);
     struct be_req *breq = op_ctx->be_req;
     struct be_ctx *be_ctx = be_req_get_be_ctx(breq);
-    struct sysdb_ctx *sysdb = op_ctx->domain->sysdb;
+    struct sysdb_ctx *sysdb = op_ctx->ipa_domain->sysdb;
     errno_t ret, sret;
     size_t map_count = 0;
     struct sysdb_attrs **maps = NULL;
@@ -251,6 +257,41 @@ static void ipa_selinux_handler_done(struct tevent_req *req)
         goto fail;
     }
 
+    ret = sysdb_transaction_start(sysdb);
+    if (ret != EOK) {
+        DEBUG(SSSDBG_CRIT_FAILURE, ("Failed to start transaction\n"));
+        goto fail;
+    }
+    in_transaction = true;
+
+    ret = sysdb_delete_usermaps(op_ctx->ipa_domain->sysdb, op_ctx->ipa_domain);
+    if (ret != EOK) {
+        DEBUG(SSSDBG_CRIT_FAILURE,
+              ("Cannot delete existing maps from sysdb\n"));
+        goto fail;
+    }
+
+    ret = sysdb_store_selinux_config(op_ctx->ipa_domain->sysdb,
+                                     op_ctx->ipa_domain,
+                                     default_user, map_order);
+    if (ret != EOK) {
+        goto fail;
+    }
+
+    if (map_count > 0) {
+        ret = ipa_save_user_maps(sysdb, op_ctx->ipa_domain, map_count, maps);
+        if (ret != EOK) {
+            goto fail;
+        }
+    }
+
+    ret = sysdb_transaction_commit(sysdb);
+    if (ret != EOK) {
+        DEBUG(SSSDBG_OP_FAILURE, ("Could not commit transaction\n"));
+        goto fail;
+    }
+    in_transaction = false;
+
     /* Process the maps and return list of best matches (maps with
      * highest priority). The input maps are also parent memory
      * context for the output list of best matches. The best match
@@ -271,47 +312,13 @@ static void ipa_selinux_handler_done(struct tevent_req *req)
         goto fail;
     }
 
-    ret = choose_best_seuser(best_match_maps, pd, order_array, order_count,
-                             default_user);
+    ret = choose_best_seuser(best_match_maps, pd, op_ctx->user_domain,
+                             order_array, order_count, default_user);
     if (ret != EOK) {
         DEBUG(SSSDBG_CRIT_FAILURE,
               ("Failed to evaluate ordered SELinux users array.\n"));
         goto fail;
     }
-
-    ret = sysdb_transaction_start(sysdb);
-    if (ret != EOK) {
-        DEBUG(SSSDBG_CRIT_FAILURE, ("Failed to start transaction\n"));
-        goto fail;
-    }
-    in_transaction = true;
-
-    ret = sysdb_delete_usermaps(op_ctx->domain->sysdb, op_ctx->domain);
-    if (ret != EOK) {
-        DEBUG(SSSDBG_CRIT_FAILURE,
-              ("Cannot delete existing maps from sysdb\n"));
-        goto fail;
-    }
-
-    ret = sysdb_store_selinux_config(sysdb, op_ctx->domain,
-                                     default_user, map_order);
-    if (ret != EOK) {
-        goto fail;
-    }
-
-    if (map_count > 0 && maps != NULL) {
-        ret = ipa_save_user_maps(sysdb, op_ctx->domain, map_count, maps);
-        if (ret != EOK) {
-            goto fail;
-        }
-    }
-
-    ret = sysdb_transaction_commit(sysdb);
-    if (ret != EOK) {
-        DEBUG(SSSDBG_OP_FAILURE, ("Could not commit transaction\n"));
-        goto fail;
-    }
-    in_transaction = false;
 
     /* If we got here in online mode, set last_update to current time */
     if (!be_is_offline(be_ctx)) {
@@ -550,25 +557,25 @@ static errno_t create_order_array(TALLOC_CTX *mem_ctx, const char *map_order,
         goto done;
     }
 
-    order = talloc_strdup(tmp_ctx, map_order);
-    if (order == NULL) {
-        ret = ENOMEM;
-        goto done;
-    }
-    len = strlen(order);
-
     /* The "order" string contains one or more SELinux user records
      * separated by $. Now we need to create an array of string from
      * this one string. First find out how many elements in the array
      * will be. This way only one alloc will be necessary for the array
      */
     order_count = 1;
+    len = strlen(map_order);
     for (i = 0; i < len; i++) {
-        if (order[i] == '$') order_count++;
+        if (map_order[i] == '$') order_count++;
     }
 
     order_array = talloc_array(tmp_ctx, char *, order_count);
     if (order_array == NULL) {
+        ret = ENOMEM;
+        goto done;
+    }
+
+    order = talloc_strdup(order_array, map_order);
+    if (order == NULL) {
         ret = ENOMEM;
         goto done;
     }
@@ -595,13 +602,16 @@ done:
     return ret;
 }
 
-static errno_t write_selinux_login_file(const char *username, char *string);
+static errno_t write_selinux_login_file(const char *orig_name,
+                                        struct sss_domain_info *dom,
+                                        char *string);
 static errno_t remove_selinux_login_file(const char *username);
 
 /* Choose best selinux user based on given order and write
  * the user to selinux login file. */
 static errno_t choose_best_seuser(struct sysdb_attrs **usermaps,
                                   struct pam_data *pd,
+                                  struct sss_domain_info *user_domain,
                                   char **order_array, int order_count,
                                   const char *default_user)
 {
@@ -656,7 +666,7 @@ static errno_t choose_best_seuser(struct sysdb_attrs **usermaps,
         }
     }
 
-    ret = write_selinux_login_file(pd->user, file_content);
+    ret = write_selinux_login_file(pd->user, user_domain, file_content);
 done:
     if (!file_content) {
         err = remove_selinux_login_file(pd->user);
@@ -667,7 +677,9 @@ done:
     return ret;
 }
 
-static errno_t write_selinux_login_file(const char *username, char *string)
+static errno_t write_selinux_login_file(const char *orig_name,
+                                        struct sss_domain_info *dom,
+                                        char *string)
 {
     char *path = NULL;
     char *tmp_path = NULL;
@@ -679,6 +691,7 @@ static errno_t write_selinux_login_file(const char *username, char *string)
     char *full_string = NULL;
     int enforce;
     errno_t ret = EOK;
+    const char *username;
 
     len = strlen(string);
     if (len == 0) {
@@ -689,6 +702,15 @@ static errno_t write_selinux_login_file(const char *username, char *string)
     if (tmp_ctx == NULL) {
         DEBUG(SSSDBG_CRIT_FAILURE, ("talloc_new() failed\n"));
         return ENOMEM;
+    }
+
+    /* pam_selinux needs the username in the same format getpwnam() would
+     * return it
+     */
+    username = sss_get_cased_name(tmp_ctx, orig_name, dom->case_sensitive);
+    if (username == NULL) {
+        ret = ENOMEM;
+        goto done;
     }
 
     path = selogin_path(tmp_ctx, username);
@@ -1280,7 +1302,7 @@ ipa_get_selinux_recv(struct tevent_req *req,
         *default_user = NULL;
     }
 
-    if (state->selinuxmaps != NULL) {
+    if (state->selinuxmaps != NULL && state->nmaps != 0) {
         *count = state->nmaps;
         *maps = talloc_steal(mem_ctx, state->selinuxmaps);
     } else {

@@ -52,6 +52,7 @@
 #define FLAGS_USE_FIRST_PASS (1 << 0)
 #define FLAGS_FORWARD_PASS   (1 << 1)
 #define FLAGS_USE_AUTHTOK    (1 << 2)
+#define FLAGS_IGNORE_UNKNOWN_USER (1 << 3)
 
 #define PWEXP_FLAG "pam_sss:password_expired_flag"
 #define FD_DESTRUCTOR "pam_sss:fd_destructor"
@@ -770,6 +771,22 @@ static int user_info_offline_chpass(pam_handle_t *pamh)
     return PAM_SUCCESS;
 }
 
+static int user_info_otp_chpass(pam_handle_t *pamh)
+{
+    int ret;
+
+    ret = do_pam_conversation(pamh, PAM_TEXT_INFO,
+                              _("After changing the OTP password, you need to "
+                                "log out and back in order to acquire a ticket"),
+                              NULL, NULL);
+    if (ret != PAM_SUCCESS) {
+        D(("do_pam_conversation failed."));
+        return PAM_SYSTEM_ERR;
+    }
+
+    return PAM_SUCCESS;
+}
+
 static int user_info_chpass_error(pam_handle_t *pamh, size_t buflen,
                                   uint8_t *buf)
 {
@@ -854,6 +871,9 @@ static int eval_user_info_response(pam_handle_t *pamh, size_t buflen,
             break;
         case SSS_PAM_USER_INFO_OFFLINE_CHPASS:
             ret = user_info_offline_chpass(pamh);
+            break;
+        case SSS_PAM_USER_INFO_OTP_CHPASS:
+            ret = user_info_otp_chpass(pamh);
             break;
         case SSS_PAM_USER_INFO_CHPASS_ERROR:
             ret = user_info_chpass_error(pamh, buflen, buf);
@@ -1292,6 +1312,8 @@ static void eval_argv(pam_handle_t *pamh, int argc, const char **argv,
             }
         } else if (strcmp(*argv, "quiet") == 0) {
             *quiet_mode = true;
+        } else if (strcmp(*argv, "ignore_unknown_user") == 0) {
+            *flags |= FLAGS_IGNORE_UNKNOWN_USER;
         } else {
             logger(pamh, LOG_WARNING, "unknown option: %s", *argv);
         }
@@ -1429,6 +1451,9 @@ static int pam_sss(enum sss_cli_command task, pam_handle_t *pamh,
     ret = get_pam_items(pamh, &pi);
     if (ret != PAM_SUCCESS) {
         D(("get items returned error: %s", pam_strerror(pamh,ret)));
+        if (flags & FLAGS_IGNORE_UNKNOWN_USER && ret == PAM_USER_UNKNOWN) {
+            ret = PAM_IGNORE;
+        }
         return ret;
     }
 
@@ -1466,6 +1491,11 @@ static int pam_sss(enum sss_cli_command task, pam_handle_t *pamh,
         }
 
         pam_status = send_and_receive(pamh, &pi, task, quiet_mode);
+
+        if (flags & FLAGS_IGNORE_UNKNOWN_USER
+                && pam_status == PAM_USER_UNKNOWN) {
+            pam_status = PAM_IGNORE;
+        }
 
         switch (task) {
             case SSS_PAM_AUTHENTICATE:

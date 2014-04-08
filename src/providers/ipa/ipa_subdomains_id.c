@@ -307,13 +307,22 @@ ipa_get_ad_acct_send(TALLOC_CTX *mem_ctx,
     /* Currently only LDAP port for AD is used because POSIX
      * attributes are not replicated to GC by default
      */
-    clist = talloc_zero_array(req, struct sdap_id_conn_ctx *, 2);
-    if (clist == NULL) {
-        ret = ENOMEM;
-        goto fail;
+
+    if ((state->ar->entry_type & BE_REQ_TYPE_MASK) == BE_REQ_INITGROUPS) {
+        clist = ad_gc_conn_list(req, ad_id_ctx, state->user_dom);
+        if (clist == NULL) {
+            ret = ENOMEM;
+            goto fail;
+        }
+    } else {
+        clist = talloc_zero_array(req, struct sdap_id_conn_ctx *, 2);
+        if (clist == NULL) {
+            ret = ENOMEM;
+            goto fail;
+        }
+        clist[0] = ad_id_ctx->ldap_ctx;
+        clist[1] = NULL;
     }
-    clist[0] = ad_id_ctx->ldap_ctx;
-    clist[1] = NULL;
 
     /* Now we already need ad_id_ctx in particular sdap_id_conn_ctx */
     sdom = sdap_domain_get(sdap_id_ctx->opts, state->user_dom);
@@ -358,6 +367,7 @@ get_subdomain_homedir_of_user(TALLOC_CTX *mem_ctx, struct sss_domain_info *dom,
 {
     errno_t ret;
     char *name;
+    char *lc_name;
     const char *homedir;
     TALLOC_CTX *tmp_ctx;
 
@@ -372,7 +382,15 @@ get_subdomain_homedir_of_user(TALLOC_CTX *mem_ctx, struct sss_domain_info *dom,
         goto done;
     }
 
-    homedir = expand_homedir_template(tmp_ctx, dom->subdomain_homedir, name,
+    /* To be compatible with the old winbind based user lookups and IPA
+     * clients the user name in the home directory path will be lower-case. */
+    lc_name = sss_tc_utf8_str_tolower(tmp_ctx, name);
+    if (lc_name == NULL) {
+        ret =ENOMEM;
+        goto done;
+    }
+
+    homedir = expand_homedir_template(tmp_ctx, dom->subdomain_homedir, lc_name,
                                       uid, NULL, dom->name, dom->flat_name);
 
     if (homedir == NULL) {
@@ -550,7 +568,7 @@ ipa_get_ad_acct_ad_part_done(struct tevent_req *subreq)
     ret = apply_subdomain_homedir(state, state->user_dom,
                                   state->ar->filter_type,
                                   state->ar->filter_value);
-    if (ret != EOK) {
+    if (ret != EOK && ret != ENOENT) {
         DEBUG(SSSDBG_OP_FAILURE,
               ("apply_subdomain_homedir failed: [%d]: [%s].\n",
                ret, sss_strerror(ret)));
@@ -580,7 +598,6 @@ ipa_get_ad_acct_ad_part_done(struct tevent_req *subreq)
 fail:
     state->dp_error = DP_ERR_FATAL;
     tevent_req_error(req, ret);
-    tevent_req_post(req, state->ev);
     return;
 }
 

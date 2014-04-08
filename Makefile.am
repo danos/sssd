@@ -150,9 +150,11 @@ if HAVE_CMOCKA
         dyndns-tests \
         fqnames-tests \
         test_sss_idmap \
+        test_ipa_idmap \
         test_utils \
         ad_access_filter_tests \
         ad_common_tests \
+        dp_opt_tests \
         test_search_bases
 endif
 
@@ -613,7 +615,7 @@ libsss_idmap_la_SOURCES = \
     src/lib/idmap/sss_idmap_conv.c \
     src/util/murmurhash3.c
 libsss_idmap_la_LDFLAGS = \
-    -version-info 3:0:3
+    -version-info 4:0:4
 
 dist_pkgconfig_DATA += src/sss_client/idmap/sss_nss_idmap.pc
 libsss_nss_idmap_la_SOURCES = \
@@ -891,7 +893,8 @@ libsss_test_common_la_SOURCES = \
     src/tests/leak_check.c \
     src/tests/common.c
 libsss_test_common_la_LIBADD = \
-    $(TALLOC_LIBS)
+    $(TALLOC_LIBS) \
+    $(TEVENT_LIBS)
 
 if HAVE_CHECK
 libsss_test_common_la_SOURCES += \
@@ -978,6 +981,7 @@ krb5_utils_tests_SOURCES = \
     $(SSSD_FAILOVER_OBJ)
 krb5_utils_tests_CFLAGS = \
     $(AM_CFLAGS) \
+    $(KRB5_CFLAGS) \
     $(CHECK_CFLAGS)
 krb5_utils_tests_LDADD = \
     $(SSSD_LIBS)\
@@ -1239,6 +1243,7 @@ krb5_child_test_SOURCES = \
 krb5_child_test_CFLAGS = \
     $(AM_CFLAGS) \
     -DKRB5_CHILD_DIR=\"$(builddir)\" \
+    $(KRB5_CFLAGS) \
     $(CHECK_CFLAGS)
 krb5_child_test_LDADD = \
     $(SSSD_LIBS) \
@@ -1356,6 +1361,20 @@ test_sss_idmap_LDADD = \
     $(SSSD_INTERNAL_LTLIBS) \
     libsss_test_common.la
 
+test_ipa_idmap_SOURCES = \
+    src/tests/cmocka/test_ipa_idmap.c \
+    src/providers/ipa/ipa_idmap.c
+test_ipa_idmap_CFLAGS = \
+    $(AM_CFLAGS)
+test_ipa_idmap_LDFLAGS = \
+    -Wl,-wrap,sysdb_get_ranges
+test_ipa_idmap_LDADD = \
+    $(CMOCKA_LIBS) \
+    $(POPT_LIBS) \
+    libsss_idmap.la \
+    $(SSSD_INTERNAL_LTLIBS) \
+    libsss_test_common.la
+
 test_utils_SOURCES = \
     src/tests/cmocka/test_utils.c
 test_utils_CFLAGS = \
@@ -1439,6 +1458,18 @@ ad_common_tests_LDADD = \
     libsss_ldap_common.la \
     libsss_idmap.la \
     libsss_krb5_common.la \
+    libsss_test_common.la
+
+dp_opt_tests_SOURCES = \
+    src/providers/data_provider_opts.c \
+    src/tests/cmocka/test_dp_opts.c
+dp_opt_tests_CFLAGS = \
+    $(AM_CFLAGS)
+dp_opt_tests_LDADD = \
+    $(CMOCKA_LIBS) \
+    $(TALLOC_LIBS) \
+    $(POPT_LIBS) \
+    $(SSSD_INTERNAL_LTLIBS) \
     libsss_test_common.la
 
 endif
@@ -1605,6 +1636,9 @@ libsss_ldap_common_la_SOURCES += \
     src/providers/ldap/sdap_async_autofs.c
 endif
 
+libsss_ldap_common_la_CFLAGS = \
+    $(KRB5_CFLAGS)
+
 
 pkglib_LTLIBRARIES += libsss_krb5_common.la
 libsss_krb5_common_la_SOURCES = \
@@ -1620,6 +1654,8 @@ libsss_krb5_common_la_SOURCES = \
     src/providers/krb5/krb5_init_shared.c
 libsss_krb5_common_la_LDFLAGS = \
     -avoid-version
+libsss_krb5_common_la_CFLAGS = \
+    $(KRB5_CFLAGS)
 
 libsss_ldap_la_SOURCES = \
     src/util/find_uid.c \
@@ -1677,7 +1713,8 @@ libsss_krb5_la_SOURCES = \
     src/util/sss_krb5.c
 libsss_krb5_la_CFLAGS = \
     $(AM_CFLAGS) \
-    $(DHASH_CFLAGS)
+    $(DHASH_CFLAGS) \
+    $(KRB5_CFLAGS)
 libsss_krb5_la_LIBADD = \
     $(DHASH_LIBS) \
     $(KEYUTILS_LIBS) \
@@ -1776,6 +1813,11 @@ libsss_ad_la_SOURCES = \
     src/util/user_info_msg.c \
     src/util/sss_krb5.c \
     src/util/sss_ldap.c
+
+if BUILD_SUDO
+libsss_ad_la_SOURCES += \
+    src/providers/ad/ad_sudo.c
+endif
 
 libsss_ad_la_CFLAGS = \
     $(AM_CFLAGS) \
@@ -1887,7 +1929,7 @@ sssd_pac_plugin_la_CFLAGS = \
     $(KRB5_CFLAGS)
 sssd_pac_plugin_la_LIBADD = \
     $(CLIENT_LIBS) \
-    -lkrb5
+    $(KRB5_LIBS)
 sssd_pac_plugin_la_LDFLAGS = \
     -avoid-version \
     -module
@@ -1989,6 +2031,26 @@ dist_sssdapiplugin_DATA = \
     src/config/etc/sssd.api.d/sssd-local.conf \
     src/config/etc/sssd.api.d/sssd-proxy.conf \
     src/config/etc/sssd.api.d/sssd-simple.conf
+
+edit_cmd = $(SED) \
+        -e 's|@sbindir[@]|$(sbindir)|g' \
+        -e 's|@environment_file[@]|$(environment_file)|g' \
+        -e 's|@localstatedir[@]|$(localstatedir)|g' \
+        -e 's|@prefix[@]|$(prefix)|g'
+
+replace_script = \
+    @rm -f $@ $@.tmp; \
+    srcdir=''; \
+        test -f ./$@.in || srcdir=$(srcdir)/; \
+        $(edit_cmd) $${srcdir}$@.in >$@.tmp; \
+    mv $@.tmp $@
+
+EXTRA_DIST += \
+    src/sysv/systemd/sssd.service.in
+
+src/sysv/systemd/sssd.service: src/sysv/systemd/sssd.service.in Makefile
+	@$(MKDIR_P) src/sysv/systemd/
+	$(replace_script)
 
 installsssddirs::
 	mkdir -p \
@@ -2097,6 +2159,7 @@ endif
 		rm -Rf $$doc; \
 	done;
 	rm -Rf ldb_mod_test_dir
+	rm -f $(builddir)/src/sysv/systemd/sssd.service
 
 CLEANFILES = *.X */*.X */*/*.X
 
