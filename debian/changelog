@@ -1,5 +1,6 @@
-sssd (1.11.4-2) UNRELEASED; urgency=medium
+sssd (1.11.5-1) UNRELEASED; urgency=medium
 
+  * New upstream bugfix release. (Closes: #729982)
   * upstart: Run the daemon in foreground and drop expect fork from the
     job, should fix issues with upstart getting confused when a backend
     fails to start.
