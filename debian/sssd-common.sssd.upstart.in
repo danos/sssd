@@ -23,5 +23,9 @@ script
 	if [ -f "$DEFAULTFILE" ]; then
 	. "$DEFAULTFILE"
 	fi
+
+	# sssd dislikes having /dev/null as stdin
+	exec < /dev/zero
+
 	exec sssd $DAEMON_OPTS
 end script
