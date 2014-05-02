@@ -1,11 +1,11 @@
-sssd (1.11.5-2) UNRELEASED; urgency=medium
+sssd (1.11.5.1-1) UNRELEASED; urgency=medium
 
   [ Stéphane Graber ]
   * Fix upstart job to provide a proper stdin for sssd.
   * Update defaults to always pass -i.
-  * Cherry-pick upstream fix for crash when using samba4.
 
   [ Timo Aaltonen ]
+  * New upstream release.
   * control: Bump libkrb5-dev build-dependency to 1.12 due to the OTP
     features.
 
