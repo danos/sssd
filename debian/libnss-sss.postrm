@@ -26,7 +26,9 @@ remove_nss_entry() {
 
 case "$1" in
     remove|purge)
-        remove_nss_entry
+        if [ "${DPKG_MAINTSCRIPT_PACKAGE_REFCOUNT:-1}" = 1 ]; then
+            remove_nss_entry
+        fi
     ;;
     upgrade|failed-upgrade|abort-install|abort-upgrade|disappear)
     ;;
