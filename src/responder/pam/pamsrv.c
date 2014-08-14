@@ -47,33 +47,28 @@
 
 #define DEFAULT_PAM_FD_LIMIT 8192
 
-struct sbus_method monitor_pam_methods[] = {
-    { MON_CLI_METHOD_PING, monitor_common_pong },
-    { MON_CLI_METHOD_RES_INIT, monitor_common_res_init },
-    { MON_CLI_METHOD_ROTATE, responder_logrotate },
-    { NULL, NULL }
+struct mon_cli_iface monitor_pam_methods = {
+    { &mon_cli_iface_meta, 0 },
+    .ping = monitor_common_pong,
+    .resInit = monitor_common_res_init,
+    .shutDown = NULL,
+    .goOffline = NULL,
+    .resetOffline = NULL,
+    .rotateLogs = responder_logrotate,
+    .clearMemcache = NULL,
+    .clearEnumCache = NULL,
 };
 
-struct sbus_interface monitor_pam_interface = {
-    MONITOR_INTERFACE,
-    MONITOR_PATH,
-    SBUS_DEFAULT_VTABLE,
-    monitor_pam_methods,
-    NULL
+static struct data_provider_iface pam_dp_methods = {
+    { &data_provider_iface_meta, 0 },
+    .RegisterService = NULL,
+    .pamHandler = NULL,
+    .sudoHandler = NULL,
+    .autofsHandler = NULL,
+    .hostHandler = NULL,
+    .getDomains = NULL,
+    .getAccountInfo = NULL,
 };
-
-static struct sbus_method pam_dp_methods[] = {
-        { NULL, NULL }
-};
-
-struct sbus_interface pam_dp_interface = {
-    DP_INTERFACE,
-    DP_PATH,
-    SBUS_DEFAULT_VTABLE,
-    pam_dp_methods,
-    NULL
-};
-
 
 static void pam_dp_reconnect_init(struct sbus_connection *conn, int status, void *pvt)
 {
@@ -82,7 +77,7 @@ static void pam_dp_reconnect_init(struct sbus_connection *conn, int status, void
 
     /* Did we reconnect successfully? */
     if (status == SBUS_RECONNECT_SUCCESS) {
-        DEBUG(1, ("Reconnected to the Data Provider.\n"));
+        DEBUG(SSSDBG_CRIT_FAILURE, "Reconnected to the Data Provider.\n");
 
         /* Identify ourselves to the data provider */
         ret = dp_common_send_id(be_conn->conn,
@@ -96,8 +91,8 @@ static void pam_dp_reconnect_init(struct sbus_connection *conn, int status, void
     }
 
     /* Handle failure */
-    DEBUG(0, ("Could not reconnect to %s provider.\n",
-              be_conn->domain->name));
+    DEBUG(SSSDBG_FATAL_FAILURE, "Could not reconnect to %s provider.\n",
+              be_conn->domain->name);
 
     /* FIXME: kill the frontend and let the monitor restart it ? */
     /* pam_shutdown(rctx); */
@@ -123,11 +118,11 @@ static int pam_process_init(TALLOC_CTX *mem_ctx,
                            CONFDB_PAM_CONF_ENTRY,
                            SSS_PAM_SBUS_SERVICE_NAME,
                            SSS_PAM_SBUS_SERVICE_VERSION,
-                           &monitor_pam_interface,
-                           "PAM", &pam_dp_interface,
+                           &monitor_pam_methods,
+                           "PAM", &pam_dp_methods.vtable,
                            &rctx);
     if (ret != EOK) {
-        DEBUG(SSSDBG_FATAL_FAILURE, ("sss_process_init() failed\n"));
+        DEBUG(SSSDBG_FATAL_FAILURE, "sss_process_init() failed\n");
         return ret;
     }
 
@@ -147,7 +142,8 @@ static int pam_process_init(TALLOC_CTX *mem_ctx,
     ret = confdb_get_int(pctx->rctx->cdb, CONFDB_PAM_CONF_ENTRY,
                          CONFDB_SERVICE_RECON_RETRIES, 3, &max_retries);
     if (ret != EOK) {
-        DEBUG(0, ("Failed to set up automatic reconnection\n"));
+        DEBUG(SSSDBG_FATAL_FAILURE,
+              "Failed to set up automatic reconnection\n");
         goto done;
     }
 
@@ -172,7 +168,8 @@ static int pam_process_init(TALLOC_CTX *mem_ctx,
 
     ret = sss_ncache_init(pctx, &pctx->ncache);
     if (ret != EOK) {
-        DEBUG(0, ("fatal error initializing negative cache\n"));
+        DEBUG(SSSDBG_FATAL_FAILURE,
+              "fatal error initializing negative cache\n");
         goto done;
     }
 
@@ -185,8 +182,8 @@ static int pam_process_init(TALLOC_CTX *mem_ctx,
     ret = sss_hash_create(pctx, 10, &pctx->id_table);
     if (ret != EOK) {
         DEBUG(SSSDBG_FATAL_FAILURE,
-              ("Could not create initgroups hash table: [%s]",
-               strerror(ret)));
+              "Could not create initgroups hash table: [%s]",
+               strerror(ret));
         goto done;
     }
 
@@ -198,14 +195,14 @@ static int pam_process_init(TALLOC_CTX *mem_ctx,
                          &fd_limit);
     if (ret != EOK) {
         DEBUG(SSSDBG_FATAL_FAILURE,
-              ("Failed to set up file descriptor limit\n"));
+              "Failed to set up file descriptor limit\n");
         goto done;
     }
     responder_set_fd_limit(fd_limit);
 
     ret = schedule_get_domains_task(rctx, rctx->ev, rctx);
     if (ret != EOK) {
-        DEBUG(SSSDBG_FATAL_FAILURE, ("schedule_get_domains_tasks failed.\n"));
+        DEBUG(SSSDBG_FATAL_FAILURE, "schedule_get_domains_tasks failed.\n");
         goto done;
     }
 
@@ -258,7 +255,8 @@ int main(int argc, const char *argv[])
     ret = die_if_parent_died();
     if (ret != EOK) {
         /* This is not fatal, don't return */
-        DEBUG(2, ("Could not set up to exit when parent process does\n"));
+        DEBUG(SSSDBG_OP_FAILURE,
+              "Could not set up to exit when parent process does\n");
     }
 
     ret = pam_process_init(main_ctx,

@@ -50,7 +50,8 @@ errno_t set_debug_file_from_fd(const int fd)
     dummy = fdopen(fd, "a");
     if (dummy == NULL) {
         ret = errno;
-        DEBUG(1, ("fdopen failed [%d][%s].\n", ret, strerror(ret)));
+        DEBUG(SSSDBG_CRIT_FAILURE,
+              "fdopen failed [%d][%s].\n", ret, strerror(ret));
         sss_log(SSS_LOG_ERR,
                 "Could not open debug file descriptor [%d]. "
                 "Debug messages will not be written to the file "
@@ -104,40 +105,64 @@ int debug_convert_old_level(int old_level)
     return new_level;
 }
 
-void debug_fn(const char *format, ...)
+static void debug_fflush(void)
+{
+    fflush(debug_file ? debug_file : stderr);
+}
+
+static void debug_vprintf(const char *format, va_list ap)
+{
+    vfprintf(debug_file ? debug_file : stderr, format, ap);
+}
+
+static void debug_printf(const char *format, ...)
+                SSS_ATTRIBUTE_PRINTF(1, 2);
+
+static void debug_printf(const char *format, ...)
 {
     va_list ap;
 
     va_start(ap, format);
 
-    vfprintf(debug_file ? debug_file : stderr, format, ap);
-    fflush(debug_file ? debug_file : stderr);
+    debug_vprintf(format, ap);
 
     va_end(ap);
 }
 
-int debug_get_level(int old_level)
+void debug_fn(const char *function, int level, const char *format, ...)
 {
-    if ((old_level != 0) && !(old_level & 0x000F))
-        return old_level;
+    va_list ap;
+    struct timeval tv;
+    struct tm *tm;
+    char datetime[20];
+    int year;
 
-    if ((old_level > 9) || (old_level < 0))
-        return SSSDBG_FATAL_FAILURE;
+    if (debug_timestamps) {
+        gettimeofday(&tv, NULL);
+        tm = localtime(&tv.tv_sec);
+        year = tm->tm_year + 1900;
+        /* get date time without year */
+        memcpy(datetime, ctime(&tv.tv_sec), 19);
+        datetime[19] = '\0';
+        if (debug_microseconds) {
+            debug_printf("(%s:%.6ld %d) [%s] [%s] (%#.4x): ",
+                         datetime, tv.tv_usec,
+                         year, debug_prg_name,
+                         function, level);
+        } else {
+            debug_printf("(%s %d) [%s] [%s] (%#.4x): ",
+                         datetime, year,
+                         debug_prg_name, function, level);
+        }
+    } else {
+        debug_printf("[%s] [%s] (%#.4x): ",
+                     debug_prg_name, function, level);
+    }
 
-    int levels[] = {
-        SSSDBG_FATAL_FAILURE,   /* 0 */
-        SSSDBG_CRIT_FAILURE,
-        SSSDBG_OP_FAILURE,
-        SSSDBG_MINOR_FAILURE,
-        SSSDBG_CONF_SETTINGS,
-        SSSDBG_FUNC_DATA,
-        SSSDBG_TRACE_FUNC,
-        SSSDBG_TRACE_LIBS,
-        SSSDBG_TRACE_INTERNAL,
-        SSSDBG_TRACE_ALL        /* 9 */
-    };
-
-    return levels[old_level];
+    va_start(ap, format);
+    debug_vprintf(format, ap);
+    va_end(ap);
+    debug_fflush();
 }
 
 void ldb_debug_messages(void *context, enum ldb_debug_level level,
@@ -168,7 +193,8 @@ void ldb_debug_messages(void *context, enum ldb_debug_level level,
         return;
     }
 
-    DEBUG_MSG(loglevel, "ldb", message);
+    if (DEBUG_IS_SET(loglevel))
+        debug_fn("ldb", loglevel, "%s\n", message);
 
     free(message);
 }
@@ -274,5 +300,5 @@ int rotate_debug_files(void)
 
 void talloc_log_fn(const char *message)
 {
-    DEBUG(SSSDBG_FATAL_FAILURE, ("%s", message));
+    DEBUG(SSSDBG_FATAL_FAILURE, "%s", message);
 }

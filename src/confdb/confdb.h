@@ -96,6 +96,8 @@
 #define CONFDB_NSS_SHELL_FALLBACK "shell_fallback"
 #define CONFDB_NSS_DEFAULT_SHELL "default_shell"
 #define CONFDB_MEMCACHE_TIMEOUT "memcache_timeout"
+#define CONFDB_NSS_HOMEDIR_SUBSTRING "homedir_substring"
+#define CONFDB_DEFAULT_HOMEDIR_SUBSTRING "/home"
 
 /* PAM */
 #define CONFDB_PAM_CONF_ENTRY "config/pam"
@@ -131,6 +133,10 @@
 
 /* Data Provider */
 #define CONFDB_DP_CONF_ENTRY "config/dp"
+
+/* InfoPipe */
+#define CONFDB_IFP_CONF_ENTRY "config/ifp"
+#define CONFDB_IFP_USER_ATTR_LIST "user_attributes"
 
 /* Domains */
 #define CONFDB_DOMAIN_PATH_TMPL "config/domain/%s"
@@ -217,6 +223,7 @@ struct sss_domain_info {
     const char *override_homedir;
     const char *fallback_homedir;
     const char *subdomain_homedir;
+    const char *homedir_substr;
     const char *override_shell;
     const char *default_shell;
 

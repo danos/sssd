@@ -592,3 +592,42 @@ AC_DEFUN([WITH_SSH],
     fi
     AM_CONDITIONAL([BUILD_SSH], [test x"$with_ssh" = xyes])
   ])
+
+AC_DEFUN([WITH_SAMBA],
+  [ AC_ARG_WITH([samba],
+                [AC_HELP_STRING([--with-samba],
+                                [Whether to build with samba4 libraries [yes]]
+                               )
+                ],
+                [with_samba=$withval],
+                [with_samba=yes]
+               )
+
+    if test x"$with_samba" = xyes; then
+        AC_DEFINE(BUILD_SAMBA, 1, [whether to build with samba support])
+    fi
+    AM_CONDITIONAL([BUILD_SAMBA], [test x"$with_samba" = xyes])
+  ])
+
+AC_DEFUN([WITH_IFP],
+  [ AC_ARG_WITH([infopipe],
+                [AC_HELP_STRING([--with-infopipe],
+                                [Whether to build with InfoPipe support [yes]]
+                               )
+                ],
+                [with_infopipe=$withval],
+                with_infopipe=yes
+               )
+
+    if test x"$with_infopipe" = xyes; then
+        AC_DEFINE(BUILD_IFP, 1, [whether to build with InfoPipe support])
+    fi
+    AM_CONDITIONAL([BUILD_IFP], [test x"$with_infopipe" = xyes])
+  ])
+
+AC_ARG_ENABLE([dbus-tests],
+              [AS_HELP_STRING([--enable-dbus-tests],
+                              [enable running tests using a dbus server instance [default=yes]])],
+              [build_dbus_tests=$enableval],
+              [build_dbus_tests=yes])
+AM_CONDITIONAL([BUILD_DBUS_TESTS], [test x$build_dbus_tests = xyes])

@@ -62,6 +62,8 @@ struct sss_test_ctx {
     struct confdb_ctx *confdb;
     struct tevent_context *ev;
     struct sss_domain_info *dom;
+    struct sss_names_ctx *nctx;
+    char *confdb_path;
 
     bool done;
     int error;
@@ -99,5 +101,20 @@ errno_t test_request_recv(struct tevent_req *req);
 int test_ev_loop(struct sss_test_ctx *tctx);
 
 bool ldb_modules_path_is_set(void);
+
+DBusConnection *
+test_dbus_setup_mock(TALLOC_CTX *mem_ctx,
+                     struct tevent_context *loop,
+                     sbus_server_conn_init_fn init_fn,
+                     void *init_pvt_data);
+
+DBusMessage *
+test_dbus_call_sync(DBusConnection *conn,
+                    const char *object_path,
+                    const char *interface,
+                    const char *method,
+                    DBusError *error,
+                    int first_arg_type,
+                    ...);
 
 #endif /* !__TESTS_COMMON_H__ */

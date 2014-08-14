@@ -616,6 +616,54 @@
                     </listitem>
                 </varlistentry>
 
+                <varlistentry>
+                    <term>ldap_user_extra_attrs (string)</term>
+                    <listitem>
+                        <para>
+                            Comma-separated list of LDAP attributes that SSSD
+                            would fetch along with the usual set of user
+                            attributes.
+                        </para>
+                        <para>
+                            The list can either contain LDAP attribute names
+                            only, or colon-separated tuples of SSSD cache
+                            attribute name and LDAP attribute name. In
+                            case only LDAP attribute name is specified,
+                            the attribute is saved to the cache verbatim.
+                            Using a custom SSSD attribute name might be
+                            required by environments that configure several
+                            SSSD domains with different LDAP schemas.
+                        </para>
+                        <para>
+                            Please note that several attribute names are
+                            reserved by SSSD, notably the <quote>name</quote>
+                            attribute. SSSD would report an error if any of
+                            the reserved attribute names is used as an extra
+                            attribute name.
+                        </para>
+                        <para>
+                            Examples:
+                        </para>
+                        <para>
+                            ldap_user_extra_attrs = telephoneNumber
+                        </para>
+                        <para>
+                            Save the <quote>telephoneNumber</quote> attribute from LDAP
+                            as <quote>telephoneNumber</quote> to the cache.
+                        </para>
+                        <para>
+                            ldap_user_extra_attrs = phone:telephoneNumber
+                        </para>
+                        <para>
+                            Save the <quote>telephoneNumber</quote> attribute from LDAP
+                            as <quote>phone</quote> to the cache.
+                        </para>
+                        <para>
+                            Default: not set
+                        </para>
+                    </listitem>
+                </varlistentry>
+
                 <varlistentry condition="with_ssh">
                     <term>ldap_user_ssh_public_key (string)</term>
                     <listitem>
@@ -880,6 +928,22 @@
                             RFC2307 schema.
                         </para>
                         <para>
+                          Note: This option specifies the guaranteed level of
+                          nested groups to be processed for any lookup. However,
+                          nested groups beyond this limit
+                          <emphasis>may be</emphasis> returned if previous
+                          lookups already resolved the deeper nesting levels.
+                          Also, subsequent lookups for other groups may enlarge
+                          the result set for original lookup if re-queried.
+                        </para>
+                        <para>
+                          If ldap_group_nesting_level is set to 0 then no
+                          nested groups are processed at all. However, when
+                          connected to Active-Directory Server 2008 and later
+                          it is furthermore required to disable usage of
+                          Token-Groups by setting ldap_use_tokengroups to false.
+                        </para>
+                        <para>
                             Default: 2
                         </para>
                     </listitem>
@@ -940,6 +1004,20 @@
                         </para>
                         <para>
                             Default: False
+                        </para>
+                    </listitem>
+                </varlistentry>
+
+                <varlistentry>
+                    <term>ldap_use_tokengroups</term>
+                    <listitem>
+                        <para>
+                          This options enables or disables use of Token-Groups
+                          attribute when performing initgroup for users from
+                          Active Directory Server 2008 and later.
+                        </para>
+                        <para>
+                            Default: True
                         </para>
                     </listitem>
                 </varlistentry>
@@ -1965,6 +2043,15 @@ ldap_access_filter = (employeeType=admin)
 
     <refsect1 id='sudo-options' condition="with_sudo">
         <title>SUDO OPTIONS</title>
+        <para>
+            The detailed instructions for configuration of sudo_provider
+            are in the manual page
+            <citerefentry>
+                <refentrytitle>sssd-sudo</refentrytitle>
+                <manvolnum>5</manvolnum>
+            </citerefentry>.
+        </para>
+
         <para>
             <variablelist>
                 <varlistentry>

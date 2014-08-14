@@ -28,31 +28,27 @@
 #include "responder/sudo/sudosrv_private.h"
 #include "providers/data_provider.h"
 
-struct sbus_method monitor_sudo_methods[] = {
-    { MON_CLI_METHOD_PING, monitor_common_pong },
-    { MON_CLI_METHOD_RES_INIT, monitor_common_res_init },
-    { MON_CLI_METHOD_ROTATE, responder_logrotate },
-    { NULL, NULL }
+struct mon_cli_iface monitor_sudo_methods = {
+    { &mon_cli_iface_meta, 0 },
+    .ping = monitor_common_pong,
+    .resInit = monitor_common_res_init,
+    .shutDown = NULL,
+    .goOffline = NULL,
+    .resetOffline = NULL,
+    .rotateLogs = responder_logrotate,
+    .clearMemcache = NULL,
+    .clearEnumCache = NULL,
 };
 
-struct sbus_interface monitor_sudo_interface = {
-    MONITOR_INTERFACE,
-    MONITOR_PATH,
-    SBUS_DEFAULT_VTABLE,
-    monitor_sudo_methods,
-    NULL
-};
-
-static struct sbus_method sudo_dp_methods[] = {
-    { NULL, NULL }
-};
-
-struct sbus_interface sudo_dp_interface = {
-    DP_INTERFACE,
-    DP_PATH,
-    SBUS_DEFAULT_VTABLE,
-    sudo_dp_methods,
-    NULL
+static struct data_provider_iface sudo_dp_methods = {
+    { &data_provider_iface_meta, 0 },
+    .RegisterService = NULL,
+    .pamHandler = NULL,
+    .sudoHandler = NULL,
+    .autofsHandler = NULL,
+    .hostHandler = NULL,
+    .getDomains = NULL,
+    .getAccountInfo = NULL,
 };
 
 static void sudo_dp_reconnect_init(struct sbus_connection *conn,
@@ -64,7 +60,7 @@ static void sudo_dp_reconnect_init(struct sbus_connection *conn,
 
     /* Did we reconnect successfully? */
     if (status == SBUS_RECONNECT_SUCCESS) {
-        DEBUG(SSSDBG_TRACE_FUNC, ("Reconnected to the Data Provider.\n"));
+        DEBUG(SSSDBG_TRACE_FUNC, "Reconnected to the Data Provider.\n");
 
         /* Identify ourselves to the data provider */
         ret = dp_common_send_id(be_conn->conn,
@@ -78,8 +74,8 @@ static void sudo_dp_reconnect_init(struct sbus_connection *conn,
     }
 
     /* Failed to reconnect */
-    DEBUG(SSSDBG_FATAL_FAILURE, ("Could not reconnect to %s provider.\n",
-                                 be_conn->domain->name));
+    DEBUG(SSSDBG_FATAL_FAILURE, "Could not reconnect to %s provider.\n",
+                                 be_conn->domain->name);
 }
 
 int sudo_process_init(TALLOC_CTX *mem_ctx,
@@ -100,18 +96,18 @@ int sudo_process_init(TALLOC_CTX *mem_ctx,
                            CONFDB_SUDO_CONF_ENTRY,
                            SSS_SUDO_SBUS_SERVICE_NAME,
                            SSS_SUDO_SBUS_SERVICE_VERSION,
-                           &monitor_sudo_interface,
+                           &monitor_sudo_methods,
                            "SUDO",
-                           &sudo_dp_interface,
+                           &sudo_dp_methods.vtable,
                            &rctx);
     if (ret != EOK) {
-        DEBUG(SSSDBG_FATAL_FAILURE, ("sss_process_init() failed\n"));
+        DEBUG(SSSDBG_FATAL_FAILURE, "sss_process_init() failed\n");
         return ret;
     }
 
     sudo_ctx = talloc_zero(rctx, struct sudo_ctx);
     if (!sudo_ctx) {
-        DEBUG(SSSDBG_FATAL_FAILURE, ("fatal error initializing sudo_ctx\n"));
+        DEBUG(SSSDBG_FATAL_FAILURE, "fatal error initializing sudo_ctx\n");
         ret = ENOMEM;
         goto fail;
     }
@@ -126,7 +122,7 @@ int sudo_process_init(TALLOC_CTX *mem_ctx,
                          3, &max_retries);
     if (ret != EOK) {
         DEBUG(SSSDBG_FATAL_FAILURE,
-              ("Failed to set up automatic reconnection\n"));
+              "Failed to set up automatic reconnection\n");
         goto fail;
     }
 
@@ -143,18 +139,18 @@ int sudo_process_init(TALLOC_CTX *mem_ctx,
                           CONFDB_DEFAULT_SUDO_TIMED,
                           &sudo_ctx->timed);
     if (ret != EOK) {
-        DEBUG(SSSDBG_FATAL_FAILURE, ("Error reading from confdb (%d) [%s]\n",
-              ret, strerror(ret)));
+        DEBUG(SSSDBG_FATAL_FAILURE, "Error reading from confdb (%d) [%s]\n",
+              ret, strerror(ret));
         goto fail;
     }
 
     ret = schedule_get_domains_task(rctx, rctx->ev, rctx);
     if (ret != EOK) {
-        DEBUG(SSSDBG_FATAL_FAILURE, ("schedule_get_domains_tasks failed.\n"));
+        DEBUG(SSSDBG_FATAL_FAILURE, "schedule_get_domains_tasks failed.\n");
         goto fail;
     }
 
-    DEBUG(SSSDBG_TRACE_FUNC, ("SUDO Initialization complete\n"));
+    DEBUG(SSSDBG_TRACE_FUNC, "SUDO Initialization complete\n");
 
     return EOK;
 
@@ -205,8 +201,8 @@ int main(int argc, const char *argv[])
     ret = die_if_parent_died();
     if (ret != EOK) {
         /* This is not fatal, don't return */
-        DEBUG(SSSDBG_OP_FAILURE, ("Could not set up to exit "
-                                  "when parent process does\n"));
+        DEBUG(SSSDBG_OP_FAILURE, "Could not set up to exit "
+                                  "when parent process does\n");
     }
 
     ret = sudo_process_init(main_ctx,

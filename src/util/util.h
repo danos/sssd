@@ -67,8 +67,8 @@ extern int debug_timestamps;
 extern int debug_microseconds;
 extern int debug_to_file;
 extern const char *debug_log_file;
-void debug_fn(const char *format, ...) SSS_ATTRIBUTE_PRINTF(1, 2);
-int debug_get_level(int old_level);
+void debug_fn(const char *function, int level, const char *format, ...)
+                                SSS_ATTRIBUTE_PRINTF(3, 4);
 int debug_convert_old_level(int old_level);
 errno_t set_debug_file_from_fd(const int fd);
 
@@ -105,96 +105,22 @@ errno_t set_debug_file_from_fd(const int fd);
          {"debug-microseconds", 0, POPT_ARG_INT, &debug_microseconds, 0, \
           _("Show timestamps with microseconds"), NULL},
 
-/** \def DEBUG(level, body)
+/** \def DEBUG(level, format, ...)
     \brief macro to generate debug messages
 
     \param level the debug level, please use one of the SSSDBG_* macros
-      Old format:
-      - 1 is for critical errors users may find it difficult to understand but
-        are still quite clear
-      - 2-4 is for stuff developers are interested in in general, but
-        shouldn't fill the screen with useless low level verbose stuff
-      - 5-6 is for errors you may want to track, but only if you explicitly
-        looking for additional clues
-      - 7-10 is for informational stuff
-
-    \param body the debug message you want to send, should end with \n
+    \param format the debug message format string, should result in a
+                  newline-terminated message
+    \param ... the debug message format arguments
 */
-#define DEBUG(level, body) do { \
-    int __debug_macro_newlevel = debug_get_level(level); \
-    if (DEBUG_IS_SET(__debug_macro_newlevel)) { \
-        if (debug_timestamps) { \
-            struct timeval __debug_macro_tv; \
-            struct tm *__debug_macro_tm; \
-            char __debug_macro_datetime[20]; \
-            int __debug_macro_year; \
-            gettimeofday(&__debug_macro_tv, NULL); \
-            __debug_macro_tm = localtime(&__debug_macro_tv.tv_sec); \
-            __debug_macro_year = __debug_macro_tm->tm_year + 1900; \
-            /* get date time without year */ \
-            memcpy(__debug_macro_datetime, ctime(&__debug_macro_tv.tv_sec), 19); \
-            __debug_macro_datetime[19] = '\0'; \
-            if (debug_microseconds) { \
-                debug_fn("(%s:%.6ld %d) [%s] [%s] (%#.4x): ", \
-                         __debug_macro_datetime, __debug_macro_tv.tv_usec, \
-                         __debug_macro_year, debug_prg_name, \
-                         __FUNCTION__, __debug_macro_newlevel); \
-            } else { \
-                debug_fn("(%s %d) [%s] [%s] (%#.4x): ", \
-                         __debug_macro_datetime, __debug_macro_year, \
-                         debug_prg_name, __FUNCTION__, __debug_macro_newlevel); \
-            } \
-        } else { \
-            debug_fn("[%s] [%s] (%#.4x): ", \
-                     debug_prg_name, __FUNCTION__, __debug_macro_newlevel); \
-        } \
-        debug_fn body; \
-    } \
-} while(0)
-
-/** \def DEBUG_MSG(level, function, message)
-    \brief macro to generate debug messages with message from variable
-
-    \param level the debug level, please use one of the SSSDBG_* macros
-
-    \param function name of the function where DEBUG_MSG is called
-
-    \param message message to be send (should not end with \n)
-*/
-#define DEBUG_MSG(level, function, message) do { \
-    int __debug_macro_newlevel = debug_get_level(level); \
-    if (DEBUG_IS_SET(__debug_macro_newlevel)) { \
-        if (debug_timestamps) { \
-            struct timeval __debug_macro_tv; \
-            struct tm *__debug_macro_tm; \
-            char __debug_macro_datetime[20]; \
-            int __debug_macro_year; \
-            gettimeofday(&__debug_macro_tv, NULL); \
-            __debug_macro_tm = localtime(&__debug_macro_tv.tv_sec); \
-            __debug_macro_year = __debug_macro_tm->tm_year + 1900; \
-            /* get date time without year */ \
-            memcpy(__debug_macro_datetime, ctime(&__debug_macro_tv.tv_sec), 19); \
-            __debug_macro_datetime[19] = '\0'; \
-            if (debug_microseconds) { \
-                debug_fn("(%s:%.6ld %d) [%s] [%s] (%#.4x): %s\n", \
-                         __debug_macro_datetime, __debug_macro_tv.tv_usec, \
-                         __debug_macro_year, debug_prg_name, \
-                         function, __debug_macro_newlevel, message); \
-            } else { \
-                debug_fn("(%s %d) [%s] [%s] (%#.4x): %s\n", \
-                         __debug_macro_datetime, __debug_macro_year, \
-                         debug_prg_name, function, __debug_macro_newlevel, \
-                         message); \
-            } \
-        } else { \
-            debug_fn("[%s] [%s] (%#.4x): %s\n", \
-                     debug_prg_name, function, __debug_macro_newlevel, message); \
-        } \
-    } \
-} while(0)
+#define DEBUG(level, format, ...) do { \
+    int __debug_macro_level = level; \
+    if (DEBUG_IS_SET(__debug_macro_level)) \
+        debug_fn(__FUNCTION__, __debug_macro_level, format, ##__VA_ARGS__); \
+} while (0)
 
 /** \def DEBUG_IS_SET(level)
-    \brief checks whether level (must be in new format) is set in debug_level
+    \brief checks whether level is set in debug_level
 
     \param level the debug level, please use one of the SSSDBG*_ macros
 */
@@ -350,6 +276,15 @@ int sss_names_init(TALLOC_CTX *mem_ctx,
 int sss_parse_name(TALLOC_CTX *memctx,
                    struct sss_names_ctx *snctx,
                    const char *orig, char **_domain, char **_name);
+
+int sss_parse_name_const(TALLOC_CTX *memctx,
+                         struct sss_names_ctx *snctx, const char *orig,
+                         const char **_domain, const char **_name);
+
+int sss_parse_name_for_domains(TALLOC_CTX *memctx,
+                               struct sss_domain_info *domains,
+                               const char *default_domain,
+                               const char *orig, char **domain, char **name);
 
 char *
 sss_get_cased_name(TALLOC_CTX *mem_ctx, const char *orig_name,

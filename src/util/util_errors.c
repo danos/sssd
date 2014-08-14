@@ -48,11 +48,16 @@ struct err_string error_to_str[] = {
     { "Dynamic DNS update failed" }, /* ERR_DYNDNS_FAILED */
     { "Dynamic DNS update timed out" }, /* ERR_DYNDNS_TIMEOUT */
     { "Dynamic DNS update not possible while offline" }, /* ERR_DYNDNS_OFFLINE */
+    { "Cannot parse input" }, /* ERR_INPUT_PARSE */
     { "Entry not found" }, /* ERR_NOT_FOUND */
     { "Domain not found" }, /* ERR_DOMAIN_NOT_FOUND */
     { "Missing configuration file" }, /* ERR_MISSING_CONF */
     { "Malformed search filter" }, /* ERR_INVALID_FILTER, */
     { "No POSIX attributes detected" }, /* ERR_NO_POSIX */
+    { "Extra attribute is a duplicate" }, /* ERR_DUP_EXTRA_ATTR */
+    { "Malformed extra attribute" }, /* ERR_INVALID_EXTRA_ATTR */
+    { "Cannot get bus message sender" }, /* ERR_SBUS_GET_SENDER_ERROR */
+    { "Bus message has no sender" }, /* ERR_SBUS_NO_SENDER */
 };
 
 

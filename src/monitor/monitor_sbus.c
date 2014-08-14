@@ -61,8 +61,9 @@ static void id_callback(DBusPendingCall *pending, void *ptr)
          * until reply is valid or timeout has occurred. If reply is NULL
          * here, something is seriously wrong and we should bail out.
          */
-        DEBUG(0, ("Severe error. A reply callback was called but no"
-                  " reply was received and no timeout occurred\n"));
+        DEBUG(SSSDBG_FATAL_FAILURE,
+              "Severe error. A reply callback was called but no"
+                  " reply was received and no timeout occurred\n");
 
         /* FIXME: Destroy this connection ? */
         goto done;
@@ -75,19 +76,20 @@ static void id_callback(DBusPendingCall *pending, void *ptr)
                                     DBUS_TYPE_UINT16, &mon_ver,
                                     DBUS_TYPE_INVALID);
         if (!ret) {
-            DEBUG(1, ("Failed to parse message\n"));
+            DEBUG(SSSDBG_CRIT_FAILURE, "Failed to parse message\n");
             if (dbus_error_is_set(&dbus_error)) dbus_error_free(&dbus_error);
             /* FIXME: Destroy this connection ? */
             goto done;
         }
 
-        DEBUG(4, ("Got id ack and version (%d) from Monitor\n", mon_ver));
+        DEBUG(SSSDBG_CONF_SETTINGS,
+              "Got id ack and version (%d) from Monitor\n", mon_ver);
 
         break;
 
     case DBUS_MESSAGE_TYPE_ERROR:
-        DEBUG(0,("The Monitor returned an error [%s]\n",
-                 dbus_message_get_error_name(reply)));
+        DEBUG(SSSDBG_FATAL_FAILURE,"The Monitor returned an error [%s]\n",
+                 dbus_message_get_error_name(reply));
         /* Falling through to default intentionally*/
     default:
         /*
@@ -117,21 +119,21 @@ int monitor_common_send_id(struct sbus_connection *conn,
     /* create the message */
     msg = dbus_message_new_method_call(NULL,
                                        MON_SRV_PATH,
-                                       MON_SRV_INTERFACE,
-                                       MON_SRV_METHOD_REGISTER);
+                                       MON_SRV_IFACE,
+                                       MON_SRV_IFACE_REGISTERSERVICE);
     if (msg == NULL) {
-        DEBUG(0, ("Out of memory?!\n"));
+        DEBUG(SSSDBG_FATAL_FAILURE, "Out of memory?!\n");
         return ENOMEM;
     }
 
-    DEBUG(4, ("Sending ID: (%s,%d)\n", name, version));
+    DEBUG(SSSDBG_CONF_SETTINGS, "Sending ID: (%s,%d)\n", name, version);
 
     ret = dbus_message_append_args(msg,
                                    DBUS_TYPE_STRING, &name,
                                    DBUS_TYPE_UINT16, &version,
                                    DBUS_TYPE_INVALID);
     if (!ret) {
-        DEBUG(1, ("Failed to build message\n"));
+        DEBUG(SSSDBG_CRIT_FAILURE, "Failed to build message\n");
         return EIO;
     }
 
@@ -142,30 +144,12 @@ int monitor_common_send_id(struct sbus_connection *conn,
     return retval;
 }
 
-int monitor_common_pong(DBusMessage *message,
-                        struct sbus_connection *conn)
+int monitor_common_pong(struct sbus_request *dbus_req, void *data)
 {
-    DBusMessage *reply;
-    dbus_bool_t ret;
-
-    reply = dbus_message_new_method_return(message);
-    if (!reply) return ENOMEM;
-
-    ret = dbus_message_append_args(reply, DBUS_TYPE_INVALID);
-    if (!ret) {
-        dbus_message_unref(reply);
-        return EIO;
-    }
-
-    /* send reply back */
-    sbus_conn_send_reply(conn, reply);
-    dbus_message_unref(reply);
-
-    return EOK;
+    return sbus_request_return_and_finish(dbus_req, DBUS_TYPE_INVALID);
 }
 
-int monitor_common_res_init(DBusMessage *message,
-                            struct sbus_connection *conn)
+int monitor_common_res_init(struct sbus_request *dbus_req, void *data)
 {
     int ret;
 
@@ -175,7 +159,7 @@ int monitor_common_res_init(DBusMessage *message,
     }
 
     /* Send an empty reply to acknowledge receipt */
-    return monitor_common_pong(message, conn);
+    return sbus_request_return_and_finish(dbus_req, DBUS_TYPE_INVALID);
 }
 
 errno_t monitor_common_rotate_logs(struct confdb_ctx *confdb,
@@ -197,14 +181,15 @@ errno_t monitor_common_rotate_logs(struct confdb_ctx *confdb,
                          old_debug_level,
                          &debug_level);
     if (ret != EOK) {
-        DEBUG(0, ("Error reading from confdb (%d) [%s]\n",
-                  ret, strerror(ret)));
+        DEBUG(SSSDBG_FATAL_FAILURE, "Error reading from confdb (%d) [%s]\n",
+                  ret, strerror(ret));
         /* Try to proceed with the old value */
         debug_level = old_debug_level;
     }
 
     if (debug_level != old_debug_level) {
-        DEBUG(0, ("Debug level changed to %#.4x\n", debug_level));
+        DEBUG(SSSDBG_FATAL_FAILURE,
+              "Debug level changed to %#.4x\n", debug_level);
         debug_level = debug_convert_old_level(debug_level);
     }
 
@@ -213,7 +198,7 @@ errno_t monitor_common_rotate_logs(struct confdb_ctx *confdb,
 
 errno_t sss_monitor_init(TALLOC_CTX *mem_ctx,
                          struct tevent_context *ev,
-                         struct sbus_interface *intf,
+                         struct mon_cli_iface *mon_iface,
                          const char *svc_name,
                          uint16_t svc_version,
                          void *pvt,
@@ -221,29 +206,39 @@ errno_t sss_monitor_init(TALLOC_CTX *mem_ctx,
 {
     errno_t ret;
     char *sbus_address;
+    struct sbus_interface *intf;
     struct sbus_connection *conn;
 
     /* Set up SBUS connection to the monitor */
     ret = monitor_get_sbus_address(NULL, &sbus_address);
     if (ret != EOK) {
-        DEBUG(0, ("Could not locate monitor address.\n"));
+        DEBUG(SSSDBG_FATAL_FAILURE, "Could not locate monitor address.\n");
         return ret;
     }
 
-    ret = sbus_client_init(mem_ctx, ev, sbus_address,
-                           intf, &conn,
-                           NULL, pvt);
+    ret = sbus_client_init(mem_ctx, ev, sbus_address, &conn);
     if (ret != EOK) {
-        DEBUG(0, ("Failed to connect to monitor services.\n"));
+        DEBUG(SSSDBG_FATAL_FAILURE, "Failed to connect to monitor services.\n");
         talloc_free(sbus_address);
         return ret;
     }
     talloc_free(sbus_address);
 
+    intf = sbus_new_interface(mem_ctx, MONITOR_PATH, &mon_iface->vtable, pvt);
+    if (!intf) {
+        ret = ENOMEM;
+    } else {
+        ret = sbus_conn_add_interface(conn, intf);
+    }
+    if (ret != EOK) {
+        DEBUG(SSSDBG_FATAL_FAILURE, "Failed to export monitor client.\n");
+        return ret;
+    }
+
     /* Identify ourselves to the monitor */
     ret = monitor_common_send_id(conn, svc_name, svc_version);
     if (ret != EOK) {
-        DEBUG(0, ("Failed to identify to the monitor!\n"));
+        DEBUG(SSSDBG_FATAL_FAILURE, "Failed to identify to the monitor!\n");
         return ret;
     }
 

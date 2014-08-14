@@ -115,71 +115,7 @@ START_TEST(test_debug_convert_old_level_new_format)
 }
 END_TEST
 
-START_TEST(test_debug_get_level_old_format)
-{
-    fail_unless(debug_get_level(0) == SSSDBG_FATAL_FAILURE, "Invalid conversion of 0");
-    fail_unless(debug_get_level(1) == SSSDBG_CRIT_FAILURE, "Invalid conversion of 1");
-    fail_unless(debug_get_level(2) == SSSDBG_OP_FAILURE, "Invalid conversion of 2");
-    fail_unless(debug_get_level(3) == SSSDBG_MINOR_FAILURE, "Invalid conversion of 3");
-    fail_unless(debug_get_level(4) == SSSDBG_CONF_SETTINGS, "Invalid conversion of 4");
-    fail_unless(debug_get_level(5) == SSSDBG_FUNC_DATA, "Invalid conversion of 5");
-    fail_unless(debug_get_level(6) == SSSDBG_TRACE_FUNC, "Invalid conversion of 6");
-    fail_unless(debug_get_level(7) == SSSDBG_TRACE_LIBS, "Invalid conversion of 7");
-    fail_unless(debug_get_level(8) == SSSDBG_TRACE_INTERNAL, "Invalid conversion of 8");
-    fail_unless(debug_get_level(9) == SSSDBG_TRACE_ALL, "Invalid conversion of 9");
-}
-END_TEST
-
-START_TEST(test_debug_get_level_new_format)
-{
-    fail_unless(
-        debug_get_level(SSSDBG_UNRESOLVED) == SSSDBG_FATAL_FAILURE,
-        "Invalid conversion of SSSDBG_UNRESOLVED"
-    );
-    fail_unless(
-        debug_get_level(SSSDBG_FATAL_FAILURE) == SSSDBG_FATAL_FAILURE,
-        "Invalid conversion of SSSDBG_FATAL_FAILURE"
-    );
-    fail_unless(
-        debug_get_level(SSSDBG_CRIT_FAILURE) == SSSDBG_CRIT_FAILURE,
-        "Invalid conversion of SSSDBG_CRIT_FAILURE"
-    );
-    fail_unless(
-        debug_get_level(SSSDBG_OP_FAILURE) == SSSDBG_OP_FAILURE,
-        "Invalid conversion of SSSDBG_OP_FAILURE"
-    );
-    fail_unless(
-        debug_get_level(SSSDBG_MINOR_FAILURE) == SSSDBG_MINOR_FAILURE,
-        "Invalid conversion of SSSDBG_MINOR_FAILURE"
-    );
-    fail_unless(
-        debug_get_level(SSSDBG_CONF_SETTINGS) == SSSDBG_CONF_SETTINGS,
-        "Invalid conversion of SSSDBG_CONF_SETTINGS"
-    );
-    fail_unless(
-        debug_get_level(SSSDBG_FUNC_DATA) == SSSDBG_FUNC_DATA,
-        "Invalid conversion of SSSDBG_FUNC_DATA"
-    );
-    fail_unless(
-        debug_get_level(SSSDBG_TRACE_FUNC) == SSSDBG_TRACE_FUNC,
-        "Invalid conversion of SSSDBG_TRACE_FUNC"
-    );
-    fail_unless(
-        debug_get_level(SSSDBG_TRACE_LIBS) == SSSDBG_TRACE_LIBS,
-        "Invalid conversion of SSSDBG_TRACE_LIBS"
-    );
-    fail_unless(
-        debug_get_level(SSSDBG_TRACE_INTERNAL) == SSSDBG_TRACE_INTERNAL,
-        "Invalid conversion of SSSDBG_TRACE_INTERNAL"
-    );
-    fail_unless(
-        debug_get_level(SSSDBG_TRACE_ALL) == SSSDBG_TRACE_ALL,
-        "Invalid conversion of SSSDBG_TRACE_ALL"
-    );
-}
-END_TEST
-
-int test_helper_debug_check_message(int level, int msgmode)
+int test_helper_debug_check_message(int level)
 {
     TALLOC_CTX *ctx = talloc_new(NULL);
     char filename[24] = {'\0'};
@@ -221,11 +157,7 @@ int test_helper_debug_check_message(int level, int msgmode)
         goto done;
     }
 
-    if (msgmode == 0) {
-        DEBUG(level, ("%s", body));
-    } else {
-        DEBUG_MSG(level, __FUNCTION__, "some error");
-    }
+    DEBUG(level, "%s", body);
 
     ret = fseek(file, 0, SEEK_END);
     if (ret == -1) {
@@ -329,7 +261,7 @@ done:
     return ret;
 }
 
-int test_helper_debug_is_empty_message(int level, int msgmode)
+int test_helper_debug_is_empty_message(int level)
 {
     char filename[24] = {'\0'};
     int fd;
@@ -362,11 +294,7 @@ int test_helper_debug_is_empty_message(int level, int msgmode)
         goto done;
     }
 
-    if (msgmode == 0) {
-        DEBUG(level, ("some error\n"));
-    } else {
-        DEBUG_MSG(level, __FUNCTION__, "some error");
-    }
+    DEBUG(level, "some error\n");
 
     ret = fseek(file, 0, SEEK_END);
     if (ret == -1) {
@@ -420,7 +348,7 @@ START_TEST(test_debug_is_set_single_no_timestamp)
         debug_level = levels[i];
 
         errno = 0;
-        result = test_helper_debug_check_message(levels[i], 0);
+        result = test_helper_debug_check_message(levels[i]);
 
         if (result == DEBUG_TEST_ERROR) {
             error_msg = strerror(errno);
@@ -462,7 +390,7 @@ START_TEST(test_debug_is_set_single_timestamp)
         debug_level = levels[i];
 
         errno = 0;
-        result = test_helper_debug_check_message(levels[i], 0);
+        result = test_helper_debug_check_message(levels[i]);
 
         if (result == DEBUG_TEST_ERROR) {
             error_msg = strerror(errno);
@@ -509,7 +437,7 @@ START_TEST(test_debug_is_set_single_timestamp_microseconds)
         debug_level = levels[i];
 
         errno = 0;
-        result = test_helper_debug_check_message(levels[i], 0);
+        result = test_helper_debug_check_message(levels[i]);
 
         if (result == DEBUG_TEST_ERROR) {
             error_msg = strerror(errno);
@@ -557,7 +485,7 @@ START_TEST(test_debug_is_notset_no_timestamp)
         debug_level = all_set & ~levels[i];
 
         errno = 0;
-        result = test_helper_debug_is_empty_message(levels[i], 0);
+        result = test_helper_debug_is_empty_message(levels[i]);
 
         if (result == DEBUG_TEST_ERROR) {
             error_msg = strerror(errno);
@@ -602,7 +530,7 @@ START_TEST(test_debug_is_notset_timestamp)
         debug_level = all_set & ~levels[i];
 
         errno = 0;
-        result = test_helper_debug_is_empty_message(levels[i], 0);
+        result = test_helper_debug_is_empty_message(levels[i]);
 
         if (result == DEBUG_TEST_ERROR) {
             error_msg = strerror(errno);
@@ -647,7 +575,7 @@ START_TEST(test_debug_is_notset_timestamp_microseconds)
         debug_level = all_set & ~levels[i];
 
         errno = 0;
-        result = test_helper_debug_is_empty_message(levels[i], 0);
+        result = test_helper_debug_is_empty_message(levels[i]);
 
         if (result == DEBUG_TEST_ERROR) {
             error_msg = strerror(errno);
@@ -658,271 +586,6 @@ START_TEST(test_debug_is_notset_timestamp_microseconds)
         msg = talloc_asprintf(NULL,
                         "Test of level %#.4x failed - message has been written",
                         levels[i]);
-        fail_unless(result == EOK, msg);
-        talloc_free(msg);
-    }
-}
-END_TEST
-
-START_TEST(test_debug_msg_is_set_single_no_timestamp)
-{
-    int i;
-    int result;
-    int levels[] = {
-        SSSDBG_FATAL_FAILURE,
-        SSSDBG_CRIT_FAILURE,
-        SSSDBG_OP_FAILURE,
-        SSSDBG_MINOR_FAILURE,
-        SSSDBG_CONF_SETTINGS,
-        SSSDBG_FUNC_DATA,
-        SSSDBG_TRACE_FUNC,
-        SSSDBG_TRACE_LIBS,
-        SSSDBG_TRACE_INTERNAL,
-        SSSDBG_TRACE_ALL
-    };
-    char *error_msg;
-
-    debug_timestamps = 0;
-    debug_microseconds = 0;
-    debug_to_file = 1;
-    debug_prg_name = "sssd";
-
-    for (i = 0; i <= 9; i++) {
-        debug_level = levels[i];
-
-        errno = 0;
-        result = test_helper_debug_check_message(levels[i], 1);
-
-        if (result == DEBUG_TEST_ERROR) {
-            error_msg = strerror(errno);
-            fail(error_msg);
-        }
-
-        char *msg = NULL;
-        msg = talloc_asprintf(NULL, "Test of level %#.4x failed - message don't match", levels[i]);
-        fail_unless(result == EOK, msg);
-        talloc_free(msg);
-    }
-}
-END_TEST
-
-START_TEST(test_debug_msg_is_set_single_timestamp)
-{
-    int i;
-    int result;
-    int levels[] = {
-        SSSDBG_FATAL_FAILURE,
-        SSSDBG_CRIT_FAILURE,
-        SSSDBG_OP_FAILURE,
-        SSSDBG_MINOR_FAILURE,
-        SSSDBG_CONF_SETTINGS,
-        SSSDBG_FUNC_DATA,
-        SSSDBG_TRACE_FUNC,
-        SSSDBG_TRACE_LIBS,
-        SSSDBG_TRACE_INTERNAL,
-        SSSDBG_TRACE_ALL
-    };
-    char *error_msg;
-
-    debug_timestamps = 1;
-    debug_microseconds = 0;
-    debug_to_file = 1;
-    debug_prg_name = "sssd";
-
-    for (i = 0; i <= 9; i++) {
-        debug_level = levels[i];
-
-        errno = 0;
-        result = test_helper_debug_check_message(levels[i], 1);
-
-        if (result == DEBUG_TEST_ERROR) {
-            error_msg = strerror(errno);
-            fail(error_msg);
-        }
-
-        char *msg = NULL;
-
-        msg = talloc_asprintf(NULL, "Test of level %#.4x failed - invalid timestamp", levels[i]);
-        fail_if(result == DEBUG_TEST_NOK_TS, msg);
-        talloc_free(msg);
-
-        msg = talloc_asprintf(NULL, "Test of level %#.4x failed - message don't match", levels[i]);
-        fail_unless(result == EOK, msg);
-        talloc_free(msg);
-    }
-}
-END_TEST
-
-START_TEST(test_debug_msg_is_set_single_timestamp_microseconds)
-{
-    int i;
-    int result;
-    int levels[] = {
-        SSSDBG_FATAL_FAILURE,
-        SSSDBG_CRIT_FAILURE,
-        SSSDBG_OP_FAILURE,
-        SSSDBG_MINOR_FAILURE,
-        SSSDBG_CONF_SETTINGS,
-        SSSDBG_FUNC_DATA,
-        SSSDBG_TRACE_FUNC,
-        SSSDBG_TRACE_LIBS,
-        SSSDBG_TRACE_INTERNAL,
-        SSSDBG_TRACE_ALL
-    };
-    char *error_msg;
-
-    debug_timestamps = 1;
-    debug_microseconds = 1;
-    debug_to_file = 1;
-    debug_prg_name = "sssd";
-
-    for (i = 0; i <= 9; i++) {
-        debug_level = levels[i];
-
-        errno = 0;
-        result = test_helper_debug_check_message(levels[i], 1);
-
-        if (result == DEBUG_TEST_ERROR) {
-            error_msg = strerror(errno);
-            fail(error_msg);
-        }
-
-        char *msg = NULL;
-
-        msg = talloc_asprintf(NULL, "Test of level %#.4x failed - invalid timestamp", levels[i]);
-        fail_if(result == DEBUG_TEST_NOK_TS, msg);
-        talloc_free(msg);
-
-        msg = talloc_asprintf(NULL, "Test of level %#.4x failed - message don't match", levels[i]);
-        fail_unless(result == EOK, msg);
-        talloc_free(msg);
-    }
-}
-END_TEST
-
-START_TEST(test_debug_msg_is_notset_no_timestamp)
-{
-    int i;
-    int result;
-    int all_set = SSSDBG_MASK_ALL;
-    int levels[] = {
-        SSSDBG_FATAL_FAILURE,
-        SSSDBG_CRIT_FAILURE,
-        SSSDBG_OP_FAILURE,
-        SSSDBG_MINOR_FAILURE,
-        SSSDBG_CONF_SETTINGS,
-        SSSDBG_FUNC_DATA,
-        SSSDBG_TRACE_FUNC,
-        SSSDBG_TRACE_LIBS,
-        SSSDBG_TRACE_INTERNAL,
-        SSSDBG_TRACE_ALL
-    };
-    char *error_msg;
-
-    debug_timestamps = 0;
-    debug_microseconds = 0;
-    debug_to_file = 1;
-    debug_prg_name = "sssd";
-
-    for (i = 0; i <= 9; i++) {
-        debug_level = all_set & ~levels[i];
-
-        errno = 0;
-        result = test_helper_debug_is_empty_message(levels[i], 1);
-
-        if (result == DEBUG_TEST_ERROR) {
-            error_msg = strerror(errno);
-            fail(error_msg);
-        }
-
-        char *msg = NULL;
-        msg = talloc_asprintf(NULL, "Test of level %#.4x failed - message has been written", levels[i]);
-        fail_unless(result == EOK, msg);
-        talloc_free(msg);
-    }
-}
-END_TEST
-
-START_TEST(test_debug_msg_is_notset_timestamp)
-{
-    int i;
-    int result;
-    int all_set = SSSDBG_MASK_ALL;
-    int levels[] = {
-        SSSDBG_FATAL_FAILURE,
-        SSSDBG_CRIT_FAILURE,
-        SSSDBG_OP_FAILURE,
-        SSSDBG_MINOR_FAILURE,
-        SSSDBG_CONF_SETTINGS,
-        SSSDBG_FUNC_DATA,
-        SSSDBG_TRACE_FUNC,
-        SSSDBG_TRACE_LIBS,
-        SSSDBG_TRACE_INTERNAL,
-        SSSDBG_TRACE_ALL
-    };
-    char *error_msg;
-
-    debug_timestamps = 0;
-    debug_microseconds = 0;
-    debug_to_file = 1;
-    debug_prg_name = "sssd";
-
-    for (i = 0; i <= 9; i++) {
-        debug_level = all_set & ~levels[i];
-
-        errno = 0;
-        result = test_helper_debug_is_empty_message(levels[i], 1);
-
-        if (result == DEBUG_TEST_ERROR) {
-            error_msg = strerror(errno);
-            fail(error_msg);
-        }
-
-        char *msg = NULL;
-        msg = talloc_asprintf(NULL, "Test of level %#.4x failed - message has been written", levels[i]);
-        fail_unless(result == EOK, msg);
-        talloc_free(msg);
-    }
-}
-END_TEST
-
-START_TEST(test_debug_msg_is_notset_timestamp_microseconds)
-{
-    int i;
-    int result;
-    int all_set = SSSDBG_MASK_ALL;
-    int levels[] = {
-        SSSDBG_FATAL_FAILURE,
-        SSSDBG_CRIT_FAILURE,
-        SSSDBG_OP_FAILURE,
-        SSSDBG_MINOR_FAILURE,
-        SSSDBG_CONF_SETTINGS,
-        SSSDBG_FUNC_DATA,
-        SSSDBG_TRACE_FUNC,
-        SSSDBG_TRACE_LIBS,
-        SSSDBG_TRACE_INTERNAL,
-        SSSDBG_TRACE_ALL
-    };
-    char *error_msg;
-
-    debug_timestamps = 0;
-    debug_microseconds = 1;
-    debug_to_file = 1;
-    debug_prg_name = "sssd";
-
-    for (i = 0; i <= 9; i++) {
-        debug_level = all_set & ~levels[i];
-
-        errno = 0;
-        result = test_helper_debug_is_empty_message(levels[i], 1);
-
-        if (result == DEBUG_TEST_ERROR) {
-            error_msg = strerror(errno);
-            fail(error_msg);
-        }
-
-        char *msg = NULL;
-        msg = talloc_asprintf(NULL, "Test of level %#.4x failed - message has been written", levels[i]);
         fail_unless(result == EOK, msg);
         talloc_free(msg);
     }
@@ -996,20 +659,12 @@ Suite *debug_suite(void)
 
     tcase_add_test(tc_debug, test_debug_convert_old_level_old_format);
     tcase_add_test(tc_debug, test_debug_convert_old_level_new_format);
-    tcase_add_test(tc_debug, test_debug_get_level_old_format);
-    tcase_add_test(tc_debug, test_debug_get_level_new_format);
     tcase_add_test(tc_debug, test_debug_is_set_single_no_timestamp);
     tcase_add_test(tc_debug, test_debug_is_set_single_timestamp);
     tcase_add_test(tc_debug, test_debug_is_set_single_timestamp_microseconds);
     tcase_add_test(tc_debug, test_debug_is_notset_no_timestamp);
     tcase_add_test(tc_debug, test_debug_is_notset_timestamp);
     tcase_add_test(tc_debug, test_debug_is_notset_timestamp_microseconds);
-    tcase_add_test(tc_debug, test_debug_msg_is_set_single_no_timestamp);
-    tcase_add_test(tc_debug, test_debug_msg_is_set_single_timestamp);
-    tcase_add_test(tc_debug, test_debug_msg_is_set_single_timestamp_microseconds);
-    tcase_add_test(tc_debug, test_debug_msg_is_notset_no_timestamp);
-    tcase_add_test(tc_debug, test_debug_msg_is_notset_timestamp);
-    tcase_add_test(tc_debug, test_debug_msg_is_notset_timestamp_microseconds);
     tcase_add_test(tc_debug, test_debug_is_set_true);
     tcase_add_test(tc_debug, test_debug_is_set_false);
     tcase_set_timeout(tc_debug, 60);

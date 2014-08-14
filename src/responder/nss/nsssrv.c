@@ -55,35 +55,26 @@
 #define SHELL_REALLOC_INCREMENT 5
 #define SHELL_REALLOC_MAX       50
 
-static int nss_clear_memcache(DBusMessage *message,
-                              struct sbus_connection *conn);
-static int nss_clear_netgroup_hash_table(DBusMessage *message,
-                                         struct sbus_connection *conn);
+static int nss_clear_memcache(struct sbus_request *dbus_req, void *data);
+static int nss_clear_netgroup_hash_table(struct sbus_request *dbus_req, void *data);
 
-struct sbus_method monitor_nss_methods[] = {
-    { MON_CLI_METHOD_PING, monitor_common_pong },
-    { MON_CLI_METHOD_RES_INIT, monitor_common_res_init },
-    { MON_CLI_METHOD_ROTATE, responder_logrotate },
-    { MON_CLI_METHOD_CLEAR_MEMCACHE, nss_clear_memcache},
-    { MON_CLI_METHOD_CLEAR_ENUM_CACHE, nss_clear_netgroup_hash_table},
-    { NULL, NULL }
+struct mon_cli_iface monitor_nss_methods = {
+    { &mon_cli_iface_meta, 0 },
+    .ping = monitor_common_pong,
+    .resInit = monitor_common_res_init,
+    .shutDown = NULL,
+    .goOffline = NULL,
+    .resetOffline = NULL,
+    .rotateLogs = responder_logrotate,
+    .clearMemcache = nss_clear_memcache,
+    .clearEnumCache = nss_clear_netgroup_hash_table
 };
 
-struct sbus_interface monitor_nss_interface = {
-    MONITOR_INTERFACE,
-    MONITOR_PATH,
-    SBUS_DEFAULT_VTABLE,
-    monitor_nss_methods,
-    NULL
-};
-
-static int nss_clear_memcache(DBusMessage *message,
-                              struct sbus_connection *conn)
+static int nss_clear_memcache(struct sbus_request *dbus_req, void *data)
 {
     errno_t ret;
     int memcache_timeout;
-    struct resp_ctx *rctx = talloc_get_type(sbus_conn_get_private_data(conn),
-                                            struct resp_ctx);
+    struct resp_ctx *rctx = talloc_get_type(data, struct resp_ctx);
     struct nss_ctx *nctx = (struct nss_ctx*) rctx->pvt_ctx;
 
     ret = unlink(SSS_NSS_MCACHE_DIR"/"CLEAR_MC_FLAG);
@@ -91,11 +82,11 @@ static int nss_clear_memcache(DBusMessage *message,
         ret = errno;
         if (ret == ENOENT) {
             DEBUG(SSSDBG_TRACE_FUNC,
-                  ("CLEAR_MC_FLAG not found. Nothing to do.\n"));
+                  "CLEAR_MC_FLAG not found. Nothing to do.\n");
             goto done;
         } else {
-            DEBUG(SSSDBG_CRIT_FAILURE, ("Failed to unlink file: %s.\n",
-                  strerror(ret)));
+            DEBUG(SSSDBG_CRIT_FAILURE, "Failed to unlink file: %s.\n",
+                  strerror(ret));
             return ret;
         }
     }
@@ -108,18 +99,18 @@ static int nss_clear_memcache(DBusMessage *message,
                          300, &memcache_timeout);
     if (ret != EOK) {
         DEBUG(SSSDBG_FATAL_FAILURE,
-              ("Unable to get memory cache entry timeout.\n"));
+              "Unable to get memory cache entry timeout.\n");
         return ret;
     }
 
     /* TODO: read cache sizes from configuration */
-    DEBUG(SSSDBG_TRACE_FUNC, ("Clearing memory caches.\n"));
+    DEBUG(SSSDBG_TRACE_FUNC, "Clearing memory caches.\n");
     ret = sss_mmap_cache_reinit(nctx, SSS_MC_CACHE_ELEMENTS,
                                 (time_t) memcache_timeout,
                                 &nctx->pwd_mc_ctx);
     if (ret != EOK) {
         DEBUG(SSSDBG_CRIT_FAILURE,
-              ("passwd mmap cache invalidation failed\n"));
+              "passwd mmap cache invalidation failed\n");
         return ret;
     }
 
@@ -128,30 +119,28 @@ static int nss_clear_memcache(DBusMessage *message,
                                 &nctx->grp_mc_ctx);
     if (ret != EOK) {
         DEBUG(SSSDBG_CRIT_FAILURE,
-              ("group mmap cache invalidation failed\n"));
+              "group mmap cache invalidation failed\n");
         return ret;
     }
 
 done:
-    return monitor_common_pong(message, conn);
+    return sbus_request_return_and_finish(dbus_req, DBUS_TYPE_INVALID);
 }
 
-static int nss_clear_netgroup_hash_table(DBusMessage *message,
-                                         struct sbus_connection *conn)
+static int nss_clear_netgroup_hash_table(struct sbus_request *dbus_req, void *data)
 {
     errno_t ret;
-    struct resp_ctx *rctx = talloc_get_type(sbus_conn_get_private_data(conn),
-                                            struct resp_ctx);
+    struct resp_ctx *rctx = talloc_get_type(data, struct resp_ctx);
     struct nss_ctx *nctx = (struct nss_ctx*) rctx->pvt_ctx;
 
     ret = nss_orphan_netgroups(nctx);
     if (ret != EOK) {
         DEBUG(SSSDBG_CRIT_FAILURE,
-              ("Could not invalidate netgroups\n"));
+              "Could not invalidate netgroups\n");
         return ret;
     }
 
-    return monitor_common_pong(message, conn);
+    return sbus_request_return_and_finish(dbus_req, DBUS_TYPE_INVALID);
 }
 
 static errno_t nss_get_etc_shells(TALLOC_CTX *mem_ctx, char ***_shells)
@@ -181,16 +170,17 @@ static errno_t nss_get_etc_shells(TALLOC_CTX *mem_ctx, char ***_shells)
             ret = ENOMEM;
             goto done;
         }
-        DEBUG(6, ("Found shell %s in /etc/shells\n", shells[i]));
+        DEBUG(SSSDBG_TRACE_FUNC, "Found shell %s in /etc/shells\n", shells[i]);
         i++;
 
         if (i == size) {
             size += SHELL_REALLOC_INCREMENT;
             if (size > SHELL_REALLOC_MAX) {
-                DEBUG(0, ("Reached maximum number of shells [%d]. "
+                DEBUG(SSSDBG_FATAL_FAILURE,
+                      "Reached maximum number of shells [%d]. "
                           "Users may be denied access. "
                           "Please check /etc/shells for sanity\n",
-                          SHELL_REALLOC_MAX));
+                          SHELL_REALLOC_MAX);
                 break;
             }
             shells = talloc_realloc(NULL, shells, char *,
@@ -245,8 +235,9 @@ static int nss_get_config(struct nss_ctx *nctx,
     if (ret != EOK) goto done;
     if (nctx->cache_refresh_percent < 0 ||
         nctx->cache_refresh_percent > 99) {
-        DEBUG(0,("Configuration error: entry_cache_nowait_percentage is "
-                 "invalid. Disabling feature.\n"));
+        DEBUG(SSSDBG_FATAL_FAILURE,
+              "Configuration error: entry_cache_nowait_percentage is "
+                 "invalid. Disabling feature.\n");
         nctx->cache_refresh_percent = 0;
     }
 
@@ -300,16 +291,20 @@ static int nss_get_config(struct nss_ctx *nctx,
                             &nctx->default_shell);
     if (ret != EOK) goto done;
 
+    ret = confdb_get_string(cdb, nctx, CONFDB_NSS_CONF_ENTRY,
+                            CONFDB_NSS_HOMEDIR_SUBSTRING,
+                            CONFDB_DEFAULT_HOMEDIR_SUBSTRING,
+                            &nctx->homedir_substr);
+    if (ret != EOK) goto done;
+
     ret = 0;
 done:
     return ret;
 }
 
-static int nss_update_memcache(DBusMessage *message,
-                               struct sbus_connection *conn)
+static int nss_update_memcache(struct sbus_request *dbus_req, void *data)
 {
-    struct resp_ctx *rctx = talloc_get_type(sbus_conn_get_private_data(conn),
-                                            struct resp_ctx);
+    struct resp_ctx *rctx = talloc_get_type(data, struct resp_ctx);
     struct nss_ctx *nctx = talloc_get_type(rctx->pvt_ctx, struct nss_ctx);
 
     nss_update_pw_memcache(nctx);
@@ -318,72 +313,36 @@ static int nss_update_memcache(DBusMessage *message,
     return EOK;
 }
 
-static int nss_memcache_initgr_check(DBusMessage *message,
-                                     struct sbus_connection *conn)
+static int nss_memcache_initgr_check(struct sbus_request *dbus_req, void *data)
 {
-    struct resp_ctx *rctx = talloc_get_type(sbus_conn_get_private_data(conn),
-                                            struct resp_ctx);
+    struct resp_ctx *rctx = talloc_get_type(data, struct resp_ctx);
     struct nss_ctx *nctx = talloc_get_type(rctx->pvt_ctx, struct nss_ctx);
-    DBusError dbus_error;
-    dbus_bool_t dbret;
-    DBusMessage *reply;
     char *user;
     char *domain;
     uint32_t *groups;
     int gnum;
 
-    dbus_error_init(&dbus_error);
-
-    dbret = dbus_message_get_args(message, &dbus_error,
-                                  DBUS_TYPE_STRING, &user,
-                                  DBUS_TYPE_STRING, &domain,
-                                  DBUS_TYPE_ARRAY, DBUS_TYPE_UINT32,
-                                  &groups, &gnum,
-                                  DBUS_TYPE_INVALID);
-
-    if (!dbret) {
-        DEBUG(SSSDBG_CRIT_FAILURE, ("Failed, to parse message!\n"));
-        if (dbus_error_is_set(&dbus_error)) {
-            dbus_error_free(&dbus_error);
-        }
-        return EIO;
+    if (!sbus_request_parse_or_finish(dbus_req,
+                                      DBUS_TYPE_STRING, &user,
+                                      DBUS_TYPE_STRING, &domain,
+                                      DBUS_TYPE_ARRAY, DBUS_TYPE_UINT32, &groups, &gnum,
+                                      DBUS_TYPE_INVALID)) {
+        return EOK; /* handled */
     }
 
     DEBUG(SSSDBG_TRACE_LIBS,
-          ("Got request for [%s@%s]\n", user, domain));
+          "Got request for [%s@%s]\n", user, domain);
 
     nss_update_initgr_memcache(nctx, user, domain, gnum, groups);
 
-    reply = dbus_message_new_method_return(message);
-    if (!reply) return ENOMEM;
-
-    dbret = dbus_message_append_args(reply, DBUS_TYPE_INVALID);
-    if (!dbret) {
-        dbus_message_unref(reply);
-        return EIO;
-    }
-
-    /* send reply back */
-    sbus_conn_send_reply(conn, reply);
-    dbus_message_unref(reply);
-
-    return EOK;
+    return sbus_request_return_and_finish(dbus_req, DBUS_TYPE_INVALID);
 }
 
-static struct sbus_method nss_dp_methods[] = {
-    { DP_REV_METHOD_UPDATE_CACHE, nss_update_memcache },
-    { DP_REV_METHOD_INITGR_CHECK, nss_memcache_initgr_check },
-    { NULL, NULL }
+static struct data_provider_rev_iface nss_dp_methods = {
+    { &data_provider_rev_iface_meta, 0 },
+    .updateCache = nss_update_memcache,
+    .initgrCheck = nss_memcache_initgr_check
 };
-
-struct sbus_interface nss_dp_interface = {
-    DP_INTERFACE,
-    DP_PATH,
-    SBUS_DEFAULT_VTABLE,
-    nss_dp_methods,
-    NULL
-};
-
 
 static void nss_dp_reconnect_init(struct sbus_connection *conn,
                                   int status, void *pvt)
@@ -393,7 +352,7 @@ static void nss_dp_reconnect_init(struct sbus_connection *conn,
 
     /* Did we reconnect successfully? */
     if (status == SBUS_RECONNECT_SUCCESS) {
-        DEBUG(1, ("Reconnected to the Data Provider.\n"));
+        DEBUG(SSSDBG_CRIT_FAILURE, "Reconnected to the Data Provider.\n");
 
         /* Identify ourselves to the data provider */
         ret = dp_common_send_id(be_conn->conn,
@@ -407,8 +366,8 @@ static void nss_dp_reconnect_init(struct sbus_connection *conn,
     }
 
     /* Failed to reconnect */
-    DEBUG(0, ("Could not reconnect to %s provider.\n",
-              be_conn->domain->name));
+    DEBUG(SSSDBG_FATAL_FAILURE, "Could not reconnect to %s provider.\n",
+              be_conn->domain->name);
 
     /* FIXME: kill the frontend and let the monitor restart it ? */
     /* nss_shutdown(rctx); */
@@ -436,24 +395,25 @@ int nss_process_init(TALLOC_CTX *mem_ctx,
                            CONFDB_NSS_CONF_ENTRY,
                            NSS_SBUS_SERVICE_NAME,
                            NSS_SBUS_SERVICE_VERSION,
-                           &monitor_nss_interface,
-                           "NSS", &nss_dp_interface,
+                           &monitor_nss_methods,
+                           "NSS", &nss_dp_methods.vtable,
                            &rctx);
     if (ret != EOK) {
-        DEBUG(SSSDBG_FATAL_FAILURE, ("sss_process_init() failed\n"));
+        DEBUG(SSSDBG_FATAL_FAILURE, "sss_process_init() failed\n");
         return ret;
     }
 
     nctx = talloc_zero(rctx, struct nss_ctx);
     if (!nctx) {
-        DEBUG(0, ("fatal error initializing nss_ctx\n"));
+        DEBUG(SSSDBG_FATAL_FAILURE, "fatal error initializing nss_ctx\n");
         ret = ENOMEM;
         goto fail;
     }
 
     ret = sss_ncache_init(rctx, &nctx->ncache);
     if (ret != EOK) {
-        DEBUG(0, ("fatal error initializing negative cache\n"));
+        DEBUG(SSSDBG_FATAL_FAILURE,
+              "fatal error initializing negative cache\n");
         goto fail;
     }
 
@@ -462,7 +422,7 @@ int nss_process_init(TALLOC_CTX *mem_ctx,
 
     ret = nss_get_config(nctx, cdb);
     if (ret != EOK) {
-        DEBUG(0, ("fatal error getting nss config\n"));
+        DEBUG(SSSDBG_FATAL_FAILURE, "fatal error getting nss config\n");
         goto fail;
     }
 
@@ -472,7 +432,8 @@ int nss_process_init(TALLOC_CTX *mem_ctx,
                          CONFDB_SERVICE_RECON_RETRIES,
                          3, &max_retries);
     if (ret != EOK) {
-        DEBUG(0, ("Failed to set up automatic reconnection\n"));
+        DEBUG(SSSDBG_FATAL_FAILURE,
+              "Failed to set up automatic reconnection\n");
         goto fail;
     }
 
@@ -484,7 +445,7 @@ int nss_process_init(TALLOC_CTX *mem_ctx,
     err = sss_idmap_init(sss_idmap_talloc, nctx, sss_idmap_talloc_free,
                          &nctx->idmap_ctx);
     if (err != IDMAP_SUCCESS) {
-        DEBUG(SSSDBG_FATAL_FAILURE, ("sss_idmap_init failed.\n"));
+        DEBUG(SSSDBG_FATAL_FAILURE, "sss_idmap_init failed.\n");
         ret = EFAULT;
         goto fail;
     }
@@ -493,7 +454,8 @@ int nss_process_init(TALLOC_CTX *mem_ctx,
     hret = sss_hash_create_ex(nctx, 10, &nctx->netgroups, 0, 0, 0, 0,
                               netgroup_hash_delete_cb, NULL);
     if (hret != HASH_SUCCESS) {
-        DEBUG(0,("Unable to initialize netgroup hash table\n"));
+        DEBUG(SSSDBG_FATAL_FAILURE,
+              "Unable to initialize netgroup hash table\n");
         ret = EIO;
         goto fail;
     }
@@ -504,9 +466,9 @@ int nss_process_init(TALLOC_CTX *mem_ctx,
     if (ret != 0 && errno != ENOENT) {
         ret = errno;
         DEBUG(SSSDBG_CRIT_FAILURE,
-              ("Failed to unlink file [%s]. This can cause memory cache to "
+              "Failed to unlink file [%s]. This can cause memory cache to "
                "be purged when next log rotation is requested. %d: %s\n",
-               SSS_NSS_MCACHE_DIR"/"CLEAR_MC_FLAG, ret, strerror(ret)));
+               SSS_NSS_MCACHE_DIR"/"CLEAR_MC_FLAG, ret, strerror(ret));
     }
 
     ret = confdb_get_int(nctx->rctx->cdb,
@@ -514,7 +476,8 @@ int nss_process_init(TALLOC_CTX *mem_ctx,
                          CONFDB_MEMCACHE_TIMEOUT,
                          300, &memcache_timeout);
     if (ret != EOK) {
-        DEBUG(0, ("Failed to set up automatic reconnection\n"));
+        DEBUG(SSSDBG_FATAL_FAILURE,
+              "Failed to set up automatic reconnection\n");
         goto fail;
     }
 
@@ -523,14 +486,14 @@ int nss_process_init(TALLOC_CTX *mem_ctx,
                               SSS_MC_CACHE_ELEMENTS, (time_t)memcache_timeout,
                               &nctx->pwd_mc_ctx);
     if (ret) {
-        DEBUG(SSSDBG_CRIT_FAILURE, ("passwd mmap cache is DISABLED\n"));
+        DEBUG(SSSDBG_CRIT_FAILURE, "passwd mmap cache is DISABLED\n");
     }
 
     ret = sss_mmap_cache_init(nctx, "group", SSS_MC_GROUP,
                               SSS_MC_CACHE_ELEMENTS, (time_t)memcache_timeout,
                               &nctx->grp_mc_ctx);
     if (ret) {
-        DEBUG(SSSDBG_CRIT_FAILURE, ("group mmap cache is DISABLED\n"));
+        DEBUG(SSSDBG_CRIT_FAILURE, "group mmap cache is DISABLED\n");
     }
 
     /* Set up file descriptor limits */
@@ -541,18 +504,18 @@ int nss_process_init(TALLOC_CTX *mem_ctx,
                          &fd_limit);
     if (ret != EOK) {
         DEBUG(SSSDBG_FATAL_FAILURE,
-              ("Failed to set up file descriptor limit\n"));
+              "Failed to set up file descriptor limit\n");
         goto fail;
     }
     responder_set_fd_limit(fd_limit);
 
     ret = schedule_get_domains_task(rctx, rctx->ev, rctx);
     if (ret != EOK) {
-        DEBUG(SSSDBG_FATAL_FAILURE, ("schedule_get_domains_tasks failed.\n"));
+        DEBUG(SSSDBG_FATAL_FAILURE, "schedule_get_domains_tasks failed.\n");
         goto fail;
     }
 
-    DEBUG(SSSDBG_TRACE_FUNC, ("NSS Initialization complete\n"));
+    DEBUG(SSSDBG_TRACE_FUNC, "NSS Initialization complete\n");
 
     return EOK;
 
@@ -601,7 +564,8 @@ int main(int argc, const char *argv[])
     ret = die_if_parent_died();
     if (ret != EOK) {
         /* This is not fatal, don't return */
-        DEBUG(2, ("Could not set up to exit when parent process does\n"));
+        DEBUG(SSSDBG_OP_FAILURE,
+              "Could not set up to exit when parent process does\n");
     }
 
     ret = nss_process_init(main_ctx,

@@ -159,6 +159,7 @@ enum sdap_basic_opt {
     SDAP_USER_SEARCH_BASE,
     SDAP_USER_SEARCH_SCOPE,
     SDAP_USER_SEARCH_FILTER,
+    SDAP_USER_EXTRA_ATTRS,
     SDAP_GROUP_SEARCH_BASE,
     SDAP_GROUP_SEARCH_SCOPE,
     SDAP_GROUP_SEARCH_FILTER,
@@ -225,6 +226,7 @@ enum sdap_basic_opt {
     SDAP_IDMAP_DEFAULT_DOMAIN_SID,
     SDAP_AD_MATCHING_RULE_GROUPS,
     SDAP_AD_MATCHING_RULE_INITGROUPS,
+    SDAP_AD_USE_TOKENGROUPS,
     SDAP_RFC2307_FALLBACK_TO_LOCAL_USERS,
     SDAP_DISABLE_RANGE_RETRIEVAL,
     SDAP_MIN_ID,
@@ -411,6 +413,7 @@ struct sdap_options {
     struct dp_option *basic;
     struct sdap_attr_map *gen_map;
     struct sdap_attr_map *user_map;
+    size_t user_map_cnt;
     struct sdap_attr_map *group_map;
     struct sdap_attr_map *netgroup_map;
     struct sdap_attr_map *service_map;
@@ -465,6 +468,21 @@ int sdap_copy_map(TALLOC_CTX *memctx,
                  struct sdap_attr_map *src_map,
                  int num_entries,
                  struct sdap_attr_map **_map);
+
+int sdap_extend_map(TALLOC_CTX *memctx,
+                    struct sdap_attr_map *src_map,
+                    size_t num_entries,
+                    char **extra_attrs,
+                    struct sdap_attr_map **_map,
+                    size_t *_new_size);
+
+int sdap_extend_map_with_list(TALLOC_CTX *mem_ctx,
+                              struct sdap_options *opts,
+                              int extra_attr_index,
+                              struct sdap_attr_map *src_map,
+                              size_t num_entries,
+                              struct sdap_attr_map **_map,
+                              size_t *_new_size);
 
 int sdap_get_map(TALLOC_CTX *memctx,
                  struct confdb_ctx *cdb,

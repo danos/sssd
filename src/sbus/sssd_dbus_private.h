@@ -22,6 +22,10 @@
 #ifndef _SSSD_DBUS_PRIVATE_H_
 #define _SSSD_DBUS_PRIVATE_H_
 
+#include <dhash.h>
+
+#include "sssd_dbus_meta.h"
+
 union dbus_conn_pointer {
     DBusServer *server;
     DBusConnection *conn;
@@ -44,9 +48,6 @@ struct sbus_connection {
     int connection_type;
     int disconnect;
 
-    sbus_conn_destructor_fn destructor;
-    void *pvt_data; /* Private data for this connection */
-
     /* dbus tables and handlers */
     struct sbus_interface_p *intf_list;
 
@@ -59,9 +60,9 @@ struct sbus_connection {
 
     /* server related stuff */
     char *symlink;
-    struct sbus_interface *server_intf;
     sbus_server_conn_init_fn srv_init_fn;
     void *srv_init_data;
+    hash_table_t *clients;
 
     /* watches list */
     struct sbus_watch_ctx *watch_list;
@@ -95,5 +96,45 @@ struct sbus_timeout_ctx {
 dbus_bool_t sbus_add_timeout(DBusTimeout *dbus_timeout, void *data);
 void sbus_toggle_timeout(DBusTimeout *dbus_timeout, void *data);
 void sbus_remove_timeout(DBusTimeout *dbus_timeout, void *data);
+
+/* =Requests============================================================== */
+
+struct sbus_request *
+sbus_new_request(struct sbus_connection *conn, struct sbus_interface *intf,
+                 DBusMessage *message);
+
+/* =Interface=introspection=============================================== */
+extern const struct sbus_method_meta introspect_method;
+
+struct sbus_introspect_ctx {
+    const struct sbus_interface_meta *iface;
+};
+
+int sbus_introspect(struct sbus_request *dbus_req, void *pvt);
+
+void
+sbus_request_invoke_or_finish(struct sbus_request *dbus_req,
+                              sbus_msg_handler_fn handler_fn,
+                              void *handler_data,
+                              sbus_method_invoker_fn invoker_fn);
+
+/* A low-level, private variant of sbus_conn_send that accepts just
+ * DBusConnection. It should never be used outside sbus code, responders
+ * and back ends should use sbus_conn_send!
+ */
+int sss_dbus_conn_send(DBusConnection *dbus_conn,
+                       DBusMessage *msg,
+                       int timeout_ms,
+                       DBusPendingCallNotifyFunction reply_handler,
+                       void *pvt,
+                       DBusPendingCall **pending);
+
+
+/* =Retrieve-conn-credentials=============================================== */
+struct tevent_req *sbus_get_sender_id_send(TALLOC_CTX *mem_ctx,
+                                           struct tevent_context *ev,
+                                           struct sbus_connection *conn,
+                                           const char *sender);
+int sbus_get_sender_id_recv(struct tevent_req *req, int64_t *_uid);
 
 #endif /* _SSSD_DBUS_PRIVATE_H_ */

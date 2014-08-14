@@ -45,37 +45,33 @@ static void sbus_server_init_new_connection(DBusServer *dbus_server,
     struct sbus_connection *conn;
     int ret;
 
-    DEBUG(5,("Entering.\n"));
+    DEBUG(SSSDBG_FUNC_DATA,"Entering.\n");
     server = talloc_get_type(data, struct sbus_connection);
     if (!server) {
         return;
     }
 
-    DEBUG(5,("Adding connection %p.\n", dbus_conn));
-    ret = sbus_init_connection(server, server->ev,
-                               dbus_conn, server->server_intf,
+    DEBUG(SSSDBG_FUNC_DATA,"Adding connection %p.\n", dbus_conn);
+    ret = sbus_init_connection(server, server->ev, dbus_conn,
                                SBUS_CONN_TYPE_PRIVATE, &conn);
     if (ret != 0) {
         dbus_connection_close(dbus_conn);
-        DEBUG(5,("Closing connection (failed setup)"));
+        DEBUG(SSSDBG_FUNC_DATA,"Closing connection (failed setup)");
         return;
     }
 
     dbus_connection_ref(dbus_conn);
 
-    DEBUG(5,("Got a connection\n"));
+    DEBUG(SSSDBG_FUNC_DATA,"Got a connection\n");
 
     /*
      * Initialize connection-specific features
-     * This may set a more detailed destructor, but
-     * the default destructor will always be chained
-     * to handle connection cleanup.
      * This function (or its callbacks) should also
      * set up connection-specific methods.
      */
     ret = server->srv_init_fn(conn, server->srv_init_data);
     if (ret != EOK) {
-        DEBUG(1,("Initialization failed!\n"));
+        DEBUG(SSSDBG_CRIT_FAILURE,"Initialization failed!\n");
         dbus_connection_close(dbus_conn);
         talloc_zfree(conn);
     }
@@ -97,8 +93,8 @@ create_socket_symlink(const char *filename, const char *symlink_filename)
 {
     errno_t ret;
 
-    DEBUG(7, ("Symlinking the dbus path %s to a link %s\n",
-              filename, symlink_filename));
+    DEBUG(SSSDBG_TRACE_LIBS, "Symlinking the dbus path %s to a link %s\n",
+              filename, symlink_filename);
     errno = 0;
     ret = symlink(filename, symlink_filename);
     if (ret != 0 && errno == EEXIST) {
@@ -107,8 +103,8 @@ create_socket_symlink(const char *filename, const char *symlink_filename)
         ret = unlink(symlink_filename);
         if (ret != 0) {
             ret = errno;
-            DEBUG(1, ("Cannot remove old symlink: [%d][%s].\n",
-                      ret, strerror(ret)));
+            DEBUG(SSSDBG_CRIT_FAILURE, "Cannot remove old symlink: [%d][%s].\n",
+                      ret, strerror(ret));
             return EIO;
         }
         errno = 0;
@@ -117,8 +113,8 @@ create_socket_symlink(const char *filename, const char *symlink_filename)
 
     if (ret != 0) {
         ret = errno;
-        DEBUG(1, ("symlink() failed on file '%s': [%d][%s].\n",
-                  filename, ret, strerror(ret)));
+        DEBUG(SSSDBG_CRIT_FAILURE, "symlink() failed on file '%s': [%d][%s].\n",
+                  filename, ret, strerror(ret));
         return EIO;
     }
 
@@ -137,28 +133,30 @@ remove_socket_symlink(const char *symlink_name)
     numread = readlink(symlink_name, target, PATH_MAX-1);
     if (numread < 0) {
         ret = errno;
-        DEBUG(2, ("readlink failed [%d]: %s\n", ret, strerror(ret)));
+        DEBUG(SSSDBG_OP_FAILURE,
+              "readlink failed [%d]: %s\n", ret, strerror(ret));
         return ret;
     }
     target[numread] = '\0';
-    DEBUG(9, ("The symlink points to [%s]\n", target));
+    DEBUG(SSSDBG_TRACE_ALL, "The symlink points to [%s]\n", target);
 
     /* We can only remove the symlink if it points to a socket with
      * the same PID */
     ret = snprintf(pidpath, PATH_MAX, "%s.%lu",
                    symlink_name, (unsigned long) getpid());
     if (ret < 0) {
-        DEBUG(2, ("snprintf failed"));
+        DEBUG(SSSDBG_OP_FAILURE, "snprintf failed");
         return EIO;
     } else if (ret >= PATH_MAX) {
-        DEBUG(2, ("path too long?!?!\n"));
+        DEBUG(SSSDBG_OP_FAILURE, "path too long?!?!\n");
         return EIO;
     }
-    DEBUG(9, ("The path including our pid is [%s]\n", pidpath));
+    DEBUG(SSSDBG_TRACE_ALL, "The path including our pid is [%s]\n", pidpath);
 
     if (strcmp(pidpath, target) != 0) {
-        DEBUG(4, ("Will not remove symlink, seems to be owned by "
-                  "another process\n"));
+        DEBUG(SSSDBG_CONF_SETTINGS,
+              "Will not remove symlink, seems to be owned by "
+                  "another process\n");
         return EOK;
     }
 
@@ -166,12 +164,12 @@ remove_socket_symlink(const char *symlink_name)
     if (ret != 0) {
         ret = errno;
         DEBUG(SSSDBG_CRIT_FAILURE,
-              ("unlink failed to remove [%s] [%d]: %s\n",
-               symlink_name, ret, strerror(ret)));
+              "unlink failed to remove [%s] [%d]: %s\n",
+               symlink_name, ret, strerror(ret));
         return ret;
     }
 
-    DEBUG(9, ("Removed the symlink\n"));
+    DEBUG(SSSDBG_TRACE_ALL, "Removed the symlink\n");
     return EOK;
 }
 
@@ -183,7 +181,6 @@ remove_socket_symlink(const char *symlink_name)
 int sbus_new_server(TALLOC_CTX *mem_ctx,
                     struct tevent_context *ev,
                     const char *address,
-                    struct sbus_interface *intf,
                     bool use_symlink,
                     struct sbus_connection **_server,
                     sbus_server_conn_init_fn init_fn,
@@ -216,8 +213,9 @@ int sbus_new_server(TALLOC_CTX *mem_ctx,
     dbus_error_init(&dbus_error);
     dbus_server = dbus_server_listen(socket_address, &dbus_error);
     if (!dbus_server) {
-        DEBUG(1,("dbus_server_listen failed! (name=%s, message=%s)\n",
-                 dbus_error.name, dbus_error.message));
+        DEBUG(SSSDBG_CRIT_FAILURE,
+              "dbus_server_listen failed! (name=%s, message=%s)\n",
+                 dbus_error.name, dbus_error.message);
         if (dbus_error_is_set(&dbus_error)) dbus_error_free(&dbus_error);
         ret = EIO;
         goto done;
@@ -225,7 +223,8 @@ int sbus_new_server(TALLOC_CTX *mem_ctx,
 
     filename = strchr(socket_address, '/');
     if (filename == NULL) {
-        DEBUG(1, ("Unexpected dbus address [%s].\n", socket_address));
+        DEBUG(SSSDBG_CRIT_FAILURE,
+              "Unexpected dbus address [%s].\n", socket_address);
         ret = EIO;
         goto done;
     }
@@ -233,15 +232,16 @@ int sbus_new_server(TALLOC_CTX *mem_ctx,
     if (use_symlink) {
         symlink_filename = strchr(address, '/');
         if (symlink_filename == NULL) {
-            DEBUG(1, ("Unexpected dbus address [%s].\n", address));
+            DEBUG(SSSDBG_CRIT_FAILURE,
+                  "Unexpected dbus address [%s].\n", address);
             ret = EIO;
             goto done;
         }
 
         ret = create_socket_symlink(filename, symlink_filename);
         if (ret != EOK) {
-            DEBUG(1, ("Could not create symlink [%d]: %s\n",
-                      ret, strerror(ret)));
+            DEBUG(SSSDBG_CRIT_FAILURE, "Could not create symlink [%d]: %s\n",
+                      ret, strerror(ret));
             ret = EIO;
             goto done;
         }
@@ -249,9 +249,9 @@ int sbus_new_server(TALLOC_CTX *mem_ctx,
 
     /* Both check_file and chmod can handle both the symlink and
      * the socket */
-    ret = check_file(filename, 0, 0, -1, CHECK_SOCK, &stat_buf, true);
+    ret = check_file(filename, getuid(), getgid(), -1, CHECK_SOCK, &stat_buf, true);
     if (ret != EOK) {
-        DEBUG(1, ("check_file failed for [%s].\n", filename));
+        DEBUG(SSSDBG_CRIT_FAILURE, "check_file failed for [%s].\n", filename);
         ret = EIO;
         goto done;
     }
@@ -259,15 +259,16 @@ int sbus_new_server(TALLOC_CTX *mem_ctx,
     if ((stat_buf.st_mode & ~S_IFMT) != 0600) {
         ret = chmod(filename, 0600);
         if (ret != EOK) {
-            DEBUG(1, ("chmod failed for [%s]: [%d][%s].\n", filename, errno,
-                                                         strerror(errno)));
+            DEBUG(SSSDBG_CRIT_FAILURE,
+                  "chmod failed for [%s]: [%d][%s].\n", filename, errno,
+                                                         strerror(errno));
             ret = EIO;
             goto done;
         }
     }
 
     tmp = dbus_server_get_address(dbus_server);
-    DEBUG(SSSDBG_TRACE_FUNC, ("D-BUS Server listening on %s\n", tmp));
+    DEBUG(SSSDBG_TRACE_FUNC, "D-BUS Server listening on %s\n", tmp);
     free(tmp);
 
     server = talloc_zero(tmp_ctx, struct sbus_connection);
@@ -279,7 +280,6 @@ int sbus_new_server(TALLOC_CTX *mem_ctx,
     server->ev = ev;
     server->type = SBUS_SERVER;
     server->dbus.server = dbus_server;
-    server->server_intf = intf;
     server->srv_init_fn = init_fn;
     server->srv_init_data = init_pvt_data;
 
@@ -305,7 +305,8 @@ int sbus_new_server(TALLOC_CTX *mem_ctx,
                                             sbus_toggle_watch,
                                             server, NULL);
     if (!dbret) {
-        DEBUG(4, ("Error setting up D-BUS server watch functions\n"));
+        DEBUG(SSSDBG_CONF_SETTINGS,
+              "Error setting up D-BUS server watch functions\n");
         ret = EIO;
         goto done;
     }
@@ -317,7 +318,8 @@ int sbus_new_server(TALLOC_CTX *mem_ctx,
                                               sbus_toggle_timeout,
                                               server, NULL);
     if (!dbret) {
-        DEBUG(4,("Error setting up D-BUS server timeout functions\n"));
+        DEBUG(SSSDBG_CONF_SETTINGS,
+              "Error setting up D-BUS server timeout functions\n");
         dbus_server_set_watch_functions(server->dbus.server,
                                         NULL, NULL, NULL, NULL, NULL);
         ret = EIO;
@@ -345,7 +347,8 @@ static int sbus_server_destructor(void *ctx)
     if (server->symlink) {
         ret = remove_socket_symlink(server->symlink);
         if (ret != EOK) {
-            DEBUG(3, ("Could not remove the server symlink\n"));
+            DEBUG(SSSDBG_MINOR_FAILURE,
+                  "Could not remove the server symlink\n");
         }
     }
 

@@ -39,8 +39,9 @@
 #include <stdbool.h>
 
 #include <security/pam_modules.h>
-#include <security/pam_ext.h>
-#include <security/pam_modutil.h>
+#include <security/pam_appl.h>
+
+#include "sss_pam_compat.h"
 #include "sss_pam_macros.h"
 
 #include "sss_cli.h"
@@ -53,6 +54,7 @@
 #define FLAGS_FORWARD_PASS   (1 << 1)
 #define FLAGS_USE_AUTHTOK    (1 << 2)
 #define FLAGS_IGNORE_UNKNOWN_USER (1 << 3)
+#define FLAGS_IGNORE_AUTHINFO_UNAVAIL (1 << 4)
 
 #define PWEXP_FLAG "pam_sss:password_expired_flag"
 #define FD_DESTRUCTOR "pam_sss:fd_destructor"
@@ -126,10 +128,12 @@ static void free_exp_data(pam_handle_t *pamh, void *ptr, int err)
 
 static void close_fd(pam_handle_t *pamh, void *ptr, int err)
 {
+#ifdef PAM_DATA_REPLACE
     if (err & PAM_DATA_REPLACE) {
         /* Nothing to do */
         return;
     }
+#endif /* PAM_DATA_REPLACE */
 
     D(("Closing the fd"));
     sss_pam_close_fd();
@@ -1314,6 +1318,8 @@ static void eval_argv(pam_handle_t *pamh, int argc, const char **argv,
             *quiet_mode = true;
         } else if (strcmp(*argv, "ignore_unknown_user") == 0) {
             *flags |= FLAGS_IGNORE_UNKNOWN_USER;
+        } else if (strcmp(*argv, "ignore_authinfo_unavail") == 0) {
+            *flags |= FLAGS_IGNORE_AUTHINFO_UNAVAIL;
         } else {
             logger(pamh, LOG_WARNING, "unknown option: %s", *argv);
         }
@@ -1454,6 +1460,10 @@ static int pam_sss(enum sss_cli_command task, pam_handle_t *pamh,
         if (flags & FLAGS_IGNORE_UNKNOWN_USER && ret == PAM_USER_UNKNOWN) {
             ret = PAM_IGNORE;
         }
+        if (flags & FLAGS_IGNORE_AUTHINFO_UNAVAIL
+                && ret == PAM_AUTHINFO_UNAVAIL) {
+            ret = PAM_IGNORE;
+        }
         return ret;
     }
 
@@ -1494,6 +1504,10 @@ static int pam_sss(enum sss_cli_command task, pam_handle_t *pamh,
 
         if (flags & FLAGS_IGNORE_UNKNOWN_USER
                 && pam_status == PAM_USER_UNKNOWN) {
+            pam_status = PAM_IGNORE;
+        }
+        if (flags & FLAGS_IGNORE_AUTHINFO_UNAVAIL
+                && pam_status == PAM_AUTHINFO_UNAVAIL) {
             pam_status = PAM_IGNORE;
         }
 

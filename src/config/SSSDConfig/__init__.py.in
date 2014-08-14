@@ -94,6 +94,10 @@ option_strings = {
     # [pac]
     'allowed_uids': _('List of UIDs or user names allowed to access the PAC responder'),
 
+    # [ifp]
+    'allowed_uids': _('List of UIDs or user names allowed to access the InfoPipe responder'),
+    'user_attributes': _('List of user attributes the InfoPipe is allowed to publish'),
+
     # [provider]
     'id_provider' : _('Identity provider'),
     'auth_provider' : _('Authentication provider'),
@@ -272,6 +276,7 @@ option_strings = {
     'ldap_user_nds_login_expiration_time' : _('loginExpirationTime attribute of NDS'),
     'ldap_user_nds_login_allowed_time_map' : _('loginAllowedTimeMap attribute of NDS'),
     'ldap_user_ssh_public_key' : _('SSH public key attribute'),
+    'ldap_user_extra_attrs' : _('A list of extra attributes to download along with the user entry'),
 
     'ldap_group_search_base' : _('Base DN for group lookups'),
     # not used # 'ldap_group_search_scope' : _('Scope of group lookups'),
@@ -312,6 +317,7 @@ option_strings = {
 
     'ldap_groups_use_matching_rule_in_chain' : _('Use LDAP_MATCHING_RULE_IN_CHAIN for group lookups'),
     'ldap_initgroups_use_matching_rule_in_chain' : _('Use LDAP_MATCHING_RULE_IN_CHAIN for initgroup lookups'),
+    'ldap_use_tokengroups' : _('Whether to use Token-Groups'),
     'ldap_min_id' : _('Set lower boundary for allowed IDs from the LDAP server'),
     'ldap_max_id' : _('Set upper boundary for allowed IDs from the LDAP server'),
 

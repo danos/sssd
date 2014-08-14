@@ -68,12 +68,6 @@ LIBS=$SAVE_LIBS
 AC_CHECK_FUNCS([ utimensat \
                  futimens ])
 
-#Check for PAM headers
-AC_CHECK_HEADERS([security/pam_appl.h security/pam_misc.h security/pam_modules.h],
-    [AC_CHECK_LIB(pam, pam_get_item, [ PAM_LIBS="-lpam" ], [AC_MSG_ERROR([PAM must support pam_get_item])])],
-    [AC_MSG_ERROR([PAM development libraries not installed])]
-)
-
 #Check for endian headers
 AC_CHECK_HEADERS([endian.h sys/endian.h byteswap.h])
 
@@ -124,7 +118,9 @@ WITH_SUDO
 WITH_SUDO_LIB_PATH
 WITH_AUTOFS
 WITH_SSH
+WITH_IFP
 WITH_CRYPTO
+WITH_SAMBA
 
 m4_include([src/external/pkg.m4])
 m4_include([src/external/libpopt.m4])
@@ -155,6 +151,7 @@ m4_include([src/external/pac_responder.m4])
 m4_include([src/external/signal.m4])
 m4_include([src/external/inotify.m4])
 m4_include([src/external/libndr_nbt.m4])
+m4_include([src/external/sasl.m4])
 
 WITH_UNICODE_LIB
 if test x$unicode_lib = xlibunistring; then
@@ -253,8 +250,6 @@ if test x$cryptolib = xlibcrypto; then
 fi
 
 AM_CHECK_INOTIFY
-
-AC_CHECK_HEADERS([sasl/sasl.h],,AC_MSG_ERROR([Could not find SASL headers]))
 
 AC_CACHE_CHECK([whether compiler supports __attribute__((destructor))],
                sss_client_cv_attribute_destructor,

@@ -29,35 +29,29 @@
 #include "providers/data_provider.h"
 #include "responder/autofs/autofs_private.h"
 
-static int autofs_clean_hash_table(DBusMessage *message,
-                                   struct sbus_connection *conn);
+static int autofs_clean_hash_table(struct sbus_request *dbus_req, void *data);
 
-struct sbus_method monitor_autofs_methods[] = {
-    { MON_CLI_METHOD_PING, monitor_common_pong },
-    { MON_CLI_METHOD_RES_INIT, monitor_common_res_init },
-    { MON_CLI_METHOD_ROTATE, responder_logrotate },
-    { MON_CLI_METHOD_CLEAR_ENUM_CACHE, autofs_clean_hash_table },
-    { NULL, NULL }
+struct mon_cli_iface monitor_autofs_methods = {
+    { &mon_cli_iface_meta, 0 },
+    .ping = monitor_common_pong,
+    .resInit = monitor_common_res_init,
+    .shutDown = NULL,
+    .goOffline = NULL,
+    .resetOffline = NULL,
+    .rotateLogs = responder_logrotate,
+    .clearMemcache = NULL,
+    .clearEnumCache = autofs_clean_hash_table,
 };
 
-struct sbus_interface monitor_autofs_interface = {
-    MONITOR_INTERFACE,
-    MONITOR_PATH,
-    SBUS_DEFAULT_VTABLE,
-    monitor_autofs_methods,
-    NULL
-};
-
-static struct sbus_method autofs_dp_methods[] = {
-    { NULL, NULL }
-};
-
-struct sbus_interface autofs_dp_interface = {
-    DP_INTERFACE,
-    DP_PATH,
-    SBUS_DEFAULT_VTABLE,
-    autofs_dp_methods,
-    NULL
+static struct data_provider_iface autofs_dp_methods = {
+    { &data_provider_iface_meta, 0 },
+    .RegisterService = NULL,
+    .pamHandler = NULL,
+    .sudoHandler = NULL,
+    .autofsHandler = NULL,
+    .hostHandler = NULL,
+    .getDomains = NULL,
+    .getAccountInfo = NULL,
 };
 
 static errno_t
@@ -70,8 +64,8 @@ autofs_get_config(struct autofs_ctx *actx,
                          CONFDB_AUTOFS_MAP_NEG_TIMEOUT, 15,
                          &actx->neg_timeout);
     if (ret != EOK) {
-        DEBUG(SSSDBG_OP_FAILURE, ("Cannot read %s from configuration [%d]: %s\n",
-              CONFDB_AUTOFS_MAP_NEG_TIMEOUT, ret, strerror(ret)));
+        DEBUG(SSSDBG_OP_FAILURE, "Cannot read %s from configuration [%d]: %s\n",
+              CONFDB_AUTOFS_MAP_NEG_TIMEOUT, ret, strerror(ret));
         return ret;
     }
 
@@ -87,7 +81,7 @@ autofs_dp_reconnect_init(struct sbus_connection *conn,
 
     /* Did we reconnect successfully? */
     if (status == SBUS_RECONNECT_SUCCESS) {
-        DEBUG(SSSDBG_TRACE_FUNC, ("Reconnected to the Data Provider.\n"));
+        DEBUG(SSSDBG_TRACE_FUNC, "Reconnected to the Data Provider.\n");
 
         /* Identify ourselves to the data provider */
         ret = dp_common_send_id(be_conn->conn,
@@ -101,26 +95,24 @@ autofs_dp_reconnect_init(struct sbus_connection *conn,
     }
 
     /* Failed to reconnect */
-    DEBUG(SSSDBG_FATAL_FAILURE, ("Could not reconnect to %s provider.\n",
-                                 be_conn->domain->name));
+    DEBUG(SSSDBG_FATAL_FAILURE, "Could not reconnect to %s provider.\n",
+                                 be_conn->domain->name);
 }
 
-static int autofs_clean_hash_table(DBusMessage *message,
-                                   struct sbus_connection *conn)
+static int autofs_clean_hash_table(struct sbus_request *dbus_req, void *data)
 {
-    struct resp_ctx *rctx = talloc_get_type(sbus_conn_get_private_data(conn),
-                                            struct resp_ctx);
+    struct resp_ctx *rctx = talloc_get_type(data, struct resp_ctx);
     struct autofs_ctx *actx =
             talloc_get_type(rctx->pvt_ctx, struct autofs_ctx);
     errno_t ret;
 
     ret = autofs_orphan_maps(actx);
     if (ret != EOK) {
-        DEBUG(SSSDBG_OP_FAILURE, ("Could not invalidate maps\n"));
+        DEBUG(SSSDBG_OP_FAILURE, "Could not invalidate maps\n");
         return ret;
     }
 
-    return monitor_common_pong(message, conn);
+    return sbus_request_return_and_finish(dbus_req, DBUS_TYPE_INVALID);
 }
 
 static int
@@ -143,25 +135,25 @@ autofs_process_init(TALLOC_CTX *mem_ctx,
                            CONFDB_AUTOFS_CONF_ENTRY,
                            SSS_AUTOFS_SBUS_SERVICE_NAME,
                            SSS_AUTOFS_SBUS_SERVICE_VERSION,
-                           &monitor_autofs_interface,
+                           &monitor_autofs_methods,
                            "autofs",
-                           &autofs_dp_interface,
+                           &autofs_dp_methods.vtable,
                            &rctx);
     if (ret != EOK) {
-        DEBUG(SSSDBG_FATAL_FAILURE, ("sss_process_init() failed\n"));
+        DEBUG(SSSDBG_FATAL_FAILURE, "sss_process_init() failed\n");
         return ret;
     }
 
     autofs_ctx = talloc_zero(rctx, struct autofs_ctx);
     if (!autofs_ctx) {
-        DEBUG(SSSDBG_FATAL_FAILURE, ("fatal error initializing autofs_ctx\n"));
+        DEBUG(SSSDBG_FATAL_FAILURE, "fatal error initializing autofs_ctx\n");
         ret = ENOMEM;
         goto fail;
     }
 
     ret = autofs_get_config(autofs_ctx, cdb);
     if (ret != EOK) {
-        DEBUG(SSSDBG_FATAL_FAILURE, ("Cannot read autofs configuration\n"));
+        DEBUG(SSSDBG_FATAL_FAILURE, "Cannot read autofs configuration\n");
         goto fail;
     }
 
@@ -175,7 +167,7 @@ autofs_process_init(TALLOC_CTX *mem_ctx,
                          3, &max_retries);
     if (ret != EOK) {
         DEBUG(SSSDBG_FATAL_FAILURE,
-              ("Failed to set up automatic reconnection\n"));
+              "Failed to set up automatic reconnection\n");
         goto fail;
     }
 
@@ -189,18 +181,18 @@ autofs_process_init(TALLOC_CTX *mem_ctx,
                               autofs_map_hash_delete_cb, NULL);
     if (hret != HASH_SUCCESS) {
         DEBUG(SSSDBG_CRIT_FAILURE,
-              ("Unable to initialize automount maps hash table\n"));
+              "Unable to initialize automount maps hash table\n");
         ret = EIO;
         goto fail;
     }
 
     ret = schedule_get_domains_task(rctx, rctx->ev, rctx);
     if (ret != EOK) {
-        DEBUG(SSSDBG_FATAL_FAILURE, ("schedule_get_domains_tasks failed.\n"));
+        DEBUG(SSSDBG_FATAL_FAILURE, "schedule_get_domains_tasks failed.\n");
         goto fail;
     }
 
-    DEBUG(SSSDBG_TRACE_FUNC, ("autofs Initialization complete\n"));
+    DEBUG(SSSDBG_TRACE_FUNC, "autofs Initialization complete\n");
     return EOK;
 
 fail:
@@ -250,8 +242,8 @@ int main(int argc, const char *argv[])
     ret = die_if_parent_died();
     if (ret != EOK) {
         /* This is not fatal, don't return */
-        DEBUG(SSSDBG_OP_FAILURE, ("Could not set up to exit "
-                                  "when parent process does\n"));
+        DEBUG(SSSDBG_OP_FAILURE, "Could not set up to exit "
+                                  "when parent process does\n");
     }
 
     ret = autofs_process_init(main_ctx,

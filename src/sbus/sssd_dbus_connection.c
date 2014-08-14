@@ -24,9 +24,13 @@
 #include "dbus/dbus.h"
 #include "sbus/sssd_dbus.h"
 #include "sbus/sssd_dbus_private.h"
+#include "sbus/sssd_dbus_meta.h"
 
 /* Types */
 struct dbus_ctx_list;
+
+static DBusObjectPathVTable dbus_object_path_vtable =
+    { NULL, sbus_message_handler, NULL, NULL, NULL, NULL };
 
 struct sbus_interface_p {
     struct sbus_interface_p *prev, *next;
@@ -54,15 +58,15 @@ static void sbus_dispatch(struct tevent_context *ev,
     conn = talloc_get_type(data, struct sbus_connection);
 
     dbus_conn = conn->dbus.conn;
-    DEBUG(SSSDBG_TRACE_ALL, ("dbus conn: %p\n", dbus_conn));
+    DEBUG(SSSDBG_TRACE_ALL, "dbus conn: %p\n", dbus_conn);
 
     if (conn->retries > 0) {
-        DEBUG(6, ("SBUS is reconnecting. Deferring.\n"));
+        DEBUG(SSSDBG_TRACE_FUNC, "SBUS is reconnecting. Deferring.\n");
         /* Currently trying to reconnect, defer dispatch for 30ms */
         tv = tevent_timeval_current_ofs(0, 30);
         new_event = tevent_add_timer(ev, conn, tv, sbus_dispatch, conn);
         if (new_event == NULL) {
-            DEBUG(0,("Could not defer dispatch!\n"));
+            DEBUG(SSSDBG_FATAL_FAILURE,"Could not defer dispatch!\n");
         }
         return;
     }
@@ -72,11 +76,11 @@ static void sbus_dispatch(struct tevent_context *ev,
         /* Attempt to reconnect automatically */
         ret = sbus_auto_reconnect(conn);
         if (ret == EOK) {
-            DEBUG(1, ("Performing auto-reconnect\n"));
+            DEBUG(SSSDBG_CRIT_FAILURE, "Performing auto-reconnect\n");
             return;
         }
 
-        DEBUG(0, ("Cannot start auto-reconnection.\n"));
+        DEBUG(SSSDBG_FATAL_FAILURE, "Cannot start auto-reconnection.\n");
         conn->reconnect_callback(conn,
                                  SBUS_RECONNECT_ERROR,
                                  conn->reconnect_pvt);
@@ -85,7 +89,7 @@ static void sbus_dispatch(struct tevent_context *ev,
 
     if ((conn->disconnect) ||
         (!dbus_connection_get_is_connected(dbus_conn))) {
-        DEBUG(3,("Connection is not open for dispatching.\n"));
+        DEBUG(SSSDBG_MINOR_FAILURE,"Connection is not open for dispatching.\n");
         /*
          * Free the connection object.
          * This will invoke the destructor for the connection
@@ -100,7 +104,7 @@ static void sbus_dispatch(struct tevent_context *ev,
      */
     ret = dbus_connection_get_dispatch_status(dbus_conn);
     if (ret != DBUS_DISPATCH_COMPLETE) {
-        DEBUG(9,("Dispatching.\n"));
+        DEBUG(SSSDBG_TRACE_ALL,"Dispatching.\n");
         dbus_connection_dispatch(dbus_conn);
     }
 
@@ -111,7 +115,7 @@ static void sbus_dispatch(struct tevent_context *ev,
     if (ret != DBUS_DISPATCH_COMPLETE) {
         new_event = tevent_add_timer(ev, conn, tv, sbus_dispatch, conn);
         if (new_event == NULL) {
-            DEBUG(2,("Could not add dispatch event!\n"));
+            DEBUG(SSSDBG_OP_FAILURE,"Could not add dispatch event!\n");
 
             /* TODO: Calling exit here is bad */
             exit(1);
@@ -139,7 +143,7 @@ static void sbus_conn_wakeup_main(void *data)
     /* D-BUS calls this function when it is time to do a dispatch */
     te = tevent_add_timer(conn->ev, conn, tv, sbus_dispatch, conn);
     if (te == NULL) {
-        DEBUG(2,("Could not add dispatch event!\n"));
+        DEBUG(SSSDBG_OP_FAILURE,"Could not add dispatch event!\n");
         /* TODO: Calling exit here is bad */
         exit(1);
     }
@@ -155,14 +159,13 @@ static int sbus_conn_set_fns(struct sbus_connection *conn);
 int sbus_init_connection(TALLOC_CTX *ctx,
                          struct tevent_context *ev,
                          DBusConnection *dbus_conn,
-                         struct sbus_interface *intf,
                          int connection_type,
                          struct sbus_connection **_conn)
 {
     struct sbus_connection *conn;
     int ret;
 
-    DEBUG(SSSDBG_TRACE_FUNC,("Adding connection %p\n", dbus_conn));
+    DEBUG(SSSDBG_TRACE_FUNC,"Adding connection %p\n", dbus_conn);
     conn = talloc_zero(ctx, struct sbus_connection);
 
     conn->ev = ev;
@@ -170,10 +173,11 @@ int sbus_init_connection(TALLOC_CTX *ctx,
     conn->dbus.conn = dbus_conn;
     conn->connection_type = connection_type;
 
-    ret = sbus_conn_add_interface(conn, intf);
+    ret = sss_hash_create(conn, 32, &conn->clients);
     if (ret != EOK) {
+        DEBUG(SSSDBG_CRIT_FAILURE, "Cannot create clients hash table\n");
         talloc_free(conn);
-        return ret;
+        return EIO;
     }
 
     ret = sbus_conn_set_fns(conn);
@@ -190,13 +194,6 @@ static int sbus_conn_set_fns(struct sbus_connection *conn)
 {
     dbus_bool_t dbret;
 
-    /*
-     * Set the default destructor
-     * Connections can override this with
-     * sbus_conn_set_destructor
-     */
-    sbus_conn_set_destructor(conn, NULL);
-
     /* Set up DBusWatch functions */
     dbret = dbus_connection_set_watch_functions(conn->dbus.conn,
                                                 sbus_add_watch,
@@ -204,7 +201,8 @@ static int sbus_conn_set_fns(struct sbus_connection *conn)
                                                 sbus_toggle_watch,
                                                 conn, NULL);
     if (!dbret) {
-        DEBUG(2,("Error setting up D-BUS connection watch functions\n"));
+        DEBUG(SSSDBG_OP_FAILURE,
+              "Error setting up D-BUS connection watch functions\n");
         return EIO;
     }
 
@@ -215,7 +213,8 @@ static int sbus_conn_set_fns(struct sbus_connection *conn)
                                                   sbus_toggle_timeout,
                                                   conn, NULL);
     if (!dbret) {
-        DEBUG(2,("Error setting up D-BUS server timeout functions\n"));
+        DEBUG(SSSDBG_OP_FAILURE,
+              "Error setting up D-BUS server timeout functions\n");
         /* FIXME: free resources ? */
         return EIO;
     }
@@ -238,8 +237,7 @@ static int sbus_conn_set_fns(struct sbus_connection *conn)
 }
 
 int sbus_new_connection(TALLOC_CTX *ctx, struct tevent_context *ev,
-                        const char *address, struct sbus_interface *intf,
-                        struct sbus_connection **_conn)
+                        const char *address, struct sbus_connection **_conn)
 {
     struct sbus_connection *conn;
     DBusConnection *dbus_conn;
@@ -251,14 +249,14 @@ int sbus_new_connection(TALLOC_CTX *ctx, struct tevent_context *ev,
     /* Open a shared D-BUS connection to the address */
     dbus_conn = dbus_connection_open(address, &dbus_error);
     if (!dbus_conn) {
-        DEBUG(1, ("Failed to open connection: name=%s, message=%s\n",
-                dbus_error.name, dbus_error.message));
+        DEBUG(SSSDBG_CRIT_FAILURE,
+              "Failed to open connection: name=%s, message=%s\n",
+                dbus_error.name, dbus_error.message);
         if (dbus_error_is_set(&dbus_error)) dbus_error_free(&dbus_error);
         return EIO;
     }
 
-    ret = sbus_init_connection(ctx, ev, dbus_conn, intf,
-                               SBUS_CONN_TYPE_SHARED, &conn);
+    ret = sbus_init_connection(ctx, ev, dbus_conn, SBUS_CONN_TYPE_SHARED, &conn);
     if (ret != EOK) {
         /* FIXME: release resources */
     }
@@ -272,42 +270,26 @@ int sbus_new_connection(TALLOC_CTX *ctx, struct tevent_context *ev,
     return ret;
 }
 
-/*
- * sbus_conn_set_destructor
- * Configures a callback to clean up this connection when it
- * is finalized.
- * @param conn The sbus_connection created
- * when this connection was established
- * @param destructor The destructor function that should be
- * called when the connection is finalized. If passed NULL,
- * this will reset the connection to the default destructor.
- */
-void sbus_conn_set_destructor(struct sbus_connection *conn,
-                              sbus_conn_destructor_fn destructor)
-{
-    if (!conn) return;
-
-    conn->destructor = destructor;
-    /* TODO: Should we try to handle the talloc_destructor too? */
-}
-
-int sbus_default_connection_destructor(void *ctx)
+static int connection_destructor(void *ctx)
 {
     struct sbus_connection *conn;
     conn = talloc_get_type(ctx, struct sbus_connection);
 
-    DEBUG(SSSDBG_TRACE_FUNC, ("Invoking default destructor on connection %p\n",
-              conn->dbus.conn));
+    DEBUG(SSSDBG_TRACE_FUNC, "Invoking default destructor on connection %p\n",
+              conn->dbus.conn);
     if (conn->connection_type == SBUS_CONN_TYPE_PRIVATE) {
         /* Private connections must be closed explicitly */
         dbus_connection_close(conn->dbus.conn);
     }
-    else if (conn->connection_type == SBUS_CONN_TYPE_SHARED) {
-        /* Shared connections are destroyed when their last reference is removed */
+    else if (conn->connection_type == SBUS_CONN_TYPE_SHARED ||
+             conn->connection_type == SBUS_CONN_TYPE_SYSBUS) {
+        /* Shared and system bus connections are destroyed when their last
+           reference is removed */
     }
     else {
         /* Critical Error! */
-        DEBUG(1,("Critical Error, connection_type is neither shared nor private!\n"));
+        DEBUG(SSSDBG_CRIT_FAILURE,
+              "Critical Error, connection_type is neither shared nor private!\n");
         return -1;
     }
 
@@ -328,24 +310,19 @@ DBusConnection *sbus_get_connection(struct sbus_connection *conn)
     return conn->dbus.conn;
 }
 
-void sbus_disconnect (struct sbus_connection *conn)
+void sbus_disconnect(struct sbus_connection *conn)
 {
     if (conn == NULL) {
         return;
     }
 
-    DEBUG(SSSDBG_TRACE_FUNC, ("Disconnecting %p\n", conn->dbus.conn));
+    DEBUG(SSSDBG_TRACE_FUNC, "Disconnecting %p\n", conn->dbus.conn);
 
     /*******************************
      *  Referencing conn->dbus.conn */
     dbus_connection_ref(conn->dbus.conn);
 
     conn->disconnect = 1;
-
-    /* Invoke the custom destructor, if it exists */
-    if (conn->destructor) {
-        conn->destructor(conn);
-    }
 
     /* Unregister object paths */
     sbus_unreg_object_paths(conn);
@@ -368,103 +345,207 @@ void sbus_disconnect (struct sbus_connection *conn)
                                              NULL, NULL, NULL);
 
     /* Finalize the connection */
-    sbus_default_connection_destructor(conn);
+    connection_destructor(conn);
 
     dbus_connection_unref(conn->dbus.conn);
     /* Unreferenced conn->dbus_conn *
      ******************************/
 
-    DEBUG(SSSDBG_TRACE_FUNC ,("Disconnected %p\n", conn->dbus.conn));
+    DEBUG(SSSDBG_TRACE_FUNC ,"Disconnected %p\n", conn->dbus.conn);
 }
 
-static int sbus_reply_internal_error(DBusMessage *message,
-                                     struct sbus_connection *conn) {
-    DBusMessage *reply = dbus_message_new_error(message, DBUS_ERROR_IO_ERROR,
-                                                "Internal Error");
-    if (reply) {
-        sbus_conn_send_reply(conn, reply);
-        dbus_message_unref(reply);
-        return DBUS_HANDLER_RESULT_HANDLED;
-    }
-    return DBUS_HANDLER_RESULT_NOT_YET_HANDLED;
-}
+/* Looks up a vtable func, in a struct derived from struct sbus_vtable */
+#define VTABLE_FUNC(vtable, offset) \
+    (*((void **)((char *)(vtable) + (offset))))
+
+static void sbus_handler_got_caller_id(struct tevent_req *req);
 
 /* messsage_handler
  * Receive messages and process them
  */
 DBusHandlerResult sbus_message_handler(DBusConnection *dbus_conn,
-                                         DBusMessage *message,
-                                         void *user_data)
+                                       DBusMessage *message,
+                                       void *user_data)
 {
     struct sbus_interface_p *intf_p;
-    const char *method;
+    const char *msg_method;
     const char *path;
     const char *msg_interface;
-    DBusMessage *reply = NULL;
-    int i, ret;
-    int found;
+    const char *sender;
+    struct sbus_request *dbus_req = NULL;
+    struct tevent_req *req;
 
     if (!user_data) {
         return DBUS_HANDLER_RESULT_NOT_YET_HANDLED;
     }
     intf_p = talloc_get_type(user_data, struct sbus_interface_p);
 
-    method = dbus_message_get_member(message);
-    DEBUG(9, ("Received SBUS method [%s]\n", method));
+    msg_method = dbus_message_get_member(message);
+    DEBUG(SSSDBG_TRACE_ALL, "Received SBUS method [%s]\n", msg_method);
     path = dbus_message_get_path(message);
     msg_interface = dbus_message_get_interface(message);
+    sender = dbus_message_get_sender(message);
 
-    if (!method || !path || !msg_interface)
+    if (!msg_method || !path || !msg_interface) {
         return DBUS_HANDLER_RESULT_NOT_YET_HANDLED;
+    }
 
     /* Validate the D-BUS path */
-    if (strcmp(path, intf_p->intf->path) != 0)
+    if (strcmp(path, intf_p->intf->path) != 0) {
         return DBUS_HANDLER_RESULT_NOT_YET_HANDLED;
+    }
 
     /* Validate the method interface */
-    if (strcmp(msg_interface, intf_p->intf->interface) == 0) {
-        found = 0;
-        for (i = 0; intf_p->intf->methods[i].method != NULL; i++) {
-            if (strcmp(method, intf_p->intf->methods[i].method) == 0) {
-                found = 1;
-                ret = intf_p->intf->methods[i].fn(message, intf_p->conn);
-                if (ret != EOK) {
-                    return sbus_reply_internal_error(message, intf_p->conn);
-                }
-                break;
-            }
+    if (strcmp(msg_interface, intf_p->intf->vtable->meta->name) == 0 ||
+            (strcmp(msg_interface, DBUS_INTROSPECT_INTERFACE) == 0 &&
+                strcmp(msg_method, DBUS_INTROSPECT_METHOD) == 0)) {
+
+        /* OK, this message for us. Get the sender ID if applicable */
+        dbus_req = sbus_new_request(intf_p->conn, intf_p->intf, message);
+        if (dbus_req == NULL) {
+            return DBUS_HANDLER_RESULT_NEED_MEMORY;
         }
 
-        if (!found) {
-            /* Reply DBUS_ERROR_UNKNOWN_METHOD */
-            DEBUG(1, ("No matching method found for %s.\n", method));
-            reply = dbus_message_new_error(message, DBUS_ERROR_UNKNOWN_METHOD, NULL);
-            sbus_conn_send_reply(intf_p->conn, reply);
-            dbus_message_unref(reply);
+        req = sbus_get_sender_id_send(dbus_req, dbus_req->conn->ev,
+                                      dbus_req->conn, sender);
+        if (req == NULL) {
+            return DBUS_HANDLER_RESULT_NOT_YET_HANDLED;
         }
+        tevent_req_set_callback(req, sbus_handler_got_caller_id, dbus_req);
+        return DBUS_HANDLER_RESULT_HANDLED;
     }
-    else {
+
+    return DBUS_HANDLER_RESULT_NOT_YET_HANDLED;
+}
+
+static void sbus_handler_got_caller_id(struct tevent_req *req)
+{
+    struct sbus_request *dbus_req = \
+                      tevent_req_callback_data(req,
+                                               struct sbus_request);
+    errno_t ret;
+    DBusError *dberr;
+    DBusMessage *reply = NULL;
+    const struct sbus_method_meta *method;
+    const struct sbus_interface_meta *interface;
+    const char *msg_method;
+    const char *msg_interface;
+    sbus_msg_handler_fn handler_fn = NULL;
+    void *handler_data = NULL; /* Must be a talloc pointer! */
+    struct sbus_introspect_ctx *ictx = NULL;
+    const char *dbus_error = NULL;
+
+    ret = sbus_get_sender_id_recv(req, &dbus_req->client);
+    if (ret != EOK) {
+        dberr = sbus_error_new(dbus_req,
+                               DBUS_ERROR_FAILED,
+                               "Failed to retrieve called ID: %s\n",
+                               sss_strerror(ret));
+        sbus_request_fail_and_finish(dbus_req, dberr);
+        return;
+    }
+
+    msg_method = dbus_message_get_member(dbus_req->message);
+    msg_interface = dbus_message_get_interface(dbus_req->message);
+    DEBUG(SSSDBG_TRACE_ALL, "Received SBUS method [%s]\n", msg_method);
+
+    /* Prepare the handler */
+    interface = dbus_req->intf->vtable->meta;
+    if (strcmp(msg_interface, interface->name) == 0) {
+        method = sbus_meta_find_method(interface, msg_method);
+        if (method && method->vtable_offset)
+            handler_fn = VTABLE_FUNC(dbus_req->intf->vtable,
+                                     method->vtable_offset);
+
+        if (!method) {
+            /* Reply DBUS_ERROR_UNKNOWN_METHOD */
+            DEBUG(SSSDBG_CRIT_FAILURE,
+                  "No matching method found for %s.\n", msg_method);
+            dbus_error = DBUS_ERROR_UNKNOWN_METHOD;
+            goto fail;
+        } else if (!handler_fn) {
+            /* Reply DBUS_ERROR_NOT_SUPPORTED */
+            DEBUG(SSSDBG_CRIT_FAILURE,
+                  "No handler provided found for %s.\n", msg_method);
+            dbus_error = DBUS_ERROR_NOT_SUPPORTED;
+            goto fail;
+        }
+    } else {
         /* Special case: check for Introspection request
          * This is usually only useful for system bus connections
          */
         if (strcmp(msg_interface, DBUS_INTROSPECT_INTERFACE) == 0 &&
-            strcmp(method, DBUS_INTROSPECT_METHOD) == 0)
-        {
-            if (intf_p->intf->introspect_fn) {
-                /* If we have been asked for introspection data and we have
-                 * an introspection function registered, user that.
-                 */
-                ret = intf_p->intf->introspect_fn(message, intf_p->conn);
-                if (ret != EOK) {
-                    return sbus_reply_internal_error(message, intf_p->conn);
-                }
+                strcmp(msg_method, DBUS_INTROSPECT_METHOD) == 0) {
+            DEBUG(SSSDBG_TRACE_LIBS, "Got introspection request\n");
+            ictx = talloc(dbus_req->conn, struct sbus_introspect_ctx);
+            if (ictx == NULL) {
+                dbus_error = DBUS_ERROR_NO_MEMORY;
+                goto fail;
             }
+
+            handler_fn = sbus_introspect;
+            ictx->iface = interface;
+            handler_data = ictx;
+            method = &introspect_method;
         }
-        else
-            return DBUS_HANDLER_RESULT_NOT_YET_HANDLED;
     }
 
-    return DBUS_HANDLER_RESULT_HANDLED;
+    if (handler_fn == NULL) {
+        DEBUG(SSSDBG_MINOR_FAILURE, "No handler matched!\n");
+        dbus_error = DBUS_ERROR_NOT_SUPPORTED;
+        goto fail;
+    }
+
+    dbus_req->method = method;
+    if (handler_data) {
+        /* If the handler uses private instance data, make
+         * sure they go away when the request does
+         */
+        talloc_steal(dbus_req, handler_data);
+    } else {
+        /* If no custom handler data is set, pass on the
+         * interface data
+         */
+        handler_data = dbus_req->intf->instance_data;
+    }
+
+    sbus_request_invoke_or_finish(dbus_req,
+                                  handler_fn,
+                                  handler_data,
+                                  method->invoker);
+    return;
+
+fail:
+    reply = dbus_message_new_error(dbus_req->message,
+                                   dbus_error ? dbus_error : DBUS_ERROR_FAILED,
+                                   NULL);
+    sbus_request_finish(dbus_req, reply);
+}
+
+struct sbus_interface *
+sbus_new_interface(TALLOC_CTX *mem_ctx,
+                   const char *object_path,
+                   struct sbus_vtable *iface_vtable,
+                   void *instance_data)
+{
+    struct sbus_interface *intf;
+
+    intf = talloc_zero(mem_ctx, struct sbus_interface);
+    if (intf == NULL) {
+        DEBUG(SSSDBG_FATAL_FAILURE, "Cannot allocate a new sbus_interface.\n");
+        return NULL;
+    }
+
+    intf->path = talloc_strdup(intf, object_path);
+    if (intf->path == NULL) {
+        DEBUG(SSSDBG_FATAL_FAILURE, "Cannot duplicate object path.\n");
+        talloc_free(intf);
+        return NULL;
+    }
+
+    intf->vtable = iface_vtable;
+    intf->instance_data = instance_data;
+    return intf;
 }
 
 /* Adds a new D-BUS path message handler to the connection
@@ -477,14 +558,15 @@ int sbus_conn_add_interface(struct sbus_connection *conn,
     dbus_bool_t dbret;
     const char *path;
 
-    if (!conn || !intf || !intf->vtable.message_function) {
+    if (!conn || !intf || !intf->vtable || !intf->vtable->meta) {
         return EINVAL;
     }
 
     path = intf->path;
 
     if (path_in_interface_list(conn->intf_list, path)) {
-        DEBUG(0, ("Cannot add method context with identical path.\n"));
+        DEBUG(SSSDBG_FATAL_FAILURE,
+              "Cannot add method context with identical path.\n");
         return EINVAL;
     }
 
@@ -498,9 +580,10 @@ int sbus_conn_add_interface(struct sbus_connection *conn,
     DLIST_ADD(conn->intf_list, intf_p);
 
     dbret = dbus_connection_register_object_path(conn->dbus.conn,
-                                                 path, &intf->vtable, intf_p);
+                                                 path, &dbus_object_path_vtable, intf_p);
     if (!dbret) {
-        DEBUG(0, ("Could not register object path to the connection.\n"));
+        DEBUG(SSSDBG_FATAL_FAILURE,
+              "Could not register object path to the connection.\n");
         return ENOMEM;
     }
 
@@ -538,16 +621,6 @@ static void sbus_unreg_object_paths(struct sbus_connection *conn)
     }
 }
 
-void sbus_conn_set_private_data(struct sbus_connection *conn, void *pvt_data)
-{
-    conn->pvt_data = pvt_data;
-}
-
-void *sbus_conn_get_private_data(struct sbus_connection *conn)
-{
-    return conn->pvt_data;
-}
-
 static void sbus_reconnect(struct tevent_context *ev,
                            struct tevent_timer *te,
                            struct timeval tv, void *data)
@@ -561,12 +634,12 @@ static void sbus_reconnect(struct tevent_context *ev,
     conn = talloc_get_type(data, struct sbus_connection);
     dbus_error_init(&dbus_error);
 
-    DEBUG(3, ("Making reconnection attempt %d to [%s]\n",
-              conn->retries, conn->address));
+    DEBUG(SSSDBG_MINOR_FAILURE, "Making reconnection attempt %d to [%s]\n",
+              conn->retries, conn->address);
     conn->dbus.conn = dbus_connection_open(conn->address, &dbus_error);
     if (conn->dbus.conn) {
         /* We successfully reconnected. Set up mainloop integration. */
-        DEBUG(3, ("Reconnected to [%s]\n", conn->address));
+        DEBUG(SSSDBG_MINOR_FAILURE, "Reconnected to [%s]\n", conn->address);
         ret = sbus_conn_set_fns(conn);
         if (ret != EOK) {
             dbus_connection_unref(conn->dbus.conn);
@@ -578,10 +651,11 @@ static void sbus_reconnect(struct tevent_context *ev,
         while (iter) {
             dbret = dbus_connection_register_object_path(conn->dbus.conn,
                                                          iter->intf->path,
-                                                         &iter->intf->vtable,
+                                                         &dbus_object_path_vtable,
                                                          iter);
             if (!dbret) {
-                DEBUG(0, ("Could not register object path.\n"));
+                DEBUG(SSSDBG_FATAL_FAILURE,
+                      "Could not register object path.\n");
                 dbus_connection_unref(conn->dbus.conn);
                 goto failed;
             }
@@ -602,8 +676,9 @@ static void sbus_reconnect(struct tevent_context *ev,
 
 failed:
     /* Reconnection failed, try again in a few seconds */
-    DEBUG(1, ("Failed to open connection: name=%s, message=%s\n",
-                dbus_error.name, dbus_error.message));
+    DEBUG(SSSDBG_CRIT_FAILURE,
+          "Failed to open connection: name=%s, message=%s\n",
+                dbus_error.name, dbus_error.message);
     if (dbus_error_is_set(&dbus_error)) dbus_error_free(&dbus_error);
 
     conn->retries++;
@@ -686,31 +761,15 @@ bool sbus_conn_disconnecting(struct sbus_connection *conn)
     return false;
 }
 
-/*
- * Send a message across the SBUS
- * If requested, the DBusPendingCall object will
- * be returned to the caller.
- *
- * This function will return EAGAIN in the event
- * that the connection is not open for
- * communication.
- */
-int sbus_conn_send(struct sbus_connection *conn,
-                   DBusMessage *msg,
-                   int timeout_ms,
-                   DBusPendingCallNotifyFunction reply_handler,
-                   void *pvt,
-                   DBusPendingCall **pending)
+int sss_dbus_conn_send(DBusConnection *dbus_conn,
+                       DBusMessage *msg,
+                       int timeout_ms,
+                       DBusPendingCallNotifyFunction reply_handler,
+                       void *pvt,
+                       DBusPendingCall **pending)
 {
     DBusPendingCall *pending_reply;
-    DBusConnection *dbus_conn;
     dbus_bool_t dbret;
-
-    dbus_conn = sbus_get_connection(conn);
-    if (!dbus_conn) {
-        DEBUG(SSSDBG_CRIT_FAILURE, ("D-BUS not connected\n"));
-        return ENOTCONN;
-    }
 
     dbret = dbus_connection_send_with_reply(dbus_conn, msg,
                                             &pending_reply,
@@ -720,7 +779,7 @@ int sbus_conn_send(struct sbus_connection *conn,
          * Critical Failure
          * Insufficient memory to send message
          */
-        DEBUG(0, ("D-BUS send failed.\n"));
+        DEBUG(SSSDBG_FATAL_FAILURE, "D-BUS send failed.\n");
         return ENOMEM;
     }
 
@@ -733,7 +792,7 @@ int sbus_conn_send(struct sbus_connection *conn,
              * Critical Failure
              * Insufficient memory to create pending call notify
              */
-            DEBUG(0, ("D-BUS send failed.\n"));
+            DEBUG(SSSDBG_FATAL_FAILURE, "D-BUS send failed.\n");
             dbus_pending_call_cancel(pending_reply);
             dbus_pending_call_unref(pending_reply);
             return ENOMEM;
@@ -755,8 +814,35 @@ int sbus_conn_send(struct sbus_connection *conn,
     return EAGAIN;
 }
 
+/*
+ * Send a message across the SBUS
+ * If requested, the DBusPendingCall object will
+ * be returned to the caller.
+ *
+ * This function will return EAGAIN in the event
+ * that the connection is not open for
+ * communication.
+ */
+int sbus_conn_send(struct sbus_connection *conn,
+                   DBusMessage *msg,
+                   int timeout_ms,
+                   DBusPendingCallNotifyFunction reply_handler,
+                   void *pvt,
+                   DBusPendingCall **pending)
+{
+    DBusConnection *dbus_conn;
+
+    dbus_conn = sbus_get_connection(conn);
+    if (!dbus_conn) {
+        DEBUG(SSSDBG_CRIT_FAILURE, "D-BUS not connected\n");
+        return ENOTCONN;
+    }
+
+    return sss_dbus_conn_send(dbus_conn, msg, timeout_ms,
+                              reply_handler, pvt, pending);
+}
+
 void sbus_conn_send_reply(struct sbus_connection *conn, DBusMessage *reply)
 {
     dbus_connection_send(conn->dbus.conn, reply, NULL);
 }
-

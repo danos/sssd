@@ -28,31 +28,27 @@
 #include "responder/ssh/sshsrv_private.h"
 #include "providers/data_provider.h"
 
-struct sbus_method monitor_ssh_methods[] = {
-    { MON_CLI_METHOD_PING, monitor_common_pong },
-    { MON_CLI_METHOD_RES_INIT, monitor_common_res_init },
-    { MON_CLI_METHOD_ROTATE, responder_logrotate },
-    { NULL, NULL }
+struct mon_cli_iface monitor_ssh_methods = {
+    { &mon_cli_iface_meta, 0 },
+    .ping = monitor_common_pong,
+    .resInit = monitor_common_res_init,
+    .shutDown = NULL,
+    .goOffline = NULL,
+    .resetOffline = NULL,
+    .rotateLogs = responder_logrotate,
+    .clearMemcache = NULL,
+    .clearEnumCache = NULL,
 };
 
-struct sbus_interface monitor_ssh_interface = {
-    MONITOR_INTERFACE,
-    MONITOR_PATH,
-    SBUS_DEFAULT_VTABLE,
-    monitor_ssh_methods,
-    NULL
-};
-
-static struct sbus_method ssh_dp_methods[] = {
-    { NULL, NULL }
-};
-
-struct sbus_interface ssh_dp_interface = {
-    DP_INTERFACE,
-    DP_PATH,
-    SBUS_DEFAULT_VTABLE,
-    ssh_dp_methods,
-    NULL
+static struct data_provider_iface ssh_dp_methods = {
+    { &data_provider_iface_meta, 0 },
+    .RegisterService = NULL,
+    .pamHandler = NULL,
+    .sudoHandler = NULL,
+    .autofsHandler = NULL,
+    .hostHandler = NULL,
+    .getDomains = NULL,
+    .getAccountInfo = NULL,
 };
 
 static void ssh_dp_reconnect_init(struct sbus_connection *conn,
@@ -63,7 +59,7 @@ static void ssh_dp_reconnect_init(struct sbus_connection *conn,
 
     /* Did we reconnect successfully? */
     if (status == SBUS_RECONNECT_SUCCESS) {
-        DEBUG(SSSDBG_TRACE_FUNC, ("Reconnected to the Data Provider.\n"));
+        DEBUG(SSSDBG_TRACE_FUNC, "Reconnected to the Data Provider.\n");
 
         /* Identify ourselves to the data provider */
         ret = dp_common_send_id(be_conn->conn,
@@ -77,8 +73,8 @@ static void ssh_dp_reconnect_init(struct sbus_connection *conn,
     }
 
     /* Failed to reconnect */
-    DEBUG(SSSDBG_FATAL_FAILURE, ("Could not reconnect to %s provider.\n",
-                                 be_conn->domain->name));
+    DEBUG(SSSDBG_FATAL_FAILURE, "Could not reconnect to %s provider.\n",
+                                 be_conn->domain->name);
 }
 
 int ssh_process_init(TALLOC_CTX *mem_ctx,
@@ -99,18 +95,18 @@ int ssh_process_init(TALLOC_CTX *mem_ctx,
                            CONFDB_SSH_CONF_ENTRY,
                            SSS_SSH_SBUS_SERVICE_NAME,
                            SSS_SSH_SBUS_SERVICE_VERSION,
-                           &monitor_ssh_interface,
+                           &monitor_ssh_methods,
                            "SSH",
-                           &ssh_dp_interface,
+                           &ssh_dp_methods.vtable,
                            &rctx);
     if (ret != EOK) {
-        DEBUG(SSSDBG_FATAL_FAILURE, ("sss_process_init() failed\n"));
+        DEBUG(SSSDBG_FATAL_FAILURE, "sss_process_init() failed\n");
         return ret;
     }
 
     ssh_ctx = talloc_zero(rctx, struct ssh_ctx);
     if (!ssh_ctx) {
-        DEBUG(SSSDBG_FATAL_FAILURE, ("fatal error initializing ssh_ctx\n"));
+        DEBUG(SSSDBG_FATAL_FAILURE, "fatal error initializing ssh_ctx\n");
         ret = ENOMEM;
         goto fail;
     }
@@ -122,7 +118,7 @@ int ssh_process_init(TALLOC_CTX *mem_ctx,
                                    "(?P<name>[^@]+)@?(?P<domain>[^@]*$)",
                                    "%1$s@%2$s", &ssh_ctx->snctx);
     if (ret != EOK) {
-        DEBUG(SSSDBG_FATAL_FAILURE, ("fatal error initializing regex data\n"));
+        DEBUG(SSSDBG_FATAL_FAILURE, "fatal error initializing regex data\n");
         goto fail;
     }
 
@@ -133,7 +129,7 @@ int ssh_process_init(TALLOC_CTX *mem_ctx,
                          3, &max_retries);
     if (ret != EOK) {
         DEBUG(SSSDBG_FATAL_FAILURE,
-              ("Failed to set up automatic reconnection\n"));
+              "Failed to set up automatic reconnection\n");
         goto fail;
     }
 
@@ -150,8 +146,8 @@ int ssh_process_init(TALLOC_CTX *mem_ctx,
                           CONFDB_DEFAULT_SSH_HASH_KNOWN_HOSTS,
                           &ssh_ctx->hash_known_hosts);
     if (ret != EOK) {
-        DEBUG(SSSDBG_FATAL_FAILURE, ("Error reading from confdb (%d) [%s]\n",
-              ret, strerror(ret)));
+        DEBUG(SSSDBG_FATAL_FAILURE, "Error reading from confdb (%d) [%s]\n",
+              ret, strerror(ret));
         goto fail;
     }
 
@@ -161,18 +157,18 @@ int ssh_process_init(TALLOC_CTX *mem_ctx,
                          CONFDB_DEFAULT_SSH_KNOWN_HOSTS_TIMEOUT,
                          &ssh_ctx->known_hosts_timeout);
     if (ret != EOK) {
-        DEBUG(SSSDBG_FATAL_FAILURE, ("Error reading from confdb (%d) [%s]\n",
-              ret, strerror(ret)));
+        DEBUG(SSSDBG_FATAL_FAILURE, "Error reading from confdb (%d) [%s]\n",
+              ret, strerror(ret));
         goto fail;
     }
 
     ret = schedule_get_domains_task(rctx, rctx->ev, rctx);
     if (ret != EOK) {
-        DEBUG(SSSDBG_FATAL_FAILURE, ("schedule_get_domains_tasks failed.\n"));
+        DEBUG(SSSDBG_FATAL_FAILURE, "schedule_get_domains_tasks failed.\n");
         goto fail;
     }
 
-    DEBUG(SSSDBG_TRACE_FUNC, ("SSH Initialization complete\n"));
+    DEBUG(SSSDBG_TRACE_FUNC, "SSH Initialization complete\n");
 
     return EOK;
 
@@ -223,8 +219,8 @@ int main(int argc, const char *argv[])
     ret = die_if_parent_died();
     if (ret != EOK) {
         /* This is not fatal, don't return */
-        DEBUG(SSSDBG_OP_FAILURE, ("Could not set up to exit "
-                                  "when parent process does\n"));
+        DEBUG(SSSDBG_OP_FAILURE, "Could not set up to exit "
+                                  "when parent process does\n");
     }
 
     ret = ssh_process_init(main_ctx,

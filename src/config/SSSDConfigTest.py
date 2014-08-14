@@ -521,6 +521,7 @@ class SSSDConfigTestSSSDDomain(unittest.TestCase):
             'case_sensitive',
             'override_homedir',
             'fallback_homedir',
+            'homedir_substring',
             'override_shell',
             'default_shell',
             'pwd_expiration_warning',
@@ -877,6 +878,7 @@ class SSSDConfigTestSSSDDomain(unittest.TestCase):
             'case_sensitive',
             'override_homedir',
             'fallback_homedir',
+            'homedir_substring',
             'override_shell',
             'default_shell',
             'pwd_expiration_warning',
@@ -1232,7 +1234,8 @@ class SSSDConfigTestSSSDConfig(unittest.TestCase):
             'sudo',
             'autofs',
             'ssh',
-            'pac']
+            'pac',
+            'ifp']
         for section in control_list:
             self.assertTrue(sssdconfig.has_section(section),
                             "Section [%s] missing" %
@@ -1325,7 +1328,8 @@ class SSSDConfigTestSSSDConfig(unittest.TestCase):
             'sudo',
             'autofs',
             'ssh',
-            'pac']
+            'pac',
+            'ifp']
         service_list = sssdconfig.list_services()
         for service in control_list:
             self.assertTrue(service in service_list,

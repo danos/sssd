@@ -99,7 +99,7 @@ static int _setup_sysdb_tests(struct sysdb_test_ctx **ctx, bool enumerate)
         talloc_free(test_ctx);
         return ENOMEM;
     }
-    DEBUG(3, ("CONFDB: %s\n", conf_db));
+    DEBUG(SSSDBG_MINOR_FAILURE, "CONFDB: %s\n", conf_db);
 
     /* Connect to the conf db */
     ret = confdb_init(test_ctx, &test_ctx->confdb, conf_db);
@@ -1330,6 +1330,11 @@ START_TEST (test_sysdb_initgroups)
                 "Did not find the expected UID (found %d expected %d)",
                 uid, _i);
 
+    fail_unless(strcmp(ldb_msg_find_attr_as_string(user, SYSDB_NAME, NULL),
+                       username) == 0,
+                "Wrong username\n");
+
+
     gid = ldb_msg_find_attr_as_uint(group, SYSDB_GIDNUM, 0);
     fail_unless(gid == _i + 1000,
                 "Did not find the expected GID (found %d expected %d)",
@@ -1808,7 +1813,8 @@ static void cached_authentication_with_expiration(const char *username,
 
     now = time(NULL);
     expected_expire_date = now + (24 * 60 * 60);
-    DEBUG(9, ("Setting SYSDB_LAST_ONLINE_AUTH to [%lld].\n", (long long) now));
+    DEBUG(SSSDBG_TRACE_ALL,
+          "Setting SYSDB_LAST_ONLINE_AUTH to [%lld].\n", (long long) now);
 
     data->attrs = sysdb_new_attrs(data);
     ret = sysdb_attrs_add_time_t(data->attrs, SYSDB_LAST_ONLINE_AUTH, now);
