@@ -1,3 +1,10 @@
+sssd (1.11.5.1-3) UNRELEASED; urgency=medium
+
+  * control: Update my email.
+  * control: Update vcs urls.
+
+ -- Timo Aaltonen <tjaalton@debian.org>  Thu, 14 Aug 2014 10:22:45 +0300
+
 sssd (1.11.5.1-2) unstable; urgency=medium
 
   * control: Drop libcmocka-dev and check from build-depends again so
