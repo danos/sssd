@@ -10,6 +10,9 @@ sssd (1.11.6-1) UNRELEASED; urgency=medium
     removing sss entry from nsswitch.conf. (Closes: #748671)
   * libpam-sss.prerm: Check DPKG_MAINTSCRIPT_PACKAGE_REFCOUNT before
     running pam-auth-update --remove.
+  * control: Mark libkeyutils-dev, libselinux-dev, libsemanage-dev,
+    libnl*-dev build-deps as linux-any, as a preliminary step to build
+    on kfreebsd-*.
 
  -- Timo Aaltonen <tjaalton@debian.org>  Thu, 14 Aug 2014 10:22:45 +0300
 
