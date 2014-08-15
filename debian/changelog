@@ -3,9 +3,6 @@ sssd (1.11.6-1) UNRELEASED; urgency=medium
   * New upstream release.
   * control: Update my email.
   * control: Update vcs urls.
-  * control: Re-enable check and libcmocka-dev, but the latter only on
-    [amd64 armhf i386] which are known not to fail due to timeouts.
-    (Closes: #754618)
   * libnss-sss.postrm: Check DPKG_MAINTSCRIPT_PACKAGE_REFCOUNT before
     removing sss entry from nsswitch.conf. (Closes: #748671)
   * libpam-sss.prerm: Check DPKG_MAINTSCRIPT_PACKAGE_REFCOUNT before
