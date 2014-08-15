@@ -13,6 +13,7 @@ sssd (1.11.6-1) UNRELEASED; urgency=medium
   * control: Mark libkeyutils-dev, libselinux-dev, libsemanage-dev,
     libnl*-dev build-deps as linux-any, as a preliminary step to build
     on kfreebsd-*.
+  * Run wrap-and-sort.
 
  -- Timo Aaltonen <tjaalton@debian.org>  Thu, 14 Aug 2014 10:22:45 +0300
 
