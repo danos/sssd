@@ -15,6 +15,7 @@ sssd (1.11.6-1) UNRELEASED; urgency=medium
   * control: Demote libsasl2-modules-ldap to Suggests for sssd-ldap.
   * generate-config: Bring it back for convenience, but don't run it on
     postinst.
+  * sssd-common.postinst: Remove obsolete config upgrade.
 
  -- Timo Aaltonen <tjaalton@debian.org>  Thu, 14 Aug 2014 10:22:45 +0300
 
