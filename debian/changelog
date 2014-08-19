@@ -12,6 +12,7 @@ sssd (1.11.6-1) UNRELEASED; urgency=medium
     on kfreebsd-*.
   * Run wrap-and-sort.
   * sssd-dbus: Add a new subpackage for the D-Bus responder.
+  * control: Demote libsasl2-modules-ldap to Suggests for sssd-ldap.
 
  -- Timo Aaltonen <tjaalton@debian.org>  Thu, 14 Aug 2014 10:22:45 +0300
 
