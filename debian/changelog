@@ -13,6 +13,8 @@ sssd (1.11.6-1) UNRELEASED; urgency=medium
   * Run wrap-and-sort.
   * sssd-dbus: Add a new subpackage for the D-Bus responder.
   * control: Demote libsasl2-modules-ldap to Suggests for sssd-ldap.
+  * generate-config: Bring it back for convenience, but don't run it on
+    postinst.
 
  -- Timo Aaltonen <tjaalton@debian.org>  Thu, 14 Aug 2014 10:22:45 +0300
 
