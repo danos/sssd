@@ -117,6 +117,13 @@ Description: System Security Services Daemon -- PAC responder
  Provides the PAC responder that the AD and IPA backends can use for
  fetching additional attributes from the kerberos ticket.
 
+Package: sssd-dbus
+Architecture: any
+Depends: sssd-common (= ${binary:Version}), ${misc:Depends}, ${shlibs:Depends}
+Description: System Security Services Daemon -- D-Bus responder
+ Provides the D-Bus responder called InfoPipe, that allows the information
+ from the SSSD to be transmitted over the system bus.
+
 Package: sssd-ipa
 Architecture: any
 Depends:

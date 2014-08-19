@@ -11,6 +11,7 @@ sssd (1.11.6-1) UNRELEASED; urgency=medium
     libnl*-dev build-deps as linux-any, as a preliminary step to build
     on kfreebsd-*.
   * Run wrap-and-sort.
+  * sssd-dbus: Add a new subpackage for the D-Bus responder.
 
  -- Timo Aaltonen <tjaalton@debian.org>  Thu, 14 Aug 2014 10:22:45 +0300
 
