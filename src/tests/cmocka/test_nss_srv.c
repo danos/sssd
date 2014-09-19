@@ -602,6 +602,7 @@ void test_nss_setup(struct sss_test_conf_param params[],
     nss_test_ctx->rctx = mock_rctx(nss_test_ctx, nss_test_ctx->tctx->ev,
                                    nss_test_ctx->tctx->dom, nss_test_ctx->nctx);
     assert_non_null(nss_test_ctx->rctx);
+    nss_test_ctx->nctx->rctx = nss_test_ctx->rctx;
 
     /* Create client context */
     nss_test_ctx->cctx = mock_cctx(nss_test_ctx, nss_test_ctx->rctx);

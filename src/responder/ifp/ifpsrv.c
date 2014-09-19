@@ -42,6 +42,8 @@
 
 #define DEFAULT_ALLOWED_UIDS "0"
 
+static int ifp_sysbus_reconnect(struct sbus_request *dbus_req, void *data);
+
 struct mon_cli_iface monitor_ifp_methods = {
     { &mon_cli_iface_meta, 0 },
     .ping = monitor_common_pong,
@@ -50,6 +52,7 @@ struct mon_cli_iface monitor_ifp_methods = {
     .goOffline = NULL,
     .resetOffline = NULL,
     .rotateLogs = responder_logrotate,
+    .sysbusReconnect = ifp_sysbus_reconnect,
 };
 
 static struct data_provider_iface ifp_dp_methods = {
@@ -132,8 +135,9 @@ sysbus_init(TALLOC_CTX *mem_ctx,
     conn = dbus_bus_get(DBUS_BUS_SYSTEM, &dbus_error);
     if (conn == NULL) {
         DEBUG(SSSDBG_CRIT_FAILURE,
-              ("Failed to connect to D-BUS system bus.\n"));
-        ret = EIO;
+              "Failed to connect to D-BUS system bus: [%s]\n",
+              dbus_error.message);
+        ret = ERR_NO_SYSBUS;
         goto fail;
     }
     dbus_connection_set_exit_on_disconnect(conn, FALSE);
@@ -145,7 +149,8 @@ sysbus_init(TALLOC_CTX *mem_ctx,
     if (ret != DBUS_REQUEST_NAME_REPLY_PRIMARY_OWNER) {
         /* We were unable to register on the system bus */
         DEBUG(SSSDBG_CRIT_FAILURE,
-              ("Unable to request name on the system bus.\n"));
+              "Unable to request name on the system bus: [%s]\n",
+              dbus_error.message);
         ret = EIO;
         goto fail;
     }
@@ -193,6 +198,40 @@ fail:
 
     talloc_free(system_bus);
     return ret;
+}
+
+static int ifp_sysbus_reconnect(struct sbus_request *dbus_req, void *data)
+{
+    struct resp_ctx *rctx = talloc_get_type(data, struct resp_ctx);
+    struct ifp_ctx *ifp_ctx = (struct ifp_ctx*) rctx->pvt_ctx;
+    errno_t ret;
+
+    DEBUG(SSSDBG_TRACE_FUNC, "Attempting to reconnect to the system bus\n");
+
+    if (ifp_ctx->sysbus) {
+        goto done;
+    }
+
+    /* Connect to the D-BUS system bus and set up methods */
+    ret = sysbus_init(ifp_ctx, ifp_ctx->rctx->ev,
+                      INFOPIPE_IFACE,
+                      INFOPIPE_PATH,
+                      &ifp_iface.vtable,
+                      ifp_ctx, &ifp_ctx->sysbus);
+    if (ret == ERR_NO_SYSBUS) {
+        DEBUG(SSSDBG_MINOR_FAILURE,
+              "The system bus is not available..\n");
+        goto done;
+    } else if (ret != EOK) {
+        DEBUG(SSSDBG_CRIT_FAILURE,
+              "Failed to connect to the system message bus\n");
+        return ret;
+    }
+
+    DEBUG(SSSDBG_TRACE_LIBS, "Reconnected to the system bus!\n");
+
+done:
+    return sbus_request_return_and_finish(dbus_req, DBUS_TYPE_INVALID);
 }
 
 int ifp_process_init(TALLOC_CTX *mem_ctx,
@@ -246,7 +285,7 @@ int ifp_process_init(TALLOC_CTX *mem_ctx,
                             CONFDB_IFP_CONF_ENTRY, CONFDB_SERVICE_ALLOWED_UIDS,
                             DEFAULT_ALLOWED_UIDS, &uid_str);
     if (ret != EOK) {
-        DEBUG(SSSDBG_FATAL_FAILURE, ("Failed to get allowed UIDs.\n"));
+        DEBUG(SSSDBG_FATAL_FAILURE, "Failed to get allowed UIDs.\n");
         goto fail;
     }
 
@@ -255,7 +294,7 @@ int ifp_process_init(TALLOC_CTX *mem_ctx,
                                   &ifp_ctx->rctx->allowed_uids);
     talloc_free(uid_str);
     if (ret != EOK) {
-        DEBUG(SSSDBG_FATAL_FAILURE, ("Failed to set allowed UIDs.\n"));
+        DEBUG(SSSDBG_FATAL_FAILURE, "Failed to set allowed UIDs.\n");
         goto fail;
     }
 
@@ -269,7 +308,7 @@ int ifp_process_init(TALLOC_CTX *mem_ctx,
 
     ret = sss_ncache_init(rctx, &ifp_ctx->ncache);
     if (ret != EOK) {
-        DEBUG(SSSDBG_CRIT_FAILURE, ("fatal error initializing negcache\n"));
+        DEBUG(SSSDBG_CRIT_FAILURE, "fatal error initializing negcache\n");
         goto fail;
     }
 
@@ -277,7 +316,7 @@ int ifp_process_init(TALLOC_CTX *mem_ctx,
                             CONFDB_IFP_CONF_ENTRY, CONFDB_IFP_USER_ATTR_LIST,
                             NULL, &attr_list_str);
     if (ret != EOK) {
-        DEBUG(SSSDBG_FATAL_FAILURE, ("Failed to get allowed UIDs.\n"));
+        DEBUG(SSSDBG_FATAL_FAILURE, "Failed to get allowed UIDs.\n");
         goto fail;
     }
 
@@ -285,7 +324,7 @@ int ifp_process_init(TALLOC_CTX *mem_ctx,
     talloc_free(attr_list_str);
     if (ifp_ctx->user_whitelist == NULL) {
         DEBUG(SSSDBG_FATAL_FAILURE,
-              ("Failed to parse the allowed attribute list\n"));
+              "Failed to parse the allowed attribute list\n");
         goto fail;
     }
 
@@ -311,7 +350,11 @@ int ifp_process_init(TALLOC_CTX *mem_ctx,
                       INFOPIPE_PATH,
                       &ifp_iface.vtable,
                       ifp_ctx, &ifp_ctx->sysbus);
-    if (ret != EOK) {
+    if (ret == ERR_NO_SYSBUS) {
+        DEBUG(SSSDBG_MINOR_FAILURE,
+              "The system bus is not available..\n");
+        /* Explicitly ignore, the D-Bus daemon will start us */
+    } else if (ret != EOK) {
         DEBUG(SSSDBG_CRIT_FAILURE,
               "Failed to connect to the system message bus\n");
         talloc_free(ifp_ctx);

@@ -3,10 +3,11 @@ if HAVE_DEVSHM
     extra_distcheck_flags += --with-test-dir=/dev/shm
 endif
 
-AM_DISTCHECK_CONFIGURE_FLAGS = --with-ldb-lib-dir="$$dc_install_base"/lib/ldb \
-                               --disable-dbus-tests \
-                               --enable-all-experimental-features \
-                               $(extra_distcheck_flags)
+DISTCHECK_CONFIGURE_FLAGS = --with-ldb-lib-dir="$$dc_install_base"/lib/ldb \
+                            --disable-dbus-tests \
+                            --enable-all-experimental-features \
+                            $(extra_distcheck_flags) \
+                            $(AUX_DISTCHECK_CONFIGURE_FLAGS)
 
 SUBDIRS = po
 
@@ -36,8 +37,8 @@ endif
 sssdconfdir = $(sysconfdir)/sssd
 sssddatadir = $(datadir)/sssd
 sssdapiplugindir = $(sssddatadir)/sssd.api.d
-dbusintrospectdir = $(datarootdir)/sssd/introspect
 dbuspolicydir = $(sysconfdir)/dbus-1/system.d
+dbusservicedir = $(datadir)/dbus-1/system-services
 localedir = @localedir@
 nsslibdir = @nsslibdir@
 pamlibdir = @pammoddir@
@@ -99,7 +100,9 @@ sssdlibexec_PROGRAMS = \
     sssd_be \
     krb5_child \
     ldap_child \
-    proxy_child
+    proxy_child \
+    sss_signal \
+    $(NULL)
 if BUILD_SUDO
 sssdlibexec_PROGRAMS += sssd_sudo
 endif
@@ -312,7 +315,6 @@ AM_CPPFLAGS = \
     -DVARDIR=\"$(localstatedir)\" \
     -DSHLIBEXT=\"$(SHLIBEXT)\" \
     -DSSSD_LIBEXEC_PATH=\"$(sssdlibexecdir)\" \
-    -DSSSD_INTROSPECT_PATH=\"$(dbusintrospectdir)\" \
     -DSSSD_CONF_DIR=\"$(sssdconfdir)\" \
     -DSSS_NSS_MCACHE_DIR=\"$(mcpath)\" \
     -DSSS_NSS_SOCKET_NAME=\"$(pipepath)/nss\" \
@@ -529,7 +531,9 @@ dist_noinst_HEADERS = \
     src/tests/cmocka/common_mock_resp.h \
     src/sss_client/ssh/sss_ssh_client.h \
     src/sss_client/sudo/sss_sudo.h \
-    src/lib/idmap/sss_idmap_private.h
+    src/lib/idmap/sss_idmap_private.h \
+    src/tests/cmocka/test_utils.h \
+    $(NULL)
 
 
 if HAVE_NSS
@@ -611,7 +615,12 @@ libsss_util_la_SOURCES = \
     src/util/util_errors.c \
     src/util/sss_ini.c \
     src/util/io.c \
-    src/util/util_sss_idmap.c
+    src/util/util_sss_idmap.c \
+    src/util/string_utils.c \
+    $(NULL)
+libsss_util_la_CFLAGS = \
+    $(AM_CFLAGS) \
+    $(SYSTEMD_LOGIN_CFLAGS)
 libsss_util_la_LIBADD = \
     $(SSSD_LIBS) \
     $(UNICODE_LIBS)
@@ -808,6 +817,9 @@ sssd_ifp_LDADD = \
     $(SSSD_INTERNAL_LTLIBS)
 dist_dbuspolicy_DATA = \
     src/responder/ifp/org.freedesktop.sssd.infopipe.conf
+dist_dbusservice_DATA = \
+    src/responder/ifp/org.freedesktop.sssd.infopipe.service
+
 endif
 
 sssd_be_SOURCES = \
@@ -934,6 +946,15 @@ sss_seed_SOURCES = \
 sss_seed_LDADD = \
     $(TOOLS_LIBS) \
     $(SSSD_INTERNAL_LTLIBS)
+
+sss_signal_SOURCES = \
+    src/tools/sss_signal.c \
+    $(SSSD_TOOLS_OBJ) \
+    $(NULL)
+sss_signal_LDADD = \
+    $(TOOLS_LIBS) \
+    $(SSSD_INTERNAL_LTLIBS) \
+    $(NULL)
 
 if BUILD_SUDO
 sss_sudo_cli_SOURCES = \
@@ -1538,7 +1559,10 @@ test_ipa_idmap_LDADD = \
     libsss_test_common.la
 
 test_utils_SOURCES = \
-    src/tests/cmocka/test_utils.c
+    src/tests/cmocka/test_utils.c \
+    src/tests/cmocka/test_sss_ssh.c \
+    src/tests/cmocka/test_string_utils.c \
+    $(NULL)
 test_utils_CFLAGS = \
     $(AM_CFLAGS)
 test_utils_LDADD = \
@@ -2243,8 +2267,8 @@ installsssddirs::
     $(DESTDIR)$(mandir) \
     $(DESTDIR)$(pluginpath) \
     $(DESTDIR)$(libdir)/ldb \
-    $(DESTDIR)$(dbusintrospectdir) \
     $(DESTDIR)$(dbuspolicydir) \
+    $(DESTDIR)$(dbusservicedir) \
     $(DESTDIR)$(pipepath)/private \
     $(DESTDIR)$(sssdlibdir) \
     $(DESTDIR)$(pkglibdir) \

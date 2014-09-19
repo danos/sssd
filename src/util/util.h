@@ -491,6 +491,11 @@ struct sss_domain_info *find_subdomain_by_name(struct sss_domain_info *domain,
                                                bool match_any);
 struct sss_domain_info *find_subdomain_by_sid(struct sss_domain_info *domain,
                                               const char *sid);
+
+struct sss_domain_info*
+sss_get_domain_by_sid_ldap_fallback(struct sss_domain_info *domain,
+                                    const char* sid);
+
 struct sss_domain_info *
 find_subdomain_by_object_name(struct sss_domain_info *domain,
                               const char *object_name);
@@ -529,5 +534,13 @@ errno_t sss_br_lock_file(int fd, size_t start, size_t len,
 #else
 #define BUILD_WITH_PAC_RESPONDER false
 #endif
+
+/* from string_utils.c */
+char * sss_replace_space(TALLOC_CTX *mem_ctx,
+                         const char *orig_name,
+                         const char replace_char);
+char * sss_reverse_replace_space(TALLOC_CTX *mem_ctx,
+                                 const char *orig_name,
+                                 const char replace_char);
 
 #endif /* __SSSD_UTIL_H__ */

@@ -69,6 +69,7 @@ struct mon_cli_iface monitor_be_methods = {
     .rotateLogs = data_provider_logrotate,
     .clearMemcache = NULL,
     .clearEnumCache = NULL,
+    .sysbusReconnect = NULL,
 };
 
 static int client_registration(struct sbus_request *dbus_req, void *data);
@@ -449,24 +450,57 @@ static void be_queue_next_request(struct be_req *be_req, enum bet_type type)
 
 bool be_is_offline(struct be_ctx *ctx)
 {
-    time_t now = time(NULL);
-
-    /* check if we are past the offline blackout timeout */
-    /* FIXME: get offline_timeout from configuration */
-    if (ctx->offstat.went_offline + 60 < now) {
-        ctx->offstat.offline = false;
-    }
-
     return ctx->offstat.offline;
+}
+
+static void check_if_online(struct be_ctx *ctx);
+
+static errno_t
+try_to_go_online(TALLOC_CTX *mem_ctx,
+                 struct tevent_context *ev,
+                 struct be_ctx *be_ctx,
+                 struct be_ptask *be_ptask,
+                 void *be_ctx_void)
+{
+    struct be_ctx *ctx = (struct be_ctx*) be_ctx_void;
+
+    check_if_online(ctx);
+    return EOK;
 }
 
 void be_mark_offline(struct be_ctx *ctx)
 {
+    int offline_timeout = 60;
+    errno_t ret;
+
     DEBUG(SSSDBG_TRACE_INTERNAL, "Going offline!\n");
 
     ctx->offstat.went_offline = time(NULL);
     ctx->offstat.offline = true;
     ctx->run_online_cb = true;
+
+    if (ctx->check_if_online_ptask == NULL) {
+        /* This is the first time we go offline - create a periodic task
+         * to check if we can switch to online. */
+        ret = be_ptask_create_sync(ctx, ctx,
+                                   offline_timeout, offline_timeout,
+                                   offline_timeout, 30, offline_timeout,
+                                   BE_PTASK_OFFLINE_EXECUTE,
+                                   3600 /* max_backoff */,
+                                   try_to_go_online,
+                                   ctx, "Check if online (periodic)",
+                                   &ctx->check_if_online_ptask);
+        if (ret != EOK) {
+            DEBUG(SSSDBG_FATAL_FAILURE,
+                  "be_ptask_create_sync failed [%d]: %s\n",
+                  ret, sss_strerror(ret));
+        }
+    } else {
+        /* Periodic task was already created. Just enable it. */
+        DEBUG(SSSDBG_TRACE_INTERNAL, "Enable check_if_online_ptask.\n");
+        be_ptask_enable(ctx->check_if_online_ptask);
+    }
+
     be_run_offline_cb(ctx);
 }
 
@@ -474,6 +508,7 @@ static void be_reset_offline(struct be_ctx *ctx)
 {
     ctx->offstat.went_offline = 0;
     ctx->offstat.offline = false;
+    be_ptask_disable(ctx->check_if_online_ptask);
     be_run_online_cb(ctx);
 }
 
@@ -1434,7 +1469,7 @@ static int be_sudo_handler(struct sbus_request *dbus_req, void *user_data)
 {
     DBusError dbus_error;
     DBusMessageIter iter;
-    dbus_bool_t iter_next = FALSE;
+    DBusMessageIter array_iter;
     struct be_client *be_cli = NULL;
     struct be_req *be_req = NULL;
     struct be_sudo_req *sudo_req = NULL;
@@ -1524,29 +1559,36 @@ static int be_sudo_handler(struct sbus_request *dbus_req, void *user_data)
             goto fail;
         }
 
+        dbus_message_iter_next(&iter);
+
+        if (dbus_message_iter_get_arg_type(&iter) != DBUS_TYPE_ARRAY) {
+            DEBUG(SSSDBG_CRIT_FAILURE, "Failed, to parse the message!\n");
+            ret = EIO;
+            err_msg = "Invalid D-Bus message format";
+            goto fail;
+        }
+
+        dbus_message_iter_recurse(&iter, &array_iter);
+
         /* read the rules */
         for (i = 0; i < rules_num; i++) {
-            iter_next = dbus_message_iter_next(&iter);
-            if (iter_next == FALSE) {
-                DEBUG(SSSDBG_CRIT_FAILURE, "Failed, to parse the message!\n");
-                ret = EIO;
-                err_msg = "Invalid D-Bus message format";
-                goto fail;
-            }
-            if (dbus_message_iter_get_arg_type(&iter) != DBUS_TYPE_STRING) {
+            if (dbus_message_iter_get_arg_type(&array_iter)
+                    != DBUS_TYPE_STRING) {
                 DEBUG(SSSDBG_CRIT_FAILURE, "Failed, to parse the message!\n");
                 ret = EIO;
                 err_msg = "Invalid D-Bus message format";
                 goto fail;
             }
 
-            dbus_message_iter_get_basic(&iter, &rule);
+            dbus_message_iter_get_basic(&array_iter, &rule);
             sudo_req->rules[i] = talloc_strdup(sudo_req->rules, rule);
             if (sudo_req->rules[i] == NULL) {
                 DEBUG(SSSDBG_CRIT_FAILURE, "talloc_strdup failed.\n");
                 ret = ENOMEM;
                 goto fail;
             }
+
+            dbus_message_iter_next(&array_iter);
         }
 
         sudo_req->rules[rules_num] = NULL;
@@ -2573,8 +2615,8 @@ int be_process_init(TALLOC_CTX *mem_ctx,
 
     if (ctx->domain->refresh_expired_interval > 0) {
         ret = be_ptask_create(ctx, ctx, ctx->domain->refresh_expired_interval,
-                              30, 5, ctx->domain->refresh_expired_interval,
-                              BE_PTASK_OFFLINE_SKIP,
+                              30, 5, 0, ctx->domain->refresh_expired_interval,
+                              BE_PTASK_OFFLINE_SKIP, 0,
                               be_refresh_send, be_refresh_recv,
                               ctx->refresh_ctx, "Refresh Records", NULL);
         if (ret != EOK) {

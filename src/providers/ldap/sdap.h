@@ -231,6 +231,7 @@ enum sdap_basic_opt {
     SDAP_DISABLE_RANGE_RETRIEVAL,
     SDAP_MIN_ID,
     SDAP_MAX_ID,
+    SDAP_PWDLOCKOUT_DN,
 
     SDAP_OPTS_BASIC /* opts counter */
 };
@@ -256,7 +257,6 @@ enum sdap_user_attrs {
     SDAP_AT_USER_PRINC,
     SDAP_AT_USER_FULLNAME,
     SDAP_AT_USER_MEMBEROF,
-    SDAP_AT_USER_UUID,
     SDAP_AT_USER_OBJECTSID,
     SDAP_AT_USER_PRIMARY_GROUP,
     SDAP_AT_USER_MODSTAMP,
@@ -290,11 +290,11 @@ enum sdap_user_attrs {
  * Functions depend on this */
 enum sdap_group_attrs {
     SDAP_OC_GROUP = 0,
+    SDAP_OC_GROUP_ALT,
     SDAP_AT_GROUP_NAME,
     SDAP_AT_GROUP_PWD,
     SDAP_AT_GROUP_GID,
     SDAP_AT_GROUP_MEMBER,
-    SDAP_AT_GROUP_UUID,
     SDAP_AT_GROUP_OBJECTSID,
     SDAP_AT_GROUP_MODSTAMP,
     SDAP_AT_GROUP_USN,
@@ -308,7 +308,6 @@ enum sdap_netgroup_attrs {
     SDAP_AT_NETGROUP_NAME,
     SDAP_AT_NETGROUP_MEMBER,
     SDAP_AT_NETGROUP_TRIPLE,
-    SDAP_AT_NETGROUP_UUID,
     SDAP_AT_NETGROUP_MODSTAMP,
 
     SDAP_OPTS_NETGROUP /* attrs counter */
@@ -321,6 +320,7 @@ enum sdap_sudorule_attrs {
     SDAP_AT_SUDO_HOST,
     SDAP_AT_SUDO_USER,
     SDAP_AT_SUDO_OPTION,
+    SDAP_AT_SUDO_RUNAS,
     SDAP_AT_SUDO_RUNASUSER,
     SDAP_AT_SUDO_RUNASGROUP,
     SDAP_AT_SUDO_NOTBEFORE,
@@ -377,7 +377,8 @@ enum dc_functional_level {
     DS_BEHAVIOR_WIN2003 = 2,
     DS_BEHAVIOR_WIN2008 = 3,
     DS_BEHAVIOR_WIN2008R2 = 4,
-    DS_BEHAVIOR_WIN2012 = 5
+    DS_BEHAVIOR_WIN2012 = 5,
+    DS_BEHAVIOR_WIN2012R2 = 6
 };
 
 struct sdap_domain {
@@ -561,4 +562,6 @@ int sdap_get_server_opts_from_rootdse(TALLOC_CTX *memctx,
                                       struct sdap_server_opts **srv_opts);
 void sdap_steal_server_opts(struct sdap_id_ctx *id_ctx,
                             struct sdap_server_opts **srv_opts);
+
+char *sdap_make_oc_list(TALLOC_CTX *mem_ctx, struct sdap_attr_map *map);
 #endif /* _SDAP_H_ */

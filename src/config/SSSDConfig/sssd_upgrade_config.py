@@ -170,7 +170,6 @@ class SSSDConfigFile(SSSDChangeConf):
                     'ldap_user_gecos' : 'userGecos',
                     'ldap_user_home_directory' : 'userHomeDirectory',
                     'ldap_user_shell' : 'userShell',
-                    'ldap_user_uuid' : 'userUUID',
                     'ldap_user_principal' : 'userPrincipal',
                     'ldap_force_upper_case_realm' : 'force_upper_case_realm',
                     'ldap_user_fullname' : 'userFullname',
@@ -184,7 +183,6 @@ class SSSDConfigFile(SSSDChangeConf):
                     'ldap_group_pwd' : 'userPassword',
                     'ldap_group_gid_number' : 'groupGidNumber',
                     'ldap_group_member' : 'groupMember',
-                    'ldap_group_uuid' : 'groupUUID',
                     'ldap_group_modify_timestamp' : 'modifyTimestamp',
                     'ldap_network_timeout' : 'network_timeout',
                     'ldap_offline_timeout' : 'offline_timeout',
@@ -197,7 +195,6 @@ class SSSDConfigFile(SSSDChangeConf):
                     'ldap_netgroup_name' : 'netgroupName',
                     'ldap_netgroup_member' : 'netgroupMember',
                     'ldap_netgroup_triple' : 'netgroupTriple',
-                    'ldap_netgroup_uuid' : 'netgroupUUID',
                     'ldap_netgroup_modify_timestamp' : 'netgroupModifyTimestamp',
                    }
         krb5_kw = { 'krb5_server' : 'krb5KDCIP',

@@ -174,6 +174,26 @@ static void ifp_user_get_attr_process(struct tevent_req *req)
 }
 
 static errno_t
+ifp_user_get_attr_replace_space(TALLOC_CTX *mem_ctx,
+                                struct ldb_message_element *el,
+                                const char sub)
+{
+    int i;
+
+    for (i = 0; i < el->num_values; i++) {
+        el->values[i].data = (uint8_t *) sss_replace_space(mem_ctx,
+                                             (const char *) el->values[i].data,
+                                             sub);
+        if (el->values[i].data == NULL) {
+            DEBUG(SSSDBG_CRIT_FAILURE, "sss_replace_space failed, skipping\n");
+            return ENOMEM;
+        }
+    }
+
+    return EOK;
+}
+
+static errno_t
 ifp_user_get_attr_handle_reply(struct ifp_req *ireq,
                                const char **attrs, struct ldb_result *res)
 {
@@ -212,6 +232,18 @@ ifp_user_get_attr_handle_reply(struct ifp_req *ireq,
                       "Attribute %s not present or has no values\n",
                       attrs[ai]);
                 continue;
+            }
+
+            /* Normalize white space in user names */
+            if (ireq->ifp_ctx->rctx->override_space != '\0' &&
+                    strcmp(attrs[ai], SYSDB_NAME) == 0) {
+                ret = ifp_user_get_attr_replace_space(ireq, el,
+                                        ireq->ifp_ctx->rctx->override_space);
+                if (ret != EOK) {
+                    DEBUG(SSSDBG_MINOR_FAILURE, "Cannot normalize %s\n",
+                          attrs[ai]);
+                    continue;
+                }
             }
 
             ret = ifp_add_ldb_el_to_dict(&iter_dict, el);
@@ -343,8 +375,17 @@ ifp_user_get_groups_reply(struct ifp_req *ireq, struct ldb_result *res)
             continue;
         }
 
-        DEBUG(SSSDBG_TRACE_FUNC, "Adding group %s\n", name);
-        groupnames[i] = name;
+        if (ireq->ifp_ctx->rctx->override_space != '\0') {
+            groupnames[i] = sss_replace_space(groupnames, name,
+                                          ireq->ifp_ctx->rctx->override_space);
+            if (groupnames[i] == NULL) {
+                DEBUG(SSSDBG_MINOR_FAILURE, "Cannot normalize %s\n", name);
+                continue;
+            }
+        } else {
+            groupnames[i] = name;
+        }
+        DEBUG(SSSDBG_TRACE_FUNC, "Adding group %s\n", groupnames[i]);
     }
 
     return infopipe_iface_GetUserGroups_finish(ireq->dbus_req,
@@ -495,6 +536,14 @@ static errno_t ifp_user_get_attr_search(struct tevent_req *req)
         name = sss_get_cased_name(state, state->name, dom->case_sensitive);
         if (!name) return ENOMEM;
 
+        state->name = sss_reverse_replace_space(state, name,
+                                         state->rctx->override_space);
+        if (state->name == NULL) {
+            DEBUG(SSSDBG_CRIT_FAILURE,
+                  "sss_reverse_replace_space failed\n");
+            return ENOMEM;
+        }
+
         /* verify this user has not yet been negatively cached,
          * or has been permanently filtered */
         ret = sss_ncache_check_user(state->ncache,
@@ -643,7 +692,7 @@ int ifp_cache_check(struct ifp_user_get_attr_state *state,
         DEBUG(SSSDBG_TRACE_FUNC, "Performing midpoint cache update\n");
 
         req = sss_dp_get_account_send(state, state->rctx, state->dom, true,
-                                      search_type, state->inp, 0,
+                                      search_type, state->name, 0,
                                       NULL);
         if (req == NULL) {
             DEBUG(SSSDBG_CRIT_FAILURE,
@@ -667,7 +716,7 @@ int ifp_cache_check(struct ifp_user_get_attr_state *state,
         state->check_provider = false;
 
         req = sss_dp_get_account_send(state, state->rctx, state->dom, true,
-                                      search_type, state->inp, 0, NULL);
+                                      search_type, state->name, 0, NULL);
         if (req == NULL) {
             DEBUG(SSSDBG_CRIT_FAILURE,
                   "Out of memory sending data provider request\n");

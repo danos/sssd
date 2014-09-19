@@ -119,6 +119,7 @@ struct dp_option default_basic_opts[] = {
     { "ldap_disable_range_retrieval", DP_OPT_BOOL, BOOL_FALSE, BOOL_FALSE },
     { "ldap_min_id", DP_OPT_NUMBER, NULL_NUMBER, NULL_NUMBER},
     { "ldap_max_id", DP_OPT_NUMBER, NULL_NUMBER, NULL_NUMBER},
+    { "ldap_pwdlockout_dn", DP_OPT_STRING, NULL_STRING, NULL_STRING },
     DP_OPTION_TERMINATOR
 };
 
@@ -152,7 +153,6 @@ struct sdap_attr_map rfc2307_user_map[] = {
     { "ldap_user_principal", "krbPrincipalName", SYSDB_UPN, NULL },
     { "ldap_user_fullname", "cn", SYSDB_FULLNAME, NULL },
     { "ldap_user_member_of", NULL, SYSDB_MEMBEROF, NULL },
-    { "ldap_user_uuid", NULL, SYSDB_UUID, NULL },
     { "ldap_user_objectsid", NULL, SYSDB_SID, NULL },
     { "ldap_user_primary_group", NULL, SYSDB_PRIMARY_GROUP, NULL },
     { "ldap_user_modify_timestamp", "modifyTimestamp", SYSDB_ORIG_MODSTAMP, NULL },
@@ -181,11 +181,11 @@ struct sdap_attr_map rfc2307_user_map[] = {
 
 struct sdap_attr_map rfc2307_group_map[] = {
     { "ldap_group_object_class", "posixGroup", SYSDB_GROUP_CLASS, NULL },
+    { "ldap_group_object_class_alt", NULL, SYSDB_GROUP_CLASS, NULL },
     { "ldap_group_name", "cn", SYSDB_NAME, NULL },
     { "ldap_group_pwd", "userPassword", SYSDB_PWD, NULL },
     { "ldap_group_gid_number", "gidNumber", SYSDB_GIDNUM, NULL },
     { "ldap_group_member", "memberuid", SYSDB_MEMBER, NULL },
-    { "ldap_group_uuid", NULL, SYSDB_UUID, NULL },
     { "ldap_group_objectsid", NULL, SYSDB_SID, NULL },
     { "ldap_group_modify_timestamp", "modifyTimestamp", SYSDB_ORIG_MODSTAMP, NULL },
     { "ldap_group_entry_usn", NULL, SYSDB_USN, NULL },
@@ -205,8 +205,6 @@ struct sdap_attr_map rfc2307bis_user_map[] = {
     { "ldap_user_principal", "krbPrincipalName", SYSDB_UPN, NULL },
     { "ldap_user_fullname", "cn", SYSDB_FULLNAME, NULL },
     { "ldap_user_member_of", "memberOf", SYSDB_MEMBEROF, NULL },
-    /* FIXME: this is 389ds specific */
-    { "ldap_user_uuid", "nsUniqueId", SYSDB_UUID, NULL },
     { "ldap_user_objectsid", NULL, SYSDB_SID, NULL },
     { "ldap_user_primary_group", NULL, SYSDB_PRIMARY_GROUP, NULL },
     { "ldap_user_modify_timestamp", "modifyTimestamp", SYSDB_ORIG_MODSTAMP, NULL },
@@ -235,12 +233,11 @@ struct sdap_attr_map rfc2307bis_user_map[] = {
 
 struct sdap_attr_map rfc2307bis_group_map[] = {
     { "ldap_group_object_class", "posixGroup", SYSDB_GROUP_CLASS, NULL },
+    { "ldap_group_object_class_alt", NULL, SYSDB_GROUP_CLASS, NULL },
     { "ldap_group_name", "cn", SYSDB_NAME, NULL },
     { "ldap_group_pwd", "userPassword", SYSDB_PWD, NULL },
     { "ldap_group_gid_number", "gidNumber", SYSDB_GIDNUM, NULL },
     { "ldap_group_member", "member", SYSDB_MEMBER, NULL },
-    /* FIXME: this is 389ds specific */
-    { "ldap_group_uuid", "nsUniqueId", SYSDB_UUID, NULL },
     { "ldap_group_objectsid", NULL, SYSDB_SID, NULL },
     { "ldap_group_modify_timestamp", "modifyTimestamp", SYSDB_ORIG_MODSTAMP, NULL },
     { "ldap_group_entry_usn", NULL, SYSDB_USN, NULL },
@@ -260,7 +257,6 @@ struct sdap_attr_map gen_ad2008r2_user_map[] = {
     { "ldap_user_principal", "userPrincipalName", SYSDB_UPN, NULL },
     { "ldap_user_fullname", "name", SYSDB_FULLNAME, NULL },
     { "ldap_user_member_of", "memberOf", SYSDB_MEMBEROF, NULL },
-    { "ldap_user_uuid", "objectGUID", SYSDB_UUID, NULL },
     { "ldap_user_objectsid", "objectSID", SYSDB_SID, NULL },
     { "ldap_user_primary_group", "primaryGroupID", SYSDB_PRIMARY_GROUP, NULL },
     { "ldap_user_modify_timestamp", "whenChanged", SYSDB_ORIG_MODSTAMP, NULL },
@@ -289,11 +285,11 @@ struct sdap_attr_map gen_ad2008r2_user_map[] = {
 
 struct sdap_attr_map gen_ad2008r2_group_map[] = {
     { "ldap_group_object_class", "group", SYSDB_GROUP_CLASS, NULL },
+    { "ldap_group_object_class_alt", NULL, SYSDB_GROUP_CLASS, NULL },
     { "ldap_group_name", "name", SYSDB_NAME, NULL },
     { "ldap_group_pwd", NULL, SYSDB_PWD, NULL },
     { "ldap_group_gid_number", "gidNumber", SYSDB_GIDNUM, NULL },
     { "ldap_group_member", "member", SYSDB_MEMBER, NULL },
-    { "ldap_group_uuid", "objectGUID", SYSDB_UUID, NULL },
     { "ldap_group_objectsid", "objectSID", SYSDB_SID, NULL },
     { "ldap_group_modify_timestamp", "whenChanged", SYSDB_ORIG_MODSTAMP, NULL },
     { "ldap_group_entry_usn", SDAP_AD_USN, SYSDB_USN, NULL },
@@ -306,8 +302,6 @@ struct sdap_attr_map netgroup_map[] = {
     { "ldap_netgroup_name", "cn", SYSDB_NAME, NULL },
     { "ldap_netgroup_member", "memberNisNetgroup", SYSDB_ORIG_NETGROUP_MEMBER, NULL },
     { "ldap_netgroup_triple", "nisNetgroupTriple", SYSDB_NETGROUP_TRIPLE, NULL },
-    /* FIXME: this is 389ds specific */
-    { "ldap_netgroup_uuid", "nsUniqueId", SYSDB_UUID, NULL },
     { "ldap_netgroup_modify_timestamp", "modifyTimestamp", SYSDB_ORIG_MODSTAMP, NULL },
     SDAP_ATTR_MAP_TERMINATOR
 };
@@ -319,6 +313,7 @@ struct sdap_attr_map native_sudorule_map[] = {
     { "ldap_sudorule_host", "sudoHost", SYSDB_SUDO_CACHE_AT_HOST, NULL },
     { "ldap_sudorule_user", "sudoUser", SYSDB_SUDO_CACHE_AT_USER, NULL },
     { "ldap_sudorule_option", "sudoOption", SYSDB_SUDO_CACHE_AT_OPTION, NULL },
+    { "ldap_sudorule_runas", "sudoRunAs", SYSDB_SUDO_CACHE_AT_RUNAS, NULL },
     { "ldap_sudorule_runasuser", "sudoRunAsUser", SYSDB_SUDO_CACHE_AT_RUNASUSER, NULL },
     { "ldap_sudorule_runasgroup", "sudoRunAsGroup", SYSDB_SUDO_CACHE_AT_RUNASGROUP, NULL },
     { "ldap_sudorule_notbefore", "sudoNotBefore", SYSDB_SUDO_CACHE_AT_NOTBEFORE, NULL },

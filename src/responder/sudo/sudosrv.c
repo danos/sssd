@@ -38,6 +38,7 @@ struct mon_cli_iface monitor_sudo_methods = {
     .rotateLogs = responder_logrotate,
     .clearMemcache = NULL,
     .clearEnumCache = NULL,
+    .sysbusReconnect = NULL,
 };
 
 static struct data_provider_iface sudo_dp_methods = {
@@ -130,8 +131,6 @@ int sudo_process_init(TALLOC_CTX *mem_ctx,
         sbus_reconnect_init(iter->conn, max_retries,
                             sudo_dp_reconnect_init, iter);
     }
-
-    /* Get responder options */
 
     /* Get sudo_timed option */
     ret = confdb_get_bool(sudo_ctx->rctx->cdb,

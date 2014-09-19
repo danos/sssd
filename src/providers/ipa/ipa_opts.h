@@ -153,6 +153,7 @@ struct dp_option ipa_def_ldap_opts[] = {
     { "ldap_disable_range_retrieval", DP_OPT_BOOL, BOOL_FALSE, BOOL_FALSE },
     { "ldap_min_id", DP_OPT_NUMBER, NULL_NUMBER, NULL_NUMBER},
     { "ldap_max_id", DP_OPT_NUMBER, NULL_NUMBER, NULL_NUMBER},
+    { "ldap_pwdlockout_dn", DP_OPT_STRING, NULL_STRING, NULL_STRING },
     DP_OPTION_TERMINATOR
 };
 
@@ -174,7 +175,6 @@ struct sdap_attr_map ipa_user_map[] = {
     { "ldap_user_principal", "krbPrincipalName", SYSDB_UPN, NULL },
     { "ldap_user_fullname", "cn", SYSDB_FULLNAME, NULL },
     { "ldap_user_member_of", "memberOf", SYSDB_MEMBEROF, NULL },
-    { "ldap_user_uuid", "nsUniqueId", SYSDB_UUID, NULL },
     { "ldap_user_objectsid", "ipaNTSecurityIdentifier", SYSDB_SID_STR, NULL },
     { "ldap_user_primary_group", NULL, SYSDB_PRIMARY_GROUP, NULL },
     { "ldap_user_modify_timestamp", "modifyTimestamp", SYSDB_ORIG_MODSTAMP, NULL },
@@ -202,12 +202,12 @@ struct sdap_attr_map ipa_user_map[] = {
 };
 
 struct sdap_attr_map ipa_group_map[] = {
-    { "ldap_group_object_class", "posixGroup", SYSDB_GROUP_CLASS, NULL },
+    { "ldap_group_object_class", "groupOfNames", SYSDB_GROUP_CLASS, NULL },
+    { "ldap_group_object_class_alt", "posixGroup", SYSDB_GROUP_CLASS, NULL },
     { "ldap_group_name", "cn", SYSDB_NAME, NULL },
     { "ldap_group_pwd", "userPassword", SYSDB_PWD, NULL },
     { "ldap_group_gid_number", "gidNumber", SYSDB_GIDNUM, NULL },
     { "ldap_group_member", "member", SYSDB_MEMBER, NULL },
-    { "ldap_group_uuid", "nsUniqueId", SYSDB_UUID, NULL },
     { "ldap_group_objectsid", "ipaNTSecurityIdentifier", SYSDB_SID_STR, NULL },
     { "ldap_group_modify_timestamp", "modifyTimestamp", SYSDB_ORIG_MODSTAMP, NULL },
     { "ldap_group_entry_usn", NULL, SYSDB_USN, NULL },

@@ -368,6 +368,7 @@ struct tevent_req *sdap_initgr_rfc2307_send(TALLOC_CTX *memctx,
     const char **attr_filter;
     char *clean_name;
     errno_t ret;
+    char *oc_list;
 
     req = tevent_req_create(memctx, &state, struct sdap_initgr_rfc2307_state);
     if (!req) return NULL;
@@ -419,11 +420,17 @@ struct tevent_req *sdap_initgr_rfc2307_send(TALLOC_CTX *memctx,
         return NULL;
     }
 
+    oc_list = sdap_make_oc_list(state, opts->group_map);
+    if (oc_list == NULL) {
+        DEBUG(SSSDBG_CRIT_FAILURE, "Failed to create objectClass list.\n");
+        ret = ENOMEM;
+        goto done;
+    }
+
     state->base_filter = talloc_asprintf(state,
-                             "(&(%s=%s)(objectclass=%s)(%s=*)(&(%s=*)(!(%s=0))))",
+                             "(&(%s=%s)(%s)(%s=*)(&(%s=*)(!(%s=0))))",
                              opts->group_map[SDAP_AT_GROUP_MEMBER].name,
-                             clean_name,
-                             opts->group_map[SDAP_OC_GROUP].name,
+                             clean_name, oc_list,
                              opts->group_map[SDAP_AT_GROUP_NAME].name,
                              opts->group_map[SDAP_AT_GROUP_GID].name,
                              opts->group_map[SDAP_AT_GROUP_GID].name);
@@ -805,6 +812,7 @@ static errno_t sdap_initgr_nested_noderef_search(struct tevent_req *req)
     int i;
     struct tevent_req *subreq;
     struct sdap_initgr_nested_state *state;
+    char *oc_list;
 
     state = tevent_req_data(req, struct sdap_initgr_nested_state);
 
@@ -823,8 +831,13 @@ static errno_t sdap_initgr_nested_noderef_search(struct tevent_req *req)
     state->group_dns[i] = NULL; /* terminate */
     state->cur = 0;
 
-    state->filter = talloc_asprintf(state, "(&(objectclass=%s)(%s=*))",
-                            state->opts->group_map[SDAP_OC_GROUP].name,
+    oc_list = sdap_make_oc_list(state, state->opts->group_map);
+    if (oc_list == NULL) {
+        DEBUG(SSSDBG_CRIT_FAILURE, "Failed to create objectClass list.\n");
+        return ENOMEM;
+    }
+
+    state->filter = talloc_asprintf(state, "(&(%s)(%s=*))", oc_list,
                             state->opts->group_map[SDAP_AT_GROUP_NAME].name);
     if (!state->filter) {
         return ENOMEM;
@@ -962,7 +975,7 @@ static void sdap_initgr_nested_search(struct tevent_req *subreq)
     } else {
         DEBUG(SSSDBG_OP_FAILURE,
               "Search for group %s, returned %zu results. Skipping\n",
-               state->group_dns[state->cur], count);
+              state->group_dns[state->cur], count);
     }
 
     state->cur++;
@@ -1515,6 +1528,7 @@ static struct tevent_req *sdap_initgr_rfc2307bis_send(
     const char **attr_filter;
     char *clean_orig_dn;
     bool use_id_mapping;
+    char *oc_list;
 
     req = tevent_req_create(memctx, &state, struct sdap_initgr_rfc2307bis_state);
     if (!req) return NULL;
@@ -1567,11 +1581,18 @@ static struct tevent_req *sdap_initgr_rfc2307bis_send(
                                                         sdom->dom->name,
                                                         sdom->dom->domain_id);
 
+    oc_list = sdap_make_oc_list(state, opts->group_map);
+    if (oc_list == NULL) {
+        DEBUG(SSSDBG_CRIT_FAILURE, "Failed to create objectClass list.\n");
+        ret = ENOMEM;
+        goto done;
+    }
+
     state->base_filter =
-            talloc_asprintf(state, "(&(%s=%s)(objectclass=%s)(%s=*)",
+            talloc_asprintf(state,
+                            "(&(%s=%s)(%s)(%s=*)",
                             opts->group_map[SDAP_AT_GROUP_MEMBER].name,
-                            clean_orig_dn,
-                            opts->group_map[SDAP_OC_GROUP].name,
+                            clean_orig_dn, oc_list,
                             opts->group_map[SDAP_AT_GROUP_NAME].name);
     if (!state->base_filter) {
         ret = ENOMEM;
@@ -1587,11 +1608,7 @@ static struct tevent_req *sdap_initgr_rfc2307bis_send(
                                         "(%s=*))",
                                         opts->group_map[SDAP_AT_GROUP_OBJECTSID].name);
     } else {
-        /* When not ID-mapping, make sure there is a non-NULL UID */
-        state->base_filter = talloc_asprintf_append(state->base_filter,
-                                        "(&(%s=*)(!(%s=0))))",
-                                        opts->group_map[SDAP_AT_GROUP_GID].name,
-                                        opts->group_map[SDAP_AT_GROUP_GID].name);
+        state->base_filter = talloc_asprintf_append(state->base_filter, ")");
     }
     if (!state->base_filter) {
         talloc_zfree(req);
@@ -2270,6 +2287,7 @@ static errno_t rfc2307bis_nested_groups_step(struct tevent_req *req)
     hash_value_t value;
     struct sdap_rfc2307bis_nested_ctx *state =
             tevent_req_data(req, struct sdap_rfc2307bis_nested_ctx);
+    char *oc_list;
 
     tmp_ctx = talloc_new(state);
     if (!tmp_ctx) {
@@ -2346,11 +2364,17 @@ static errno_t rfc2307bis_nested_groups_step(struct tevent_req *req)
         goto done;
     }
 
+    oc_list = sdap_make_oc_list(state, state->opts->group_map);
+    if (oc_list == NULL) {
+        DEBUG(SSSDBG_CRIT_FAILURE, "Failed to create objectClass list.\n");
+        ret = ENOMEM;
+        goto done;
+    }
+
     state->base_filter = talloc_asprintf(
-            state, "(&(%s=%s)(objectclass=%s)(%s=*))",
+            state, "(&(%s=%s)(%s)(%s=*))",
             state->opts->group_map[SDAP_AT_GROUP_MEMBER].name,
-            clean_orig_dn,
-            state->opts->group_map[SDAP_OC_GROUP].name,
+            clean_orig_dn, oc_list,
             state->opts->group_map[SDAP_AT_GROUP_NAME].name);
     if (!state->base_filter) {
         ret = ENOMEM;
@@ -2924,7 +2948,7 @@ static void sdap_get_initgr_user(struct tevent_req *subreq)
             return;
         }
 
-        if (state->opts->dc_functional_level >= DS_BEHAVIOR_WIN2008
+        if (state->opts->dc_functional_level >= DS_BEHAVIOR_WIN2003
             && dp_opt_get_bool(state->opts->basic, SDAP_AD_USE_TOKENGROUPS)) {
             /* Take advantage of AD's tokenGroups mechanism to look up all
              * parent groups in a single request.
@@ -3025,7 +3049,7 @@ static void sdap_get_initgr_done(struct tevent_req *subreq)
 
     case SDAP_SCHEMA_RFC2307BIS:
     case SDAP_SCHEMA_AD:
-        if (state->opts->dc_functional_level >= DS_BEHAVIOR_WIN2008
+        if (state->opts->dc_functional_level >= DS_BEHAVIOR_WIN2003
             && dp_opt_get_bool(state->opts->basic, SDAP_AD_USE_TOKENGROUPS)) {
 
             ret = sdap_ad_tokengroups_initgroups_recv(subreq);

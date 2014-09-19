@@ -47,6 +47,8 @@ enum mock_nsupdate_states {
     MOCK_NSUPDATE_TIMEOUT,
 };
 
+static TALLOC_CTX *global_mock_context = NULL;
+
 struct dyndns_test_ctx {
     struct sss_test_ctx *tctx;
 
@@ -103,7 +105,7 @@ int __wrap_getifaddrs(struct ifaddrs **_ifap)
             goto fail;
         }
 
-        ifap = talloc_zero(global_talloc_context, struct ifaddrs);
+        ifap = talloc_zero(global_mock_context, struct ifaddrs);
         if (ifap == NULL) {
             errno = ENOMEM;    /* getifaddrs sets errno, too */
             goto fail;
@@ -190,10 +192,54 @@ void dyndns_test_get_ifaddr(void **state)
 
     assert_non_null(inet_ntop(AF_INET,
                               &((struct sockaddr_in *) addrlist->addr)->sin_addr,
-                              straddr, INET6_ADDRSTRLEN));
+                              straddr, INET_ADDRSTRLEN));
     assert_string_equal(straddr, "192.168.0.1");
 
     talloc_free(addrlist);
+
+    assert_true(check_leaks_pop(dyndns_test_ctx) == true);
+}
+
+void dyndns_test_get_multi_ifaddr(void **state)
+{
+    errno_t ret;
+    struct sss_iface_addr *addrlist;
+    struct sss_iface_addr *sss_if_addr;
+    char straddr[128];
+
+    check_leaks_push(dyndns_test_ctx);
+    will_return_getifaddrs("eth0", "192.168.0.2");
+    will_return_getifaddrs("eth0", "192.168.0.1");
+    will_return_getifaddrs(NULL, NULL); /* sentinel */
+    ret = sss_iface_addr_list_get(dyndns_test_ctx, "eth0", &addrlist);
+    assert_int_equal(ret, EOK);
+
+    sss_if_addr = addrlist;
+    assert_non_null(sss_if_addr);
+    assert_non_null(sss_if_addr->addr);
+    assert_non_null(sss_if_addr->next);
+    assert_null(sss_if_addr->prev);
+
+    assert_non_null(inet_ntop(AF_INET,
+                              &((struct sockaddr_in *) sss_if_addr->addr)->sin_addr,
+                              straddr, INET_ADDRSTRLEN));
+    /* ip addresses are returned in different order */
+    assert_string_equal(straddr, "192.168.0.1");
+
+    sss_if_addr = addrlist->next;
+    assert_non_null(sss_if_addr);
+    assert_non_null(sss_if_addr->addr);
+    assert_null(sss_if_addr->next);
+    assert_non_null(sss_if_addr->prev);
+
+    assert_non_null(inet_ntop(AF_INET,
+                              &((struct sockaddr_in *) sss_if_addr->addr)->sin_addr,
+                              straddr, INET_ADDRSTRLEN));
+    /* ip addresses are returned in different order */
+    assert_string_equal(straddr, "192.168.0.2");
+
+    talloc_free(addrlist);
+
     assert_true(check_leaks_pop(dyndns_test_ctx) == true);
 }
 
@@ -352,6 +398,9 @@ void dyndns_test_setup(void **state)
     };
 
     assert_true(leak_check_setup());
+    global_mock_context = talloc_new(global_talloc_context);
+    assert_non_null(global_mock_context);
+
     dyndns_test_ctx = talloc_zero(global_talloc_context, struct dyndns_test_ctx);
     assert_non_null(dyndns_test_ctx);
 
@@ -372,9 +421,20 @@ void dyndns_test_setup(void **state)
     assert_non_null(dyndns_test_ctx->be_ctx->conf_path);
 }
 
+void dyndns_test_simple_setup(void **state)
+{
+    assert_true(leak_check_setup());
+    global_mock_context = talloc_new(global_talloc_context);
+    assert_non_null(global_mock_context);
+
+    dyndns_test_ctx = talloc_zero(global_talloc_context, struct dyndns_test_ctx);
+    assert_non_null(dyndns_test_ctx);
+}
+
 void dyndns_test_teardown(void **state)
 {
     talloc_free(dyndns_test_ctx);
+    talloc_free(global_mock_context);
     assert_true(leak_check_teardown());
 }
 
@@ -394,7 +454,12 @@ int main(int argc, const char *argv[])
 
     const UnitTest tests[] = {
         /* Utility functions unit test */
-        unit_test(dyndns_test_get_ifaddr),
+        unit_test_setup_teardown(dyndns_test_get_ifaddr,
+                                 dyndns_test_simple_setup,
+                                 dyndns_test_teardown),
+        unit_test_setup_teardown(dyndns_test_get_multi_ifaddr,
+                                 dyndns_test_simple_setup,
+                                 dyndns_test_teardown),
 
         /* Dynamic DNS update unit tests*/
         unit_test_setup_teardown(dyndns_test_ok,

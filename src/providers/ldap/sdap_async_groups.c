@@ -191,6 +191,49 @@ sdap_dn_by_primary_gid(TALLOC_CTX *mem_ctx, struct sysdb_attrs *ldap_attrs,
     return EOK;
 }
 
+static bool has_member(struct ldb_message_element *member_el,
+                       char *member)
+{
+    struct ldb_val val;
+
+    val.data = (uint8_t *) member;
+    val.length = strlen(member);
+
+    /* This is bad complexity, but the this loop should only be invoked in
+     * the very rare scenario of AD POSIX group that is primary group of
+     * some users but has user member attributes at the same time
+     */
+    if (ldb_msg_find_val(member_el, &val) != NULL) {
+        return true;
+    }
+
+    return false;
+}
+
+static void link_pgroup_members(struct sysdb_attrs *group_attrs,
+                                struct ldb_message_element *member_el,
+                                char **userdns,
+                                size_t nuserdns)
+{
+    int i, j;
+
+    j = 0;
+    for (i=0; i < nuserdns; i++) {
+        if (has_member(member_el, userdns[i])) {
+            DEBUG(SSSDBG_TRACE_INTERNAL,
+                  "Member %s already included, skipping\n", userdns[i]);
+            continue;
+        }
+
+        member_el->values[member_el->num_values + j].data = (uint8_t *) \
+                                         talloc_steal(group_attrs, userdns[i]);
+        member_el->values[member_el->num_values + j].length = \
+                                         strlen(userdns[i]);
+        j++;
+    }
+    member_el->num_values += j;
+}
+
 static int sdap_fill_memberships(struct sdap_options *opts,
                                  struct sysdb_attrs *group_attrs,
                                  struct sysdb_ctx *ctx,
@@ -285,13 +328,7 @@ static int sdap_fill_memberships(struct sdap_options *opts,
     }
     el->num_values = j;
 
-    for (i=0; i < nuserdns; i++) {
-        el->values[el->num_values + i].data = (uint8_t *) \
-                                          talloc_steal(group_attrs, userdns[i]);
-        el->values[el->num_values + i].length = strlen(userdns[i]);
-    }
-    el->num_values += nuserdns;
-
+    link_pgroup_members(group_attrs, el, userdns, nuserdns);
     ret = EOK;
 
 done:
@@ -515,7 +552,8 @@ static int sdap_save_group(TALLOC_CTX *memctx,
     /* If this object has a SID available, we will determine the correct
      * domain by its SID. */
     if (sid_str != NULL) {
-        subdomain = find_subdomain_by_sid(get_domains_head(dom), sid_str);
+        subdomain = sss_get_domain_by_sid_ldap_fallback(get_domains_head(dom),
+                                                        sid_str);
         if (subdomain) {
             dom = subdomain;
         } else {
@@ -539,7 +577,7 @@ static int sdap_save_group(TALLOC_CTX *memctx,
             goto done;
         }
 
-        DEBUG(SSSDBG_TRACE_ALL, "AD group [%s] has type flags %#x.",
+        DEBUG(SSSDBG_TRACE_ALL, "AD group [%s] has type flags %#x.\n",
                                  group_name, ad_group_type);
         /* Only security groups from AD are considered for POSIX groups.
          * Additionally only global and universal group are taken to account

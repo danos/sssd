@@ -108,6 +108,14 @@ static errno_t sudosrv_get_user(struct sudo_dom_ctx *dctx)
             goto done;
         }
 
+        name = sss_reverse_replace_space(tmp_ctx, name,
+                                         cmd_ctx->sudo_ctx->rctx->override_space);
+        if (name == NULL) {
+            DEBUG(SSSDBG_CRIT_FAILURE,
+                  "sss_reverse_replace_whitespaces failed\n");
+            return ENOMEM;
+        }
+
         DEBUG(SSSDBG_FUNC_DATA, "Requesting info about [%s@%s]\n",
               name, dom->name);
 
@@ -539,6 +547,7 @@ static errno_t sudosrv_get_sudorules_from_cache(TALLOC_CTX *mem_ctx,
                             SYSDB_SUDO_CACHE_AT_HOST,
                             SYSDB_SUDO_CACHE_AT_COMMAND,
                             SYSDB_SUDO_CACHE_AT_OPTION,
+                            SYSDB_SUDO_CACHE_AT_RUNAS,
                             SYSDB_SUDO_CACHE_AT_RUNASUSER,
                             SYSDB_SUDO_CACHE_AT_RUNASGROUP,
                             SYSDB_SUDO_CACHE_AT_NOTBEFORE,

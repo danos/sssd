@@ -24,6 +24,7 @@
 
 #include "tests/cmocka/common_mock.h"
 #include "util/sss_nss.h"
+#include "test_utils.h"
 
 #define DOM_COUNT 10
 #define DOMNAME_TMPL "name_%zu.dom"
@@ -47,6 +48,7 @@ struct dom_list_test_ctx {
     size_t dom_count;
     struct sss_domain_info *dom_list;
 };
+
 
 void setup_dom_list(void **state)
 {
@@ -422,6 +424,9 @@ int main(int argc, const char *argv[])
         unit_test(test_expand_homedir_template_NULL),
         unit_test_setup_teardown(test_expand_homedir_template,
                                  setup_homedir_ctx, teardown_homedir_ctx),
+        unit_test(test_textual_public_key),
+        unit_test(test_replace_whitespaces),
+        unit_test(test_reverse_replace_whitespaces),
     };
 
     /* Set debug level to invalid value so we can deside if -d 0 was used. */

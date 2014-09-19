@@ -290,6 +290,8 @@ int sdap_get_map(TALLOC_CTX *memctx,
 
 /* =Parse-msg============================================================= */
 
+static bool objectclass_matched(struct sdap_attr_map *map,
+                                const char *objcl, int len);
 int sdap_parse_entry(TALLOC_CTX *memctx,
                      struct sdap_handle *sh, struct sdap_msg *sm,
                      struct sdap_attr_map *map, int attrs_num,
@@ -357,9 +359,7 @@ int sdap_parse_entry(TALLOC_CTX *memctx,
         }
 
         for (i = 0; vals[i]; i++) {
-            /* the objectclass is always the first name in the map */
-            if (strncasecmp(map[0].name,
-                            vals[i]->bv_val, vals[i]->bv_len) == 0) {
+            if (objectclass_matched(map, vals[i]->bv_val, vals[i]->bv_len)) {
                 /* ok it's an entry of the right type */
                 break;
             }
@@ -511,6 +511,25 @@ done:
     return ret;
 }
 
+static bool objectclass_matched(struct sdap_attr_map *map,
+                                const char *objcl, int len)
+{
+    if (len == 0) {
+        len = strlen(objcl) + 1;
+    }
+
+    if (strncasecmp(map[SDAP_OC_GROUP].name, objcl, len) == 0) {
+        return true;
+    }
+
+    if (map[SDAP_OC_GROUP_ALT].name != NULL
+        && strncasecmp(map[SDAP_OC_GROUP_ALT].name, objcl, len) == 0) {
+        return true;
+    }
+
+    return false;
+}
+
 /* Parses an LDAPDerefRes into sdap_deref_attrs structure */
 errno_t sdap_parse_deref(TALLOC_CTX *mem_ctx,
                          struct sdap_attr_map_info *minfo,
@@ -561,10 +580,11 @@ errno_t sdap_parse_deref(TALLOC_CTX *mem_ctx,
           "Dereferenced DN: %s\n", orig_dn);
 
     if (!dref->attrVals) {
-        DEBUG(SSSDBG_MINOR_FAILURE,
-              "Dereferenced entry [%s] has no attributes\n",
+        DEBUG(SSSDBG_FUNC_DATA,
+              "Dereferenced entry [%s] has no attributes, skipping\n",
               orig_dn);
-        ret = EINVAL;
+        *_res = NULL;
+        ret = EOK;
         goto done;
     }
 
@@ -610,7 +630,7 @@ errno_t sdap_parse_deref(TALLOC_CTX *mem_ctx,
 
         for (i=0; ocs[i]; i++) {
             /* the objectclass is always the first name in the map */
-            if (strcasecmp(minfo[mi].map[0].name, ocs[i]) == 0) {
+            if (objectclass_matched(minfo[mi].map, ocs[i], 0)) {
                 DEBUG(SSSDBG_TRACE_ALL,
                       "Found map for objectclass '%s'\n", ocs[i]);
                 map = minfo[mi].map;
@@ -1199,6 +1219,7 @@ int sdap_get_server_opts_from_rootdse(TALLOC_CTX *memctx,
             case DS_BEHAVIOR_WIN2008:
             case DS_BEHAVIOR_WIN2008R2:
             case DS_BEHAVIOR_WIN2012:
+            case DS_BEHAVIOR_WIN2012R2:
                 opts->dc_functional_level = dc_level;
                 DEBUG(SSSDBG_CONF_SETTINGS,
                       "Setting AD compatibility level to [%d]\n",
@@ -1207,7 +1228,8 @@ int sdap_get_server_opts_from_rootdse(TALLOC_CTX *memctx,
             default:
                 DEBUG(SSSDBG_MINOR_FAILURE,
                       "Received invalid value for AD compatibility level. "
-                       "Continuing without AD performance enhancements\n");
+                      "Using the lowest-common compatibility level\n");
+                opts->dc_functional_level = DS_BEHAVIOR_WIN2003;
             }
         } else if (ret != ENOENT) {
             DEBUG(SSSDBG_MINOR_FAILURE,
@@ -1457,4 +1479,17 @@ errno_t sdap_get_netgroup_primary_name(TALLOC_CTX *memctx,
     return sdap_get_primary_name(memctx,
                                  opts->netgroup_map[SDAP_AT_NETGROUP_NAME].name,
                                  attrs, dom, _netgroup_name);
+}
+
+char *sdap_make_oc_list(TALLOC_CTX *mem_ctx, struct sdap_attr_map *map)
+{
+    if (map[SDAP_OC_GROUP_ALT].name == NULL) {
+        return talloc_asprintf(mem_ctx, "objectClass=%s",
+                               map[SDAP_OC_GROUP].name);
+    } else {
+        return talloc_asprintf(mem_ctx,
+                               "|(objectClass=%s)(objectClass=%s)",
+                               map[SDAP_OC_GROUP].name,
+                               map[SDAP_OC_GROUP_ALT].name);
+    }
 }
