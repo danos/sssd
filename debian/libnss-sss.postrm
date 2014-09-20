@@ -17,7 +17,7 @@ remove_nss_entry() {
         return
     fi
     sed -i --regexp-extended '
-      /^(passwd|group|shadow|netgroup):/ {
+      /^(passwd|group|shadow|netgroup|services):/ {
         s/\bsss\b//g
         s/[[:space:]]+$//
       }

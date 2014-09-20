@@ -1,9 +1,11 @@
-sssd (1.11.7-1) debian; urgency=medium
+sssd (1.11.7-1) UNRELEASED; urgency=medium
 
   * New upstream release.
   * sssd-common.install, sssd-dbus.install: Add new sss_signal helper
     and the dbus service using it.
   * fix-obsolete-target.diff: Drop syslog.target from the service file.
+  * libnss-sss.post*: Add sss entry to shadow and services on
+    nsswitch.conf. (Closes: #761173)
 
  -- Timo Aaltonen <tjaalton@debian.org>  Fri, 19 Sep 2014 16:04:59 +0300
 
