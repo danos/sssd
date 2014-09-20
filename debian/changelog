@@ -1,3 +1,11 @@
+sssd (1.11.7-1) UNRELEASED; urgency=medium
+
+  * New upstream release.
+  * sssd-common.install, sssd-dbus.install: Add new sss_signal helper
+    and the dbus service using it.
+
+ -- Timo Aaltonen <tjaalton@debian.org>  Fri, 19 Sep 2014 16:04:59 +0300
+
 sssd (1.11.6-1) unstable; urgency=medium
 
   * New upstream release.

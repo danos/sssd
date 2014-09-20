@@ -11,6 +11,7 @@ usr/lib/*/sssd/libsss_ldap_common.so
 usr/lib/*/sssd/libsss_simple.so
 usr/lib/*/sssd/libsss_util.so
 usr/lib/*/sssd/modules/libsss_autofs.so
+usr/lib/*/sssd/sss_signal
 usr/lib/*/sssd/sssd_autofs
 usr/lib/*/sssd/sssd_be
 usr/lib/*/sssd/sssd_nss
