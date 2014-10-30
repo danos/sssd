@@ -44,7 +44,7 @@ Build-Depends:
  lsb-release,
  python-dev (>= 2.6.6-3~),
  quilt,
- samba-dev,
+ samba-dev (>= 2:4.1.13),
  xml-core,
  xsltproc
 Standards-Version: 3.9.5
