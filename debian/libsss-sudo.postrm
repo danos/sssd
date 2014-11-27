@@ -22,6 +22,11 @@ remove_nss_entry() {
         s/[[:space:]]+$//
       }
     ' /etc/nsswitch.conf
+
+    # delete sudoers line if only default entry left"
+    if ! [ -z "grep \"^sudoers:        files$\" /etc/nsswitch.conf" ]; then
+        sed -i /^sudoers:/d /etc/nsswitch.conf
+    fi
 }
 
 case "$1" in
