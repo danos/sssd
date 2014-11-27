@@ -2,6 +2,7 @@ sssd (1.11.7-3) UNRELEASED; urgency=medium
 
   * libsss-sudo.postrm: Delete sudoers line from nsswitch.conf, if only
     files source left. (Closes: #749722)
+  * libsss-sudo.postinst: Fix comments.
 
  -- Timo Aaltonen <tjaalton@debian.org>  Thu, 27 Nov 2014 15:59:43 +0200
 
