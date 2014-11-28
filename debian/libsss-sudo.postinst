@@ -47,20 +47,7 @@ insert_nss_entry() {
     fi
 }
 
-action="$1"
+insert_nss_entry
 
-if [ configure = "$action" ]; then
-    if [ -z "$2" ]; then
-        log "First installation detected..."
-        # first install: setup the recommended configuration (unless
-        # nsswitch.conf already contains sss entries)
-        insert_nss_entry
-    else
-        # upgrade
-        version="$2"
-
-        # Nothing to do here yet
-    fi
-fi
 
 exit 0
