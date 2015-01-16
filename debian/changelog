@@ -1,4 +1,4 @@
-sssd (1.11.7-3) UNRELEASED; urgency=medium
+sssd (1.11.7-3) unstable; urgency=medium
 
   * libsss-sudo.postrm: Delete sudoers line from nsswitch.conf, if only
     files source left. (Closes: #749722)
@@ -6,7 +6,7 @@ sssd (1.11.7-3) UNRELEASED; urgency=medium
   * libsss-sudo.postinst: Check nsswitch sudoers entry unconditionally,
     so that it is added on upgrade too if missing.
 
- -- Timo Aaltonen <tjaalton@debian.org>  Thu, 27 Nov 2014 15:59:43 +0200
+ -- Timo Aaltonen <tjaalton@debian.org>  Fri, 16 Jan 2015 13:53:22 +0200
 
 sssd (1.11.7-2) unstable; urgency=medium
 
