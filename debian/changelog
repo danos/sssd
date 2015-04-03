@@ -2,6 +2,8 @@ sssd (1.12.4-1) UNRELEASED; urgency=medium
 
   * New upstream release.
   * apparmor-profile: Updated. (LP: #1421110)
+  * control: Add new build-depends; cifs-utils, libaugeas-dev,
+    libsmbclient-dev, systemd.
 
  -- Timo Aaltonen <tjaalton@debian.org>  Fri, 03 Apr 2015 08:54:53 +0300
 
