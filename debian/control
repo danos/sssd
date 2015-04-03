@@ -302,6 +302,23 @@ Description: Communicator library for sudo
  Utility library to allow communication between sudo and SSSD for caching
  sudo rules by SSSD.
 
+Package: libwbclient-sssd
+Section: libs
+Architecture: any
+Depends: ${misc:Depends}, ${shlibs:Depends}
+Description: SSSD libwbclient implementation
+ The SSSD libwbclient implementation
+
+Package: libwbclient-sssd-dev
+Section: libdevel
+Architecture: any
+Depends: libwbclient-sssd (= ${binary:Version}), ${misc:Depends},
+Description: SSSD libwbclient implementation
+ The SSSD libwbclient implementation
+ .
+ This package contains header files and symlinks to develop programs which will
+ use the libwbclient-sssd library.
+
 Package: python-libipa-hbac
 Section: python
 Architecture: any
