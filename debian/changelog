@@ -5,6 +5,7 @@ sssd (1.12.4-1) UNRELEASED; urgency=medium
   * control: Add new build-depends; cifs-utils, libaugeas-dev,
     libsmbclient-dev, systemd.
   * control, .install: Add libwbclient-sssd{,-dev}.
+  * control, .install: Add libsss-simpleifp{0,-dev}.
 
  -- Timo Aaltonen <tjaalton@debian.org>  Fri, 03 Apr 2015 08:54:53 +0300
 

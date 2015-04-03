@@ -302,6 +302,23 @@ Description: Communicator library for sudo
  Utility library to allow communication between sudo and SSSD for caching
  sudo rules by SSSD.
 
+Package: libsss-simpleifp0
+Section: libs
+Architecture: any
+Depends: ${misc:Depends}, ${shlibs:Depends}
+Description: SSSD D-Bus responder helper library
+ Provides library that simplifies D-Bus API for the SSSD InfoPipe responder.
+
+Package: libsss-simpleifp-dev
+Section: libs
+Architecture: any
+Depends: libsss-simpleifp0 (= ${binary:Version}), ${misc:Depends}
+Description: SSSD D-Bus responder helper library -- development files
+ Provides library that simplifies D-Bus API for the SSSD InfoPipe responder.
+ .
+ This package contains header files and symlinks to develop programs which will
+ use the libsss-simpleifp0 library.
+
 Package: libwbclient-sssd
 Section: libs
 Architecture: any
