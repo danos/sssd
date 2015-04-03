@@ -311,7 +311,7 @@ Description: SSSD D-Bus responder helper library
  Provides library that simplifies D-Bus API for the SSSD InfoPipe responder.
 
 Package: libsss-simpleifp-dev
-Section: libs
+Section: libdevel
 Architecture: any
 Depends: libsss-simpleifp0 (= ${binary:Version}), ${misc:Depends}
 Description: SSSD D-Bus responder helper library -- development files
