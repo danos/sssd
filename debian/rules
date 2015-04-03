@@ -42,6 +42,9 @@ override_dh_auto_configure:
 override_dh_auto_test:
 	dh_auto_test || (cat $(CURDIR)/build/test-suite.log; return 2)
 
+override_dh_auto_install:
+	dh_auto_install --max-parallel=1
+
 override_dh_install:
 	install -D -m755 $(CURDIR)/debian/generate-config \
 		$(CURDIR)/debian/tmp/usr/share/sssd/generate-config

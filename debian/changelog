@@ -7,6 +7,7 @@ sssd (1.12.4-1) UNRELEASED; urgency=medium
   * control, .install: Add libwbclient-sssd{,-dev}.
   * control, .install: Add libsss-simpleifp{0,-dev}.
   * fix-automake-compat.diff, fix-catchchild.diff: Dropped, upstream.
+  * rules: Use max-parallel=1 for dh_auto_install.
 
  -- Timo Aaltonen <tjaalton@debian.org>  Fri, 03 Apr 2015 08:54:53 +0300
 
