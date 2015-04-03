@@ -4,6 +4,7 @@ usr/bin/sss_ssh_knownhostsproxy
 usr/lib/*/krb5/plugins/authdata/*
 usr/lib/*/krb5/plugins/krb5/*
 usr/lib/*/ldb/modules/ldb/memberof.so
+usr/lib/*/libnfsidmap/sss.so
 usr/lib/*/sssd/libsss_child.so
 usr/lib/*/sssd/libsss_crypt.so
 usr/lib/*/sssd/libsss_debug.so
@@ -22,6 +23,7 @@ usr/sbin/sssd
 usr/share/locale/*/LC_MESSAGES/*
 usr/share/man/man1/sss_ssh_authorizedkeys.1*
 usr/share/man/man1/sss_ssh_knownhostsproxy.1*
+usr/share/man/man5/sss_rpcidmapd.5*
 usr/share/man/man5/sssd-simple.5*
 usr/share/man/man5/sssd-sudo.5*
 usr/share/man/man5/sssd.conf.5*
