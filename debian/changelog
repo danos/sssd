@@ -11,6 +11,7 @@ sssd (1.12.4-1) UNRELEASED; urgency=medium
   * sssd-common.install: Add files for NFS v4 client.
   * sssd-ad.install: Add new files.
   * sssd-ipa.install: Add selinux_child.
+  * sssd-dbus: Add libsss_config.so.
 
  -- Timo Aaltonen <tjaalton@debian.org>  Fri, 03 Apr 2015 08:54:53 +0300
 
