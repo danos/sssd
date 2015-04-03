@@ -9,6 +9,7 @@ sssd (1.12.4-1) UNRELEASED; urgency=medium
   * fix-automake-compat.diff, fix-catchchild.diff: Dropped, upstream.
   * rules: Use max-parallel=1 for dh_auto_install.
   * sssd-common.install: Add files for NFS v4 client.
+  * sssd-ad.install: Add new files.
 
  -- Timo Aaltonen <tjaalton@debian.org>  Fri, 03 Apr 2015 08:54:53 +0300
 
