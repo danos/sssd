@@ -29,6 +29,7 @@ Build-Depends:
  libldap2-dev,
  libldb-dev,
  libltdl-dev,
+ libnfsidmap-dev,
  libnl-3-dev [linux-any],
  libnl-route-3-dev [linux-any],
  libnspr4-dev,

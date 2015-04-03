@@ -3,7 +3,7 @@ sssd (1.12.4-1) UNRELEASED; urgency=medium
   * New upstream release.
   * apparmor-profile: Updated. (LP: #1421110)
   * control: Add new build-depends; cifs-utils, libaugeas-dev,
-    libsmbclient-dev, systemd.
+    libnfsidmap-dev, libsmbclient-dev, systemd.
   * control, .install: Add libwbclient-sssd{,-dev}.
   * control, .install: Add libsss-simpleifp{0,-dev}.
   * fix-automake-compat.diff, fix-catchchild.diff: Dropped, upstream.
