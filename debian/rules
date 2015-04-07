@@ -45,6 +45,9 @@ override_dh_auto_test:
 override_dh_auto_install:
 	dh_auto_install --max-parallel=1
 
+override_dh_fixperms:
+	dh_fixperms -Xkrb5_child -Xldap_child -Xselinux_child
+
 override_dh_install:
 	install -D -m755 $(CURDIR)/debian/generate-config \
 		$(CURDIR)/debian/tmp/usr/share/sssd/generate-config

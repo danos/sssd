@@ -14,6 +14,8 @@ sssd (1.12.4-1) UNRELEASED; urgency=medium
   * sssd-dbus: Add libsss_config.so.
   * sssd-common: Add cifs idmap plugin, semanage library and krb5
     localauth plugin.
+  * rules: Add a placeholder to not modify permissions of
+    {krb5,ldap,selinux}_child.
 
  -- Timo Aaltonen <tjaalton@debian.org>  Fri, 03 Apr 2015 08:54:53 +0300
 
