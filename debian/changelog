@@ -17,6 +17,7 @@ sssd (1.12.4-1) UNRELEASED; urgency=medium
   * rules: Add a placeholder to not modify permissions of
     {krb5,ldap,selinux}_child.
   * control: Add libsystemd-login-dev to build-depends.
+  * control: Add libnss-wrapper and libuid-wrapper to build-depends.
 
  -- Timo Aaltonen <tjaalton@debian.org>  Fri, 03 Apr 2015 08:54:53 +0300
 
