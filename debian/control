@@ -41,6 +41,7 @@ Build-Depends:
  libselinux1-dev [linux-any],
  libsemanage1-dev [linux-any],
  libsmbclient-dev,
+ libsystemd-login-dev,
  libtalloc-dev,
  libtdb-dev,
  libtevent-dev,

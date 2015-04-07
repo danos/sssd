@@ -16,6 +16,7 @@ sssd (1.12.4-1) UNRELEASED; urgency=medium
     localauth plugin.
   * rules: Add a placeholder to not modify permissions of
     {krb5,ldap,selinux}_child.
+  * control: Add libsystemd-login-dev to build-depends.
 
  -- Timo Aaltonen <tjaalton@debian.org>  Fri, 03 Apr 2015 08:54:53 +0300
 
