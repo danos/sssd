@@ -40,7 +40,9 @@ override_dh_auto_configure:
 	--with-sudo
 
 override_dh_auto_test:
-	dh_auto_test || (cat $(CURDIR)/build/test-suite.log; return 2)
+	export CK_TIMEOUT_MULTIPLIER=10
+	dh_auto_test -- VERBOSE=yes
+	unset CK_TIMEOUT_MULTIPLIER
 
 override_dh_auto_install:
 	dh_auto_install --max-parallel=1

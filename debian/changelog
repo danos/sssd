@@ -18,6 +18,8 @@ sssd (1.12.4-1) UNRELEASED; urgency=medium
     {krb5,ldap,selinux}_child.
   * control: Add libsystemd-login-dev to build-depends.
   * control: Add libnss-wrapper and libuid-wrapper to build-depends.
+  * rules: Use automake native verbosity for tests, and bump
+    CK_TIMEOUT_MULTIPLIER.
 
  -- Timo Aaltonen <tjaalton@debian.org>  Fri, 03 Apr 2015 08:54:53 +0300
 
