@@ -1,4 +1,4 @@
-sssd (1.12.4-1) UNRELEASED; urgency=medium
+sssd (1.12.4-1) experimental; urgency=medium
 
   * New upstream release.
   * apparmor-profile: Updated. (LP: #1421110)
@@ -21,7 +21,7 @@ sssd (1.12.4-1) UNRELEASED; urgency=medium
   * rules: Use automake native verbosity for tests, and bump
     CK_TIMEOUT_MULTIPLIER.
 
- -- Timo Aaltonen <tjaalton@debian.org>  Fri, 03 Apr 2015 08:54:53 +0300
+ -- Timo Aaltonen <tjaalton@debian.org>  Thu, 09 Apr 2015 23:56:01 +0300
 
 sssd (1.11.7-3) unstable; urgency=medium
 
