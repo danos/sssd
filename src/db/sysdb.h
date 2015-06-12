@@ -383,8 +383,12 @@ errno_t sysdb_get_rdn(struct sysdb_ctx *sysdb, TALLOC_CTX *mem_ctx,
                       const char *dn, char **_name, char **_val);
 struct ldb_dn *sysdb_user_dn(TALLOC_CTX *mem_ctx, struct sss_domain_info *dom,
                              const char *name);
+struct ldb_dn *sysdb_user_base_dn(TALLOC_CTX *mem_ctx,
+                                  struct sss_domain_info *dom);
 struct ldb_dn *sysdb_group_dn(TALLOC_CTX *mem_ctx, struct sss_domain_info *dom,
                               const char *name);
+struct ldb_dn *sysdb_group_base_dn(TALLOC_CTX *mem_ctx,
+                                   struct sss_domain_info *dom);
 struct ldb_dn *sysdb_netgroup_dn(TALLOC_CTX *mem_ctx,
                                  struct sss_domain_info *dom, const char *name);
 struct ldb_dn *sysdb_netgroup_base_dn(TALLOC_CTX *mem_ctx,
@@ -1113,4 +1117,10 @@ errno_t sysdb_get_sids_of_members(TALLOC_CTX *mem_ctx,
                                   const char ***_sids,
                                   const char ***_dns,
                                   size_t *_n);
+
+errno_t sysdb_handle_original_uuid(const char *orig_name,
+                                   struct sysdb_attrs *src_attrs,
+                                   const char *src_name,
+                                   struct sysdb_attrs *dest_attrs,
+                                   const char *dest_name);
 #endif /* __SYS_DB_H__ */

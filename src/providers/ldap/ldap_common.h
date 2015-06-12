@@ -102,9 +102,12 @@ int sdap_id_setup_tasks(struct be_ctx *be_ctx,
                         be_ptask_recv_t recv_fn,
                         void *pvt);
 
+/* Allow shortcutting an enumeration request */
+bool sdap_is_enum_request(struct be_acct_req *ar);
+
 struct tevent_req *
 sdap_handle_acct_req_send(TALLOC_CTX *mem_ctx,
-                          struct be_req *breq,
+                          struct be_ctx *be_ctx,
                           struct be_acct_req *ar,
                           struct sdap_id_ctx *id_ctx,
                           struct sdap_domain *sdom,
@@ -212,7 +215,8 @@ struct tevent_req *groups_get_send(TALLOC_CTX *memctx,
                                    const char *name,
                                    int filter_type,
                                    int attrs_type,
-                                   bool noexist_delete);
+                                   bool noexist_delete,
+                                   bool no_members);
 int groups_get_recv(struct tevent_req *req, int *dp_error_out, int *sdap_ret);
 
 struct tevent_req *ldap_netgroup_get_send(TALLOC_CTX *memctx,
@@ -324,12 +328,7 @@ struct sdap_id_ctx *
 sdap_id_ctx_new(TALLOC_CTX *mem_ctx, struct be_ctx *bectx,
                 struct sdap_service *sdap_service);
 
-struct tevent_req *sdap_refresh_netgroups_send(TALLOC_CTX *mem_ctx,
-                                               struct tevent_context *ev,
-                                               struct be_ctx *be_ctx,
-                                               char **names,
-                                               void *pvt);
-
-errno_t sdap_refresh_netgroups_recv(struct tevent_req *req);
+errno_t sdap_refresh_init(struct be_refresh_ctx *refresh_ctx,
+                          struct sdap_id_ctx *id_ctx);
 
 #endif /* _LDAP_COMMON_H_ */

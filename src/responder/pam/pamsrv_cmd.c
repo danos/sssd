@@ -44,6 +44,55 @@ enum pam_verbosity {
 
 static void pam_reply(struct pam_auth_req *preq);
 
+static errno_t pack_user_info_account_expired(TALLOC_CTX *mem_ctx,
+                                              const char *user_error_message,
+                                              size_t *resp_len,
+                                              uint8_t **_resp)
+{
+    uint32_t resp_type = SSS_PAM_USER_INFO_ACCOUNT_EXPIRED;
+    size_t err_len;
+    uint8_t *resp;
+    size_t p;
+
+    err_len = strlen(user_error_message);
+    *resp_len = 2 * sizeof(uint32_t) + err_len;
+    resp = talloc_size(mem_ctx, *resp_len);
+    if (resp == NULL) {
+        DEBUG(SSSDBG_CRIT_FAILURE, "talloc_size failed.\n");
+        return ENOMEM;
+    }
+
+    p = 0;
+    SAFEALIGN_SET_UINT32(&resp[p], resp_type, &p);
+    SAFEALIGN_SET_UINT32(&resp[p], err_len, &p);
+    safealign_memcpy(&resp[p], user_error_message, err_len, &p);
+    if (p != *resp_len) {
+        DEBUG(SSSDBG_FATAL_FAILURE, "Size mismatch\n");
+    }
+
+    *_resp = resp;
+    return EOK;
+}
+
+static void inform_account_expired(struct pam_data* pd,
+                                   const char *pam_message)
+{
+    size_t msg_len;
+    uint8_t *msg;
+    errno_t ret;
+
+    ret = pack_user_info_account_expired(pd, pam_message, &msg_len, &msg);
+    if (ret != EOK) {
+        DEBUG(SSSDBG_CRIT_FAILURE,
+              "pack_user_info_account_expired failed.\n");
+    } else {
+        ret = pam_add_response(pd, SSS_PAM_USER_INFO, msg_len, msg);
+        if (ret != EOK) {
+            DEBUG(SSSDBG_CRIT_FAILURE, "pam_add_response failed.\n");
+        }
+    }
+}
+
 static bool is_domain_requested(struct pam_data *pd, const char *domain_name)
 {
     int i;
@@ -496,11 +545,21 @@ static void pam_reply(struct pam_auth_req *preq)
     uint32_t user_info_type;
     time_t exp_date = -1;
     time_t delay_until = -1;
+    char* pam_account_expired_message;
+    int pam_verbosity;
 
     pd = preq->pd;
     cctx = preq->cctx;
     pctx = talloc_get_type(preq->cctx->rctx->pvt_ctx, struct pam_ctx);
 
+    ret = confdb_get_int(pctx->rctx->cdb, CONFDB_PAM_CONF_ENTRY,
+                         CONFDB_PAM_VERBOSITY, DEFAULT_PAM_VERBOSITY,
+                         &pam_verbosity);
+    if (ret != EOK) {
+        DEBUG(SSSDBG_CRIT_FAILURE,
+              "Failed to read PAM verbosity, not fatal.\n");
+        pam_verbosity = DEFAULT_PAM_VERBOSITY;
+    }
 
     DEBUG(SSSDBG_FUNC_DATA,
           "pam_reply called with result [%d].\n", pd->pam_status);
@@ -572,7 +631,7 @@ static void pam_reply(struct pam_auth_req *preq)
         ret = gettimeofday(&tv, NULL);
         if (ret != EOK) {
             DEBUG(SSSDBG_CRIT_FAILURE, "gettimeofday failed [%d][%s].\n",
-                      errno, strerror(errno));
+                  errno, strerror(errno));
             goto done;
         }
         tv.tv_sec += pd->response_delay;
@@ -607,6 +666,27 @@ static void pam_reply(struct pam_auth_req *preq)
                          &cctx->creq->out);
     if (ret != EOK) {
         goto done;
+    }
+
+    /* Account expiration warning is printed for sshd. If pam_verbosity
+     * is equal or above PAM_VERBOSITY_INFO then all services are informed
+     * about account expiration.
+     */
+    if (pd->pam_status == PAM_ACCT_EXPIRED &&
+        ((pd->service != NULL && strcasecmp(pd->service, "sshd") == 0) ||
+         pam_verbosity >= PAM_VERBOSITY_INFO)) {
+
+        ret = confdb_get_string(pctx->rctx->cdb, pd, CONFDB_PAM_CONF_ENTRY,
+                                CONFDB_PAM_ACCOUNT_EXPIRED_MESSAGE, "",
+                                &pam_account_expired_message);
+        if (ret != EOK) {
+            DEBUG(SSSDBG_MINOR_FAILURE,
+                  "Failed to get expiration message: %d:[%s].\n",
+                  ret, sss_strerror(ret));
+            goto done;
+        }
+
+        inform_account_expired(pd, pam_account_expired_message);
     }
 
     ret = filter_responses(pctx->rctx->cdb, pd->resp_list);
@@ -1060,7 +1140,8 @@ static int pam_check_user_search(struct pam_auth_req *preq)
          * the number of updates within a reasonable timeout
          */
         if (preq->check_provider) {
-            ret = pam_initgr_check_timeout(pctx->id_table, name);
+            ret = pam_initgr_check_timeout(pctx->id_table,
+                                           preq->pd->logon_name);
             if (ret != EOK
                     && ret != ENOENT) {
                 DEBUG(SSSDBG_OP_FAILURE,
@@ -1254,7 +1335,6 @@ static void pam_check_user_dp_callback(uint16_t err_maj, uint32_t err_min,
     int ret;
     struct pam_ctx *pctx =
             talloc_get_type(preq->cctx->rctx->pvt_ctx, struct pam_ctx);
-    char *name;
 
     if (err_maj) {
         DEBUG(SSSDBG_OP_FAILURE,
@@ -1266,17 +1346,8 @@ static void pam_check_user_dp_callback(uint16_t err_maj, uint32_t err_min,
     ret = pam_check_user_search(preq);
     if (ret == EOK) {
         /* Make sure we don't go to the ID provider too often */
-        name = preq->domain->case_sensitive ?
-                talloc_strdup(preq, preq->pd->user) :
-                sss_tc_utf8_str_tolower(preq, preq->pd->user);
-        if (!name) {
-            ret = ENOMEM;
-            goto done;
-        }
-
         ret = pam_initgr_cache_set(pctx->rctx->ev, pctx->id_table,
-                                   name, pctx->id_timeout);
-        talloc_free(name);
+                                   preq->pd->logon_name, pctx->id_timeout);
         if (ret != EOK) {
             DEBUG(SSSDBG_OP_FAILURE,
                   "Could not save initgr timestamp. "
@@ -1291,7 +1362,6 @@ static void pam_check_user_dp_callback(uint16_t err_maj, uint32_t err_min,
 
     ret = pam_check_user_done(preq, ret);
 
-done:
     if (ret) {
         preq->pd->pam_status = PAM_SYSTEM_ERR;
         pam_reply(preq);

@@ -49,7 +49,9 @@ static errno_t unpack_buffer(uint8_t *buf,
     SAFEALIGN_COPY_UINT32_CHECK(&len, buf + p, size, &p);
     DEBUG(SSSDBG_TRACE_INTERNAL, "seuser length: %d\n", len);
     if (len == 0) {
-        return EINVAL;
+        ibuf->seuser = "";
+        DEBUG(SSSDBG_TRACE_INTERNAL,
+              "Empty SELinux user, will delete the mapping\n");
     } else {
         if ((p + len ) > size) return EINVAL;
         ibuf->seuser = talloc_strndup(ibuf, (char *)(buf + p), len);
@@ -62,7 +64,10 @@ static errno_t unpack_buffer(uint8_t *buf,
     SAFEALIGN_COPY_UINT32_CHECK(&len, buf + p, size, &p);
     DEBUG(SSSDBG_TRACE_INTERNAL, "mls_range length: %d\n", len);
     if (len == 0) {
-        return EINVAL;
+        if (strcmp(ibuf->seuser, "") != 0) {
+            DEBUG(SSSDBG_CRIT_FAILURE, "No MLS mapping!\n");
+            return EINVAL;
+        }
     } else {
         if ((p + len ) > size) return EINVAL;
         ibuf->mls_range = talloc_strndup(ibuf, (char *)(buf + p), len);
@@ -75,6 +80,7 @@ static errno_t unpack_buffer(uint8_t *buf,
     SAFEALIGN_COPY_UINT32_CHECK(&len, buf + p, size, &p);
     DEBUG(SSSDBG_TRACE_INTERNAL, "username length: %d\n", len);
     if (len == 0) {
+        DEBUG(SSSDBG_CRIT_FAILURE, "No username set!\n");
         return EINVAL;
     } else {
         if ((p + len ) > size) return EINVAL;
@@ -146,9 +152,40 @@ static int sc_set_seuser(const char *login_name, const char *seuser_name,
      * the directories are created with the expected permissions
      */
     old_mask = umask(0);
-    ret = set_seuser(login_name, seuser_name, mls);
+    if (strcmp(seuser_name, "") == 0) {
+        /* An empty SELinux user should cause SSSD to use the system
+         * default. We need to remove the SELinux user from the DB
+         * in that case
+         */
+        ret = del_seuser(login_name);
+    } else {
+        ret = set_seuser(login_name, seuser_name, mls);
+    }
     umask(old_mask);
     return ret;
+}
+
+static bool seuser_needs_update(struct input_buffer *ibuf)
+{
+    bool needs_update = true;
+    char *db_seuser = NULL;
+    char *db_mls_range = NULL;
+    errno_t ret;
+
+    ret = get_seuser(ibuf, ibuf->username, &db_seuser, &db_mls_range);
+    DEBUG(SSSDBG_TRACE_INTERNAL,
+          "get_seuser: ret: %d seuser: %s mls: %s\n",
+          ret, db_seuser ? db_seuser : "unknown",
+          db_mls_range ? db_mls_range : "unknown");
+    if (ret == EOK && db_seuser && db_mls_range &&
+            strcmp(db_seuser, ibuf->seuser) == 0 &&
+            strcmp(db_mls_range, ibuf->mls_range) == 0) {
+        needs_update = false;
+    }
+
+    talloc_free(db_seuser);
+    talloc_free(db_mls_range);
+    return needs_update;
 }
 
 int main(int argc, const char *argv[])
@@ -163,6 +200,7 @@ int main(int argc, const char *argv[])
     struct input_buffer *ibuf = NULL;
     struct response *resp = NULL;
     ssize_t written;
+    bool needs_update;
 
     struct poptOption long_options[] = {
         POPT_AUTOHELP
@@ -282,10 +320,13 @@ int main(int argc, const char *argv[])
 
     DEBUG(SSSDBG_TRACE_FUNC, "performing selinux operations\n");
 
-    ret = sc_set_seuser(ibuf->username, ibuf->seuser, ibuf->mls_range);
-    if (ret != EOK) {
-        DEBUG(SSSDBG_CRIT_FAILURE, "Cannot set SELinux login context.\n");
-        goto fail;
+    needs_update = seuser_needs_update(ibuf);
+    if (needs_update == true) {
+        ret = sc_set_seuser(ibuf->username, ibuf->seuser, ibuf->mls_range);
+        if (ret != EOK) {
+            DEBUG(SSSDBG_CRIT_FAILURE, "Cannot set SELinux login context.\n");
+            goto fail;
+        }
     }
 
     ret = prepare_response(main_ctx, ret, &resp);

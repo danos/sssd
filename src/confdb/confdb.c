@@ -200,6 +200,9 @@ int confdb_add_param(struct confdb_ctx *cdb,
 
         ret = ldb_modify(cdb->ldb, msg);
         if (ret != LDB_SUCCESS) {
+            DEBUG(SSSDBG_MINOR_FAILURE,
+                  "ldb_modify failed: [%s](%d)[%s]\n",
+                  ldb_strerror(ret), ret, ldb_errstring(cdb->ldb));
             ret = EIO;
             goto done;
         }
@@ -348,7 +351,8 @@ int confdb_set_string(struct confdb_ctx *cdb,
     lret = ldb_modify(cdb->ldb, msg);
     if (lret != LDB_SUCCESS) {
         DEBUG(SSSDBG_MINOR_FAILURE,
-              "ldb_modify failed: [%s]\n", ldb_strerror(lret));
+              "ldb_modify failed: [%s](%d)[%s]\n",
+              ldb_strerror(lret), lret, ldb_errstring(cdb->ldb));
         ret = EIO;
         goto done;
     }
@@ -1205,6 +1209,19 @@ static int confdb_get_domain_internal(struct confdb_ctx *cdb,
     if (tmp != NULL) {
         ret = split_on_separator(domain, tmp, ',', true, true,
                                  &domain->sd_enumerate, NULL);
+        if (ret != 0) {
+            DEBUG(SSSDBG_FATAL_FAILURE,
+                  "Cannot parse %s\n", CONFDB_SUBDOMAIN_ENUMERATE);
+            goto done;
+        }
+    }
+
+    tmp = ldb_msg_find_attr_as_string(res->msgs[0],
+                                      CONFDB_DOMAIN_SUBDOMAIN_INHERIT,
+                                      NULL);
+    if (tmp != NULL) {
+        ret = split_on_separator(domain, tmp, ',', true, true,
+                                 &domain->sd_inherit, NULL);
         if (ret != 0) {
             DEBUG(SSSDBG_FATAL_FAILURE,
                   "Cannot parse %s\n", CONFDB_SUBDOMAIN_ENUMERATE);

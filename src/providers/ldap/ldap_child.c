@@ -272,7 +272,7 @@ static krb5_error_code ldap_child_get_tgt_sync(TALLOC_CTX *memctx,
     int kdc_time_offset_usec;
     int ret;
     TALLOC_CTX *tmp_ctx;
-    char *ccname_file_dummy;
+    char *ccname_file_dummy = NULL;
     char *ccname_file;
     mode_t old_umask;
 
@@ -391,14 +391,20 @@ static krb5_error_code ldap_child_get_tgt_sync(TALLOC_CTX *memctx,
     ccname_file = talloc_asprintf(tmp_ctx, "%s/ccache_%s",
                                   DB_PATH, realm_name);
     if (ccname_file == NULL) {
-        ret = ENOMEM;
+        krberr = ENOMEM;
+        DEBUG(SSSDBG_CRIT_FAILURE,
+              "talloc_asprintf failed: %s:[%d].\n",
+              strerror(krberr), krberr);
         goto done;
     }
 
     ccname_file_dummy = talloc_asprintf(tmp_ctx, "%s/ccache_%s_XXXXXX",
                                         DB_PATH, realm_name);
     if (ccname_file_dummy == NULL) {
-        ret = ENOMEM;
+        krberr = ENOMEM;
+        DEBUG(SSSDBG_CRIT_FAILURE,
+              "talloc_asprintf failed: %s:[%d].\n",
+              strerror(krberr), krberr);
         goto done;
     }
 
@@ -407,6 +413,10 @@ static krb5_error_code ldap_child_get_tgt_sync(TALLOC_CTX *memctx,
     umask(old_umask);
     if (fd == -1) {
         ret = errno;
+        DEBUG(SSSDBG_CRIT_FAILURE,
+              "mkstemp failed: %s:[%d].\n",
+              strerror(ret), ret);
+        krberr = KRB5KRB_ERR_GENERIC;
         goto done;
     }
     /* We only care about creating a unique file name here, we don't
@@ -489,16 +499,26 @@ static krb5_error_code ldap_child_get_tgt_sync(TALLOC_CTX *memctx,
               "rename failed [%d][%s].\n", ret, strerror(ret));
         goto done;
     }
+    ccname_file_dummy = NULL;
 
     krberr = 0;
     *ccname_out = talloc_steal(memctx, ccname);
     *expire_time_out = my_creds.times.endtime - kdc_time_offset;
 
 done:
-    talloc_free(tmp_ctx);
     if (krberr != 0) KRB5_SYSLOG(krberr);
     if (keytab) krb5_kt_close(context, keytab);
     if (context) krb5_free_context(context);
+    if (ccname_file_dummy) {
+        DEBUG(SSSDBG_TRACE_INTERNAL, "Unlinking [%s]\n", ccname_file_dummy);
+        ret = unlink(ccname_file_dummy);
+        if (ret == -1) {
+            ret = errno;
+            DEBUG(SSSDBG_MINOR_FAILURE,
+                  "Unlink failed [%d][%s].\n", ret, strerror(ret));
+        }
+    }
+    talloc_free(tmp_ctx);
     return krberr;
 }
 

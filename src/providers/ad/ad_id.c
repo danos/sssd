@@ -120,7 +120,7 @@ ad_handle_acct_info_step(struct tevent_req *req)
         noexist_delete = true;
     }
 
-    subreq = sdap_handle_acct_req_send(state, state->breq,
+    subreq = sdap_handle_acct_req_send(state, state->ctx->be,
                                        state->ar, state->ctx,
                                        state->sdom,
                                        state->conn[state->cindex],
@@ -348,6 +348,11 @@ ad_account_info_handler(struct be_req *be_req)
 
     if (be_is_offline(be_ctx)) {
         return be_req_terminate(be_req, DP_ERR_OFFLINE, EAGAIN, "Offline");
+    }
+
+    if (sdap_is_enum_request(ar)) {
+        DEBUG(SSSDBG_TRACE_LIBS, "Skipping enumeration on demand\n");
+        return sdap_handler_done(be_req, DP_ERR_OK, EOK, "Success");
     }
 
     /* Try to shortcut if this is ID or SID search and it belongs to

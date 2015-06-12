@@ -618,6 +618,13 @@ char * sss_reverse_replace_space(TALLOC_CTX *mem_ctx,
                                  const char *orig_name,
                                  const char replace_char);
 
+#define GUID_BIN_LENGTH 16
+/* 16 2-digit hex values + 4 dashes + terminating 0 */
+#define GUID_STR_BUF_SIZE (2 * GUID_BIN_LENGTH + 4 + 1)
+
+errno_t guid_blob_to_string_buf(const uint8_t *blob, char *str_buf,
+                                size_t buf_size);
+
 /* from become_user.c */
 errno_t become_user(uid_t uid, gid_t gid);
 struct sss_creds;
@@ -635,5 +642,10 @@ errno_t restore_creds(struct sss_creds *saved_creds);
 int set_seuser(const char *login_name, const char *seuser_name,
                const char *mlsrange);
 int del_seuser(const char *login_name);
+int get_seuser(TALLOC_CTX *mem_ctx, const char *login_name,
+               char **_seuser, char **_mls_range);
+
+/* convert time from generalized form to unix time */
+errno_t sss_utc_to_time_t(const char *str, const char *format, time_t *unix_time);
 
 #endif /* __SSSD_UTIL_H__ */

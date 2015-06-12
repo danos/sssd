@@ -476,7 +476,38 @@
                         </para>
                     </listitem>
                 </varlistentry>
-
+                <varlistentry>
+                    <term>subdomain_inherit (string)</term>
+                    <listitem>
+                        <para>
+                            Specifies a list of configuration parameters that
+                            should be inherited by a subdomain. Please note
+                            that only selected parameters can be inherited.
+                            Currently the following options can be inherited:
+                        </para>
+                        <para>
+                            ignore_group_members
+                        </para>
+                        <para>
+                            ldap_purge_cache_timeout
+                        </para>
+                        <para>
+                            ldap_use_tokengroups
+                        </para>
+                        <para>
+                            ldap_user_principal
+                        </para>
+                        <para>
+                            Example:
+                            <programlisting>
+subdomain_inherit = ldap_purge_cache_timeout
+                            </programlisting>
+                        </para>
+                        <para>
+                            Default: none
+                        </para>
+                    </listitem>
+                </varlistentry>
             </variablelist>
         </refsect2>
 
@@ -933,6 +964,27 @@ fallback_homedir = /home/%u
                         </para>
                     </listitem>
                 </varlistentry>
+                <varlistentry>
+                    <term>pam_account_expired_message (string)</term>
+                    <listitem>
+                        <para>
+                           If user is authenticating using SSH keys and
+                           account is expired then by default
+                           'Permission denied' is output. This output will
+                           be changed to content of this variable if it is
+                           set.
+                        </para>
+                        <para>
+                            example:
+                            <programlisting>
+pam_account_expired_message = Account expired, please call help desk.
+                            </programlisting>
+                        </para>
+                        <para>
+                            Default: none
+                        </para>
+                    </listitem>
+                </varlistentry>
 
             </variablelist>
         </refsect2>
@@ -1339,8 +1391,8 @@ fallback_homedir = /home/%u
                             refresh all expired or nearly expired records.
                         </para>
                         <para>
-                            Currently only refreshing expired netgroups is
-                            supported.
+                            The background refresh will process users,
+                            groups and netgroups in the cache.
                         </para>
                         <para>
                             You can consider setting this value to

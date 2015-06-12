@@ -620,9 +620,8 @@ errno_t check_cache(struct nss_dom_ctx *dctx,
             if (req_type == SSS_DP_INITGROUPS) {
                 cacheExpire = ldb_msg_find_attr_as_uint64(res->msgs[0],
                                                           SYSDB_INITGR_EXPIRE,
-                                                          1);
-            }
-            if (cacheExpire == 0) {
+                                                          0);
+            } else {
                 cacheExpire = ldb_msg_find_attr_as_uint64(res->msgs[0],
                                                           SYSDB_CACHE_EXPIRE,
                                                           0);
@@ -948,7 +947,10 @@ static int nss_cmd_getpwnam_search(struct nss_dom_ctx *dctx)
 
             if (cmdctx->name_is_upn) {
                 extra_flag = EXTRA_NAME_IS_UPN;
-            } else if (DOM_HAS_VIEWS(dom) && dctx->res->count == 0) {
+            } else if (DOM_HAS_VIEWS(dom) && (dctx->res->count == 0
+                    || ldb_msg_find_attr_as_string(dctx->res->msgs[0],
+                                                   OVERRIDE_PREFIX SYSDB_NAME,
+                                                   NULL) != NULL)) {
                 extra_flag = EXTRA_INPUT_MAYBE_WITH_VIEW;
             } else {
                 extra_flag = NULL;
@@ -1608,7 +1610,10 @@ static int nss_cmd_getpwuid_search(struct nss_dom_ctx *dctx)
          * yet) then verify that the cache is uptodate */
         if (dctx->check_provider) {
 
-            if (DOM_HAS_VIEWS(dom) && dctx->res->count == 0) {
+            if (DOM_HAS_VIEWS(dom) && (dctx->res->count == 0
+                    || ldb_msg_find_attr_as_uint64(dctx->res->msgs[0],
+                                                   OVERRIDE_PREFIX SYSDB_UIDNUM,
+                                                   0) != 0)) {
                 extra_flag = EXTRA_INPUT_MAYBE_WITH_VIEW;
             } else {
                 extra_flag = NULL;
@@ -3049,7 +3054,10 @@ static int nss_cmd_getgrnam_search(struct nss_dom_ctx *dctx)
          * yet) then verify that the cache is uptodate */
         if (dctx->check_provider) {
 
-            if (DOM_HAS_VIEWS(dom) && dctx->res->count == 0) {
+            if (DOM_HAS_VIEWS(dom) && (dctx->res->count == 0
+                    || ldb_msg_find_attr_as_string(dctx->res->msgs[0],
+                                                   OVERRIDE_PREFIX SYSDB_NAME,
+                                                   NULL) != NULL)) {
                 extra_flag = EXTRA_INPUT_MAYBE_WITH_VIEW;
             } else {
                 extra_flag = NULL;
@@ -3173,7 +3181,10 @@ static int nss_cmd_getgrgid_search(struct nss_dom_ctx *dctx)
          * yet) then verify that the cache is uptodate */
         if (dctx->check_provider) {
 
-            if (DOM_HAS_VIEWS(dom) && dctx->res->count == 0) {
+            if (DOM_HAS_VIEWS(dom) && (dctx->res->count == 0
+                    || ldb_msg_find_attr_as_uint64(dctx->res->msgs[0],
+                                                   OVERRIDE_PREFIX SYSDB_GIDNUM,
+                                                   0) != 0)) {
                 extra_flag = EXTRA_INPUT_MAYBE_WITH_VIEW;
             } else {
                 extra_flag = NULL;
@@ -4062,27 +4073,37 @@ static int nss_cmd_initgroups_search(struct nss_dom_ctx *dctx)
 
         if (cmdctx->name_is_upn) {
             ret = sysdb_search_user_by_upn(cmdctx, dom, name, user_attrs, &msg);
-            if (ret != EOK && ret != ENOENT) {
+            if (ret == ENOENT) {
+                dctx->res = talloc_zero(cmdctx, struct ldb_result);
+                if (dctx->res == NULL) {
+                    DEBUG(SSSDBG_OP_FAILURE, "talloc_zero failed.\n");
+                    return ENOMEM;
+                }
+
+                dctx->res->count = 0;
+                dctx->res->msgs = NULL;
+                ret = EOK;
+            } else if (ret != EOK) {
                 DEBUG(SSSDBG_OP_FAILURE, "sysdb_search_user_by_upn failed.\n");
                 return ret;
-            }
+            } else {
+                sysdb_name = ldb_msg_find_attr_as_string(msg, SYSDB_NAME, NULL);
+                if (sysdb_name == NULL) {
+                    DEBUG(SSSDBG_OP_FAILURE,
+                        "Sysdb entry does not have a name.\n");
+                    return EINVAL;
+                }
 
-            sysdb_name = ldb_msg_find_attr_as_string(msg, SYSDB_NAME, NULL);
-            if (sysdb_name == NULL) {
-                DEBUG(SSSDBG_OP_FAILURE,
-                      "Sysdb entry does not have a name.\n");
-                return EINVAL;
-            }
-
-            ret = sysdb_initgroups(cmdctx, dom, sysdb_name, &dctx->res);
-            if (ret == EOK && DOM_HAS_VIEWS(dom)) {
-                for (c = 0; c < dctx->res->count; c++) {
-                    ret = sysdb_add_overrides_to_object(dom, dctx->res->msgs[c],
-                                                        NULL, NULL);
-                    if (ret != EOK) {
-                        DEBUG(SSSDBG_OP_FAILURE,
-                              "sysdb_add_overrides_to_object failed.\n");
-                        return ret;
+                ret = sysdb_initgroups(cmdctx, dom, sysdb_name, &dctx->res);
+                if (ret == EOK && DOM_HAS_VIEWS(dom)) {
+                    for (c = 0; c < dctx->res->count; c++) {
+                        ret = sysdb_add_overrides_to_object(dom, dctx->res->msgs[c],
+                                                            NULL, NULL);
+                        if (ret != EOK) {
+                            DEBUG(SSSDBG_OP_FAILURE,
+                                "sysdb_add_overrides_to_object failed.\n");
+                            return ret;
+                        }
                     }
                 }
             }
@@ -4121,7 +4142,10 @@ static int nss_cmd_initgroups_search(struct nss_dom_ctx *dctx)
 
             if (cmdctx->name_is_upn) {
                 extra_flag = EXTRA_NAME_IS_UPN;
-            } else if (DOM_HAS_VIEWS(dom) && dctx->res->count == 0) {
+            } else if (DOM_HAS_VIEWS(dom) && (dctx->res->count == 0
+                    || ldb_msg_find_attr_as_string(dctx->res->msgs[0],
+                                                   OVERRIDE_PREFIX SYSDB_NAME,
+                                                   NULL) != NULL)) {
                 extra_flag = EXTRA_INPUT_MAYBE_WITH_VIEW;
             } else {
                 extra_flag = NULL;

@@ -8,7 +8,7 @@
 # muzzol <muzzol@gmail.com>, 2012
 # sgallagh <sgallagh@redhat.com>, 2011
 # sgallagh <sgallagh@redhat.com>, 2011
-# Robert Antoni Buj Gelonch <robert.buj@gmail.com>, 2015. #zanata
+# Robert Antoni Buj Gelonch <rbuj@fedoraproject.org>, 2015. #zanata
 msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
@@ -17,13 +17,13 @@ msgstr ""
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
-"PO-Revision-Date: 2015-01-31 02:39-0500\n"
-"Last-Translator: Robert Antoni Buj Gelonch <robert.buj@gmail.com>\n"
+"PO-Revision-Date: 2015-05-10 06:20-0400\n"
+"Last-Translator: Robert Antoni Buj Gelonch <rbuj@fedoraproject.org>\n"
 "Language-Team: Catalan (http://www.transifex.com/projects/p/sssd/language/ca/"
 ")\n"
 "Language: ca\n"
 "Plural-Forms: nplurals=2; plural=(n != 1);\n"
-"X-Generator: Zanata 3.5.1\n"
+"X-Generator: Zanata 3.6.2\n"
 
 #: src/config/SSSDConfig/__init__.py.in:40
 msgid "Set the verbosity of the debug logging"
@@ -236,21 +236,21 @@ msgstr ""
 
 #: src/config/SSSDConfig/__init__.py.in:89
 msgid "Whether to evaluate the time-based attributes in sudo rules"
-msgstr "Si s'han d'avaluar els atributs de temps a les regles sudo"
+msgstr "Si s'avaluen els atributs basats en temps a les regles sudo"
 
 #: src/config/SSSDConfig/__init__.py.in:95
 msgid "Whether to hash host names and addresses in the known_hosts file"
 msgstr ""
-"Si s'han d'utilitzar els algoritmes hash als noms d'ordinadors i a les "
-"adreces dins el fitxer known_hosts"
+"Si s'utilitzen els algoritmes hash als noms i adreces dels amfitrions al "
+"fitxer known_hosts"
 
 #: src/config/SSSDConfig/__init__.py.in:96
 msgid ""
 "How many seconds to keep a host in the known_hosts file after its host keys "
 "were requested"
 msgstr ""
-"Quants segons s'ha de mantenir una màquina a l'arxiu de known_hosts després "
-"que s'ha sol·licitat la seva clau"
+"Quants segons s'ha de mantenir un amfitrió al fitxer known_hosts després que "
+"s'hagi sol·licitat la seva clau"
 
 #: src/config/SSSDConfig/__init__.py.in:99
 msgid "List of UIDs or user names allowed to access the PAC responder"
@@ -298,7 +298,7 @@ msgstr "Proveïdor de càrrega de sessió"
 
 #: src/config/SSSDConfig/__init__.py.in:113
 msgid "Host identity provider"
-msgstr "Proveïdor d'identitat d'ordinadors"
+msgstr "Proveïdor d'identitat d'amfitrions"
 
 #: src/config/SSSDConfig/__init__.py.in:116
 msgid "Minimum user ID"
@@ -374,7 +374,7 @@ msgstr ""
 
 #: src/config/SSSDConfig/__init__.py.in:137
 msgid "Whether to automatically update the client's DNS entry"
-msgstr ""
+msgstr "Si s'actualitza automàticament l'entrada DND del client"
 
 #: src/config/SSSDConfig/__init__.py.in:138
 #: src/config/SSSDConfig/__init__.py.in:153
@@ -398,19 +398,21 @@ msgstr ""
 
 #: src/config/SSSDConfig/__init__.py.in:142
 msgid "Whether the nsupdate utility should default to using TCP"
-msgstr ""
+msgstr "Si la utilitat nsupdate per defecte ha d'utilitzar TCP"
 
 #: src/config/SSSDConfig/__init__.py.in:143
 msgid "What kind of authentication should be used to perform the DNS update"
 msgstr ""
+"Quin tipus d'autentificació s'ha d'utilitzar per realitzar l'actualització "
+"del DNS"
 
 #: src/config/SSSDConfig/__init__.py.in:144
 msgid "Control enumeration of trusted domains"
-msgstr ""
+msgstr "Enumeració de control dels amfitrions de confiança"
 
 #: src/config/SSSDConfig/__init__.py.in:145
 msgid "How often should subdomains list be refreshed"
-msgstr ""
+msgstr "Amb quina freqüència s'ha de refrescar la llista dels subdominis"
 
 #: src/config/SSSDConfig/__init__.py.in:148
 msgid "IPA domain"
@@ -426,11 +428,11 @@ msgstr "Adreça del servidor IPA de reserva "
 
 #: src/config/SSSDConfig/__init__.py.in:151
 msgid "IPA client hostname"
-msgstr "Nom d'ordinador del client IPA"
+msgstr "Nom d'amfitrió del client IPA"
 
 #: src/config/SSSDConfig/__init__.py.in:152
 msgid "Whether to automatically update the client's DNS entry in FreeIPA"
-msgstr "Si actualitzar automàticament l'entrada DNS del client a FreeIPA"
+msgstr "Si s'actualitza automàticament l'entrada DNS del client a FreeIPA"
 
 #: src/config/SSSDConfig/__init__.py.in:155
 msgid "Search base for HBAC related objects"
@@ -455,7 +457,8 @@ msgstr "Si les regles DENY són presents, o DENY_ALL o IGNORE"
 #: src/config/SSSDConfig/__init__.py.in:159
 msgid "If set to false, host argument given by PAM will be ignored"
 msgstr ""
-"Si s'estableix a fals, l'argument d'ordinador facilitat per PAM serà ignorat"
+"Si s'estableix a fals, s'ignorarà l'argument de l'amfitrió proporcionat amb "
+"PAM"
 
 #: src/config/SSSDConfig/__init__.py.in:160
 msgid "The automounter location this IPA client is using"
@@ -476,6 +479,8 @@ msgstr ""
 #: src/config/SSSDConfig/__init__.py.in:177
 msgid "Enable DNS sites - location based service discovery"
 msgstr ""
+"Habilita els llocs DNS - la localització es basa en el descobriment del "
+"servei"
 
 #: src/config/SSSDConfig/__init__.py.in:164
 msgid "Search base for view containers"
@@ -483,11 +488,11 @@ msgstr ""
 
 #: src/config/SSSDConfig/__init__.py.in:165
 msgid "Objectclass for view containers"
-msgstr ""
+msgstr "Objectclass per veure els contenidors"
 
 #: src/config/SSSDConfig/__init__.py.in:166
 msgid "Attribute with the name of the view"
-msgstr ""
+msgstr "Atribut amb el nom de la vista"
 
 #: src/config/SSSDConfig/__init__.py.in:167
 msgid "Objectclass for override objects"
@@ -507,19 +512,19 @@ msgstr ""
 
 #: src/config/SSSDConfig/__init__.py.in:173
 msgid "Active Directory domain"
-msgstr "Domini d'Active Directory"
+msgstr "Domini Active Directory"
 
 #: src/config/SSSDConfig/__init__.py.in:174
 msgid "Active Directory server address"
-msgstr "Adreça de servidor d'Active Directory"
+msgstr "Adreça del servidor de l'Active Directory"
 
 #: src/config/SSSDConfig/__init__.py.in:175
 msgid "Active Directory backup server address"
-msgstr "Adreça del servidor d'Active Directory de reserva"
+msgstr "Adreça del servidor de l'Active Directory de reserva"
 
 #: src/config/SSSDConfig/__init__.py.in:176
 msgid "Active Directory client hostname"
-msgstr "Nom de màquina del client d'Active Directory"
+msgstr "Nom d'amfitrió del client d'Active Directory"
 
 #: src/config/SSSDConfig/__init__.py.in:178
 #: src/config/SSSDConfig/__init__.py.in:348
@@ -532,7 +537,7 @@ msgstr ""
 
 #: src/config/SSSDConfig/__init__.py.in:180
 msgid "Operation mode for GPO-based access control"
-msgstr ""
+msgstr "Mode d'operació per al control d'accés basat en GPO"
 
 #: src/config/SSSDConfig/__init__.py.in:181
 msgid ""
@@ -601,7 +606,7 @@ msgstr "Temps d'espera de la autenticació"
 
 #: src/config/SSSDConfig/__init__.py.in:196
 msgid "Whether to create kdcinfo files"
-msgstr ""
+msgstr "Si es creen els fitxers kdcinfo"
 
 #: src/config/SSSDConfig/__init__.py.in:199
 msgid "Directory to store credential caches"
@@ -651,7 +656,7 @@ msgstr "Activa la canonització del principal"
 
 #: src/config/SSSDConfig/__init__.py.in:210
 msgid "Enables enterprise principals"
-msgstr ""
+msgstr "Habilita els principals empresarials"
 
 #: src/config/SSSDConfig/__init__.py.in:213
 #: src/config/SSSDConfig/__init__.py.in:214
@@ -785,7 +790,7 @@ msgid ""
 "host name during a SASL bind"
 msgstr ""
 "Si la biblioteca LDAP hauria de realitzar una petició inversa per "
-"canonalitzar el nom d'ordinador durant la connexió SASL"
+"canonalitzar el nom d'amfitrió durant la creació de l'enllaç SASL"
 
 #: src/config/SSSDConfig/__init__.py.in:248
 msgid "entryUSN attribute"
@@ -808,7 +813,7 @@ msgstr "Desactiva el control de paginació LDAP"
 
 #: src/config/SSSDConfig/__init__.py.in:254
 msgid "Disable Active Directory range retrieval"
-msgstr ""
+msgstr "Inhabilita la recuperació del rang de l'Active Directory"
 
 #: src/config/SSSDConfig/__init__.py.in:257
 msgid "Length of time to wait for a search request"
@@ -881,7 +886,7 @@ msgstr "Atribut de l'objectSID"
 
 #: src/config/SSSDConfig/__init__.py.in:275
 msgid "Active Directory primary group attribute for ID-mapping"
-msgstr "Atribut del grup primari de l'Active Directory per mapejat d'IDs"
+msgstr "Atribut del grup primari de l'Active Directory per assignació d'Ids."
 
 #: src/config/SSSDConfig/__init__.py.in:276
 msgid "User principal attribute (for Kerberos)"
@@ -933,7 +938,7 @@ msgstr "Atribut que llista els serveis PAM autoritzats"
 
 #: src/config/SSSDConfig/__init__.py.in:289
 msgid "Attribute listing authorized server hosts"
-msgstr "Atribut que llista els servidors autoritzats"
+msgstr "Llista els atributs dels amfitrions servidors autoritzats"
 
 #: src/config/SSSDConfig/__init__.py.in:290
 msgid "krbLastPwdChange attribute"
@@ -1106,7 +1111,7 @@ msgstr ""
 
 #: src/config/SSSDConfig/__init__.py.in:342
 msgid "DN for ppolicy queries"
-msgstr ""
+msgstr "DN per a les consultes ppolicy"
 
 #: src/config/SSSDConfig/__init__.py.in:345
 msgid "Policy to evaluate the password expiration"
@@ -1138,8 +1143,8 @@ msgid ""
 "Whether to update the ldap_user_shadow_last_change attribute after a "
 "password change"
 msgstr ""
-"Si voleu actualitzar l'atribut ldap_user_shadow_last_change després d'un "
-"canvi de contrasenya"
+"Si s'actualitza l'atribut ldap_user_shadow_last_change després d'un canvi de "
+"contrasenya"
 
 #: src/config/SSSDConfig/__init__.py.in:359
 msgid "Base DN for sudo rules lookups"
@@ -1155,15 +1160,15 @@ msgstr "Període d'actualització automàtica intel·ligent"
 
 #: src/config/SSSDConfig/__init__.py.in:362
 msgid "Whether to filter rules by hostname, IP addresses and network"
-msgstr "Si voleu filtrar les normes per nom de màquina, adreça IP i xarxa"
+msgstr "Si es filtren les regles per nom d'amfitrió, adreça IP i xarxa"
 
 #: src/config/SSSDConfig/__init__.py.in:363
 msgid ""
 "Hostnames and/or fully qualified domain names of this machine to filter sudo "
 "rules"
 msgstr ""
-"Noms de màquina i/o noms de domini plenament qualificat d'aquesta màquina "
-"per filtrar regles de sudo"
+"Noms d'amfitrió i/o noms de domini plenament qualificat d'aquesta màquina "
+"per filtrar les regles de sudo"
 
 #: src/config/SSSDConfig/__init__.py.in:364
 msgid "IPv4 or IPv6 addresses or network of this machine to filter sudo rules"
@@ -1173,14 +1178,14 @@ msgstr ""
 #: src/config/SSSDConfig/__init__.py.in:365
 msgid "Whether to include rules that contains netgroup in host attribute"
 msgstr ""
-"Si voleu incloure regles que contenen netgroup en l'atribut de màquina"
+"Si s'inclouen les regles que contenen netgroup en l'atribut de l'amfitrió"
 
 #: src/config/SSSDConfig/__init__.py.in:366
 msgid ""
 "Whether to include rules that contains regular expression in host attribute"
 msgstr ""
-"Si voleu incloure regles que contenen expressions regulars en l'atribut de "
-"màquina"
+"Si s'inclouen les regles que contenen expressions regulars en l'atribut de "
+"l'amfitrió"
 
 #: src/config/SSSDConfig/__init__.py.in:367
 msgid "Object class for sudo rules"
@@ -1196,7 +1201,7 @@ msgstr "Attribut de la comanda de la regla sudo"
 
 #: src/config/SSSDConfig/__init__.py.in:370
 msgid "Sudo rule host attribute"
-msgstr "Atribut de l'ordinador de la regla sudo"
+msgstr "Atribut d'amfitrió de la regla sudo"
 
 #: src/config/SSSDConfig/__init__.py.in:371
 msgid "Sudo rule user attribute"
@@ -1208,7 +1213,7 @@ msgstr "Atribut de l'opció de la regla sudo"
 
 #: src/config/SSSDConfig/__init__.py.in:373
 msgid "Sudo rule runas attribute"
-msgstr ""
+msgstr "Atribut runas de la regla sudo"
 
 #: src/config/SSSDConfig/__init__.py.in:374
 msgid "Sudo rule runasuser attribute"
@@ -1276,7 +1281,8 @@ msgstr "El nom de la biblioteca NSS a utilitzar"
 
 #: src/config/SSSDConfig/__init__.py.in:398
 msgid "Whether to look up canonical group name from cache if possible"
-msgstr "Cercar nom de grup canònic al cau si és possible"
+msgstr ""
+"Si es cerca el nom del grup canònic des de la memòria cau, si és possible"
 
 #: src/config/SSSDConfig/__init__.py.in:401
 msgid "PAM stack to use"
@@ -1457,7 +1463,7 @@ msgstr "S'ha produït un error en cercar les claus públiques\n"
 
 #: src/sss_client/ssh/sss_ssh_knownhostsproxy.c:194
 msgid "The port to use to connect to the host"
-msgstr "El port a utilitzar per connectar-se a l'ordinador"
+msgstr "El port a utilitzar per connectar-se a l'amfitrió"
 
 #: src/sss_client/ssh/sss_ssh_knownhostsproxy.c:238
 msgid "Invalid port\n"
@@ -1465,7 +1471,7 @@ msgstr "Port invàlid\n"
 
 #: src/sss_client/ssh/sss_ssh_knownhostsproxy.c:243
 msgid "Host not specified\n"
-msgstr "No s'ha especificat l'ordinador\n"
+msgstr "No s'ha especificat l'amfitrió\n"
 
 #: src/sss_client/ssh/sss_ssh_knownhostsproxy.c:249
 msgid "The path to the proxy command must be absolute\n"
@@ -1869,7 +1875,7 @@ msgstr ""
 #: src/tools/sss_usermod.c:117 src/tools/sss_usermod.c:126
 #: src/tools/sss_usermod.c:135
 msgid "Specify the attribute name/value pair(s)\n"
-msgstr ""
+msgstr "Especifica les parelles nom/valor de l'atribut\n"
 
 #: src/tools/sss_usermod.c:152
 msgid "Specify user to modify\n"
@@ -1915,6 +1921,8 @@ msgstr "No s'ha pogut invalidar %1$s %2$s"
 #: src/tools/sss_cache.c:588
 msgid "Invalidate all cached entries except for sudo rules"
 msgstr ""
+"Invalida totes les entrades de la memòria cau amb l'excepció de les regles "
+"sudo"
 
 #: src/tools/sss_cache.c:590
 msgid "Invalidate particular user"
@@ -1958,11 +1966,11 @@ msgstr "Invalida tots els mapes autofs"
 
 #: src/tools/sss_cache.c:613
 msgid "Invalidate particular SSH host"
-msgstr ""
+msgstr "Invalida un determinat amfitrió SSH"
 
 #: src/tools/sss_cache.c:615
 msgid "Invalidate all SSH hosts"
-msgstr ""
+msgstr "Invalida tots els amfitrions SSH"
 
 #: src/tools/sss_cache.c:618
 msgid "Only invalidate entries from a particular domain"
@@ -1993,7 +2001,7 @@ msgstr "Especificau el nivell de depuració que voleu establir\n"
 
 #: src/tools/sss_debuglevel.c:102
 msgid "Only one argument expected\n"
-msgstr ""
+msgstr "Tan sols s'esperava un argument\n"
 
 #: src/tools/tools_util.c:204
 #, c-format

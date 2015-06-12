@@ -172,6 +172,13 @@ struct ldb_dn *sysdb_user_dn(TALLOC_CTX *mem_ctx, struct sss_domain_info *dom,
     return dn;
 }
 
+struct ldb_dn *sysdb_user_base_dn(TALLOC_CTX *mem_ctx,
+                                  struct sss_domain_info *dom)
+{
+    return ldb_dn_new_fmt(mem_ctx, dom->sysdb->ldb,
+                          SYSDB_TMPL_USER_BASE, dom->name);
+}
+
 struct ldb_dn *sysdb_group_dn(TALLOC_CTX *mem_ctx,
                               struct sss_domain_info *dom, const char *name)
 {
@@ -190,6 +197,14 @@ struct ldb_dn *sysdb_group_dn(TALLOC_CTX *mem_ctx,
 
     return dn;
 }
+
+struct ldb_dn *sysdb_group_base_dn(TALLOC_CTX *mem_ctx,
+                                   struct sss_domain_info *dom)
+{
+    return ldb_dn_new_fmt(mem_ctx, dom->sysdb->ldb,
+                          SYSDB_TMPL_GROUP_BASE, dom->name);
+}
+
 
 struct ldb_dn *sysdb_netgroup_dn(TALLOC_CTX *mem_ctx,
                                  struct sss_domain_info *dom, const char *name)
@@ -1621,6 +1636,11 @@ errno_t sysdb_set_bool(struct sysdb_ctx *sysdb,
         lret = ldb_add(sysdb->ldb, msg);
     }
 
+    if (lret != LDB_SUCCESS) {
+        DEBUG(SSSDBG_OP_FAILURE,
+              "ldb operation failed: [%s](%d)[%s]\n",
+              ldb_strerror(lret), lret, ldb_errstring(sysdb->ldb));
+    }
     ret = sysdb_error_to_errno(lret);
 
 done:

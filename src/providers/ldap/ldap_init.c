@@ -179,12 +179,9 @@ static int ldap_id_init_internal(struct be_ctx *bectx,
     }
 
     /* setup periodical refresh of expired records */
-    ret = be_refresh_add_cb(bectx->refresh_ctx, BE_REFRESH_TYPE_NETGROUPS,
-                            sdap_refresh_netgroups_send,
-                            sdap_refresh_netgroups_recv,
-                            ctx);
+    ret = sdap_refresh_init(bectx->refresh_ctx, ctx);
     if (ret != EOK && ret != EEXIST) {
-        DEBUG(SSSDBG_MINOR_FAILURE, "Periodical refresh of netgroups "
+        DEBUG(SSSDBG_MINOR_FAILURE, "Periodical refresh "
               "will not work [%d]: %s\n", ret, strerror(ret));
     }
 
@@ -423,6 +420,17 @@ int sssm_ldap_access_init(struct be_ctx *bectx,
             access_ctx->access_rule[c] = LDAP_ACCESS_HOST;
         } else if (strcasecmp(order_list[c], LDAP_ACCESS_LOCK_NAME) == 0) {
             access_ctx->access_rule[c] = LDAP_ACCESS_LOCKOUT;
+        } else if (strcasecmp(order_list[c],
+                              LDAP_ACCESS_EXPIRE_POLICY_REJECT_NAME) == 0) {
+            access_ctx->access_rule[c] = LDAP_ACCESS_EXPIRE_POLICY_REJECT;
+        } else if (strcasecmp(order_list[c],
+                              LDAP_ACCESS_EXPIRE_POLICY_WARN_NAME) == 0) {
+            access_ctx->access_rule[c] = LDAP_ACCESS_EXPIRE_POLICY_WARN;
+        } else if (strcasecmp(order_list[c],
+                              LDAP_ACCESS_EXPIRE_POLICY_RENEW_NAME) == 0) {
+            access_ctx->access_rule[c] = LDAP_ACCESS_EXPIRE_POLICY_RENEW;
+        } else if (strcasecmp(order_list[c], LDAP_ACCESS_PPOLICY_NAME) == 0) {
+            access_ctx->access_rule[c] = LDAP_ACCESS_PPOLICY;
         } else {
             DEBUG(SSSDBG_CRIT_FAILURE,
                   "Unexpected access rule name [%s].\n", order_list[c]);

@@ -50,9 +50,6 @@ enum response_types {
 };
 
 /* ==Sid2Name Extended Operation============================================= */
-#define EXOP_SID2NAME_OID "2.16.840.1.113730.3.8.10.4"
-#define EXOP_SID2NAME_V1_OID "2.16.840.1.113730.3.8.10.4.1"
-
 struct ipa_s2n_exop_state {
     struct sdap_handle *sh;
 
@@ -147,9 +144,13 @@ static void ipa_s2n_exop_done(struct sdap_op *op,
           sss_ldap_err2string(result), result, errmsg);
 
     if (result != LDAP_SUCCESS) {
-        DEBUG(SSSDBG_OP_FAILURE, "ldap_extended_operation failed, " \
-                                 "server logs might contain more details.\n");
-        ret = ERR_NETWORK_IO;
+        if (result == LDAP_NO_SUCH_OBJECT) {
+            ret = ENOENT;
+        } else {
+            DEBUG(SSSDBG_OP_FAILURE, "ldap_extended_operation failed, server " \
+                                     "logs might contain more details.\n");
+            ret = ERR_NETWORK_IO;
+        }
         goto done;
     }
 
@@ -159,6 +160,11 @@ static void ipa_s2n_exop_done(struct sdap_op *op,
         DEBUG(SSSDBG_OP_FAILURE, "ldap_parse_extendend_result failed (%d)\n",
                                  ret);
         ret = ERR_NETWORK_IO;
+        goto done;
+    }
+    if (retdata == NULL) {
+        DEBUG(SSSDBG_CRIT_FAILURE, "Missing exop result data.\n");
+        ret = EINVAL;
         goto done;
     }
 
@@ -679,7 +685,8 @@ static errno_t ipa_s2n_save_objects(struct sss_domain_info *dom,
                                     struct resp_attrs *attrs,
                                     struct resp_attrs *simple_attrs,
                                     const char *view_name,
-                                    struct sysdb_attrs *override_attrs);
+                                    struct sysdb_attrs *override_attrs,
+                                    bool update_initgr_timeout);
 
 static errno_t s2n_response_to_attrs(TALLOC_CTX *mem_ctx,
                                      char *retoid,
@@ -1027,7 +1034,8 @@ static void ipa_s2n_get_fqlist_next(struct tevent_req *subreq)
         goto fail;
     }
 
-    if (strcmp(state->ipa_ctx->view_name, SYSDB_DEFAULT_VIEW_NAME) == 0) {
+    if (state->ipa_ctx->view_name == NULL ||
+            strcmp(state->ipa_ctx->view_name, SYSDB_DEFAULT_VIEW_NAME) == 0) {
         ret = ipa_s2n_get_fqlist_save_step(req);
         if (ret == EOK) {
             tevent_req_done(req);
@@ -1111,7 +1119,7 @@ static errno_t ipa_s2n_get_fqlist_save_step(struct tevent_req *req)
 
     ret = ipa_s2n_save_objects(state->dom, &state->req_input, state->attrs,
                                NULL, state->ipa_ctx->view_name,
-                               state->override_attrs);
+                               state->override_attrs, false);
     if (ret != EOK) {
         DEBUG(SSSDBG_OP_FAILURE, "ipa_s2n_save_objects failed.\n");
         return ret;
@@ -1243,7 +1251,9 @@ static errno_t process_members(struct sss_domain_info *domain,
 
     if (members == NULL) {
         DEBUG(SSSDBG_TRACE_INTERNAL, "No members\n");
-        *_missing_members = NULL;
+        if (_missing_members != NULL) {
+            *_missing_members = NULL;
+        }
         return EOK;
     }
 
@@ -1281,16 +1291,18 @@ static errno_t process_members(struct sss_domain_info *domain,
                 dn_str = ldb_dn_get_linearized(msg->dn);
                 if (dn_str == NULL) {
                     DEBUG(SSSDBG_OP_FAILURE, "ldb_dn_get_linearized failed.\n");
+                    ret = EINVAL;
                     goto done;
                 }
 
                 DEBUG(SSSDBG_TRACE_ALL, "Adding member [%s][%s]\n",
                                         members[c], dn_str);
 
-                ret = sysdb_attrs_add_string(group_attrs, SYSDB_MEMBER, dn_str);
+                ret = sysdb_attrs_add_string_safe(group_attrs, SYSDB_MEMBER,
+                                                  dn_str);
                 if (ret != EOK) {
                     DEBUG(SSSDBG_OP_FAILURE,
-                          "sysdb_attrs_add_string failed.\n");
+                          "sysdb_attrs_add_string_safe failed.\n");
                     goto done;
                 }
             }
@@ -1602,10 +1614,11 @@ static void ipa_s2n_get_user_done(struct tevent_req *subreq)
     }
 
     if (ret == ENOENT
+            || state->ipa_ctx->view_name == NULL
             || strcmp(state->ipa_ctx->view_name,
                       SYSDB_DEFAULT_VIEW_NAME) == 0) {
         ret = ipa_s2n_save_objects(state->dom, state->req_input, state->attrs,
-                                   state->simple_attrs, NULL, NULL);
+                                   state->simple_attrs, NULL, NULL, true);
         if (ret != EOK) {
             DEBUG(SSSDBG_OP_FAILURE, "ipa_s2n_save_objects failed.\n");
             goto done;
@@ -1711,6 +1724,8 @@ static errno_t get_groups_dns(TALLOC_CTX *mem_ctx, struct sss_domain_info *dom,
             ret = ENOMEM;
             goto done;
         }
+
+        DEBUG(SSSDBG_TRACE_ALL, "Added [%s][%s].\n", name_list[c], dn_list[c]);
     }
 
     *_dn_list = talloc_steal(mem_ctx, dn_list);
@@ -1727,7 +1742,8 @@ static errno_t ipa_s2n_save_objects(struct sss_domain_info *dom,
                                     struct resp_attrs *attrs,
                                     struct resp_attrs *simple_attrs,
                                     const char *view_name,
-                                    struct sysdb_attrs *override_attrs)
+                                    struct sysdb_attrs *override_attrs,
+                                    bool update_initgr_timeout)
 {
     int ret;
     time_t now;
@@ -1926,7 +1942,8 @@ static errno_t ipa_s2n_save_objects(struct sss_domain_info *dom,
                 }
             }
 
-            if (attrs->response_type == RESP_USER_GROUPLIST) {
+            if (attrs->response_type == RESP_USER_GROUPLIST
+                    && update_initgr_timeout) {
                 /* Since RESP_USER_GROUPLIST contains all group memberships it
                  * is effectively an initgroups request hence
                  * SYSDB_INITGR_EXPIRE will be set.*/
@@ -2150,11 +2167,16 @@ static errno_t ipa_s2n_save_objects(struct sss_domain_info *dom,
         goto done;
     }
 
-    ret = sysdb_store_override(dom, view_name, type, override_attrs,
-                               res->msgs[0]->dn);
-    if (ret != EOK) {
-        DEBUG(SSSDBG_OP_FAILURE, "sysdb_store_override failed.\n");
-        goto done;
+    if (view_name != NULL && strcmp(view_name, SYSDB_DEFAULT_VIEW_NAME) != 0) {
+        /* For the default view the data return by the extdom plugin already
+         * contains all needed data and it is not expected to have a separate
+         * override object. */
+        ret = sysdb_store_override(dom, view_name, type, override_attrs,
+                                   res->msgs[0]->dn);
+        if (ret != EOK) {
+            DEBUG(SSSDBG_OP_FAILURE, "sysdb_store_override failed.\n");
+            goto done;
+        }
     }
 
 done:
@@ -2192,7 +2214,7 @@ static void ipa_s2n_get_fqlist_done(struct tevent_req  *subreq)
                                  &sid_str);
     if (ret == ENOENT) {
         ret = ipa_s2n_save_objects(state->dom, state->req_input, state->attrs,
-                                   state->simple_attrs, NULL, NULL);
+                                   state->simple_attrs, NULL, NULL, true);
         if (ret != EOK) {
             DEBUG(SSSDBG_OP_FAILURE, "ipa_s2n_save_objects failed.\n");
             goto fail;
@@ -2211,6 +2233,7 @@ static void ipa_s2n_get_fqlist_done(struct tevent_req  *subreq)
     }
 
     if (state->override_attrs == NULL
+            && state->ipa_ctx->view_name != NULL
             && strcmp(state->ipa_ctx->view_name,
                       SYSDB_DEFAULT_VIEW_NAME) != 0) {
         subreq = ipa_get_ad_override_send(state, state->ev,
@@ -2231,7 +2254,7 @@ static void ipa_s2n_get_fqlist_done(struct tevent_req  *subreq)
         ret = ipa_s2n_save_objects(state->dom, state->req_input, state->attrs,
                                    state->simple_attrs,
                                    state->ipa_ctx->view_name,
-                                   state->override_attrs);
+                                   state->override_attrs, true);
         if (ret != EOK) {
             DEBUG(SSSDBG_OP_FAILURE, "ipa_s2n_save_objects failed.\n");
             tevent_req_error(req, ret);
@@ -2267,7 +2290,7 @@ static void ipa_s2n_get_user_get_override_done(struct tevent_req *subreq)
 
     ret = ipa_s2n_save_objects(state->dom, state->req_input, state->attrs,
                                state->simple_attrs, state->ipa_ctx->view_name,
-                               override_attrs);
+                               override_attrs, true);
     if (ret != EOK) {
         DEBUG(SSSDBG_OP_FAILURE, "ipa_s2n_save_objects failed.\n");
         tevent_req_error(req, ret);

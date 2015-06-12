@@ -707,7 +707,8 @@ int sysdb_set_entry_attr(struct sysdb_ctx *sysdb,
     lret = ldb_modify(sysdb->ldb, msg);
     if (lret != LDB_SUCCESS) {
         DEBUG(SSSDBG_MINOR_FAILURE,
-              "ldb_modify failed: [%s]\n", ldb_strerror(lret));
+              "ldb_modify failed: [%s](%d)[%s]\n",
+              ldb_strerror(lret), lret, ldb_errstring(sysdb->ldb));
     }
 
     ret = sysdb_error_to_errno(lret);
@@ -969,6 +970,11 @@ int sysdb_get_new_id(struct sss_domain_info *domain,
     }
 
     ret = ldb_modify(domain->sysdb->ldb, msg);
+    if (ret != LDB_SUCCESS) {
+        DEBUG(SSSDBG_MINOR_FAILURE,
+              "ldb_modify failed: [%s](%d)[%s]\n",
+              ldb_strerror(ret), ret, ldb_errstring(domain->sysdb->ldb));
+    }
     ret = sysdb_error_to_errno(ret);
 
     *_id = new_id;
@@ -1139,6 +1145,12 @@ sysdb_remove_ghost_from_group(struct sss_domain_info *dom,
 
 
     ret = sss_ldb_modify_permissive(dom->sysdb->ldb, msg);
+    if (ret != LDB_SUCCESS) {
+        DEBUG(SSSDBG_MINOR_FAILURE,
+              "sss_ldb_modify_permissive failed: [%s](%d)[%s]\n",
+              ldb_strerror(ret), ret, ldb_errstring(dom->sysdb->ldb));
+    }
+
     ret = sysdb_error_to_errno(ret);
     if (ret != EOK) {
         goto done;
@@ -1706,6 +1718,11 @@ int sysdb_mod_group_member(struct sss_domain_info *domain,
     }
 
     ret = ldb_modify(domain->sysdb->ldb, msg);
+    if (ret != LDB_SUCCESS) {
+        DEBUG(SSSDBG_MINOR_FAILURE,
+              "ldb_modify failed: [%s](%d)[%s]\n",
+              ldb_strerror(ret), ret, ldb_errstring(domain->sysdb->ldb));
+    }
     ret = sysdb_error_to_errno(ret);
 
 fail:
@@ -2750,6 +2767,12 @@ int sysdb_delete_user(struct sss_domain_info *domain,
             if (ret) goto fail;
 
             ret = ldb_modify(domain->sysdb->ldb, msg);
+            if (ret != LDB_SUCCESS) {
+                DEBUG(SSSDBG_MINOR_FAILURE,
+                      "ldb_modify failed: [%s](%d)[%s]\n",
+                      ldb_strerror(ret), ret,
+                      ldb_errstring(domain->sysdb->ldb));
+            }
             ret = sysdb_error_to_errno(ret);
             if (ret != EOK) {
                 goto fail;
@@ -3479,6 +3502,9 @@ errno_t sysdb_remove_attrs(struct sss_domain_info *domain,
          */
         lret = ldb_modify(domain->sysdb->ldb, msg);
         if (lret != LDB_SUCCESS && lret != LDB_ERR_NO_SUCH_ATTRIBUTE) {
+            DEBUG(SSSDBG_MINOR_FAILURE,
+                  "ldb_modify failed: [%s](%d)[%s]\n",
+                  ldb_strerror(lret), lret, ldb_errstring(domain->sysdb->ldb));
             ret = sysdb_error_to_errno(lret);
             goto done;
         }
@@ -3517,7 +3543,8 @@ static errno_t sysdb_search_object_by_str_attr(TALLOC_CTX *mem_ctx,
     TALLOC_CTX *tmp_ctx;
     const char *def_attrs[] = { SYSDB_NAME, SYSDB_UIDNUM, SYSDB_GIDNUM,
                                 ORIGINALAD_PREFIX SYSDB_NAME,
-                                SYSDB_OBJECTCLASS, NULL };
+                                SYSDB_DEFAULT_ATTRS,
+                                NULL };
     struct ldb_dn *basedn;
     int ret;
     struct ldb_result *res = NULL;
@@ -3669,4 +3696,56 @@ done:
     }
     talloc_free(tmp_ctx);
     return ret;
+}
+
+errno_t sysdb_handle_original_uuid(const char *orig_name,
+                                   struct sysdb_attrs *src_attrs,
+                                   const char *src_name,
+                                   struct sysdb_attrs *dest_attrs,
+                                   const char *dest_name)
+{
+    int ret;
+    struct ldb_message_element *el;
+    char guid_str_buf[GUID_STR_BUF_SIZE];
+
+    if (orig_name == NULL || src_attrs == NULL || src_name == NULL
+            || dest_attrs == NULL || dest_name == NULL) {
+        return EINVAL;
+    }
+
+    ret = sysdb_attrs_get_el_ext(src_attrs, src_name, false, &el);
+    if (ret != EOK) {
+        if (ret != ENOENT) {
+            DEBUG(SSSDBG_OP_FAILURE, "sysdb_attrs_get_el failed.\n");
+        }
+        return ret;
+    }
+
+    if (el->num_values != 1) {
+        DEBUG(SSSDBG_MINOR_FAILURE,
+              "Found more than one UUID value, using the first.\n");
+    }
+
+    /* Check if we got a binary AD objectGUID */
+    if (el->values[0].length == GUID_BIN_LENGTH
+            && strcasecmp(orig_name, "objectGUID") == 0) {
+        ret = guid_blob_to_string_buf(el->values[0].data, guid_str_buf,
+                                      GUID_STR_BUF_SIZE);
+        if (ret != EOK) {
+            DEBUG(SSSDBG_OP_FAILURE, "guid_blob_to_string_buf failed.\n");
+            return ret;
+        }
+
+        ret = sysdb_attrs_add_string(dest_attrs, dest_name, guid_str_buf);
+    } else {
+        ret = sysdb_attrs_add_string(dest_attrs, dest_name,
+                                     (const char *)el->values[0].data);
+    }
+
+    if (ret != EOK) {
+        DEBUG(SSSDBG_OP_FAILURE, "sysdb_attrs_add_string failed.\n");
+        return ret;;
+    }
+
+    return EOK;
 }

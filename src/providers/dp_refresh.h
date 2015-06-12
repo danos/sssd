@@ -36,6 +36,7 @@ typedef struct tevent_req *
 (*be_refresh_send_t)(TALLOC_CTX *mem_ctx,
                      struct tevent_context *ev,
                      struct be_ctx *be_ctx,
+                     struct sss_domain_info *domain,
                      char **values,
                      void *pvt);
 
@@ -43,6 +44,8 @@ typedef errno_t
 (*be_refresh_recv_t)(struct tevent_req *req);
 
 enum be_refresh_type {
+    BE_REFRESH_TYPE_USERS,
+    BE_REFRESH_TYPE_GROUPS,
     BE_REFRESH_TYPE_NETGROUPS,
     BE_REFRESH_TYPE_SENTINEL
 };

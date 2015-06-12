@@ -222,6 +222,15 @@
                             defined by krb5.conf.
                         </para>
                         <para>
+                          NOTE: Please be aware that libkrb5 ccache expansion
+                          template from
+                          <citerefentry>
+                                <refentrytitle>krb5.conf</refentrytitle>
+                                <manvolnum>5</manvolnum>
+                          </citerefentry>
+                          uses different expansion sequences than SSSD.
+                        </para>
+                        <para>
                             Default: (from libkrb5)
                         </para>
                     </listitem>
@@ -503,6 +512,42 @@
 
                         <para>
                             Default: false (AD provider: true)
+                        </para>
+                    </listitem>
+                </varlistentry>
+
+                <varlistentry>
+                    <term>krb5_map_user (string)</term>
+                    <listitem>
+                        <para>
+                             The list of mappings is given as a comma-separated
+                             list of pairs <quote>username:primary</quote>
+                             where <quote>username</quote> is a UNIX user name
+                             and <quote>primary</quote> is a user part of
+                             a kerberos principal. This mapping is used when
+                             user is authenticating using
+                             <quote>auth_provider = krb5</quote>.
+                        </para>
+
+                        <para>
+                             example:
+<programlisting>
+krb5_realm = REALM
+krb5_map_user = joe:juser,dick:richard
+</programlisting>
+                        </para>
+                        <para>
+                             <quote>joe</quote> and <quote>dick</quote> are
+                             UNIX user names and <quote>juser</quote> and
+                             <quote>richard</quote> are primaries of kerberos
+                             principals. For user <quote>joe</quote> resp.
+                             <quote>dick</quote> SSSD will try to kinit as
+                             <quote>juser@REALM</quote> resp.
+                             <quote>richard@REALM</quote>.
+                        </para>
+
+                        <para>
+                            Default: not set
                         </para>
                     </listitem>
                 </varlistentry>

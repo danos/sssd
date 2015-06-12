@@ -68,6 +68,18 @@ static void sss_semanage_error_callback(void *varg,
     free(message);
 }
 
+static void sss_semanage_close(semanage_handle_t *handle)
+{
+    if (handle == NULL) {
+        return;     /* semanage uses asserts */
+    }
+
+    if (semanage_is_connected(handle)) {
+        semanage_disconnect(handle);
+    }
+    semanage_handle_destroy(handle);
+}
+
 static semanage_handle_t *sss_semanage_init(void)
 {
     int ret;
@@ -102,15 +114,9 @@ static semanage_handle_t *sss_semanage_init(void)
         goto fail;
     }
 
-    ret = semanage_begin_transaction(handle);
-    if (ret != 0) {
-        DEBUG(SSSDBG_CRIT_FAILURE, "Cannot begin SELinux transaction\n");
-        goto fail;
-    }
-
     return handle;
 fail:
-    semanage_handle_destroy(handle);
+    sss_semanage_close(handle);
     return NULL;
 }
 
@@ -236,6 +242,13 @@ int set_seuser(const char *login_name, const char *seuser_name,
         goto done;
     }
 
+    ret = semanage_begin_transaction(handle);
+    if (ret != 0) {
+        DEBUG(SSSDBG_CRIT_FAILURE, "Cannot begin SELinux transaction\n");
+        ret = EIO;
+        goto done;
+    }
+
     ret = semanage_seuser_key_create(handle, login_name, &key);
     if (ret != 0) {
         DEBUG(SSSDBG_CRIT_FAILURE, "Cannot create SELinux user key\n");
@@ -278,7 +291,7 @@ int set_seuser(const char *login_name, const char *seuser_name,
     ret = EOK;
 done:
     semanage_seuser_key_free(key);
-    semanage_handle_destroy(handle);
+    sss_semanage_close(handle);
     return ret;
 }
 
@@ -292,6 +305,13 @@ int del_seuser(const char *login_name)
     handle = sss_semanage_init();
     if (!handle) {
         DEBUG(SSSDBG_CRIT_FAILURE, "Cannot init SELinux management\n");
+        ret = EIO;
+        goto done;
+    }
+
+    ret = semanage_begin_transaction(handle);
+    if (ret != 0) {
+        DEBUG(SSSDBG_CRIT_FAILURE, "Cannot begin SELinux transaction\n");
         ret = EIO;
         goto done;
     }
@@ -350,7 +370,72 @@ int del_seuser(const char *login_name)
 
     ret = EOK;
 done:
-    semanage_handle_destroy(handle);
+    sss_semanage_close(handle);
+    return ret;
+}
+
+int get_seuser(TALLOC_CTX *mem_ctx, const char *login_name,
+               char **_seuser, char **_mls_range)
+{
+    errno_t ret;
+    const char *seuser;
+    const char *mls_range;
+    semanage_handle_t *sm_handle = NULL;
+    semanage_seuser_t *sm_user = NULL;
+    semanage_seuser_key_t *sm_key = NULL;
+
+    sm_handle = sss_semanage_init();
+    if (sm_handle == NULL) {
+        DEBUG(SSSDBG_CRIT_FAILURE, "Cannot create SELinux handle\n");
+        ret = EIO;
+        goto done;
+    }
+
+    ret = semanage_seuser_key_create(sm_handle, login_name, &sm_key);
+    if (ret != EOK) {
+        DEBUG(SSSDBG_CRIT_FAILURE, "Cannot create key for %s\n", login_name);
+        ret = EIO;
+        goto done;
+    }
+
+    ret = semanage_seuser_query(sm_handle, sm_key, &sm_user);
+    if (ret < 0) {
+        DEBUG(SSSDBG_CRIT_FAILURE, "Cannot query for %s\n", login_name);
+        ret = EIO;
+        goto done;
+    }
+
+    seuser = semanage_seuser_get_sename(sm_user);
+    if (seuser != NULL) {
+        *_seuser = talloc_strdup(mem_ctx, seuser);
+        if (*_seuser == NULL) {
+            ret = ENOMEM;
+            goto done;
+        }
+        DEBUG(SSSDBG_OP_FAILURE,
+              "SELinux user for %s: %s\n", login_name, *_seuser);
+    } else {
+        DEBUG(SSSDBG_CRIT_FAILURE, "Cannot get sename for %s\n", login_name);
+    }
+
+    mls_range = semanage_seuser_get_mlsrange(sm_user);
+    if (mls_range != NULL) {
+        *_mls_range = talloc_strdup(mem_ctx, mls_range);
+        if (*_mls_range == NULL) {
+            ret = ENOMEM;
+            goto done;
+        }
+        DEBUG(SSSDBG_OP_FAILURE,
+              "SELinux range for %s: %s\n", login_name, *_mls_range);
+    } else {
+        DEBUG(SSSDBG_CRIT_FAILURE, "Cannot get mlsrange for %s\n", login_name);
+    }
+
+    ret = EOK;
+done:
+    semanage_seuser_key_free(sm_key);
+    semanage_seuser_free(sm_user);
+    sss_semanage_close(sm_handle);
     return ret;
 }
 
@@ -362,6 +447,12 @@ int set_seuser(const char *login_name, const char *seuser_name,
 }
 
 int del_seuser(const char *login_name)
+{
+    return EOK;
+}
+
+int get_seuser(TALLOC_CTX *mem_ctx, const char *login_name,
+               char **_seuser, char **_mls_range)
 {
     return EOK;
 }

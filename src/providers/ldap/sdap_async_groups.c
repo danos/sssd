@@ -510,10 +510,9 @@ static int sdap_save_group(TALLOC_CTX *memctx,
     TALLOC_CTX *tmpctx = NULL;
     bool posix_group;
     bool use_id_mapping;
+    bool need_filter;
     char *sid_str;
-    const char *uuid;
     struct sss_domain_info *subdomain;
-    int32_t ad_group_type;
 
     tmpctx = talloc_new(NULL);
     if (!tmpctx) {
@@ -549,22 +548,14 @@ static int sdap_save_group(TALLOC_CTX *memctx,
     }
 
     /* Always store UUID if available */
-    ret = sysdb_attrs_get_string(attrs,
-                                 opts->group_map[SDAP_AT_GROUP_UUID].sys_name,
-                                 &uuid);
-    if (ret == EOK) {
-        ret = sysdb_attrs_add_string(group_attrs, SYSDB_UUID, uuid);
-        if (ret != EOK) {
-            DEBUG(SSSDBG_MINOR_FAILURE, "Could not add UUID string: [%s]\n",
-                                         sss_strerror(ret));
-            goto done;
-        }
-    } else if (ret == ENOENT) {
-        DEBUG(SSSDBG_TRACE_ALL, "UUID not available for group [%s].\n",
-                                 group_name);
-    } else {
-        DEBUG(SSSDBG_MINOR_FAILURE, "Could not identify UUID [%s]\n",
-                                     sss_strerror(ret));
+    ret = sysdb_handle_original_uuid(
+                                   opts->group_map[SDAP_AT_GROUP_UUID].def_name,
+                                   attrs,
+                                   opts->group_map[SDAP_AT_GROUP_UUID].sys_name,
+                                   group_attrs, SYSDB_UUID);
+    if (ret != EOK) {
+        DEBUG((ret == ENOENT) ? SSSDBG_TRACE_ALL : SSSDBG_MINOR_FAILURE,
+              "Failed to retrieve UUID [%d][%s].\n", ret, sss_strerror(ret));
     }
 
     /* If this object has a SID available, we will determine the correct
@@ -588,39 +579,20 @@ static int sdap_save_group(TALLOC_CTX *memctx,
     DEBUG(SSSDBG_TRACE_FUNC, "Processing group %s\n", group_name);
 
     posix_group = true;
-    if (opts->schema_type == SDAP_SCHEMA_AD) {
-        ret = sysdb_attrs_get_int32_t(attrs, SYSDB_GROUP_TYPE, &ad_group_type);
-        if (ret != EOK) {
-            DEBUG(SSSDBG_OP_FAILURE, "sysdb_attrs_get_int32_t failed.\n");
-            goto done;
-        }
+    ret = sdap_check_ad_group_type(dom, opts, attrs, group_name,
+                                   &need_filter);
+    if (ret != EOK) {
+        goto done;
+    }
+    if (need_filter) {
+        posix_group = false;
+        gid = 0;
 
-        DEBUG(SSSDBG_TRACE_ALL, "AD group [%s] has type flags %#x.\n",
-                                 group_name, ad_group_type);
-        /* Only security groups from AD are considered for POSIX groups.
-         * Additionally only global and universal group are taken to account
-         * for trusted domains. */
-        if (!(ad_group_type & SDAP_AD_GROUP_TYPE_SECURITY)
-                || (IS_SUBDOMAIN(dom)
-                    && (!((ad_group_type & SDAP_AD_GROUP_TYPE_GLOBAL)
-                        || (ad_group_type & SDAP_AD_GROUP_TYPE_UNIVERSAL))))) {
-            posix_group = false;
-            gid = 0;
-            DEBUG(SSSDBG_TRACE_FUNC, "Filtering AD group [%s].\n",
-                                      group_name);
-            ret = sysdb_attrs_add_uint32(group_attrs,
-                                         opts->group_map[SDAP_AT_GROUP_GID].sys_name, 0);
-            if (ret != EOK) {
-                DEBUG(SSSDBG_CRIT_FAILURE,
-                      "Failed to add a GID to non-posix group!\n");
-                return ret;
-            }
-            ret = sysdb_attrs_add_bool(group_attrs, SYSDB_POSIX, false);
-            if (ret != EOK) {
-                DEBUG(SSSDBG_OP_FAILURE,
-                      "Error: Failed to mark group as non-posix!\n");
-                return ret;
-            }
+        ret = sysdb_attrs_add_bool(group_attrs, SYSDB_POSIX, false);
+        if (ret != EOK) {
+            DEBUG(SSSDBG_OP_FAILURE,
+                  "Error: Failed to mark group as non-posix!\n");
+            return ret;
         }
     }
 
@@ -1750,6 +1722,7 @@ struct sdap_get_groups_state {
     char *filter;
     int timeout;
     bool enumeration;
+    bool no_members;
 
     char *higher_usn;
     struct sysdb_attrs **groups;
@@ -1779,7 +1752,8 @@ struct tevent_req *sdap_get_groups_send(TALLOC_CTX *memctx,
                                        const char **attrs,
                                        const char *filter,
                                        int timeout,
-                                       bool enumeration)
+                                       bool enumeration,
+                                       bool no_members)
 {
     errno_t ret;
     struct tevent_req *req;
@@ -1802,6 +1776,7 @@ struct tevent_req *sdap_get_groups_send(TALLOC_CTX *memctx,
     state->count = 0;
     state->timeout = timeout;
     state->enumeration = enumeration;
+    state->no_members = no_members;
     state->base_filter = filter;
     state->base_iter = 0;
     state->search_bases = sdom->group_search_bases;
@@ -1926,6 +1901,7 @@ static void sdap_get_groups_process(struct tevent_req *subreq)
     bool next_base = false;
     size_t count;
     struct sysdb_attrs **groups;
+    char **groupnamelist;
 
     ret = sdap_get_generic_recv(subreq, state,
                                 &count, &groups);
@@ -1989,6 +1965,32 @@ static void sdap_get_groups_process(struct tevent_req *subreq)
      */
     if (state->count == 0) {
         tevent_req_error(req, ENOENT);
+        return;
+    }
+
+    if (state->no_members) {
+        ret = sysdb_attrs_primary_name_list(state->sysdb, state,
+                                state->groups, state->count,
+                                state->opts->group_map[SDAP_AT_GROUP_NAME].name,
+                                &groupnamelist);
+        if (ret != EOK) {
+            DEBUG(SSSDBG_OP_FAILURE,
+                  "sysdb_attrs_primary_name_list failed.\n");
+            tevent_req_error(req, ret);
+            return;
+        }
+
+        ret = sdap_add_incomplete_groups(state->sysdb, state->dom, state->opts,
+                                         groupnamelist, state->groups,
+                                         state->count);
+        if (ret == EOK) {
+            DEBUG(SSSDBG_TRACE_LIBS,
+                  "Writing only group data without members was successful.\n");
+            tevent_req_done(req);
+        } else {
+            DEBUG(SSSDBG_OP_FAILURE, "sdap_add_incomplete_groups failed.\n");
+            tevent_req_error(req, ret);
+        }
         return;
     }
 
@@ -2465,7 +2467,8 @@ static errno_t sdap_nested_group_populate_users(TALLOC_CTX *mem_ctx,
 
             ret = sysdb_attrs_add_string(attrs, SYSDB_NAME, username);
             if (ret) goto done;
-            ret = sysdb_set_user_attr(user_dom, sysdb_name, attrs, SYSDB_MOD_REP);
+            ret = sysdb_set_entry_attr(user_dom->sysdb, msgs[0]->dn, attrs,
+                                       SYSDB_MOD_REP);
             if (ret != EOK) goto done;
         } else {
             key.type = HASH_KEY_STRING;

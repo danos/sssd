@@ -214,10 +214,12 @@ if HAVE_CMOCKA
         test_search_bases \
         sdap-tests \
         test_sysdb_views \
+        test_sysdb_utils \
         test_be_ptask \
         test_copy_ccache \
         test_copy_keytab \
         test_child_common \
+        test_fo_srv \
         $(NULL)
 
 if HAVE_LIBRESOLV
@@ -562,6 +564,7 @@ dist_noinst_HEADERS = \
     src/providers/ldap/sdap_autofs.h \
     src/providers/ldap/sdap_id_op.h \
     src/providers/ldap/ldap_opts.h \
+    src/providers/ldap/ldap_auth.h \
     src/providers/ldap/sdap_range.h \
     src/providers/ldap/sdap_users.h \
     src/providers/ldap/sdap_dyndns.h \
@@ -767,10 +770,15 @@ endif
 libsss_util_la_LDFLAGS = -avoid-version
 
 pkglib_LTLIBRARIES += libsss_semanage.la
+libsss_semanage_la_CFLAGS = \
+    $(AM_CFLAGS) \
+    $(TALLOC_CFLAGS) \
+    $(NULL)
 libsss_semanage_la_SOURCES = \
     src/util/sss_semanage.c \
     $(NULL)
 libsss_semanage_la_LIBADD = \
+    $(TALLOC_LIBS) \
     libsss_debug.la \
     $(NULL)
 if BUILD_SEMANAGE
@@ -860,7 +868,9 @@ libwbclient_LTLIBRARIES = libwbclient.la
 pkgconfig_DATA += src/sss_client/libwbclient/wbclient_sssd.pc
 
 EXTRA_libwbclient_la_DEPENDENCIES = \
-    src/sss_client/libwbclient/wbclient.exports
+    src/sss_client/libwbclient/wbclient.exports \
+    $(NULL)
+
 libwbclient_la_SOURCES = \
     src/sss_client/libwbclient/wbc_guid.c \
     src/sss_client/libwbclient/wbc_idmap_common.c \
@@ -873,15 +883,21 @@ libwbclient_la_SOURCES = \
     src/sss_client/libwbclient/wbc_sid_sssd.c \
     src/sss_client/libwbclient/wbc_sssd_internal.h \
     src/sss_client/libwbclient/wbc_util_common.c \
-    src/sss_client/libwbclient/wbc_util_sssd.c
+    src/sss_client/libwbclient/wbc_util_sssd.c \
+    src/sss_client/libwbclient/wbc_ctx_sssd.c \
+    $(NULL)
 libwbclient_la_LIBADD = \
     libsss_nss_idmap.la \
-    $(CLIENT_LIBS)
+    $(CLIENT_LIBS) \
+    $(NULL)
+
 libwbclient_la_LDFLAGS = \
     -Wl,--version-script,$(srcdir)/src/sss_client/libwbclient/wbclient.exports \
-    -version-info 11:0:11
+    -version-info @libwbclient_version_info@ \
+    $(NULL)
 
-dist_noinst_DATA += src/sss_client/libwbclient/wbclient.exports
+dist_noinst_DATA += src/sss_client/libwbclient/wbclient.exports \
+    $(NULL)
 
 include_HEADERS += src/sss_client/libwbclient/wbclient_sssd.h
 endif #BUILD_LIBWBCLIENT
@@ -1538,15 +1554,18 @@ simple_access_tests_LDADD = \
     libsss_test_common.la
 
 util_tests_SOURCES = \
-    src/tests/util-tests.c
+    src/tests/util-tests.c \
+    $(NULL)
 util_tests_CFLAGS = \
     $(AM_CFLAGS) \
-    $(CHECK_CFLAGS)
+    $(CHECK_CFLAGS) \
+    $(NULL)
 util_tests_LDADD = \
     $(SSSD_LIBS) \
     $(CHECK_LIBS) \
     $(SSSD_INTERNAL_LTLIBS) \
-    libsss_test_common.la
+    libsss_test_common.la \
+    $(NULL)
 
 safe_format_tests_SOURCES = \
     src/tests/safe-format-tests.c
@@ -1880,6 +1899,7 @@ nestedgroups_tests_SOURCES = \
     src/providers/ldap/sdap_idmap.c \
     src/tests/cmocka/test_nested_groups.c \
     src/providers/ldap/sdap_async_nested_groups.c \
+    src/providers/ldap/sdap_ad_groups.c \
     $(NULL)
 nestedgroups_tests_CFLAGS = \
     $(AM_CFLAGS) \
@@ -2108,6 +2128,21 @@ test_sysdb_views_LDADD = \
     libsss_test_common.la \
     $(NULL)
 
+test_sysdb_utils_SOURCES = \
+    src/tests/cmocka/test_sysdb_utils.c \
+    $(NULL)
+test_sysdb_utils_CFLAGS = \
+    $(AM_CFLAGS) \
+    $(NULL)
+test_sysdb_utils_LDADD = \
+    $(CMOCKA_LIBS) \
+    $(LDB_LIBS) \
+    $(POPT_LIBS) \
+    $(TALLOC_LIBS) \
+    $(SSSD_INTERNAL_LTLIBS) \
+    libsss_test_common.la \
+    $(NULL)
+
 test_be_ptask_SOURCES = \
     src/tests/cmocka/test_be_ptask.c \
     src/providers/dp_ptask.c \
@@ -2208,6 +2243,24 @@ test_resolv_fake_LDADD = \
     libsss_test_common.la \
     $(NULL)
 endif # HAVE_LIBRESOLV
+
+test_fo_srv_SOURCES = \
+    src/tests/cmocka/test_fo_srv.c \
+    src/providers/fail_over.c \
+    src/providers/fail_over_srv.c \
+    $(NULL)
+test_fo_srv_CFLAGS = \
+    $(AM_CFLAGS) \
+    $(NULL)
+test_fo_srv_LDADD = \
+    $(CMOCKA_LIBS) \
+    $(POPT_LIBS) \
+    $(TALLOC_LIBS) \
+    $(CARES_LIBS) \
+    $(DHASH_LIBS) \
+    $(SSSD_INTERNAL_LTLIBS) \
+    libsss_test_common.la \
+    $(NULL)
 
 endif # HAVE_CMOCKA
 
@@ -2373,6 +2426,7 @@ libsss_ldap_common_la_SOURCES = \
     src/providers/ldap/sdap_async_connection.c \
     src/providers/ldap/sdap_async_netgroups.c \
     src/providers/ldap/sdap_async_services.c \
+    src/providers/ldap/sdap_ad_groups.c \
     src/providers/ldap/sdap_child_helpers.c \
     src/providers/ldap/sdap_fd_events.c \
     src/providers/ldap/sdap_id_op.c \
@@ -2386,16 +2440,21 @@ libsss_ldap_common_la_SOURCES = \
     src/providers/ldap/sdap_domain.c \
     src/providers/ldap/sdap.c \
     src/util/user_info_msg.c \
-    src/util/sss_ldap.c
+    src/util/sss_ldap.c \
+    $(NULL)
 libsss_ldap_common_la_CFLAGS = \
-    $(KRB5_CFLAGS)
+    $(KRB5_CFLAGS) \
+    $(NULL)
 libsss_ldap_common_la_LIBADD = \
     $(OPENLDAP_LIBS) \
     $(KRB5_LIBS) \
     libsss_krb5_common.la \
-    libsss_idmap.la
+    libsss_idmap.la \
+    libsss_util.la \
+    $(NULL)
 libsss_ldap_common_la_LDFLAGS = \
-    -avoid-version
+    -avoid-version \
+    $(NULL)
 
 if BUILD_SUDO
 libsss_ldap_common_la_SOURCES += \
@@ -3030,6 +3089,8 @@ if SSSD_USER
 	chmod 4750 $(DESTDIR)$(sssdlibexecdir)/ldap_child
 	-chgrp $(SSSD_USER) $(DESTDIR)$(sssdlibexecdir)/krb5_child
 	chmod 4750 $(DESTDIR)$(sssdlibexecdir)/krb5_child
+	-chgrp $(SSSD_USER) $(DESTDIR)$(sssdlibexecdir)/proxy_child
+	chmod 4750 $(DESTDIR)$(sssdlibexecdir)/proxy_child
 if BUILD_SEMANAGE
 	-chgrp $(SSSD_USER) $(DESTDIR)$(sssdlibexecdir)/selinux_child
 	chmod 4750 $(DESTDIR)$(sssdlibexecdir)/selinux_child

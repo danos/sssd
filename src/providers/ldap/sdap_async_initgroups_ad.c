@@ -630,7 +630,7 @@ static errno_t sdap_ad_resolve_sids_step(struct tevent_req *req)
 
     subreq = groups_get_send(state, state->ev, state->id_ctx, sdap_domain,
                              state->conn, state->current_sid,
-                             BE_FILTER_SECID, BE_ATTR_CORE, false);
+                             BE_FILTER_SECID, BE_ATTR_CORE, false, true);
     if (subreq == NULL) {
         return ENOMEM;
     }
@@ -1445,7 +1445,18 @@ sdap_ad_tokengroups_initgroups_send(TALLOC_CTX *mem_ctx,
     state->use_id_mapping = use_id_mapping;
     state->domain = domain;
 
-    if (state->use_id_mapping && !IS_SUBDOMAIN(state->domain)) {
+    /* We can compute the the gidNumber attribute from SIDs obtained from
+     * the tokenGroups lookup in case ID mapping is used for a user from the
+     * parent domain. For trusted domains, we need to know the group type
+     * to be able to filter out domain-local groups. Additionally, as a
+     * temporary workaround until https://fedorahosted.org/sssd/ticket/2656
+     * is fixed, we also fetch the group object if group members are ignored
+     * to avoid having to transfer and retain members when the fake
+     * tokengroups object without name is replaced by the full group object
+     */
+    if (state->use_id_mapping
+            && !IS_SUBDOMAIN(state->domain)
+            && state->domain->ignore_group_members == false) {
         subreq = sdap_ad_tokengroups_initgr_mapping_send(state, ev, opts,
                                                          sysdb, domain, sh,
                                                          name, orig_dn,
@@ -1485,7 +1496,9 @@ static void sdap_ad_tokengroups_initgroups_done(struct tevent_req *subreq)
     req = tevent_req_callback_data(subreq, struct tevent_req);
     state = tevent_req_data(req, struct sdap_ad_tokengroups_initgroups_state);
 
-    if (state->use_id_mapping && !IS_SUBDOMAIN(state->domain)) {
+    if (state->use_id_mapping
+            && !IS_SUBDOMAIN(state->domain)
+            && state->domain->ignore_group_members == false) {
         ret = sdap_ad_tokengroups_initgr_mapping_recv(subreq);
     } else {
         ret = sdap_ad_tokengroups_initgr_posix_recv(subreq);

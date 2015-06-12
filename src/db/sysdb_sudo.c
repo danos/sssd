@@ -221,6 +221,7 @@ sysdb_get_sudo_filter(TALLOC_CTX *mem_ctx, const char *username,
     TALLOC_CTX *tmp_ctx = NULL;
     char *filter = NULL;
     char *specific_filter = NULL;
+    char *sanitized = NULL;
     time_t now;
     errno_t ret;
     int i;
@@ -246,9 +247,14 @@ sysdb_get_sudo_filter(TALLOC_CTX *mem_ctx, const char *username,
     }
 
     if ((flags & SYSDB_SUDO_FILTER_USERNAME) && (username != NULL)) {
+        ret = sss_filter_sanitize(tmp_ctx, username, &sanitized);
+        if (ret != EOK) {
+            goto done;
+        }
+
         specific_filter = talloc_asprintf_append(specific_filter, "(%s=%s)",
                                                  SYSDB_SUDO_CACHE_AT_USER,
-                                                 username);
+                                                 sanitized);
         NULL_CHECK(specific_filter, ret, done);
     }
 
@@ -261,9 +267,14 @@ sysdb_get_sudo_filter(TALLOC_CTX *mem_ctx, const char *username,
 
     if ((flags & SYSDB_SUDO_FILTER_GROUPS) && (groupnames != NULL)) {
         for (i=0; groupnames[i] != NULL; i++) {
+            ret = sss_filter_sanitize(tmp_ctx, groupnames[i], &sanitized);
+            if (ret != EOK) {
+                goto done;
+            }
+
             specific_filter = talloc_asprintf_append(specific_filter, "(%s=%%%s)",
                                                      SYSDB_SUDO_CACHE_AT_USER,
-                                                     groupnames[i]);
+                                                     sanitized);
             NULL_CHECK(specific_filter, ret, done);
         }
     }
@@ -521,6 +532,11 @@ static errno_t sysdb_sudo_set_refresh_time(struct sss_domain_info *domain,
         lret = ldb_add(domain->sysdb->ldb, msg);
     }
 
+    if (lret != LDB_SUCCESS) {
+        DEBUG(SSSDBG_MINOR_FAILURE,
+              "ldb operation failed: [%s](%d)[%s]\n",
+              ldb_strerror(lret), lret, ldb_errstring(domain->sysdb->ldb));
+    }
     ret = sysdb_error_to_errno(lret);
 
 done:

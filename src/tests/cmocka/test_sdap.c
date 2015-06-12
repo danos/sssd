@@ -246,7 +246,7 @@ struct parse_test_ctx {
     struct sdap_msg sm;
 };
 
-void parse_entry_test_setup(void **state)
+static int parse_entry_test_setup(void **state)
 {
     struct parse_test_ctx *test_ctx;
 
@@ -257,9 +257,10 @@ void parse_entry_test_setup(void **state)
 
     check_leaks_push(test_ctx);
     *state = test_ctx;
+    return 0;
 }
 
-void parse_entry_test_teardown(void **state)
+static int parse_entry_test_teardown(void **state)
 {
     struct parse_test_ctx *test_ctx = talloc_get_type_abort(*state,
                                                       struct parse_test_ctx);
@@ -267,6 +268,7 @@ void parse_entry_test_teardown(void **state)
     assert_true(check_leaks_pop(test_ctx) == true);
     talloc_free(test_ctx);
     assert_true(leak_check_teardown());
+    return 0;
 }
 
 void test_parse_with_map(void **state)
@@ -718,6 +720,227 @@ void test_parse_no_dn(void **state)
     talloc_free(map);
 }
 
+struct copy_map_entry_test_ctx {
+    struct sdap_attr_map *src_map;
+    struct sdap_attr_map *dst_map;
+};
+
+static int copy_map_entry_test_setup(void **state)
+{
+    int ret;
+    struct copy_map_entry_test_ctx *test_ctx;
+
+    assert_true(leak_check_setup());
+
+    test_ctx = talloc_zero(global_talloc_context,
+                           struct copy_map_entry_test_ctx);
+    assert_non_null(test_ctx);
+
+    ret = sdap_copy_map(test_ctx, rfc2307_user_map,
+                        SDAP_OPTS_USER, &test_ctx->src_map);
+    assert_int_equal(ret, ERR_OK);
+
+    ret = sdap_copy_map(test_ctx, rfc2307_user_map,
+                        SDAP_OPTS_USER, &test_ctx->dst_map);
+    assert_int_equal(ret, ERR_OK);
+
+    check_leaks_push(test_ctx);
+    *state = test_ctx;
+    return 0;
+}
+
+static int copy_map_entry_test_teardown(void **state)
+{
+    struct copy_map_entry_test_ctx *test_ctx = talloc_get_type_abort(*state,
+                                               struct copy_map_entry_test_ctx);
+    assert_true(check_leaks_pop(test_ctx) == true);
+    talloc_free(test_ctx);
+    assert_true(leak_check_teardown());
+    return 0;
+}
+
+static const char *copy_uuid(struct copy_map_entry_test_ctx *test_ctx)
+{
+    errno_t ret;
+
+    assert_null(test_ctx->dst_map[SDAP_AT_USER_UUID].name);
+    ret = sdap_copy_map_entry(test_ctx->src_map, test_ctx->dst_map,
+                              SDAP_AT_USER_UUID);
+    assert_int_equal(ret, EOK);
+    return test_ctx->dst_map[SDAP_AT_USER_UUID].name;
+}
+
+static void test_sdap_copy_map_entry(void **state)
+{
+    struct copy_map_entry_test_ctx *test_ctx = talloc_get_type_abort(*state,
+                                               struct copy_map_entry_test_ctx);
+    const char *uuid_set_val = "test_uuid_val";
+    const char *uuid_val = NULL;
+
+    test_ctx->src_map[SDAP_AT_USER_UUID].name = discard_const(uuid_set_val);
+
+    uuid_val = copy_uuid(test_ctx);
+    assert_non_null(uuid_val);
+    assert_string_equal(uuid_val, uuid_set_val);
+    talloc_free(test_ctx->dst_map[SDAP_AT_USER_UUID].name);
+}
+
+static void test_sdap_copy_map_entry_null_name(void **state)
+{
+    struct copy_map_entry_test_ctx *test_ctx = talloc_get_type_abort(*state,
+                                               struct copy_map_entry_test_ctx);
+    const char *uuid_val = NULL;
+
+    uuid_val = copy_uuid(test_ctx);
+    assert_null(uuid_val);
+}
+
+struct test_sdap_inherit_ctx {
+    struct sdap_options *parent_sdap_opts;
+    struct sdap_options *child_sdap_opts;
+};
+
+struct sdap_options *mock_sdap_opts(TALLOC_CTX *mem_ctx)
+{
+    int ret;
+    struct sdap_options *opts;
+
+    opts = talloc_zero(mem_ctx, struct sdap_options);
+    assert_non_null(opts);
+
+    ret = sdap_copy_map(opts, rfc2307_user_map,
+                        SDAP_OPTS_USER, &opts->user_map);
+    assert_int_equal(ret, ERR_OK);
+
+    ret = dp_copy_defaults(opts, default_basic_opts,
+                           SDAP_OPTS_BASIC, &opts->basic);
+    assert_int_equal(ret, ERR_OK);
+
+    return opts;
+}
+
+static int test_sdap_inherit_option_setup(void **state)
+{
+    int ret;
+    struct test_sdap_inherit_ctx *test_ctx;
+
+    assert_true(leak_check_setup());
+
+    test_ctx = talloc_zero(global_talloc_context,
+                           struct test_sdap_inherit_ctx);
+    assert_non_null(test_ctx);
+
+    test_ctx->child_sdap_opts = talloc_zero(test_ctx, struct sdap_options);
+
+    test_ctx->parent_sdap_opts = mock_sdap_opts(test_ctx);
+    assert_non_null(test_ctx->parent_sdap_opts);
+    test_ctx->child_sdap_opts = mock_sdap_opts(test_ctx);
+    assert_non_null(test_ctx->child_sdap_opts);
+
+    test_ctx->parent_sdap_opts->user_map[SDAP_AT_USER_PRINC].name = \
+                                                  discard_const("test_princ");
+
+    ret = dp_opt_set_int(test_ctx->parent_sdap_opts->basic,
+                         SDAP_CACHE_PURGE_TIMEOUT, 123);
+    assert_int_equal(ret, EOK);
+
+    *state = test_ctx;
+    return 0;
+}
+
+static int test_sdap_inherit_option_teardown(void **state)
+{
+    struct test_sdap_inherit_ctx *test_ctx = \
+                talloc_get_type_abort(*state, struct test_sdap_inherit_ctx);
+
+    talloc_free(test_ctx);
+    assert_true(leak_check_teardown());
+    return 0;
+}
+
+static void test_sdap_inherit_option_null(void **state)
+{
+    struct test_sdap_inherit_ctx *test_ctx = \
+                talloc_get_type_abort(*state, struct test_sdap_inherit_ctx);
+    int val;
+
+    val = dp_opt_get_int(test_ctx->child_sdap_opts->basic,
+                         SDAP_CACHE_PURGE_TIMEOUT);
+    assert_int_equal(val, 10800);
+
+    sdap_inherit_options(NULL,
+                         test_ctx->parent_sdap_opts,
+                         test_ctx->child_sdap_opts);
+
+    val = dp_opt_get_int(test_ctx->child_sdap_opts->basic,
+                         SDAP_CACHE_PURGE_TIMEOUT);
+    assert_int_equal(val, 10800);
+}
+
+static void test_sdap_inherit_option_notset(void **state)
+{
+    struct test_sdap_inherit_ctx *test_ctx = \
+                talloc_get_type_abort(*state, struct test_sdap_inherit_ctx);
+    int val;
+    const char *inherit_options[] = { "ldap_use_tokengroups", NULL };
+
+    val = dp_opt_get_int(test_ctx->child_sdap_opts->basic,
+                         SDAP_CACHE_PURGE_TIMEOUT);
+    assert_int_equal(val, 10800);
+
+    /* parent has nondefault, but it's not supposed to be inherited */
+    sdap_inherit_options(discard_const(inherit_options),
+                         test_ctx->parent_sdap_opts,
+                         test_ctx->child_sdap_opts);
+
+    val = dp_opt_get_int(test_ctx->child_sdap_opts->basic,
+                         SDAP_CACHE_PURGE_TIMEOUT);
+    assert_int_equal(val, 10800);
+}
+
+static void test_sdap_inherit_option_basic(void **state)
+{
+    struct test_sdap_inherit_ctx *test_ctx = \
+                talloc_get_type_abort(*state, struct test_sdap_inherit_ctx);
+    int val;
+    const char *inherit_options[] = { "ldap_purge_cache_timeout", NULL };
+
+    val = dp_opt_get_int(test_ctx->child_sdap_opts->basic,
+                         SDAP_CACHE_PURGE_TIMEOUT);
+    assert_int_equal(val, 10800);
+
+    /* parent has nondefault, but it's not supposed to be inherited */
+    sdap_inherit_options(discard_const(inherit_options),
+                         test_ctx->parent_sdap_opts,
+                         test_ctx->child_sdap_opts);
+
+    val = dp_opt_get_int(test_ctx->child_sdap_opts->basic,
+                         SDAP_CACHE_PURGE_TIMEOUT);
+    assert_int_equal(val, 123);
+}
+
+static void test_sdap_inherit_option_user(void **state)
+{
+    struct test_sdap_inherit_ctx *test_ctx = \
+                talloc_get_type_abort(*state, struct test_sdap_inherit_ctx);
+    const char *inherit_options[] = { "ldap_user_principal", NULL };
+
+    assert_string_equal(
+            test_ctx->child_sdap_opts->user_map[SDAP_AT_USER_PRINC].name,
+            "krbPrincipalName");
+
+    /* parent has nondefault, but it's not supposed to be inherited */
+    sdap_inherit_options(discard_const(inherit_options),
+                         test_ctx->parent_sdap_opts,
+                         test_ctx->child_sdap_opts);
+
+    assert_string_equal(
+            test_ctx->child_sdap_opts->user_map[SDAP_AT_USER_PRINC].name,
+            "test_princ");
+
+    talloc_free(test_ctx->child_sdap_opts->user_map[SDAP_AT_USER_PRINC].name);
+}
+
 int main(int argc, const char *argv[])
 {
     poptContext pc;
@@ -728,41 +951,63 @@ int main(int argc, const char *argv[])
         POPT_TABLEEND
     };
 
-    const UnitTest tests[] = {
-        unit_test_setup_teardown(test_parse_with_map,
-                                 parse_entry_test_setup,
-                                 parse_entry_test_teardown),
-        unit_test_setup_teardown(test_parse_no_map,
-                                 parse_entry_test_setup,
-                                 parse_entry_test_teardown),
-        unit_test_setup_teardown(test_parse_no_attrs,
-                                 parse_entry_test_setup,
-                                 parse_entry_test_teardown),
-        unit_test_setup_teardown(test_parse_dups,
-                                 parse_entry_test_setup,
-                                 parse_entry_test_teardown),
-        unit_test_setup_teardown(test_parse_deref,
-                                 parse_entry_test_setup,
-                                 parse_entry_test_teardown),
-        unit_test_setup_teardown(test_parse_deref_no_attrs,
-                                 parse_entry_test_setup,
-                                 parse_entry_test_teardown),
-        unit_test_setup_teardown(test_parse_secondary_oc,
-                                 parse_entry_test_setup,
-                                 parse_entry_test_teardown),
+    const struct CMUnitTest tests[] = {
+        cmocka_unit_test_setup_teardown(test_parse_with_map,
+                                        parse_entry_test_setup,
+                                        parse_entry_test_teardown),
+        cmocka_unit_test_setup_teardown(test_parse_no_map,
+                                        parse_entry_test_setup,
+                                        parse_entry_test_teardown),
+        cmocka_unit_test_setup_teardown(test_parse_no_attrs,
+                                        parse_entry_test_setup,
+                                        parse_entry_test_teardown),
+        cmocka_unit_test_setup_teardown(test_parse_dups,
+                                        parse_entry_test_setup,
+                                        parse_entry_test_teardown),
+        cmocka_unit_test_setup_teardown(test_parse_deref,
+                                        parse_entry_test_setup,
+                                        parse_entry_test_teardown),
+        cmocka_unit_test_setup_teardown(test_parse_deref_no_attrs,
+                                        parse_entry_test_setup,
+                                        parse_entry_test_teardown),
+        cmocka_unit_test_setup_teardown(test_parse_secondary_oc,
+                                        parse_entry_test_setup,
+                                        parse_entry_test_teardown),
         /* Negative tests */
-        unit_test_setup_teardown(test_parse_no_oc,
-                                 parse_entry_test_setup,
-                                 parse_entry_test_teardown),
-        unit_test_setup_teardown(test_parse_bad_oc,
-                                 parse_entry_test_setup,
-                                 parse_entry_test_teardown),
-        unit_test_setup_teardown(test_parse_no_dn,
-                                 parse_entry_test_setup,
-                                 parse_entry_test_teardown),
-        unit_test_setup_teardown(test_parse_deref_map_mismatch,
-                                 parse_entry_test_setup,
-                                 parse_entry_test_teardown),
+        cmocka_unit_test_setup_teardown(test_parse_no_oc,
+                                        parse_entry_test_setup,
+                                        parse_entry_test_teardown),
+        cmocka_unit_test_setup_teardown(test_parse_bad_oc,
+                                        parse_entry_test_setup,
+                                        parse_entry_test_teardown),
+        cmocka_unit_test_setup_teardown(test_parse_no_dn,
+                                        parse_entry_test_setup,
+                                        parse_entry_test_teardown),
+        cmocka_unit_test_setup_teardown(test_parse_deref_map_mismatch,
+                                        parse_entry_test_setup,
+                                        parse_entry_test_teardown),
+
+        /* Map option tests */
+        cmocka_unit_test_setup_teardown(test_sdap_copy_map_entry,
+                                        copy_map_entry_test_setup,
+                                        copy_map_entry_test_teardown),
+        cmocka_unit_test_setup_teardown(test_sdap_copy_map_entry_null_name,
+                                        copy_map_entry_test_setup,
+                                        copy_map_entry_test_teardown),
+
+        /* Option inherit tests */
+        cmocka_unit_test_setup_teardown(test_sdap_inherit_option_null,
+                                        test_sdap_inherit_option_setup,
+                                        test_sdap_inherit_option_teardown),
+        cmocka_unit_test_setup_teardown(test_sdap_inherit_option_notset,
+                                        test_sdap_inherit_option_setup,
+                                        test_sdap_inherit_option_teardown),
+        cmocka_unit_test_setup_teardown(test_sdap_inherit_option_basic,
+                                        test_sdap_inherit_option_setup,
+                                        test_sdap_inherit_option_teardown),
+        cmocka_unit_test_setup_teardown(test_sdap_inherit_option_user,
+                                        test_sdap_inherit_option_setup,
+                                        test_sdap_inherit_option_teardown),
     };
 
     /* Set debug level to invalid value so we can deside if -d 0 was used. */
@@ -786,5 +1031,5 @@ int main(int argc, const char *argv[])
      * they might not after a failed run. Remove the old db to be sure */
     tests_set_cwd();
 
-    return run_tests(tests);
+    return cmocka_run_group_tests(tests, NULL, NULL);
 }

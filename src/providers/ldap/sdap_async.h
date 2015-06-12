@@ -96,7 +96,8 @@ struct tevent_req *sdap_get_groups_send(TALLOC_CTX *memctx,
                                        const char **attrs,
                                        const char *filter,
                                        int timeout,
-                                       bool enumeration);
+                                       bool enumeration,
+                                       bool no_members);
 int sdap_get_groups_recv(struct tevent_req *req,
                          TALLOC_CTX *mem_ctx, char **timestamp);
 
@@ -134,6 +135,7 @@ struct tevent_req *sdap_get_initgr_send(TALLOC_CTX *memctx,
                                         struct sdap_id_ctx *id_ctx,
                                         struct sdap_id_conn_ctx *conn,
                                         const char *name,
+                                        int name_type,
                                         const char *extra_value,
                                         const char **grp_attrs);
 int sdap_get_initgr_recv(struct tevent_req *req);

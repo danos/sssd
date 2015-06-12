@@ -42,6 +42,9 @@ struct err_string error_to_str[] = {
     { "Network I/O Error" }, /* ERR_NETWORK_IO */
     { "Account Expired" }, /* ERR_ACCOUNT_EXPIRED */
     { "Password Expired" }, /* ERR_PASSWORD_EXPIRED */
+    { "Password Expired (reject access)" }, /* ERR_PASSWORD_EXPIRED_REJECT */
+    { "Password Expired (warn user)" }, /* ERR_PASSWORD_EXPIRED_WARN */
+    { "Password Expired (ask for new password)" }, /* ERR_PASSWORD_EXPIRED_RENEW */
     { "Host Access Denied" }, /* ERR_ACCESS_DENIED */
     { "SRV record not found" }, /* ERR_SRV_NOT_FOUND */
     { "SRV lookup error" }, /* ERR_SRV_LOOKUP_ERROR */
@@ -65,6 +68,11 @@ struct err_string error_to_str[] = {
     { "LDAP search returned a referral" }, /* ERR_REFERRAL */
     { "Error setting SELinux user context" }, /* ERR_SELINUX_CONTEXT */
     { "Username format not allowed by re_expression" }, /* ERR_REGEX_NOMATCH */
+    { "Time specification not supported" }, /* ERR_TIMESPEC_NOT_SUPPORTED */
+    { "Malformed cache entry" }, /* ERR_MALFORMED_ENTRY */
+    { "Unexpected cache entry type" }, /* ERR_UNEXPECTED_ENTRY_TYPE */
+    { "Failed to resolve one of user groups." }, /* ERR_SIMPLE_GROUPS_MISSING */
+    { "ERR_LAST" } /* ERR_LAST */
 };
 
 

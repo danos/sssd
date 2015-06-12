@@ -330,7 +330,7 @@ static void ipa_selinux_handler_done(struct tevent_req *req)
     struct sysdb_attrs **hbac_rules = 0;
     struct sysdb_attrs **best_match_maps;
     struct map_order_ctx *map_order_ctx;
-    struct selinux_child_input *sci;
+    struct selinux_child_input *sci = NULL;
     struct tevent_req *child_req;
 
     ret = ipa_get_selinux_recv(req, breq, &map_count, &maps,
@@ -749,7 +749,7 @@ static errno_t choose_best_seuser(TALLOC_CTX *mem_ctx,
 
     /* If no maps match, we'll use the default SELinux user from the
      * config */
-    seuser_mls_str = talloc_strdup(tmp_ctx, default_user);
+    seuser_mls_str = talloc_strdup(tmp_ctx, default_user ? default_user : "");
     if (seuser_mls_str == NULL) {
         ret = ENOMEM;
         goto done;
@@ -808,7 +808,7 @@ selinux_child_setup(TALLOC_CTX *mem_ctx,
 {
     errno_t ret;
     char *seuser;
-    char *mls_range;
+    const char *mls_range;
     char *ptr;
     char *username;
     char *username_final;
@@ -834,7 +834,7 @@ selinux_child_setup(TALLOC_CTX *mem_ctx,
     }
     if (*ptr == '\0') {
         /* No mls_range specified */
-        mls_range = NULL;
+        mls_range = "";
     } else {
         *ptr = '\0'; /* split */
         mls_range = ptr + 1;
@@ -1373,11 +1373,13 @@ ipa_get_selinux_maps_offline(struct tevent_req *req)
         return ENOMEM;
     }
 
-    ret = sysdb_attrs_add_string(state->defaults,
-                                 IPA_CONFIG_SELINUX_DEFAULT_USER_CTX,
-                                 default_user);
-    if (ret != EOK) {
-        return ret;
+    if (default_user) {
+        ret = sysdb_attrs_add_string(state->defaults,
+                                    IPA_CONFIG_SELINUX_DEFAULT_USER_CTX,
+                                    default_user);
+        if (ret != EOK) {
+            return ret;
+        }
     }
 
     ret = sysdb_attrs_add_string(state->defaults,
