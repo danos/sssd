@@ -55,7 +55,7 @@ Build-Depends:
  systemd,
  xml-core,
  xsltproc
-Standards-Version: 3.9.5
+Standards-Version: 3.9.6
 Vcs-Git: git://anonscm.debian.org/pkg-sssd/sssd.git
 Vcs-Browser: http://anonscm.debian.org/cgit/pkg-sssd/sssd.git
 Homepage: https://fedorahosted.org/sssd/

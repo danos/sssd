@@ -2,6 +2,7 @@ sssd (1.12.5-1) UNRELEASED; urgency=medium
 
   * New upstream release.
   * Let uscan verify upstream tarballs.
+  * control: Bump policy to 3.9.6, no changes.
 
  -- Timo Aaltonen <tjaalton@debian.org>  Fri, 12 Jun 2015 19:52:29 +0300
 
