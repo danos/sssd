@@ -1,3 +1,10 @@
+sssd (1.12.5-3) UNRELEASED; urgency=medium
+
+  * sssd-common.postinst: Drop removing the old logrotate file, handle
+    it in sssd.maintscript instead. (Closes: #794332)
+
+ -- Timo Aaltonen <tjaalton@debian.org>  Sat, 05 Sep 2015 07:13:03 +0300
+
 sssd (1.12.5-2) unstable; urgency=medium
 
   * sssd-common.postinst: Remove duplicate logrotate file on update.
