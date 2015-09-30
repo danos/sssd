@@ -8,6 +8,8 @@ case "$1" in
     configure)
         chown root:sssd $LIBDIR/selinux_child
         chmod 4754 $LIBDIR/selinux_child
+        chown -f sssd:sssd /var/lib/sss/keytabs
+        chmod -f 700 /var/lib/sss/keytabs
     ;;
 esac
 

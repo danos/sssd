@@ -4,6 +4,7 @@ sssd (1.13.0-1) UNRELEASED; urgency=medium
   * {common,ipa,krb5,proxy}.postinst: Create a sssd system user & group,
     and migrate various bits to their ownership.
   * Add sssd-dbus to libsss-simpleifp0 Depends.
+  * ipa: Add /var/lib/sss/keytabs.
 
  -- Timo Aaltonen <tjaalton@debian.org>  Wed, 30 Sep 2015 08:46:31 +0300
 
