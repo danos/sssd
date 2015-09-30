@@ -6,6 +6,7 @@ usr/lib/*/krb5/plugins/authdata/sssd_pac_plugin.so
 usr/lib/*/krb5/plugins/krb5/sssd_krb5_locator_plugin.so
 usr/lib/*/ldb/modules/ldb/memberof.so
 usr/lib/*/libnfsidmap/sss.so
+usr/lib/*/sssd/libsss_cert.so
 usr/lib/*/sssd/libsss_child.so
 usr/lib/*/sssd/libsss_crypt.so
 usr/lib/*/sssd/libsss_debug.so
