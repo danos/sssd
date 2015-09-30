@@ -309,7 +309,8 @@ Description: Communicator library for sudo
 Package: libsss-simpleifp0
 Section: libs
 Architecture: any
-Depends: ${misc:Depends}, ${shlibs:Depends}
+Depends: ${misc:Depends}, ${shlibs:Depends},
+ sssd-dbus (= ${binary:Version}),
 Description: SSSD D-Bus responder helper library
  Provides library that simplifies D-Bus API for the SSSD InfoPipe responder.
 
