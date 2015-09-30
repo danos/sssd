@@ -6,8 +6,8 @@ LIBDIR=/usr/lib/$MA/sssd
 
 case "$1" in
     configure)
-        chown root:sssd $LIBDIR/ldap_child $LIBDIR/krb5_child
-        chmod 4754 $LIBDIR/ldap_child $LIBDIR/krb5_child
+        chown -f root:sssd $LIBDIR/ldap_child $LIBDIR/krb5_child
+        chmod -f 4754 $LIBDIR/ldap_child $LIBDIR/krb5_child
     ;;
 esac
 
