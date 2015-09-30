@@ -17,8 +17,27 @@ set -e
 # for details, see http://www.debian.org/doc/debian-policy/ or
 # the debian-policy package
 
+OUT=/dev/null
+HOME=/var/lib/sss
+
 case "$1" in
     configure)
+        if ! getent passwd sssd > $OUT; then
+            echo "Creating SSSD system user & group..."
+            adduser --quiet --system --home $HOME \
+                --disabled-password -- group \
+                --gecos "SSSD system user" \
+                sssd > $OUT
+        fi
+        chown -f sssd:sssd \
+            $HOME/db $HOME/mc $HOME/pipes $HOME/pipes/private \
+            $HOME/pubconf  /etc/sssd /etc/sssd/sssd.conf \
+            /var/log/sssd
+        chmod -f 755 $HOME/mc $HOME/pipes $HOME/pubconf
+        chmod -f 750 /var/log/sssd
+        chmod -f 711 /etc/sssd
+        chmod -f 700 $HOME/db $HOME/pipes/private
+        chmod -f 0600 /etc/sssd/sssd.conf
     ;;
 
     abort-upgrade|abort-remove|abort-deconfigure)

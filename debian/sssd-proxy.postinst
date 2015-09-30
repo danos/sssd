@@ -1,0 +1,14 @@
+#!/bin/sh
+set -e
+
+MA=`dpkg-architecture -q DEB_HOST_MULTIARCH`
+LIBDIR=/usr/lib/$MA/sssd
+
+case "$1" in
+    configure)
+        chown root:sssd $LIBDIR/ldap_child $LIBDIR/krb5_child
+        chmod 4754 $LIBDIR/ldap_child $LIBDIR/krb5_child
+    ;;
+esac
+
+#DEBHELPER#
