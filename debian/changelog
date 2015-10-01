@@ -5,7 +5,7 @@ sssd (1.13.1-1) UNRELEASED; urgency=medium
     and migrate various bits to their ownership.
   * Add sssd-dbus to libsss-simpleifp0 Depends.
   * ipa: Add /var/lib/sss/keytabs.
-  * Build PEM/DER conversion tool, add libssl-dev to build-depends.
+  * common: Add PEM/DER conversion library.
   * Add support for python3 modules.
   * tools: Add sss_override.
 
