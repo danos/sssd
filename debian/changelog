@@ -18,6 +18,7 @@ sssd (1.13.1-1) UNRELEASED; urgency=medium
     rename the built modules instead.
   * rules, postinst: Avoid running dpkg-architecture in postinst and
     instead mangle them in post-dh_installdeb.
+  * common: Add depends on adduser.
 
  -- Timo Aaltonen <tjaalton@debian.org>  Wed, 30 Sep 2015 08:46:31 +0300
 

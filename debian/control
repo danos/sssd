@@ -92,7 +92,8 @@ Description: System Security Services Daemon -- metapackage
 
 Package: sssd-common
 Architecture: any
-Depends: python, python-sss, ${misc:Depends}, ${shlibs:Depends}
+Depends: python, python-sss, ${misc:Depends}, ${shlibs:Depends},
+ adduser,
 Recommends: bind9-host, libnss-sss, libpam-sss, libsss-sudo
 Suggests: apparmor, sssd-tools
 Breaks: sssd (<< 1.10.0~beta2-1),
