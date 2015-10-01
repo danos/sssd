@@ -26,6 +26,9 @@ case "$1" in
 		rmdir --ignore-fail-on-non-empty /etc/sssd/
 	fi
 	rm -rf /var/log/sssd/
+	if getent group dirsrv > /dev/null; then
+	    deluser --system sssd
+	fi
     ;;
     remove|upgrade|failed-upgrade|abort-install|abort-upgrade|disappear)
     ;;
