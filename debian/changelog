@@ -8,6 +8,7 @@ sssd (1.13.1-1) UNRELEASED; urgency=medium
   * common: Add PEM/DER conversion library.
   * Add support for python3 modules.
   * tools: Add sss_override.
+  * common: Add p11_child.
 
  -- Timo Aaltonen <tjaalton@debian.org>  Wed, 30 Sep 2015 08:46:31 +0300
 
