@@ -1,1 +1,2 @@
-usr/lib/python*/dist-packages/pyhbac.so
+usr/lib/python2*/dist-packages/pyhbac.so
+usr/lib/python2*/dist-packages/_py2hbac.so

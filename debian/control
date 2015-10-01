@@ -10,6 +10,7 @@ Build-Depends:
  debhelper (>= 9),
  dh-apparmor,
  dh-autoreconf,
+ dh-python,
  dh-systemd (>= 1.5),
  dnsutils,
  docbook-xml,
@@ -51,11 +52,16 @@ Build-Depends:
  libxml2-utils,
  lsb-release,
  python-dev (>= 2.6.6-3~),
+ python-setuptools,
+ python3-dev,
+ python3-setuptools,
  quilt,
  samba-dev (>= 2:4.1.13),
  systemd,
  xml-core,
  xsltproc
+X-Python-Version: >= 2.6
+X-Python3-Version: >= 3.3
 Standards-Version: 3.9.6
 Vcs-Git: git://anonscm.debian.org/pkg-sssd/sssd.git
 Vcs-Browser: http://anonscm.debian.org/cgit/pkg-sssd/sssd.git
@@ -353,6 +359,8 @@ Depends:
 Description: Python bindings for the FreeIPA HBAC Evaluator library
  The libipa_hbac-python contains the bindings so that libipa_hbac can be
  used by Python applications.
+ .
+ This package installs the library for Python 2.
 
 Package: python-libsss-nss-idmap
 Section: python
@@ -365,6 +373,8 @@ Depends:
 Description: Python bindings for the SID lookups library
  This package contains the bindings for libnss_sss_idmap to be used by
  Python applications.
+ .
+ This package installs the library for Python 2.
 
 Package: python-sss
 Section: python
@@ -380,3 +390,50 @@ Description: Python module for the System Security Services Daemon
  services for projects like FreeIPA.
  .
  This package provide a module to access the configuration of the sssd daemon.
+ .
+ This package installs the library for Python 2.
+
+Package: python3-libipa-hbac
+Section: python
+Architecture: any
+Depends:
+ libipa-hbac0 (= ${binary:Version}),
+ ${misc:Depends},
+ ${python3:Depends},
+ ${shlibs:Depends}
+Description: Python3 bindings for the FreeIPA HBAC Evaluator library
+ The libipa_hbac-python contains the bindings so that libipa_hbac can be
+ used by Python applications.
+ .
+ This package installs the library for Python 3.
+
+Package: python3-libsss-nss-idmap
+Section: python
+Architecture: any
+Depends:
+ libsss-nss-idmap0 (= ${binary:Version}),
+ ${misc:Depends},
+ ${python3:Depends},
+ ${shlibs:Depends}
+Description: Python3 bindings for the SID lookups library
+ This package contains the bindings for libnss_sss_idmap to be used by
+ Python applications.
+ .
+ This package installs the library for Python 3.
+
+Package: python3-sss
+Section: python
+Architecture: any
+Depends: ${misc:Depends}, ${python3:Depends}, ${shlibs:Depends}
+Provides: ${python3:Provides}
+Recommends: sssd
+Description: Python3 module for the System Security Services Daemon
+ Provides a set of daemons to manage access to remote directories and
+ authentication mechanisms. It provides an NSS and PAM interface toward
+ the system and a pluggable backend system to connect to multiple different
+ account sources. It is also the basis to provide client auditing and policy
+ services for projects like FreeIPA.
+ .
+ This package provide a module to access the configuration of the sssd daemon.
+ .
+ This package installs the library for Python 3.
