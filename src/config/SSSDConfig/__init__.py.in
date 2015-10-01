@@ -89,9 +89,11 @@ option_strings = {
     'pam_trusted_users' : _('List of trusted uids or user\'s name'),
     'pam_public_domains' : _('List of domains accessible even for untrusted users.'),
     'pam_account_expired_message' : _('Message printed when user account is expired.'),
+    'p11_child_timeout' : _('How many seconds will pam_sss wait for p11_child to finish'),
 
     # [sudo]
     'sudo_timed' : _('Whether to evaluate the time-based attributes in sudo rules'),
+    'sudo_inverse_order' : _('If true, SSSD will switch back to lower-wins ordering logic'),
 
     # [autofs]
     'autofs_negative_timeout' : _('Negative cache timeout length (seconds)'),
@@ -99,6 +101,7 @@ option_strings = {
     # [ssh]
     'ssh_hash_known_hosts': _('Whether to hash host names and addresses in the known_hosts file'),
     'ssh_known_hosts_timeout': _('How many seconds to keep a host in the known_hosts file after its host keys were requested'),
+    'ca_db': _('Path to storage of trusted CA certificates'),
 
     # [pac]
     'allowed_uids': _('List of UIDs or user names allowed to access the PAC responder'),
@@ -146,6 +149,7 @@ option_strings = {
     'dyndns_update_ptr' : _("Whether the provider should explicitly update the PTR record as well"),
     'dyndns_force_tcp' : _("Whether the nsupdate utility should default to using TCP"),
     'dyndns_auth' : _("What kind of authentication should be used to perform the DNS update"),
+    'dyndns_server' : _("Override the DNS server used to perform the DNS update"),
     'subdomain_enumerate' : _('Control enumeration of trusted domains'),
     'subdomain_refresh_interval' : _('How often should subdomains list be refreshed'),
     'subdomain_inherit' : _('List of options that should be inherited into a subdomain'),
@@ -355,6 +359,7 @@ option_strings = {
     'ldap_min_id' : _('Set lower boundary for allowed IDs from the LDAP server'),
     'ldap_max_id' : _('Set upper boundary for allowed IDs from the LDAP server'),
     'ldap_pwdlockout_dn' : _('DN for ppolicy queries'),
+    'wildcard_limit' : _('How many maximum entries to fetch during a wildcard request'),
 
     # [provider/ldap/auth]
     'ldap_pwd_policy' : _('Policy to evaluate the password expiration'),
@@ -733,11 +738,6 @@ class SSSDService(SSSDConfigObject):
 
         # Set up default options for this service
         self.options.update(self.schema.get_defaults(self.name))
-
-        # For the [sssd] service, force the config file version
-        if servicename == 'sssd':
-            self.options['config_file_version'] = 2
-            self.hidden_options.append('config_file_version')
 
     def list_options_with_mandatory(self):
         """
@@ -1496,7 +1496,7 @@ class SSSDConfig(SSSDChangeConf):
                 if srv not in configured_services:
                     del service_dict[srv]
 
-            active_services = service_dict.keys()
+            active_services = list(service_dict)
         else:
             active_services = []
 
@@ -1779,7 +1779,7 @@ class SSSDConfig(SSSDChangeConf):
                 if dom not in configured_domains:
                     del domain_dict[dom]
 
-            active_domains = domain_dict.keys()
+            active_domains = list(domain_dict)
         else:
             active_domains = []
 

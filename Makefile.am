@@ -117,7 +117,9 @@ sbin_PROGRAMS = \
     sss_groupshow \
     sss_cache \
     sss_debuglevel \
-    sss_seed
+    sss_override \
+    sss_seed \
+    $(NULL)
 
 sssdlibexec_PROGRAMS = \
     sssd_nss \
@@ -146,7 +148,9 @@ endif
 if BUILD_SEMANAGE
 sssdlibexec_PROGRAMS += selinux_child
 endif
-
+if HAVE_NSS
+sssdlibexec_PROGRAMS += p11_child
+endif
 
 if BUILD_PAC_RESPONDER
     sssdlibexec_PROGRAMS += sssd_pac
@@ -232,6 +236,8 @@ if HAVE_CMOCKA
         test_ipa_subdom_server \
         test_krb5_wait_queue \
         test_cert_utils \
+        test_ldap_id_cleanup \
+        test_data_provider_be \
         $(NULL)
 
 if HAVE_LIBRESOLV
@@ -279,7 +285,9 @@ TEST_EXTENSIONS = .sh
 TESTS = \
     $(PYTHON_TESTS) \
     $(non_interactive_cmocka_based_tests) \
-    $(non_interactive_check_based_tests)
+    $(non_interactive_check_based_tests) \
+    src/tests/whitespace_test \
+    $(NULL)
 
 sssdlib_LTLIBRARIES = \
     libsss_ldap.la \
@@ -362,6 +370,8 @@ dist_noinst_SCRIPTS = \
     src/tests/pysss_murmur-test.py2.sh \
     src/tests/pysss_murmur-test.py3.sh \
     src/tests/python-test.py \
+    src/tests/whitespace_test \
+    src/tests/krb5_proxy_check_test_data.conf \
     $(NULL)
 
 dist_noinst_DATA = \
@@ -378,6 +388,8 @@ dist_noinst_DATA = \
     contrib/ci/distro.sh \
     contrib/ci/misc.sh \
     contrib/ci/sssd.supp \
+    src/tests/cmocka/p11_nssdb/cert9.db \
+    src/tests/cmocka/p11_nssdb/key4.db \
     $(NULL)
 
 ###############################
@@ -422,7 +434,9 @@ AM_CPPFLAGS = \
     -DSSS_SUDO_SOCKET_NAME=\"$(pipepath)/sudo\" \
     -DSSS_AUTOFS_SOCKET_NAME=\"$(pipepath)/autofs\" \
     -DSSS_SSH_SOCKET_NAME=\"$(pipepath)/ssh\" \
-    -DLOCALEDIR=\"$(localedir)\"
+    -DLOCALEDIR=\"$(localedir)\" \
+    -DBASE_FILE_STEM=\"$(*F)\" \
+    $(NULL)
 
 EXTRA_DIST =
 
@@ -438,14 +452,17 @@ SSSD_RESPONDER_OBJ = \
     src/monitor/monitor_iface_generated.c \
     src/monitor/monitor_iface_generated.h \
     src/providers/data_provider_iface_generated.c \
-    src/providers/data_provider_iface_generated.h
+    src/providers/data_provider_iface_generated.h \
+    src/providers/data_provider_req.c
 
 SSSD_TOOLS_OBJ = \
     src/tools/sss_sync_ops.c \
     src/tools/tools_util.c \
     src/tools/files.c \
     src/tools/selinux.c \
-    src/util/nscd.c
+    src/tools/common/sss_tools.c \
+    src/util/nscd.c \
+    $(NULL)
 
 SSSD_LCL_TOOLS_OBJ = \
     src/sss_client/common.c \
@@ -510,6 +527,7 @@ dist_noinst_HEADERS = \
     src/util/util_errors.h \
     src/util/safe-format-string.h \
     src/util/strtonum.h \
+    src/util/sss_cli_cmd.h \
     src/util/sss_endian.h \
     src/util/sss_nss.h \
     src/util/sss_ldap.h \
@@ -573,6 +591,7 @@ dist_noinst_HEADERS = \
     src/confdb/confdb_private.h \
     src/confdb/confdb_setup.h \
     src/providers/data_provider.h \
+    src/providers/data_provider_req.h \
     src/providers/dp_backend.h \
     src/providers/dp_dyndns.h \
     src/providers/dp_ptask_private.h \
@@ -641,6 +660,8 @@ dist_noinst_HEADERS = \
     src/lib/idmap/sss_idmap_private.h \
     src/lib/sifp/sss_sifp_private.h \
     src/tests/cmocka/test_utils.h \
+    src/tools/common/sss_tools.h \
+    src/tools/common/sss_colondb.h \
     $(NULL)
 
 
@@ -678,7 +699,9 @@ endif
 pkglib_LTLIBRARIES += libsss_debug.la
 libsss_debug_la_SOURCES = \
     src/util/debug.c \
-    src/util/sss_log.c
+    src/util/sss_log.c \
+    src/util/sss_cli_cmd.c \
+    $(NULL)
 libsss_debug_la_LIBADD = \
     $(SYSLOG_LIBS)
 libsss_debug_la_LDFLAGS = \
@@ -704,6 +727,17 @@ if HAVE_NSS
                         src/util/crypto/nss/nss_util.c
     SSS_CRYPT_CFLAGS = $(NSS_CFLAGS)
     SSS_CRYPT_LIBS = $(NSS_LIBS)
+
+    SSS_CERT_SOURCES = \
+        src/util/cert/cert_common.c \
+        src/util/cert/nss/cert.c \
+        $(NULL)
+    SSS_CERT_CFLAGS = \
+        $(NSS_CFLAGS) \
+        $(NULL)
+    SSS_CERT_LIBS = \
+        $(NSS_LIBS) \
+        $(NULL)
 else
     SSS_CRYPT_SOURCES = src/util/crypto/libcrypto/crypto_base64.c \
                         src/util/crypto/libcrypto/crypto_hmac_sha1.c \
@@ -711,11 +745,23 @@ else
                         src/util/crypto/libcrypto/crypto_obfuscate.c
     SSS_CRYPT_CFLAGS = $(CRYPTO_CFLAGS)
     SSS_CRYPT_LIBS = $(CRYPTO_LIBS)
+
+    SSS_CERT_SOURCES = \
+        src/util/cert/cert_common.c \
+        src/util/cert/libcrypto/cert.c \
+        $(NULL)
+    SSS_CERT_CFLAGS = \
+        $(CRYPTO_CFLAGS) \
+        $(NULL)
+    SSS_CERT_LIBS = \
+        $(CRYPTO_LIBS) \
+        $(NULL)
 endif
 
 libsss_crypt_la_SOURCES = \
     $(SSS_CRYPT_SOURCES)
 libsss_crypt_la_CFLAGS = \
+    $(AM_CFLAGS) \
     $(SSS_CRYPT_CFLAGS) \
     $(DHASH_CFLAGS)
 libsss_crypt_la_LIBADD = \
@@ -730,14 +776,14 @@ libsss_crypt_la_LDFLAGS = \
 pkglib_LTLIBRARIES += libsss_cert.la
 
 libsss_cert_la_SOURCES = \
-    src/util/cert/cert_common.c \
-    src/util/cert/libcrypto/cert.c \
+    $(SSS_CERT_SOURCES) \
     $(NULL)
 libsss_cert_la_CFLAGS = \
-    $(CRYPTO_CFLAGS) \
+    $(AM_CFLAGS) \
+    $(SSS_CERT_CFLAGS) \
     $(NULL)
 libsss_cert_la_LIBADD = \
-    $(CRYPTO_LIBS) \
+    $(SSS_CERT_LIBS) \
     $(TALLOC_LIBS) \
     libsss_crypt.la \
     libsss_debug.la \
@@ -1058,6 +1104,7 @@ sssd_pam_SOURCES = \
     src/responder/pam/pam_LOCAL_domain.c \
     src/responder/pam/pamsrv.c \
     src/responder/pam/pamsrv_cmd.c \
+    src/responder/pam/pamsrv_p11.c \
     src/responder/pam/pamsrv_dp.c \
     src/responder/pam/pam_helpers.c \
     $(SSSD_RESPONDER_OBJ)
@@ -1098,17 +1145,19 @@ sssd_ssh_SOURCES = \
     src/responder/ssh/sshsrv.c \
     src/responder/ssh/sshsrv_dp.c \
     src/responder/ssh/sshsrv_cmd.c \
-    $(SSSD_RESPONDER_OBJ)
+    $(SSSD_RESPONDER_OBJ) \
+    $(NULL)
 sssd_ssh_LDADD = \
     $(SSSD_LIBS) \
-    $(SSSD_INTERNAL_LTLIBS)
+    $(SSSD_INTERNAL_LTLIBS) \
+    libsss_cert.la \
+    $(NULL)
 endif
 
 sssd_pac_SOURCES = \
     src/responder/pac/pacsrv.c \
     src/responder/pac/pacsrv_cmd.c \
     src/responder/pac/pacsrv_utils.c \
-    $(SSSD_UTIL_OBJ) \
     $(SSSD_RESPONDER_OBJ)
 sssd_pac_CFLAGS = \
     $(AM_CFLAGS) \
@@ -1134,7 +1183,6 @@ sssd_ifp_SOURCES = \
     src/responder/ifp/ifp_users.c \
     src/responder/ifp/ifp_groups.c \
     src/responder/ifp/ifp_cache.c \
-    $(SSSD_UTIL_OBJ) \
     $(SSSD_RESPONDER_OBJ)
 sssd_ifp_CFLAGS = \
     $(AM_CFLAGS)
@@ -1156,6 +1204,7 @@ endif
 
 sssd_be_SOURCES = \
     src/providers/data_provider_be.c \
+    src/providers/data_provider_req.c \
     src/providers/data_provider_fo.c \
     src/providers/data_provider_opts.c \
     src/providers/data_provider_callbacks.c \
@@ -1294,6 +1343,19 @@ sss_signal_LDADD = \
     $(SSSD_INTERNAL_LTLIBS) \
     $(NULL)
 
+sss_override_SOURCES = \
+    src/tools/sss_override.c \
+    src/tools/common/sss_colondb.c \
+    $(SSSD_TOOLS_OBJ) \
+    $(NULL)
+sss_override_LDADD = \
+    $(TOOLS_LIBS) \
+    $(SSSD_INTERNAL_LTLIBS) \
+    $(NULL)
+sss_override_CFLAGS = \
+    $(AM_CFLAGS) \
+    $(NULL)
+
 if BUILD_SUDO
 sss_sudo_cli_SOURCES = \
     src/sss_client/common.c \
@@ -1329,6 +1391,7 @@ endif
 #################
 TESTS_ENVIRONMENT = LDB_MODULES_PATH=$(abs_top_builddir)/ldb_mod_test_dir \
                     SSS_TEST_DIR=$(TEST_DIR) \
+                    ABS_TOP_SRCDIR=$(abs_top_srcdir) \
                     $(AUX_TESTS_ENVIRONMENT)
 
 ldb_mod_test_dir: memberof.la
@@ -1356,6 +1419,10 @@ check_LTLIBRARIES += \
     libsss_nss_idmap_tests.la \
     $(NULL)
 
+if BUILD_SAMBA
+check_LTLIBRARIES += libsss_ad_tests.la
+endif
+
 libdlopen_test_providers_la_SOURCES = \
     $(sssd_be_SOURCES)
 libdlopen_test_providers_la_CFLAGS = \
@@ -1368,7 +1435,7 @@ libdlopen_test_providers_la_LIBADD = \
     $(CARES_LIBS) \
     $(SSSD_INTERNAL_LTLIBS)
 libdlopen_test_providers_la_LDFLAGS = \
-    -module \
+    -shared \
     -avoid-version \
     -Wl,--version-script,$(srcdir)/src/providers/sssd_be.exports \
     -rpath $(abs_top_builddir) \
@@ -1383,6 +1450,14 @@ libsss_nss_idmap_tests_la_LDFLAGS = \
     -Wl,--version-script,$(srcdir)/src/sss_client/idmap/sss_nss_idmap.unit_tests
 
 dist_noinst_DATA += src/sss_client/idmap/sss_nss_idmap.unit_tests
+
+libsss_ad_tests_la_SOURCES = $(libsss_ad_la_SOURCES)
+libsss_ad_tests_la_CFLAGS = $(libsss_ad_la_CFLAGS)
+libsss_ad_tests_la_LIBADD = $(libsss_ad_la_LIBADD)
+libsss_ad_tests_la_LDFLAGS = \
+    -shared \
+    -rpath $(abs_top_builddir) \
+    $(NULL)
 
 dlopen_tests_SOURCES = \
     src/tests/dlopen-tests.c
@@ -1513,7 +1588,7 @@ resolv_tests_LDADD = \
 
 refcount_tests_SOURCES = \
     src/tests/refcount-tests.c \
-    $(CHECK_OBJ)
+    $(NULL)
 refcount_tests_CFLAGS = \
     $(CHECK_CFLAGS)
 refcount_tests_LDADD = \
@@ -1525,7 +1600,7 @@ refcount_tests_LDADD = \
 fail_over_tests_SOURCES = \
     src/tests/fail_over-tests.c \
     $(SSSD_FAILOVER_OBJ) \
-    $(CHECK_OBJ)
+    $(NULL)
 fail_over_tests_CFLAGS = \
     $(CHECK_CFLAGS)
 fail_over_tests_LDADD = \
@@ -1569,6 +1644,7 @@ ipa_ldap_opt_tests_SOURCES = \
     src/providers/data_provider_opts.c \
     src/providers/ldap/sdap.c \
     src/providers/ldap/sdap_range.c \
+    src/providers/ldap/sdap_domain.c \
     src/util/sss_ldap.c \
     src/tests/ipa_ldap_opt-tests.c
 ipa_ldap_opt_tests_CFLAGS = \
@@ -1577,6 +1653,7 @@ ipa_ldap_opt_tests_CFLAGS = \
 ipa_ldap_opt_tests_LDADD = \
     $(CHECK_LIBS) \
     $(TALLOC_LIBS) \
+    $(LDB_LIBS) \
     $(SSSD_INTERNAL_LTLIBS) \
     $(OPENLDAP_LIBS) \
     libsss_test_common.la
@@ -1595,29 +1672,15 @@ simple_access_tests_SOURCES = \
     src/tests/simple_access-tests.c \
     src/providers/simple/simple_access.c \
     src/providers/simple/simple_access_check.c \
-    src/providers/data_provider_be.c \
-    src/providers/data_provider_fo.c \
-    src/providers/data_provider_opts.c \
-    src/providers/data_provider_callbacks.c \
-    src/providers/dp_ptask.c \
-    src/providers/dp_refresh.c \
-    src/monitor/monitor_iface_generated.c \
-    src/monitor/monitor_iface_generated.h \
-    src/providers/data_provider_iface_generated.c \
-    src/providers/data_provider_iface_generated.h \
-    $(SSSD_FAILOVER_OBJ)
-simple_access_tests_CFLAGS = \
-    $(AM_CFLAGS) \
-    $(CHECK_CFLAGS) \
-    -DUNIT_TESTING
+    $(NULL)
 simple_access_tests_LDADD = \
     $(LIBADD_DL) \
-    $(SSSD_LIBS) \
-    $(CARES_LIBS) \
     $(CHECK_LIBS) \
-    $(PAM_LIBS) \
+    $(SSSD_LIBS) \
     $(SSSD_INTERNAL_LTLIBS) \
-    libsss_test_common.la
+    libsss_test_common.la \
+    libdlopen_test_providers.la \
+    $(NULL)
 
 util_tests_SOURCES = \
     src/tests/util-tests.c \
@@ -1837,11 +1900,13 @@ pam_srv_tests_SOURCES = \
     src/tests/cmocka/test_pam_srv.c \
     src/sss_client/pam_message.c \
     src/responder/pam/pamsrv_cmd.c \
+    src/responder/pam/pamsrv_p11.c \
     src/responder/pam/pam_helpers.c \
     src/responder/pam/pamsrv_dp.c \
     src/responder/pam/pam_LOCAL_domain.c \
     $(NULL)
 pam_srv_tests_CFLAGS = \
+    -U SSSD_LIBEXEC_PATH -DSSSD_LIBEXEC_PATH=\"$(abs_builddir)\" \
     $(AM_CFLAGS) \
     $(NULL)
 pam_srv_tests_LDFLAGS = \
@@ -2056,132 +2121,105 @@ test_utils_LDADD = \
     libsss_test_common.la
 
 test_search_bases_SOURCES = \
-    $(sssd_be_SOURCES) \
     src/tests/cmocka/test_search_bases.c
-test_search_bases_CFLAGS = \
-    $(AM_CFLAGS) \
-    -DUNIT_TESTING
 test_search_bases_LDADD = \
-    $(PAM_LIBS) \
     $(CMOCKA_LIBS) \
-    $(POPT_LIBS) \
-    $(SSSD_LIBS) \
-    $(CARES_LIBS) \
-    $(KRB5_LIBS) \
+    $(TALLOC_LIBS) \
     $(SSSD_INTERNAL_LTLIBS) \
     libsss_ldap_common.la \
-    libsss_idmap.la \
-    libsss_krb5_common.la \
-    libsss_test_common.la
+    libsss_test_common.la \
+    libdlopen_test_providers.la \
+    $(NULL)
 
 test_ldap_auth_SOURCES = \
-    $(sssd_be_SOURCES) \
     src/tests/cmocka/test_ldap_auth.c \
     src/tests/cmocka/test_expire_common.c \
     $(NULL)
-test_ldap_auth_CFLAGS = \
-    $(AM_CFLAGS) \
-    -DUNIT_TESTING
-    $(NULL)
 test_ldap_auth_LDADD = \
-    $(PAM_LIBS) \
+    $(CMOCKA_LIBS) \
+    $(TALLOC_LIBS) \
+    libsss_ldap_common.la \
+    libsss_test_common.la \
+    libdlopen_test_providers.la \
+    $(NULL)
+
+test_ldap_id_cleanup_SOURCES = \
+    src/tests/cmocka/test_ldap_id_cleanup.c \
+    $(NULL)
+test_ldap_id_cleanup_LDADD = \
     $(CMOCKA_LIBS) \
     $(POPT_LIBS) \
-    $(SSSD_LIBS) \
-    $(CARES_LIBS) \
-    $(KRB5_LIBS) \
+    $(TALLOC_LIBS) \
+    $(TEVENT_LIBS) \
     $(SSSD_INTERNAL_LTLIBS) \
     libsss_ldap_common.la \
     libsss_test_common.la \
+    libdlopen_test_providers.la \
     $(NULL)
 
 test_sdap_access_SOURCES = \
-    $(sssd_be_SOURCES) \
     src/tests/cmocka/test_sdap_access.c \
     src/tests/cmocka/test_expire_common.c \
     $(NULL)
-test_sdap_access_CFLAGS = \
-    $(AM_CFLAGS) \
-    -DUNIT_TESTING
-    $(NULL)
 test_sdap_access_LDADD = \
-    $(PAM_LIBS) \
     $(CMOCKA_LIBS) \
-    $(POPT_LIBS) \
-    $(SSSD_LIBS) \
-    $(CARES_LIBS) \
-    $(KRB5_LIBS) \
-    $(SSSD_INTERNAL_LTLIBS) \
+    $(TALLOC_LIBS) \
     libsss_ldap_common.la \
     libsss_test_common.la \
+    libdlopen_test_providers.la \
     $(NULL)
 
 ad_access_filter_tests_SOURCES = \
-    $(sssd_be_SOURCES) \
-    src/providers/ad/ad_common.c \
     src/tests/cmocka/test_ad_access_filter.c
-ad_access_filter_tests_CFLAGS = \
-    $(AM_CFLAGS) \
-    -DUNIT_TESTING
 ad_access_filter_tests_LDADD = \
-    $(PAM_LIBS) \
     $(CMOCKA_LIBS) \
-    $(SSSD_LIBS) \
-    $(CARES_LIBS) \
-    $(KRB5_LIBS) \
+    $(POPT_LIBS) \
+    $(TALLOC_LIBS) \
+    $(TEVENT_LIBS) \
     $(SSSD_INTERNAL_LTLIBS) \
     libsss_ldap_common.la \
-    libsss_idmap.la \
-    libsss_krb5_common.la \
-    libsss_ad_common.la \
-    libsss_test_common.la
+    libsss_ad_tests.la \
+    libsss_test_common.la \
+    libdlopen_test_providers.la \
+    $(NULL)
 
 ad_gpo_tests_SOURCES = \
-    $(sssd_be_SOURCES) \
-    src/providers/ad/ad_common.c \
     src/tests/cmocka/test_ad_gpo.c
 ad_gpo_tests_CFLAGS = \
     $(AM_CFLAGS) \
     $(NDR_NBT_CFLAGS) \
-    -DUNIT_TESTING
+    $(NULL)
 ad_gpo_tests_LDADD = \
-    $(PAM_LIBS) \
     $(CMOCKA_LIBS) \
     $(SSSD_LIBS) \
-    $(CARES_LIBS) \
     $(SSSD_INTERNAL_LTLIBS) \
     $(NDR_NBT_LIBS) \
     libsss_ldap_common.la \
     libsss_idmap.la \
     libsss_krb5_common.la \
-    libsss_ad_common.la \
-    libsss_test_common.la
+    libsss_ad_tests.la \
+    libsss_test_common.la \
+    libdlopen_test_providers.la \
+    $(NULL)
 
 ad_common_tests_SOURCES = \
-    $(sssd_be_SOURCES) \
     $(libsss_krb5_common_la_SOURCES) \
     src/tests/cmocka/common_mock_krb5.c \
     src/tests/cmocka/test_ad_common.c \
-    $(NULL)
-ad_common_tests_CFLAGS = \
-    $(AM_CFLAGS) \
-    -DUNIT_TESTING \
     $(NULL)
 ad_common_tests_LDFLAGS = \
     -Wl,-wrap,sdap_set_sasl_options \
     -Wl,-wrap,krb5_kt_default \
     $(NULL)
 ad_common_tests_LDADD = \
-    $(PAM_LIBS) \
     $(CMOCKA_LIBS) \
     $(SSSD_LIBS) \
-    $(CARES_LIBS) \
     $(KEYUTILS_LIBS) \
     $(KRB5_LIBS) \
     $(SSSD_INTERNAL_LTLIBS) \
     libsss_ldap_common.la \
-    libsss_idmap.la \
     libsss_test_common.la \
+    libdlopen_test_providers.la \
     $(NULL)
 
 dp_opt_tests_SOURCES = \
@@ -2198,6 +2236,7 @@ dp_opt_tests_LDADD = \
 
 sdap_tests_SOURCES = \
     src/providers/data_provider_opts.c \
+    src/providers/ldap/sdap_domain.c \
     src/providers/ldap/sdap.c \
     src/providers/ldap/sdap_range.c \
     src/util/sss_ldap.c \
@@ -2219,6 +2258,7 @@ sdap_tests_LDFLAGS = \
 sdap_tests_LDADD = \
     $(CMOCKA_LIBS) \
     $(TALLOC_LIBS) \
+    $(LDB_LIBS) \
     $(POPT_LIBS) \
     $(SSSD_INTERNAL_LTLIBS) \
     $(SSS_CRYPT_LIBS) \
@@ -2483,7 +2523,6 @@ test_ipa_subdom_util_LDADD = \
     $(NULL)
 
 test_ipa_subdom_server_SOURCES = \
-    $(sssd_be_SOURCES) \
     $(libsss_krb5_common_la_SOURCES) \
     src/tests/cmocka/common_mock_sdap.c \
     src/tests/cmocka/common_mock_be.c \
@@ -2494,26 +2533,25 @@ test_ipa_subdom_server_SOURCES = \
     $(NULL)
 test_ipa_subdom_server_CFLAGS = \
     $(AM_CFLAGS) \
-    -DUNIT_TESTING \
-    -DIPA_TRUST_KEYTAB_DIR=TEST_DIR \
+    -DIPA_TRUST_KEYTAB_DIR=TEST_DIR\"/tp_test_ipa_subdom_server-test_ipa_subdomains_server\" \
     $(NULL)
 test_ipa_subdom_server_LDFLAGS = \
     -Wl,-wrap,krb5_kt_default \
     -Wl,-wrap,execle \
     -Wl,-wrap,execve \
+    -Wl,-wrap,rename \
+    -Wl,-wrap,sss_unique_filename \
     $(NULL)
 test_ipa_subdom_server_LDADD = \
-    $(PAM_LIBS) \
     $(CMOCKA_LIBS) \
     $(SSSD_LIBS) \
-    $(CARES_LIBS) \
     $(KEYUTILS_LIBS) \
     $(KRB5_LIBS) \
     $(SSSD_INTERNAL_LTLIBS) \
     libsss_ldap_common.la \
-    libsss_idmap.la \
-    libsss_ad_common.la \
+    libsss_ad_tests.la \
     libsss_test_common.la \
+    libdlopen_test_providers.la \
     $(NULL)
 
 test_krb5_wait_queue_SOURCES = \
@@ -2549,6 +2587,29 @@ test_cert_utils_LDADD = \
     libsss_cert.la \
     libsss_crypt.la \
     $(NULL)
+
+test_data_provider_be_SOURCES = \
+    src/providers/data_provider_be.c \
+    src/tests/cmocka/test_data_provider_be.c \
+    src/tests/cmocka/common_mock_be.c \
+    $(NULL)
+test_data_provider_be_CFLAGS = \
+    $(AM_CFLAGS) \
+    -DUNIT_TESTING \
+    $(NULL)
+test_data_provider_be_LDFLAGS = \
+    -Wl,-wrap,_tevent_add_timer \
+    $(NULL)
+test_data_provider_be_LDADD = \
+    $(CMOCKA_LIBS) \
+    $(PAM_LIBS) \
+    $(SSSD_LIBS) \
+    $(SSSD_INTERNAL_LTLIBS) \
+    $(LIBADD_DL) \
+    libsss_test_common.la \
+    libdlopen_test_providers.la \
+    $(NULL)
+
 endif # HAVE_CMOCKA
 
 noinst_PROGRAMS = pam_test_client
@@ -2759,6 +2820,7 @@ libsss_ldap_common_la_SOURCES = \
     src/util/sss_ldap.c \
     $(NULL)
 libsss_ldap_common_la_CFLAGS = \
+    $(AM_CFLAGS) \
     $(KRB5_CFLAGS) \
     $(NULL)
 libsss_ldap_common_la_LIBADD = \
@@ -2787,20 +2849,6 @@ libsss_ldap_common_la_SOURCES += \
     src/providers/ldap/sdap_async_autofs.c
 endif
 
-if BUILD_SAMBA
-pkglib_LTLIBRARIES += libsss_ad_common.la
-endif
-libsss_ad_common_la_SOURCES = \
-    $(libsss_ad_la_SOURCES)
-libsss_ad_common_la_LDFLAGS = \
-    -avoid-version
-libsss_ad_common_la_CFLAGS = \
-    $(NDR_NBT_CFLAGS) \
-    $(SMBCLIENT_CFLAGS)
-libsss_ad_common_la_LIBADD = \
-    $(NDR_NBT_LIBS) \
-    $(SMBCLIENT_LIBS)
-
 libsss_krb5_common_la_SOURCES = \
     src/providers/krb5/krb5_utils.c \
     src/providers/krb5/krb5_delayed_online_authentication.c \
@@ -2816,6 +2864,7 @@ libsss_krb5_common_la_SOURCES = \
     src/util/become_user.c \
     $(NULL)
 libsss_krb5_common_la_CFLAGS = \
+    $(AM_CFLAGS) \
     $(KRB5_CFLAGS)
 libsss_krb5_common_la_LIBADD = \
     $(KEYUTILS_LIBS) \
@@ -3107,6 +3156,23 @@ proxy_child_LDADD = \
     $(PAM_LIBS) \
     $(SSSD_LIBS) \
     $(SSSD_INTERNAL_LTLIBS)
+
+p11_child_SOURCES = \
+    src/p11_child/p11_child_nss.c \
+    src/util/atomic_io.c \
+    $(NULL)
+p11_child_CFLAGS = \
+    $(AM_CFLAGS) \
+    $(POPT_CFLAGS) \
+    $(NSS_CFLAGS) \
+    $(NULL)
+p11_child_LDADD = \
+    libsss_debug.la \
+    $(TALLOC_LIBS) \
+    $(POPT_LIBS) \
+    $(NSS_LIBS) \
+    libsss_crypt.la \
+    $(NULL)
 
 memberof_la_SOURCES = \
     src/ldb_modules/memberof.c \
@@ -3502,6 +3568,10 @@ if SSSD_USER
 if BUILD_SEMANAGE
 	-chgrp $(SSSD_USER) $(DESTDIR)$(sssdlibexecdir)/selinux_child
 	chmod 4750 $(DESTDIR)$(sssdlibexecdir)/selinux_child
+endif
+if HAVE_NSS
+	-chgrp $(SSSD_USER) $(DESTDIR)$(sssdlibexecdir)/p11_child
+	chmod 4750 $(DESTDIR)$(sssdlibexecdir)/p11_child
 endif
 endif
 

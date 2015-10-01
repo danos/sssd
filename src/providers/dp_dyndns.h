@@ -55,6 +55,7 @@ enum dp_dyndns_opts {
     DP_OPT_DYNDNS_UPDATE_PTR,
     DP_OPT_DYNDNS_FORCE_TCP,
     DP_OPT_DYNDNS_AUTH,
+    DP_OPT_DYNDNS_SERVER,
 
     DP_OPT_DYNDNS /* attrs counter */
 };
@@ -81,10 +82,6 @@ errno_t
 sss_iface_addr_list_get(TALLOC_CTX *mem_ctx, const char *ifname,
                         struct sss_iface_addr **_addrlist);
 
-struct sss_iface_addr *
-sss_iface_addr_add(TALLOC_CTX *mem_ctx, struct sss_iface_addr **list,
-                   struct sockaddr_storage *ss);
-
 errno_t
 sss_iface_addr_list_as_str_list(TALLOC_CTX *mem_ctx,
                                 struct sss_iface_addr *ifaddr_list,
@@ -92,7 +89,7 @@ sss_iface_addr_list_as_str_list(TALLOC_CTX *mem_ctx,
 
 errno_t
 be_nsupdate_create_fwd_msg(TALLOC_CTX *mem_ctx, const char *realm,
-                           const char *zone, const char *servername,
+                           const char *servername,
                            const char *hostname, const unsigned int ttl,
                            uint8_t remove_af, struct sss_iface_addr *addresses,
                            char **_update_msg);
@@ -100,9 +97,9 @@ be_nsupdate_create_fwd_msg(TALLOC_CTX *mem_ctx, const char *realm,
 errno_t
 be_nsupdate_create_ptr_msg(TALLOC_CTX *mem_ctx, const char *realm,
                            const char *servername, const char *hostname,
-                           const unsigned int ttl, uint8_t remove_af,
-                           struct sss_iface_addr *addresses,
-                           struct sss_iface_addr *old_addresses,
+                           const unsigned int ttl,
+                           struct sockaddr_storage *address,
+                           bool delete,
                            char **_update_msg);
 
 /* Returns:
@@ -127,5 +124,20 @@ nsupdate_get_addrs_recv(struct tevent_req *req,
                         TALLOC_CTX *mem_ctx,
                         struct sss_iface_addr **_addrlist,
                         size_t *_count);
+
+void
+sss_iface_addr_concatenate(struct sss_iface_addr **list,
+                           struct sss_iface_addr *list2);
+
+errno_t
+sss_get_dualstack_addresses(TALLOC_CTX *mem_ctx,
+                            struct sockaddr *ss,
+                            struct sss_iface_addr **_iface_addrs);
+
+struct sss_iface_addr *
+sss_iface_addr_get_next(struct sss_iface_addr *address);
+
+struct sockaddr_storage*
+sss_iface_addr_get_address(struct sss_iface_addr *address);
 
 #endif /* DP_DYNDNS_H_ */

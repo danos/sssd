@@ -59,7 +59,7 @@ errno_t ldap_setup_cleanup(struct sdap_id_ctx *id_ctx,
     struct ldap_id_cleanup_ctx *cleanup_ctx = NULL;
     char *name = NULL;
 
-    period = dp_opt_get_int(id_ctx->opts->basic, SDAP_CACHE_PURGE_TIMEOUT);
+    period = dp_opt_get_int(id_ctx->opts->basic, SDAP_PURGE_CACHE_TIMEOUT);
     if (period == 0) {
         /* Cleanup has been explicitly disabled, so we won't
          * create any cleanup tasks. */
@@ -169,11 +169,14 @@ done:
 static int cleanup_users_logged_in(hash_table_t *table,
                                    const struct ldb_message *msg);
 
+static errno_t expire_memberof_target_groups(struct sss_domain_info *dom,
+                                             struct ldb_message *user);
+
 static int cleanup_users(struct sdap_options *opts,
                          struct sss_domain_info *dom)
 {
     TALLOC_CTX *tmpctx;
-    const char *attrs[] = { SYSDB_NAME, SYSDB_UIDNUM, NULL };
+    const char *attrs[] = { SYSDB_NAME, SYSDB_UIDNUM, SYSDB_MEMBEROF, NULL };
     time_t now = time(NULL);
     char *subfilter = NULL;
     int account_cache_expiration;
@@ -271,10 +274,58 @@ static int cleanup_users(struct sdap_options *opts,
             DEBUG(SSSDBG_CRIT_FAILURE, "sysdb_delete_user failed: %d\n", ret);
             goto done;
         }
+
+        /* Mark all groups of which user was a member as expired in cache,
+         * so that its ghost/member attributes are refreshed on next
+         * request. */
+        ret = expire_memberof_target_groups(dom, msgs[i]);
+        if (ret != EOK && ret != ENOENT) {
+            DEBUG(SSSDBG_CRIT_FAILURE,
+                  "expire_memberof_target_groups failed: [%d]:%s\n",
+                  ret, sss_strerror(ret));
+            goto done;
+        }
     }
 
 done:
     talloc_zfree(tmpctx);
+    return ret;
+}
+
+static errno_t expire_memberof_target_groups(struct sss_domain_info *dom,
+                                             struct ldb_message *user)
+{
+    struct ldb_message_element *memberof_el = NULL;
+    errno_t ret;
+    TALLOC_CTX *tmp_ctx;
+
+    tmp_ctx = talloc_new(NULL);
+    if (tmp_ctx == NULL) {
+        return ENOMEM;
+    }
+
+    memberof_el = ldb_msg_find_element(user, SYSDB_MEMBEROF);
+    if (memberof_el == NULL) {
+        /* User has no cached groups. Nothing to be marked as expired. */
+        ret = EOK;
+        goto done;
+    }
+
+    for (unsigned int i = 0; i < memberof_el->num_values; i++) {
+        ret = sysdb_mark_entry_as_expired_ldb_val(dom,
+                                                  &memberof_el->values[i]);
+        if (ret != EOK && ret != ENOENT) {
+            DEBUG(SSSDBG_CRIT_FAILURE,
+                  "sysdb_mark_entry_as_expired_ldb_val failed: [%d]: %s\n",
+                  ret, sss_strerror(ret));
+            goto done;
+        }
+    }
+
+    ret = EOK;
+
+done:
+    talloc_free(tmp_ctx);
     return ret;
 }
 
@@ -359,10 +410,21 @@ static int cleanup_groups(TALLOC_CTX *memctx,
     }
 
     for (i = 0; i < count; i++) {
+        char *sanitized_dn;
+
         dn = ldb_dn_get_linearized(msgs[i]->dn);
         if (!dn) {
             DEBUG(SSSDBG_CRIT_FAILURE, "Cannot linearize DN!\n");
             ret = EFAULT;
+            goto done;
+        }
+
+        /* sanitize dn */
+        ret = sss_filter_sanitize(tmpctx, dn, &sanitized_dn);
+        if (ret != EOK) {
+            DEBUG(SSSDBG_MINOR_FAILURE,
+                  "sss_filter_sanitize failed: %s:[%d]\n",
+                  sss_strerror(ret), ret);
             goto done;
         }
 
@@ -375,11 +437,14 @@ static int cleanup_groups(TALLOC_CTX *memctx,
             gid = (gid_t) ldb_msg_find_attr_as_uint(msgs[i], SYSDB_GIDNUM, 0);
             subfilter = talloc_asprintf(tmpctx, "(&(%s=%s)(|(%s=%s)(%s=%lu)))",
                                         SYSDB_OBJECTCLASS, SYSDB_USER_CLASS,
-                                        SYSDB_MEMBEROF, dn,
+                                        SYSDB_MEMBEROF, sanitized_dn,
                                         SYSDB_GIDNUM, (long unsigned) gid);
         } else {
-            subfilter = talloc_asprintf(tmpctx, "(%s=%s)", SYSDB_MEMBEROF, dn);
+            subfilter = talloc_asprintf(tmpctx, "(%s=%s)", SYSDB_MEMBEROF,
+                                        sanitized_dn);
         }
+        talloc_zfree(sanitized_dn);
+
         if (!subfilter) {
             DEBUG(SSSDBG_OP_FAILURE, "Failed to build filter\n");
             ret = ENOMEM;
@@ -416,10 +481,10 @@ static int cleanup_groups(TALLOC_CTX *memctx,
                           ret, strerror(ret));
                 goto done;
             }
-        }
-        if (ret != EOK) {
+        } else if (ret != EOK) {
             DEBUG(SSSDBG_CRIT_FAILURE,
-                  "Failed to search sysdb using %s: %d\n", subfilter, ret);
+                  "Failed to search sysdb using %s: [%d] %s\n",
+                  subfilter, ret, sss_strerror(ret));
             goto done;
         }
         talloc_zfree(u_msgs);

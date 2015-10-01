@@ -754,14 +754,17 @@ ad_gpo_map_deny = +my_pam_service
                     <listitem>
                         <para>
                             Optional. Applicable only when dyndns_update
-                            is true. Choose the interface whose IP address
-                            should be used for dynamic DNS updates.
+                            is true. Choose the interface or a list of interfaces
+                            whose IP addresses should be used for dynamic DNS
+                            updates. Special value <quote>*</quote> implies that
+                            IPs from all interfaces should be used.
                         </para>
                         <para>
-                            NOTE: This option currently supports only one interface.
+                            Default: Use the IP addresses of the interface which
+                            is used for AD LDAP connection
                         </para>
                         <para>
-                            Default: Use the IP address of the AD LDAP connection
+                            Example: dyndns_iface = em1, vnet1, vnet2
                         </para>
                     </listitem>
                 </varlistentry>
@@ -805,6 +808,30 @@ ad_gpo_map_deny = +my_pam_service
                         </para>
                         <para>
                             Default: False (let nsupdate choose the protocol)
+                        </para>
+                    </listitem>
+                </varlistentry>
+
+                <varlistentry>
+                    <term>dyndns_server (string)</term>
+                    <listitem>
+                        <para>
+                            The DNS server to use when performing a DNS
+                            update. In most setups, it's recommended to leave
+                            this option unset.
+                        </para>
+                        <para>
+                            Setting this option makes sense for environments
+                            where the DNS server is different from the identity
+                            server.
+                        </para>
+                        <para>
+                            Please note that this option will be only used in
+                            fallback attempt when previous attempt using
+                            autodetected settings failed.
+                        </para>
+                        <para>
+                            Default: None (let nsupdate choose the server)
                         </para>
                     </listitem>
                 </varlistentry>

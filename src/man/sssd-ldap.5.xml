@@ -821,7 +821,7 @@
                             certificate of the user.
                         </para>
                         <para>
-                            Default: no set in the general case, userCertificate
+                            Default: no set in the general case, userCertificate;binary
                             for IPA
                         </para>
                     </listitem>
@@ -2135,6 +2135,23 @@ ldap_access_filter = (employeeType=admin)
                     </listitem>
                 </varlistentry>
 
+                <varlistentry>
+                    <term>wildcart_limit (integer)</term>
+                    <listitem>
+                        <para>
+                            Specifies an upper limit on the number of entries
+                            that are downloaded during a wildcard lookup.
+                        </para>
+                        <para>
+                            At the moment, only the InfoPipe responder supports
+                            wildcard lookups.
+                        </para>
+                        <para>
+                            Default: 1000 (often the size of one page)
+                        </para>
+                    </listitem>
+                </varlistentry>
+
             </variablelist>
         </para>
     </refsect1>
@@ -2445,8 +2462,8 @@ ldap_access_filter = (employeeType=admin)
     <refsect1 id='autofs-options' condition="with_autofs">
         <title>AUTOFS OPTIONS</title>
         <para>
-            Please note that the default values correspond to the default
-            schema which is RFC2307.
+            Some of the defaults for the parameters below are dependent on the
+            LDAP schema.
         </para>
         <para>
             <variablelist>
@@ -2483,7 +2500,8 @@ ldap_access_filter = (employeeType=admin)
                             The name of an automount map entry in LDAP.
                         </para>
                         <para>
-                            Default: ou
+                            Default: ou (rfc2307), automountMapName
+                            (rfc2307bis, ipa, ad)
                         </para>
                     </listitem>
                 </varlistentry>
@@ -2493,11 +2511,12 @@ ldap_access_filter = (employeeType=admin)
                     <term>ldap_autofs_entry_object_class (string)</term>
                     <listitem>
                         <para>
-                            The object class of an automount map entry
-                            in LDAP.
+                            The object class of an automount entry
+                            in LDAP. The entry usually corresponds to a mount
+                            point.
                         </para>
                         <para>
-                            Default: automountMap
+                            Default: automount
                         </para>
                     </listitem>
                 </varlistentry>
@@ -2511,7 +2530,8 @@ ldap_access_filter = (employeeType=admin)
                             entry usually corresponds to a mount point.
                         </para>
                         <para>
-                            Default: cn
+                            Default: cn (rfc2307), automountKey (rfc2307bis,
+                            ipa, ad)
                         </para>
                     </listitem>
                 </varlistentry>

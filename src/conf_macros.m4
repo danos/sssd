@@ -182,7 +182,7 @@ AC_DEFUN([WITH_INIT_DIR],
                 ]
                )
     initdir="${sysconfdir}/rc.d/init.d"
-    if test x$osname == xgentoo; then
+    if test x$osname = xgentoo; then
         initdir="${sysconfdir}/init.d"
     fi
     if test x"$with_init_dir" != x; then
@@ -596,11 +596,11 @@ AC_DEFUN([WITH_UNICODE_LIB],
     if test x"$with_unicode_lib" != x; then
         unicode_lib=$with_unicode_lib
     fi
-    
+
     if test x"$unicode_lib" != x"libunistring" -a x"$unicode_lib" != x"glib2"; then
 		AC_MSG_ERROR([Unsupported unicode library])
     fi
-    
+
     AM_CONDITIONAL([WITH_LIBUNISTRING], test x"$unicode_lib" = x"libunistring")
     AM_CONDITIONAL([WITH_GLIB], test x"$unicode_lib" = x"glib2")
   ])

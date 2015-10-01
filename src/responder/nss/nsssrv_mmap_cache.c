@@ -31,8 +31,8 @@
 #define SSS_AVG_PASSWD_PAYLOAD (MC_SLOT_SIZE * 4)
 /* short group name and no gids (private user group */
 #define SSS_AVG_GROUP_PAYLOAD (MC_SLOT_SIZE * 3)
-/* average place for 40 supplementary groups */
-#define SSS_AVG_INITGROUP_PAYLOAD (MC_SLOT_SIZE * 4)
+/* average place for 40 supplementary groups + 2 names */
+#define SSS_AVG_INITGROUP_PAYLOAD (MC_SLOT_SIZE * 5)
 
 #define MC_NEXT_BARRIER(val) ((((val) + 1) & 0x00ffffff) | 0xf0000000)
 
@@ -475,6 +475,9 @@ static errno_t sss_mc_get_strs_offset(struct sss_mc_ctx *mcc,
     case SSS_MC_GROUP:
         *_offset = offsetof(struct sss_mc_grp_data, strs);
         return EOK;
+    case SSS_MC_INITGROUPS:
+        *_offset = offsetof(struct sss_mc_initgr_data, gids);
+        return EOK;
     default:
         DEBUG(SSSDBG_FATAL_FAILURE, "Unknown memory cache type.\n");
         return EINVAL;
@@ -491,6 +494,9 @@ static errno_t sss_mc_get_strs_len(struct sss_mc_ctx *mcc,
         return EOK;
     case SSS_MC_GROUP:
         *_len = ((struct sss_mc_grp_data *)&rec->data)->strs_len;
+        return EOK;
+    case SSS_MC_INITGROUPS:
+        *_len = ((struct sss_mc_initgr_data *)&rec->data)->data_len;
         return EOK;
     default:
         DEBUG(SSSDBG_FATAL_FAILURE, "Unknown memory cache type.\n");
@@ -959,14 +965,16 @@ done:
 
 errno_t sss_mmap_cache_initgr_store(struct sss_mc_ctx **_mcc,
                                     struct sized_string *name,
-                                    uint32_t memnum,
-                                    uint8_t *membuf)
+                                    struct sized_string *unique_name,
+                                    uint32_t num_groups,
+                                    uint8_t *gids_buf)
 {
     struct sss_mc_ctx *mcc = *_mcc;
     struct sss_mc_rec *rec;
     struct sss_mc_initgr_data *data;
     size_t data_len;
     size_t rec_len;
+    size_t pos;
     int ret;
 
     if (mcc == NULL) {
@@ -974,20 +982,22 @@ errno_t sss_mmap_cache_initgr_store(struct sss_mc_ctx **_mcc,
         return EINVAL;
     }
 
-    /* memnum + reserved + array of members + name*/
-    data_len = (2 + memnum) * sizeof(uint32_t) + name->len;
+    /* array of gids + name + unique_name */
+    data_len = num_groups * sizeof(uint32_t) + name->len + unique_name->len;
     rec_len = sizeof(struct sss_mc_rec) + sizeof(struct sss_mc_initgr_data)
               + data_len;
     if (rec_len > mcc->dt_size) {
         return ENOMEM;
     }
 
-    ret = sss_mc_get_record(_mcc, rec_len, name, &rec);
+    /* use unique name for searching potential old records */
+    ret = sss_mc_get_record(_mcc, rec_len, unique_name, &rec);
     if (ret != EOK) {
         return ret;
     }
 
     data = (struct sss_mc_initgr_data *)rec->data;
+    pos = 0;
 
     MC_RAISE_BARRIER(rec);
 
@@ -995,13 +1005,22 @@ errno_t sss_mmap_cache_initgr_store(struct sss_mc_ctx **_mcc,
      * Use the first key twice.
      */
     sss_mmap_set_rec_header(mcc, rec, rec_len, mcc->valid_time_slot,
-                            name->str, name->len, name->str, name->len);
+                            name->str, name->len,
+                            unique_name->str, unique_name->len);
 
     /* initgroups struct */
-    data->members = memnum;
-    memcpy(data->gids, membuf, memnum * sizeof(uint32_t));
-    memcpy(&data->gids[memnum], name->str, name->len);
-    data->name = MC_PTR_DIFF(&data->gids[memnum], data);
+    data->strs_len = name->len + unique_name->len;
+    data->data_len = data_len;
+    data->num_groups = num_groups;
+    memcpy((char *)data->gids + pos, gids_buf, num_groups * sizeof(uint32_t));
+    pos += num_groups * sizeof(uint32_t);
+
+    memcpy((char *)data->gids + pos, unique_name->str, unique_name->len);
+    data->strs = data->unique_name = MC_PTR_DIFF((char *)data->gids + pos, data);
+    pos += unique_name->len;
+
+    memcpy((char *)data->gids + pos, name->str, name->len);
+    data->name = MC_PTR_DIFF((char *)data->gids + pos, data);
 
     MC_LOWER_BARRIER(rec);
 

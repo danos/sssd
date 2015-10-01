@@ -756,7 +756,7 @@ fallback_homedir = /home/%u
                             Some of the additional NSS responder requests can
                             return more attributes than just the POSIX ones
                             defined by the NSS interface. The list of attributes
-                            is controlled by this option. It is handle the same
+                            is controlled by this option. It is handled the same
                             way as the <quote>user_attributes</quote> option of
                             the InfoPipe responder (see
                             <citerefentry>
@@ -988,6 +988,18 @@ pam_account_expired_message = Account expired, please call help desk.
                         </para>
                     </listitem>
                 </varlistentry>
+                <varlistentry>
+                    <term>p11_child_timeout (integer)</term>
+                    <listitem>
+                        <para>
+                            How many seconds will pam_sss wait for
+                            p11_child to finish.
+                        </para>
+                        <para>
+                            Default: 10
+                        </para>
+                    </listitem>
+                </varlistentry>
 
             </variablelist>
         </refsect2>
@@ -1079,6 +1091,19 @@ pam_account_expired_message = Account expired, please call help desk.
                         </para>
                         <para>
                             Default: 180
+                        </para>
+                    </listitem>
+                </varlistentry>
+                <varlistentry>
+                    <term>ca_db (string)</term>
+                    <listitem>
+                        <para>
+                            Path to a storage of trusted CA certificates. The
+                            option is used to validate user certificates before
+                            deriving public ssh keys from them.
+                        </para>
+                        <para>
+                            Default: /etc/pki/nssdb
                         </para>
                     </listitem>
                 </varlistentry>
@@ -1291,7 +1316,7 @@ pam_account_expired_message = Account expired, please call help desk.
                         </para>
                     </listitem>
                 </varlistentry>
-                
+
                 <varlistentry>
                     <term>entry_cache_user_timeout (integer)</term>
                     <listitem>
@@ -1304,7 +1329,7 @@ pam_account_expired_message = Account expired, please call help desk.
                         </para>
                     </listitem>
                 </varlistentry>
-                
+
                 <varlistentry>
                     <term>entry_cache_group_timeout (integer)</term>
                     <listitem>
@@ -1317,7 +1342,7 @@ pam_account_expired_message = Account expired, please call help desk.
                         </para>
                     </listitem>
                 </varlistentry>
-                
+
                 <varlistentry>
                     <term>entry_cache_netgroup_timeout (integer)</term>
                     <listitem>
@@ -1330,7 +1355,7 @@ pam_account_expired_message = Account expired, please call help desk.
                         </para>
                     </listitem>
                 </varlistentry>
-                
+
                 <varlistentry>
                     <term>entry_cache_service_timeout (integer)</term>
                     <listitem>
@@ -1430,7 +1455,7 @@ pam_account_expired_message = Account expired, please call help desk.
                         <para>
                             If 2-Factor-Authentication (2FA) is used and
                             credentials should be saved this value determines
-                            the minimal lenght the first authentication factor
+                            the minimal length the first authentication factor
                             (long term password) must have to be saved as SHA512
                             hash into the cache.
                         </para>

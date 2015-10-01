@@ -32,7 +32,7 @@
 #include "util/sss_utf8.h"
 #include "tests/common.h"
 
-#define TESTS_PATH "tests_krb5_utils"
+#define TESTS_PATH "tp_" BASE_FILE_STEM
 
 #define BASE "/abc/def"
 #define FILENAME "ghi"
@@ -684,6 +684,19 @@ START_TEST(test_parse_krb5_map_user)
 }
 END_TEST
 
+START_TEST(test_sss_krb5_realm_has_proxy)
+{
+    fail_unless(sss_krb5_realm_has_proxy(NULL) == false);
+
+    setenv("KRB5_CONFIG", "/dev/null", 1);
+    fail_unless(sss_krb5_realm_has_proxy("REALM") == false);
+
+    setenv("KRB5_CONFIG", ABS_SRC_DIR"/src/tests/krb5_proxy_check_test_data.conf", 1);
+    fail_unless(sss_krb5_realm_has_proxy("REALM") == false);
+    fail_unless(sss_krb5_realm_has_proxy("REALM_PROXY") == true);
+}
+END_TEST
+
 Suite *krb5_utils_suite (void)
 {
     Suite *s = suite_create ("krb5_utils");
@@ -723,6 +736,7 @@ Suite *krb5_utils_suite (void)
     TCase *tc_krb5_helpers = tcase_create("Helper functions");
     tcase_add_test(tc_krb5_helpers, test_compare_principal_realm);
     tcase_add_test(tc_krb5_helpers, test_parse_krb5_map_user);
+    tcase_add_test(tc_krb5_helpers, test_sss_krb5_realm_has_proxy);
     suite_add_tcase(s, tc_krb5_helpers);
 
     return s;

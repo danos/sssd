@@ -24,16 +24,19 @@ import pytest
 import ent
 from util import *
 
+
 def backup_envvar_file(name):
     path = os.environ[name]
     backup_path = path + ".bak"
     shutil.copyfile(path, backup_path)
     return path
 
+
 def restore_envvar_file(name):
     path = os.environ[name]
     backup_path = path + ".bak"
     os.rename(backup_path, path)
+
 
 @pytest.fixture(scope="module")
 def passwd_path(request):
@@ -41,11 +44,13 @@ def passwd_path(request):
     request.addfinalizer(lambda: restore_envvar_file(name))
     return backup_envvar_file(name)
 
+
 @pytest.fixture(scope="module")
 def group_path(request):
     name = "NSS_WRAPPER_GROUP"
     request.addfinalizer(lambda: restore_envvar_file(name))
     return backup_envvar_file(name)
+
 
 USER1   = dict(name="user1", passwd="x", uid=1001, gid=2001,
                gecos="User 1", dir="/home/user1", shell="/bin/bash")
@@ -77,6 +82,7 @@ GROUP_LIST      = [EMPTY_GROUP,
 GROUP_NAME_DICT = dict((g["name"], g) for g in GROUP_LIST)
 GROUP_GID_DICT  = dict((g["gid"], g) for g in GROUP_LIST)
 
+
 @pytest.fixture(scope="module")
 def users_and_groups(request, passwd_path, group_path):
     passwd_contents = "".join([
@@ -94,6 +100,7 @@ def users_and_groups(request, passwd_path, group_path):
     with open(group_path, "a") as f:
         f.write(group_contents)
 
+
 def test_assert_passwd_by_name(users_and_groups):
     ent.assert_passwd_by_name("user1", {})
     ent.assert_passwd_by_name("user1", dict(name="user1", uid=1001))
@@ -102,14 +109,15 @@ def test_assert_passwd_by_name(users_and_groups):
     try:
         ent.assert_passwd_by_name("user3", {})
         assert False
-    except AssertionError, e:
+    except AssertionError as e:
         assert str(e) == "'getpwnam(): name not found: user3'"
 
     try:
         ent.assert_passwd_by_name("user2", dict(name="user1"))
         assert False
-    except AssertionError, e:
+    except AssertionError as e:
         assert str(e) == "'name' mismatch: 'user1' != 'user2'"
+
 
 def test_assert_passwd_by_uid(users_and_groups):
     ent.assert_passwd_by_uid(1001, {})
@@ -119,13 +127,13 @@ def test_assert_passwd_by_uid(users_and_groups):
     try:
         ent.assert_passwd_by_uid(1003, {})
         assert False
-    except AssertionError, e:
+    except AssertionError as e:
         assert str(e) == "'getpwuid(): uid not found: 1003'"
 
     try:
         ent.assert_passwd_by_uid(1002, dict(name="user1"))
         assert False
-    except AssertionError, e:
+    except AssertionError as e:
         assert str(e) == "'name' mismatch: 'user1' != 'user2'"
 
 
@@ -136,15 +144,16 @@ def test_assert_passwd_list(users_and_groups):
     try:
         ent.assert_passwd_list(ent.contains_only())
         assert False
-    except AssertionError, e:
+    except AssertionError as e:
         assert not re.search("expected users not found:", str(e))
         assert re.search("unexpected users found:", str(e))
     try:
         ent.assert_passwd_list(ent.contains(dict(name="non_existent")))
         assert False
-    except AssertionError, e:
+    except AssertionError as e:
         assert re.search("expected users not found:", str(e))
         assert not re.search("unexpected users found:", str(e))
+
 
 def test_assert_each_passwd_by_name(users_and_groups):
     ent.assert_each_passwd_by_name({})
@@ -153,14 +162,15 @@ def test_assert_each_passwd_by_name(users_and_groups):
     try:
         ent.assert_each_passwd_by_name(dict(user3={}))
         assert False
-    except AssertionError, e:
+    except AssertionError as e:
         assert str(e) == "'getpwnam(): name not found: user3'"
     try:
         ent.assert_each_passwd_by_name(dict(user1=dict(name="user2")))
         assert False
-    except AssertionError, e:
+    except AssertionError as e:
         assert str(e) == \
                "user 'user1' mismatch: 'name' mismatch: 'user2' != 'user1'"
+
 
 def test_assert_each_passwd_by_uid(users_and_groups):
     ent.assert_each_passwd_by_uid({})
@@ -169,14 +179,15 @@ def test_assert_each_passwd_by_uid(users_and_groups):
     try:
         ent.assert_each_passwd_by_uid({1003:{}})
         assert False
-    except AssertionError, e:
+    except AssertionError as e:
         assert str(e) == "'getpwuid(): uid not found: 1003'"
     try:
         ent.assert_each_passwd_by_uid({1001:dict(uid=1002)})
         assert False
-    except AssertionError, e:
+    except AssertionError as e:
         assert str(e) == \
                "user 1001 mismatch: 'uid' mismatch: 1002 != 1001"
+
 
 def test_assert_each_passwd_with_name(users_and_groups):
     ent.assert_each_passwd_with_name([])
@@ -185,14 +196,15 @@ def test_assert_each_passwd_with_name(users_and_groups):
     try:
         ent.assert_each_passwd_with_name([dict(name="user3")])
         assert False
-    except AssertionError, e:
+    except AssertionError as e:
         assert str(e) == "'getpwnam(): name not found: user3'"
     try:
         ent.assert_each_passwd_with_name([dict(name="user1", uid=1002)])
         assert False
-    except AssertionError, e:
+    except AssertionError as e:
         assert str(e) == \
                "user 'user1' mismatch: 'uid' mismatch: 1002 != 1001"
+
 
 def test_assert_each_passwd_with_uid(users_and_groups):
     ent.assert_each_passwd_with_uid([])
@@ -201,14 +213,15 @@ def test_assert_each_passwd_with_uid(users_and_groups):
     try:
         ent.assert_each_passwd_with_uid([dict(uid=1003)])
         assert False
-    except AssertionError, e:
+    except AssertionError as e:
         assert str(e) == "'getpwuid(): uid not found: 1003'"
     try:
         ent.assert_each_passwd_with_uid([dict(name="user2", uid=1001)])
         assert False
-    except AssertionError, e:
+    except AssertionError as e:
         assert str(e) == \
                "user 1001 mismatch: 'name' mismatch: 'user2' != 'user1'"
+
 
 def test_assert_passwd(users_and_groups):
     ent.assert_passwd(ent.contains())
@@ -217,17 +230,18 @@ def test_assert_passwd(users_and_groups):
     try:
         ent.assert_passwd(ent.contains(dict(name="user3", uid=1003)))
         assert False
-    except AssertionError, e:
+    except AssertionError as e:
         assert re.search("list mismatch:", str(e))
         assert re.search("expected users not found:", str(e))
         assert not re.search("unexpected users found:", str(e))
     try:
         ent.assert_passwd(ent.contains_only(USER1))
         assert False
-    except AssertionError, e:
+    except AssertionError as e:
         assert re.search("list mismatch:", str(e))
         assert not re.search("expected users not found:", str(e))
         assert re.search("unexpected users found:", str(e))
+
 
 def test_group_member_matching(users_and_groups):
     ent.assert_group_by_name("empty_group", dict(mem=ent.contains()))
@@ -235,7 +249,7 @@ def test_group_member_matching(users_and_groups):
     try:
         ent.assert_group_by_name("empty_group",
                                  dict(mem=ent.contains("user1")))
-    except AssertionError, e:
+    except AssertionError as e:
         assert re.search("member list mismatch:", str(e))
         assert re.search("expected members not found:", str(e))
 
@@ -247,21 +261,21 @@ def test_group_member_matching(users_and_groups):
     try:
         ent.assert_group_by_name("one_user_group1",
                                  dict(mem=ent.contains_only()))
-    except AssertionError, e:
+    except AssertionError as e:
         assert re.search("member list mismatch:", str(e))
         assert re.search("unexpected members found:", str(e))
         assert not re.search("expected members not found:", str(e))
     try:
         ent.assert_group_by_name("one_user_group1",
                                  dict(mem=ent.contains_only("user3")))
-    except AssertionError, e:
+    except AssertionError as e:
         assert re.search("member list mismatch:", str(e))
         assert re.search("unexpected members found:", str(e))
         assert re.search("expected members not found:", str(e))
     try:
         ent.assert_group_by_name("one_user_group1",
                                  dict(mem=ent.contains("user3")))
-    except AssertionError, e:
+    except AssertionError as e:
         assert re.search("member list mismatch:", str(e))
         assert not re.search("unexpected members found:", str(e))
         assert re.search("expected members not found:", str(e))
@@ -276,10 +290,11 @@ def test_group_member_matching(users_and_groups):
     try:
         ent.assert_group_by_name("two_user_group",
                                  dict(mem=ent.contains_only("user1")))
-    except AssertionError, e:
+    except AssertionError as e:
         assert re.search("member list mismatch:", str(e))
         assert re.search("unexpected members found:", str(e))
         assert not re.search("expected members not found:", str(e))
+
 
 def test_assert_group_by_name(users_and_groups):
     ent.assert_group_by_name("group1", {})
@@ -289,14 +304,15 @@ def test_assert_group_by_name(users_and_groups):
     try:
         ent.assert_group_by_name("group3", {})
         assert False
-    except AssertionError, e:
+    except AssertionError as e:
         assert str(e) == "'getgrnam(): name not found: group3'"
 
     try:
         ent.assert_group_by_name("group2", dict(name="group1"))
         assert False
-    except AssertionError, e:
+    except AssertionError as e:
         assert str(e) == "'name' mismatch: 'group1' != 'group2'"
+
 
 def test_assert_group_by_gid(users_and_groups):
     ent.assert_group_by_gid(2001, {})
@@ -306,13 +322,13 @@ def test_assert_group_by_gid(users_and_groups):
     try:
         ent.assert_group_by_gid(2003, {})
         assert False
-    except AssertionError, e:
+    except AssertionError as e:
         assert str(e) == "'getgrgid(): gid not found: 2003'"
 
     try:
         ent.assert_group_by_gid(2002, dict(name="group1"))
         assert False
-    except AssertionError, e:
+    except AssertionError as e:
         assert str(e) == "'name' mismatch: 'group1' != 'group2'"
 
 
@@ -323,15 +339,16 @@ def test_assert_group_list(users_and_groups):
     try:
         ent.assert_group_list(ent.contains_only())
         assert False
-    except AssertionError, e:
+    except AssertionError as e:
         assert not re.search("expected groups not found:", str(e))
         assert re.search("unexpected groups found:", str(e))
     try:
         ent.assert_group_list(ent.contains(dict(name="non_existent")))
         assert False
-    except AssertionError, e:
+    except AssertionError as e:
         assert re.search("expected groups not found:", str(e))
         assert not re.search("unexpected groups found:", str(e))
+
 
 def test_assert_each_group_by_name(users_and_groups):
     ent.assert_each_group_by_name({})
@@ -340,14 +357,15 @@ def test_assert_each_group_by_name(users_and_groups):
     try:
         ent.assert_each_group_by_name(dict(group3={}))
         assert False
-    except AssertionError, e:
+    except AssertionError as e:
         assert str(e) == "'getgrnam(): name not found: group3'"
     try:
         ent.assert_each_group_by_name(dict(group1=dict(name="group2")))
         assert False
-    except AssertionError, e:
+    except AssertionError as e:
         assert str(e) == "group 'group1' mismatch: " + \
                          "'name' mismatch: 'group2' != 'group1'"
+
 
 def test_assert_each_group_by_gid(users_and_groups):
     ent.assert_each_group_by_gid({})
@@ -356,14 +374,15 @@ def test_assert_each_group_by_gid(users_and_groups):
     try:
         ent.assert_each_group_by_gid({2003:{}})
         assert False
-    except AssertionError, e:
+    except AssertionError as e:
         assert str(e) == "'getgrgid(): gid not found: 2003'"
     try:
         ent.assert_each_group_by_gid({2001:dict(gid=2002)})
         assert False
-    except AssertionError, e:
+    except AssertionError as e:
         assert str(e) == \
                "group 2001 mismatch: 'gid' mismatch: 2002 != 2001"
+
 
 def test_assert_each_group_with_name(users_and_groups):
     ent.assert_each_group_with_name([])
@@ -372,14 +391,15 @@ def test_assert_each_group_with_name(users_and_groups):
     try:
         ent.assert_each_group_with_name([dict(name="group3")])
         assert False
-    except AssertionError, e:
+    except AssertionError as e:
         assert str(e) == "'getgrnam(): name not found: group3'"
     try:
         ent.assert_each_group_with_name([dict(name="group1", gid=2002)])
         assert False
-    except AssertionError, e:
+    except AssertionError as e:
         assert str(e) == \
                "group 'group1' mismatch: 'gid' mismatch: 2002 != 2001"
+
 
 def test_assert_each_group_with_gid(users_and_groups):
     ent.assert_each_group_with_gid([])
@@ -388,14 +408,15 @@ def test_assert_each_group_with_gid(users_and_groups):
     try:
         ent.assert_each_group_with_gid([dict(gid=2003)])
         assert False
-    except AssertionError, e:
+    except AssertionError as e:
         assert str(e) == "'getgrgid(): gid not found: 2003'"
     try:
         ent.assert_each_group_with_gid([dict(name="group2", gid=2001)])
         assert False
-    except AssertionError, e:
+    except AssertionError as e:
         assert str(e) == \
                "group 2001 mismatch: 'name' mismatch: 'group2' != 'group1'"
+
 
 def test_assert_group(users_and_groups):
     ent.assert_group(ent.contains())
@@ -404,14 +425,14 @@ def test_assert_group(users_and_groups):
     try:
         ent.assert_group(ent.contains(dict(name="group3", gid=2003)))
         assert False
-    except AssertionError, e:
+    except AssertionError as e:
         assert re.search("list mismatch:", str(e))
         assert re.search("expected groups not found:", str(e))
         assert not re.search("unexpected groups found:", str(e))
     try:
         ent.assert_group(ent.contains_only(GROUP1))
         assert False
-    except AssertionError, e:
+    except AssertionError as e:
         assert re.search("list mismatch:", str(e))
         assert not re.search("expected groups not found:", str(e))
         assert re.search("unexpected groups found:", str(e))

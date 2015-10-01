@@ -53,8 +53,9 @@ errno_t sss_mmap_cache_gr_store(struct sss_mc_ctx **_mcc,
 
 errno_t sss_mmap_cache_initgr_store(struct sss_mc_ctx **_mcc,
                                     struct sized_string *name,
-                                    uint32_t memnum,
-                                    uint8_t *membuf);
+                                    struct sized_string *unique_name,
+                                    uint32_t num_groups,
+                                    uint8_t *gids_buf);
 
 errno_t sss_mmap_cache_pw_invalidate(struct sss_mc_ctx *mcc,
                                      struct sized_string *name);

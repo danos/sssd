@@ -308,6 +308,13 @@ enum sss_authtok_type {
     SSS_AUTHTOK_TYPE_2FA =       0x0003, /**< Authentication token has two
                                           * factors, they may or may no contain
                                           * a trailing \\0 */
+    SSS_AUTHTOK_TYPE_SC_PIN =    0x0004, /**< Authentication token is a Smart
+                                          * Card pin, it may or may no contain
+                                          * a trailing \\0 */
+    SSS_AUTHTOK_TYPE_SC_KEYPAD = 0x0005, /**< Authentication token indicates
+                                          * Smart Card authentication is used
+                                          * and that the pin will be entered
+                                          * at the card reader. */
 };
 
 /**
@@ -410,6 +417,7 @@ enum response_type {
                           * @param Three zero terminated strings, if one of the
                           * strings is missing the message will contain only
                           * an empty string (\0) for that component. */
+    SSS_PAM_CERT_INFO,
     SSS_OTP,             /**< Indicates that the autotok was a OTP, so don't
                           * cache it. There is no message.
                           * @param None. */

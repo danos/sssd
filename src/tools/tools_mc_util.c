@@ -21,11 +21,13 @@
 
 #include <talloc.h>
 #include <fcntl.h>
+#include <sys/stat.h>
 
 #include "db/sysdb.h"
 #include "util/util.h"
 #include "tools/tools_util.h"
 #include "util/mmap_cache.h"
+#include "util/sss_cli_cmd.h"
 #include "sss_client/sss_cli.h"
 
 /* This is a copy of sss_mc_set_recycled present in
@@ -161,6 +163,33 @@ static int clear_fastcache(bool *sssd_nss_is_off)
     return EOK;
 }
 
+static errno_t wait_till_nss_responder_invalidate_cache(void)
+{
+    struct stat stat_buf = { 0 };
+    const time_t max_wait = 1000000; /* 1 second */
+    const time_t step_time = 5000; /* 5 miliseconds */
+    const size_t steps_count = max_wait / step_time;
+    int ret;
+
+    for (size_t i = 0; i < steps_count; ++i) {
+        ret = stat(SSS_NSS_MCACHE_DIR "/" CLEAR_MC_FLAG, &stat_buf);
+        if (ret == -1) {
+            ret = errno;
+            if (ret == ENOENT) {
+                /* nss responder has already invalidated memory caches */
+                return EOK;
+            }
+
+            DEBUG(SSSDBG_CRIT_FAILURE,
+                  "stat failed: %s (%d)\n", sss_strerror(ret), ret);
+        }
+
+        usleep(step_time);
+    }
+
+    return EAGAIN;
+}
+
 errno_t sss_memcache_clear_all(void)
 {
     errno_t ret;
@@ -196,6 +225,12 @@ errno_t sss_memcache_clear_all(void)
                   "Failed to send SIGHUP to monitor.\n");
             return EIO;
         }
+
+        ret = wait_till_nss_responder_invalidate_cache();
+        if (ret != EOK) {
+            ERROR("The fast memory caches was not invalidated by NSS "
+                  "responder.\n");
+        }
     }
 
     return EOK;
@@ -226,7 +261,8 @@ static errno_t sss_mc_refresh_ent(const char *name, enum sss_tools_ent ent)
     }
 
     if (cmd == SSS_CLI_NULL) {
-        DEBUG(SSSDBG_OP_FAILURE, "Unknown object %d to refresh\n", cmd);
+        DEBUG(SSSDBG_OP_FAILURE, "Unknown object [%d][%s] to refresh\n",
+              cmd, sss_cmd2str(cmd));
         return EINVAL;
     }
 

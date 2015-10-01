@@ -743,12 +743,53 @@ void reset_fo(struct be_ctx *be_ctx)
     fo_reset_services(be_ctx->be_fo->fo_ctx);
 }
 
-void be_fo_set_port_status(struct be_ctx *ctx,
-                           const char *service_name,
-                           struct fo_server *server,
-                           enum port_status status)
+void be_fo_reset_svc(struct be_ctx *be_ctx,
+                     const char *svc_name)
+{
+    struct fo_service *service;
+    int ret;
+
+    DEBUG(SSSDBG_TRACE_LIBS,
+          "Resetting all servers in service %s\n", svc_name);
+
+    ret = fo_get_service(be_ctx->be_fo->fo_ctx, svc_name, &service);
+    if (ret != EOK) {
+        DEBUG(SSSDBG_MINOR_FAILURE,
+              "Cannot retrieve service [%s]\n", svc_name);
+        return;
+    }
+
+    fo_reset_servers(service);
+}
+
+void _be_fo_set_port_status(struct be_ctx *ctx,
+                            const char *service_name,
+                            struct fo_server *server,
+                            enum port_status status,
+                            int line,
+                            const char *file,
+                            const char *function)
 {
     struct be_svc_data *be_svc;
+
+    /* Print debug info */
+    switch (status) {
+    case PORT_NEUTRAL:
+        DEBUG(SSSDBG_BE_FO,
+              "Setting status: PORT_NEUTRAL. Called from: %s: %s: %d\n",
+              file, function, line);
+        break;
+    case PORT_WORKING:
+        DEBUG(SSSDBG_BE_FO,
+              "Setting status: PORT_WORKING. Called from: %s: %s: %d\n",
+              file, function, line);
+        break;
+    case PORT_NOT_WORKING:
+        DEBUG(SSSDBG_BE_FO,
+              "Setting status: PORT_NOT_WORKING. Called from: %s: %s: %d\n",
+              file, function, line);
+        break;
+    }
 
     be_svc = be_fo_find_svc_data(ctx, service_name);
     if (be_svc == NULL) {

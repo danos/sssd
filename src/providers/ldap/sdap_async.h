@@ -59,6 +59,12 @@ errno_t sdap_connect_host_recv(TALLOC_CTX *mem_ctx,
                                struct sdap_handle **_sh);
 
 /* Search users in LDAP, return them as attrs */
+enum sdap_entry_lookup_type {
+    SDAP_LOOKUP_SINGLE,         /* Direct single-user/group lookup */
+    SDAP_LOOKUP_WILDCARD,       /* Multiple entries with a limit */
+    SDAP_LOOKUP_ENUMERATE,      /* Fetch all entries from the server */
+};
+
 struct tevent_req *sdap_search_user_send(TALLOC_CTX *memctx,
                                          struct tevent_context *ev,
                                          struct sss_domain_info *dom,
@@ -68,7 +74,7 @@ struct tevent_req *sdap_search_user_send(TALLOC_CTX *memctx,
                                          const char **attrs,
                                          const char *filter,
                                          int timeout,
-                                         bool enumeration);
+                                         enum sdap_entry_lookup_type lookup_type);
 int sdap_search_user_recv(TALLOC_CTX *memctx, struct tevent_req *req,
                           char **higher_usn, struct sysdb_attrs ***users,
                           size_t *count);
@@ -84,7 +90,7 @@ struct tevent_req *sdap_get_users_send(TALLOC_CTX *memctx,
                                        const char **attrs,
                                        const char *filter,
                                        int timeout,
-                                       bool enumeration);
+                                       enum sdap_entry_lookup_type lookup_type);
 int sdap_get_users_recv(struct tevent_req *req,
                         TALLOC_CTX *mem_ctx, char **timestamp);
 
@@ -96,7 +102,7 @@ struct tevent_req *sdap_get_groups_send(TALLOC_CTX *memctx,
                                        const char **attrs,
                                        const char *filter,
                                        int timeout,
-                                       bool enumeration,
+                                       enum sdap_entry_lookup_type lookup_type,
                                        bool no_members);
 int sdap_get_groups_recv(struct tevent_req *req,
                          TALLOC_CTX *mem_ctx, char **timestamp);
@@ -180,6 +186,28 @@ int sdap_cli_connect_recv(struct tevent_req *req,
                           bool *can_retry,
                           struct sdap_handle **gsh,
                           struct sdap_server_opts **srv_opts);
+
+/* Exposes all options of generic send while allowing to parse by map */
+struct tevent_req *sdap_get_and_parse_generic_send(TALLOC_CTX *memctx,
+                                                   struct tevent_context *ev,
+                                                   struct sdap_options *opts,
+                                                   struct sdap_handle *sh,
+                                                   const char *search_base,
+                                                   int scope,
+                                                   const char *filter,
+                                                   const char **attrs,
+                                                   struct sdap_attr_map *map,
+                                                   int map_num_attrs,
+                                                   int attrsonly,
+                                                   LDAPControl **serverctrls,
+                                                   LDAPControl **clientctrls,
+                                                   int sizelimit,
+                                                   int timeout,
+                                                   bool allow_paging);
+int sdap_get_and_parse_generic_recv(struct tevent_req *req,
+                                    TALLOC_CTX *mem_ctx,
+                                    size_t *reply_count,
+                                    struct sysdb_attrs ***reply);
 
 struct tevent_req *sdap_get_generic_send(TALLOC_CTX *memctx,
                                          struct tevent_context *ev,

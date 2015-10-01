@@ -248,7 +248,7 @@ static void sdap_inherit_basic_options(char **inherit_opt_list,
                                        struct dp_option *subdom_opts)
 {
     int inherit_options[] = {
-        SDAP_CACHE_PURGE_TIMEOUT,
+        SDAP_PURGE_CACHE_TIMEOUT,
         SDAP_AD_USE_TOKENGROUPS,
         SDAP_OPTS_BASIC     /* sentinel */
     };
@@ -1031,6 +1031,67 @@ static char *get_naming_context(TALLOC_CTX *mem_ctx,
     return naming_context;
 }
 
+errno_t
+sdap_create_search_base(TALLOC_CTX *mem_ctx,
+                        const char *unparsed_base,
+                        int scope,
+                        const char *filter,
+                        struct sdap_search_base **_base)
+{
+    struct sdap_search_base *base;
+    TALLOC_CTX *tmp_ctx;
+    errno_t ret;
+    struct ldb_dn *ldn;
+    struct ldb_context *ldb;
+
+    tmp_ctx = talloc_new(NULL);
+    if (!tmp_ctx) {
+        ret = ENOMEM;
+        goto done;
+    }
+
+    /* Create a throwaway LDB context for validating the DN */
+    ldb = ldb_init(tmp_ctx, NULL);
+    if (!ldb) {
+        ret = ENOMEM;
+        goto done;
+    }
+
+    base = talloc_zero(tmp_ctx, struct sdap_search_base);
+    if (base == NULL) {
+        ret = ENOMEM;
+        goto done;
+    }
+
+    base->basedn = talloc_strdup(base, unparsed_base);
+    if (base->basedn == NULL) {
+        ret = ENOMEM;
+        goto done;
+    }
+
+    /* Validate the basedn */
+    ldn = ldb_dn_new(tmp_ctx, ldb, unparsed_base);
+    if (!ldn) {
+        ret = ENOMEM;
+        goto done;
+    }
+
+    if (!ldb_dn_validate(ldn)) {
+        DEBUG(SSSDBG_CRIT_FAILURE, "Invalid base DN [%s]\n", unparsed_base);
+        ret = EINVAL;
+        goto done;
+    }
+
+    base->scope = scope;
+    base->filter = filter;
+
+    *_base = talloc_steal(mem_ctx, base);
+    ret = EOK;
+done:
+    talloc_free(tmp_ctx);
+    return ret;
+}
+
 static errno_t sdap_set_search_base(struct sdap_options *opts,
                                     struct sdap_domain *sdom,
                                     enum sdap_basic_opt class,
@@ -1557,4 +1618,63 @@ char *sdap_make_oc_list(TALLOC_CTX *mem_ctx, struct sdap_attr_map *map)
                                map[SDAP_OC_GROUP].name,
                                map[SDAP_OC_GROUP_ALT].name);
     }
+}
+
+static bool sdap_object_in_domain(struct sdap_options *opts,
+                                  struct sysdb_attrs *obj,
+                                  struct sss_domain_info *dom)
+{
+    errno_t ret;
+    const char *original_dn = NULL;
+    struct sdap_domain *sdmatch = NULL;
+
+    ret = sysdb_attrs_get_string(obj, SYSDB_ORIG_DN, &original_dn);
+    if (ret) {
+        DEBUG(SSSDBG_FUNC_DATA,
+              "The group has no original DN, assuming our domain\n");
+        return true;
+    }
+
+    sdmatch = sdap_domain_get_by_dn(opts, original_dn);
+    if (sdmatch == NULL) {
+        DEBUG(SSSDBG_FUNC_DATA,
+              "The group has no original DN, assuming our domain\n");
+        return true;
+    }
+
+    return (sdmatch->dom == dom);
+}
+
+size_t sdap_steal_objects_in_dom(struct sdap_options *opts,
+                                 struct sysdb_attrs **dom_objects,
+                                 size_t offset,
+                                 struct sss_domain_info *dom,
+                                 struct sysdb_attrs **all_objects,
+                                 size_t count,
+                                 bool filter)
+{
+    size_t copied = 0;
+
+    /* Own objects from all_objects by dom_objects in case they belong
+     * to domain dom.
+     *
+     * Don't copy objects from other domains in case
+     * the search was for parent domain but a child domain would match,
+     * too, such as:
+     *  dc=example,dc=com
+     *  dc=child,dc=example,dc=com
+     * while searching for an object from dc=example.
+     */
+    for (size_t i = 0; i < count; i++) {
+        if (filter &&
+                sdap_object_in_domain(opts, all_objects[i], dom) == false) {
+            continue;
+        }
+
+        dom_objects[offset + copied] =
+            talloc_steal(dom_objects, all_objects[i]);
+        copied++;
+    }
+
+    return copied;
 }

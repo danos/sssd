@@ -69,7 +69,7 @@ unpack_buffer(uint8_t *buf,
     if (len == 0) {
         return EINVAL;
     } else {
-        if ((p + len ) > size) return EINVAL;
+        if (len > size - p) return EINVAL;
         ibuf->smb_server = talloc_strndup(ibuf, (char *)(buf + p), len);
         if (ibuf->smb_server == NULL) return ENOMEM;
         DEBUG(SSSDBG_TRACE_ALL, "smb_server: %s\n", ibuf->smb_server);
@@ -82,7 +82,7 @@ unpack_buffer(uint8_t *buf,
     if (len == 0) {
         return EINVAL;
     } else {
-        if ((p + len ) > size) return EINVAL;
+        if (len > size - p) return EINVAL;
         ibuf->smb_share = talloc_strndup(ibuf, (char *)(buf + p), len);
         if (ibuf->smb_share == NULL) return ENOMEM;
         DEBUG(SSSDBG_TRACE_ALL, "smb_share: %s\n", ibuf->smb_share);
@@ -95,7 +95,7 @@ unpack_buffer(uint8_t *buf,
     if (len == 0) {
         return EINVAL;
     } else {
-        if ((p + len ) > size) return EINVAL;
+        if (len > size - p) return EINVAL;
         ibuf->smb_path = talloc_strndup(ibuf, (char *)(buf + p), len);
         if (ibuf->smb_path == NULL) return ENOMEM;
         DEBUG(SSSDBG_TRACE_ALL, "smb_path: %s\n", ibuf->smb_path);
@@ -108,7 +108,7 @@ unpack_buffer(uint8_t *buf,
     if (len == 0) {
         return EINVAL;
     } else {
-        if ((p + len ) > size) return EINVAL;
+        if (len > size - p) return EINVAL;
         ibuf->smb_cse_suffix = talloc_strndup(ibuf, (char *)(buf + p), len);
         if (ibuf->smb_cse_suffix == NULL) return ENOMEM;
         DEBUG(SSSDBG_TRACE_ALL, "smb_cse_suffix: %s\n", ibuf->smb_cse_suffix);
@@ -273,10 +273,10 @@ static errno_t gpo_cache_store_file(const char *smb_path,
                                     int buflen)
 {
     int ret;
+    int fret;
     int fd = -1;
     char *tmp_name = NULL;
     ssize_t written;
-    mode_t old_umask;
     char *filename = NULL;
     char *smb_path_with_suffix = NULL;
     TALLOC_CTX *tmp_ctx = NULL;
@@ -318,13 +318,10 @@ static errno_t gpo_cache_store_file(const char *smb_path,
         goto done;
     }
 
-    old_umask = umask(077);
-    fd = mkstemp(tmp_name);
-    umask(old_umask);
+    fd = sss_unique_file(tmp_ctx, tmp_name, &ret);
     if (fd == -1) {
-        ret = errno;
         DEBUG(SSSDBG_CRIT_FAILURE,
-              "mkstemp failed [%d][%s].\n", ret, strerror(ret));
+              "sss_unique_file failed [%d][%s].\n", ret, strerror(ret));
         goto done;
     }
 
@@ -353,14 +350,6 @@ static errno_t gpo_cache_store_file(const char *smb_path,
         goto done;
     }
 
-    ret = close(fd);
-    if (ret == -1) {
-        ret = errno;
-        DEBUG(SSSDBG_CRIT_FAILURE,
-              "close failed [%d][%s].\n", ret, strerror(ret));
-        goto done;
-    }
-
     ret = rename(tmp_name, filename);
     if (ret == -1) {
         ret = errno;
@@ -369,10 +358,19 @@ static errno_t gpo_cache_store_file(const char *smb_path,
         goto done;
     }
 
+    ret = EOK;
  done:
-
     if (ret != EOK) {
-      DEBUG(SSSDBG_CRIT_FAILURE, "Error encountered: %d.\n", ret);
+        DEBUG(SSSDBG_CRIT_FAILURE, "Error encountered: %d.\n", ret);
+    }
+
+    if (fd != -1) {
+        fret = close(fd);
+        if (fret == -1) {
+            fret = errno;
+            DEBUG(SSSDBG_CRIT_FAILURE,
+                  "close failed [%d][%s].\n", fret, strerror(fret));
+        }
     }
 
     talloc_free(tmp_ctx);
@@ -585,7 +583,7 @@ copy_smb_file_to_gpo_cache(SMBCCTX *smbc_ctx,
  * than the cached_gpt_version, thereby triggering a fresh download.
  *
  * Note that the backend will later do the following:
- * - backend will save the the sysvol_gpt_version to sysdb cache
+ * - backend will save the sysvol_gpt_version to sysdb cache
  * - backend will read the policy file from the GPO_CACHE
  */
 static errno_t

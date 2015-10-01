@@ -34,7 +34,7 @@
 #include "db/sysdb_autofs.h"
 #include "tests/common.h"
 
-#define TESTS_PATH "tests_sysdb"
+#define TESTS_PATH "tp_" BASE_FILE_STEM
 #define TEST_CONF_FILE "tests_conf.ldb"
 
 #define TEST_ATTR_NAME "test_attr_name"
@@ -1835,7 +1835,7 @@ START_TEST (test_sysdb_cache_password_ex)
 
     val = ldb_msg_find_attr_as_int(res->msgs[0], SYSDB_CACHEDPWD_TYPE, 0);
     fail_unless(val == SSS_AUTHTOK_TYPE_PASSWORD,
-                "Unexptected authtok type, found [%d], expected [%d].",
+                "Unexpected authtok type, found [%d], expected [%d].",
                 val, SSS_AUTHTOK_TYPE_PASSWORD);
 
     ret = sysdb_cache_password_ex(test_ctx->domain, data->username,
@@ -1849,12 +1849,12 @@ START_TEST (test_sysdb_cache_password_ex)
 
     val = ldb_msg_find_attr_as_int(res->msgs[0], SYSDB_CACHEDPWD_TYPE, 0);
     fail_unless(val == SSS_AUTHTOK_TYPE_2FA,
-                "Unexptected authtok type, found [%d], expected [%d].",
+                "Unexpected authtok type, found [%d], expected [%d].",
                 val, SSS_AUTHTOK_TYPE_2FA);
 
     val = ldb_msg_find_attr_as_int(res->msgs[0], SYSDB_CACHEDPWD_FA2_LEN, 0);
     fail_unless(val == 12,
-                "Unexptected second factor lenght, found [%d], expected [%d].",
+                "Unexpected second factor length, found [%d], expected [%d].",
                 val, 12);
 
     talloc_free(test_ctx);
@@ -5232,7 +5232,7 @@ START_TEST(test_sysdb_search_user_by_cert)
     fail_unless(ret == EOK, "sysdb_add_user failed with [%d][%s].",
                 ret, strerror(ret));
 
-    ret = sysdb_search_user_by_cert(test_ctx, test_ctx->domain, "ABC", &res);
+    ret = sysdb_search_user_by_cert(test_ctx, test_ctx->domain, "ABA=", &res);
     fail_unless(ret == ENOENT,
                 "Unexpected return code from sysdb_search_user_by_cert for "
                 "missing object, expected [%d], got [%d].", ENOENT, ret);
@@ -6212,6 +6212,74 @@ START_TEST(test_confdb_list_all_domain_names_multi_dom)
 }
 END_TEST
 
+START_TEST(test_sysdb_mark_entry_as_expired_ldb_dn)
+{
+    errno_t ret;
+    struct sysdb_test_ctx *test_ctx;
+    const char *attrs[] = { SYSDB_CACHE_EXPIRE, NULL };
+    size_t count;
+    struct ldb_message **msgs;
+    uint64_t expire;
+    struct ldb_dn *userdn;
+
+    ret = setup_sysdb_tests(&test_ctx);
+    fail_if(ret != EOK, "Could not setup the test");
+
+    /* Add something to database to test against */
+
+    ret = sysdb_transaction_start(test_ctx->sysdb);
+    ck_assert_int_eq(ret, EOK);
+
+    ret = sysdb_add_user(test_ctx->domain, "testuser",
+                         2000, 0, "Test User", "/home/testuser",
+                         "/bin/bash",
+                         NULL, NULL, 500, 0);
+    ck_assert_int_eq(ret, EOK);
+
+    ret = sysdb_transaction_commit(test_ctx->sysdb);
+    ck_assert_int_eq(ret, EOK);
+
+    ret = sysdb_search_users(test_ctx, test_ctx->domain,
+                             "("SYSDB_UIDNUM"=2000)", attrs, &count, &msgs);
+    ck_assert_int_eq(ret, EOK);
+    ck_assert_int_eq(count, 1);
+
+    expire = ldb_msg_find_attr_as_uint64(msgs[0], SYSDB_CACHE_EXPIRE, 0);
+    ck_assert(expire != 1);
+
+    userdn = sysdb_user_dn(test_ctx, test_ctx->domain, "testuser");
+    ck_assert(userdn != NULL);
+
+    ret = sysdb_transaction_start(test_ctx->sysdb);
+    ck_assert_int_eq(ret, EOK);
+
+    /* Expire entry */
+    ret = sysdb_mark_entry_as_expired_ldb_dn(test_ctx->domain, userdn);
+    ck_assert_int_eq(ret, EOK);
+
+    ret = sysdb_transaction_commit(test_ctx->sysdb);
+    ck_assert_int_eq(ret, EOK);
+
+    ret = sysdb_search_users(test_ctx, test_ctx->domain,
+                             "("SYSDB_UIDNUM"=2000)", attrs, &count, &msgs);
+    ck_assert_int_eq(ret, EOK);
+    ck_assert_int_eq(count, 1);
+
+    expire = ldb_msg_find_attr_as_uint64(msgs[0], SYSDB_CACHE_EXPIRE, 0);
+    ck_assert_int_eq(expire, 1);
+
+    /* Try to expire already expired entry. Should return EOK. */
+    ret = sysdb_transaction_start(test_ctx->sysdb);
+    ck_assert_int_eq(ret, EOK);
+
+    ret = sysdb_mark_entry_as_expired_ldb_dn(test_ctx->domain, userdn);
+    ck_assert_int_eq(ret, EOK);
+
+    ret = sysdb_transaction_commit(test_ctx->sysdb);
+    ck_assert_int_eq(ret, EOK);
+}
+END_TEST
+
 Suite *create_sysdb_suite(void)
 {
     Suite *s = suite_create("sysdb");
@@ -6424,6 +6492,7 @@ Suite *create_sysdb_suite(void)
 
 /* ===== Misc ===== */
     tcase_add_test(tc_sysdb, test_sysdb_set_get_bool);
+    tcase_add_test(tc_sysdb, test_sysdb_mark_entry_as_expired_ldb_dn);
 
 /* Add all test cases to the test suite */
     suite_add_tcase(s, tc_sysdb);

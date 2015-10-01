@@ -528,9 +528,11 @@ sss_dp_get_account_msg(void *pvt)
 
     switch (info->type) {
         case SSS_DP_USER:
+        case SSS_DP_WILDCARD_USER:
             be_type = BE_REQ_USER;
             break;
         case SSS_DP_GROUP:
+        case SSS_DP_WILDCARD_GROUP:
             be_type = BE_REQ_GROUP;
             break;
         case SSS_DP_INITGROUPS:
@@ -574,6 +576,15 @@ sss_dp_get_account_msg(void *pvt)
                 filter = talloc_asprintf(info, "%s=%s", DP_CERT,
                                                info->opt_name);
             }
+        } else if (info->type == SSS_DP_WILDCARD_USER ||
+                   info->type == SSS_DP_WILDCARD_GROUP) {
+            if (info->extra) {
+                filter = talloc_asprintf(info, "%s=%s:%s", DP_WILDCARD,
+                                               info->opt_name, info->extra);
+            } else {
+                filter = talloc_asprintf(info, "%s=%s", DP_WILDCARD,
+                                               info->opt_name);
+            }
         } else {
             if (info->extra) {
                 filter = talloc_asprintf(info, "name=%s:%s",
@@ -609,8 +620,8 @@ sss_dp_get_account_msg(void *pvt)
 
     /* create the message */
     DEBUG(SSSDBG_TRACE_FUNC,
-          "Creating request for [%s][%u][%d][%s]\n",
-           info->dom->name, be_type, attrs, filter);
+          "Creating request for [%s][%#x][%s][%d][%s]\n",
+           info->dom->name, be_type, be_req2str(be_type), attrs, filter);
 
     dbret = dbus_message_append_args(msg,
                                      DBUS_TYPE_UINT32, &be_type,

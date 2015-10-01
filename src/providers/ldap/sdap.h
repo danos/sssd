@@ -176,7 +176,7 @@ enum sdap_basic_opt {
     SDAP_OFFLINE_TIMEOUT,
     SDAP_FORCE_UPPER_CASE_REALM,
     SDAP_ENUM_REFRESH_TIMEOUT,
-    SDAP_CACHE_PURGE_TIMEOUT,
+    SDAP_PURGE_CACHE_TIMEOUT,
     SDAP_TLS_CACERT,
     SDAP_TLS_CACERTDIR,
     SDAP_TLS_CERT,
@@ -231,6 +231,7 @@ enum sdap_basic_opt {
     SDAP_MIN_ID,
     SDAP_MAX_ID,
     SDAP_PWDLOCKOUT_DN,
+    SDAP_WILDCARD_LIMIT,
 
     SDAP_OPTS_BASIC /* opts counter */
 };
@@ -371,6 +372,13 @@ struct sdap_search_base {
     int scope;
     const char *filter;
 };
+
+errno_t
+sdap_create_search_base(TALLOC_CTX *mem_ctx,
+                        const char *unparsed_base,
+                        int scope,
+                        const char *filter,
+                        struct sdap_search_base **_base);
 
 /* Values from
  * http://msdn.microsoft.com/en-us/library/cc223272%28v=prot.13%29.aspx
@@ -572,4 +580,13 @@ void sdap_steal_server_opts(struct sdap_id_ctx *id_ctx,
                             struct sdap_server_opts **srv_opts);
 
 char *sdap_make_oc_list(TALLOC_CTX *mem_ctx, struct sdap_attr_map *map);
+
+size_t sdap_steal_objects_in_dom(struct sdap_options *opts,
+                                 struct sysdb_attrs **dom_objects,
+                                 size_t offset,
+                                 struct sss_domain_info *dom,
+                                 struct sysdb_attrs **all_objects,
+                                 size_t count,
+                                 bool filter);
+
 #endif /* _SDAP_H_ */

@@ -102,7 +102,7 @@ sdap_dom_enum_ex_send(TALLOC_CTX *memctx,
     state->svc_conn = svc_conn;
     sdom->last_enum = tevent_timeval_current();
 
-    t = dp_opt_get_int(ctx->opts->basic, SDAP_CACHE_PURGE_TIMEOUT);
+    t = dp_opt_get_int(ctx->opts->basic, SDAP_PURGE_CACHE_TIMEOUT);
     if ((sdom->last_purge.tv_sec + t) < sdom->last_enum.tv_sec) {
         state->purge = true;
     }
@@ -487,7 +487,8 @@ static void sdap_dom_enum_ex_svcs_done(struct tevent_req *subreq)
             /* Not fatal, worst case we'll have stale entries that would be
              * removed on a subsequent online lookup
              */
-            DEBUG(SSSDBG_MINOR_FAILURE, "Cleanup failed: %d\n", ret);
+            DEBUG(SSSDBG_MINOR_FAILURE, "Cleanup failed: [%d]: %s\n",
+                  ret, sss_strerror(ret));
         }
     }
 
@@ -635,7 +636,7 @@ static struct tevent_req *enum_users_send(TALLOC_CTX *memctx,
                                  state->attrs, state->filter,
                                  dp_opt_get_int(state->ctx->opts->basic,
                                                 SDAP_ENUM_SEARCH_TIMEOUT),
-                                 true);
+                                 SDAP_LOOKUP_ENUMERATE);
     if (!subreq) {
         ret = ENOMEM;
         goto fail;
@@ -811,7 +812,7 @@ static struct tevent_req *enum_groups_send(TALLOC_CTX *memctx,
                                   state->attrs, state->filter,
                                   dp_opt_get_int(state->ctx->opts->basic,
                                                  SDAP_ENUM_SEARCH_TIMEOUT),
-                                  true, false);
+                                  SDAP_LOOKUP_ENUMERATE, false);
     if (!subreq) {
         ret = ENOMEM;
         goto fail;

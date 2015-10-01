@@ -157,9 +157,10 @@
 #define SYSDB_AD_ACCOUNT_EXPIRES "adAccountExpires"
 #define SYSDB_AD_USER_ACCOUNT_CONTROL "adUserAccountControl"
 
+#define SYSDB_DEFAULT_VIEW_NAME "default"
+#define SYSDB_LOCAL_VIEW_NAME "LOCAL" /* reserved for client-side overrides */
 #define SYSDB_VIEW_CLASS "view"
 #define SYSDB_VIEW_NAME "viewName"
-#define SYSDB_DEFAULT_VIEW_NAME "default"
 #define SYSDB_OVERRIDE_CLASS "overrride"
 #define SYSDB_OVERRIDE_ANCHOR_UUID "overrideAnchorUUID"
 #define SYSDB_OVERRIDE_USER_CLASS "userOverride"
@@ -473,6 +474,17 @@ static inline bool is_default_view(const char *view_name)
     }
 }
 
+static inline bool is_local_view(const char *view_name)
+{
+    /* NULL is treated as default */
+    if (view_name != NULL
+            && strcmp(view_name, SYSDB_LOCAL_VIEW_NAME) == 0) {
+        return true;
+    } else {
+        return false;
+    }
+}
+
 errno_t sysdb_delete_view_tree(struct sysdb_ctx *sysdb, const char *view_name);
 
 errno_t sysdb_invalidate_overrides(struct sysdb_ctx *sysdb);
@@ -601,9 +613,21 @@ int sysdb_enumpwent(TALLOC_CTX *mem_ctx,
                     struct sss_domain_info *domain,
                     struct ldb_result **res);
 
+int sysdb_enumpwent_filter(TALLOC_CTX *mem_ctx,
+                           struct sss_domain_info *domain,
+                           const char *name_filter,
+                           const char *addtl_filter,
+                           struct ldb_result **res);
+
 int sysdb_enumpwent_with_views(TALLOC_CTX *mem_ctx,
                                struct sss_domain_info *domain,
                                struct ldb_result **res);
+
+int sysdb_enumpwent_filter_with_views(TALLOC_CTX *mem_ctx,
+                                      struct sss_domain_info *domain,
+                                      const char *name_filter,
+                                      const char *addtl_filter,
+                                      struct ldb_result **res);
 
 int sysdb_getgrnam(TALLOC_CTX *mem_ctx,
                    struct sss_domain_info *domain,
@@ -619,9 +643,21 @@ int sysdb_enumgrent(TALLOC_CTX *mem_ctx,
                     struct sss_domain_info *domain,
                     struct ldb_result **res);
 
+int sysdb_enumgrent_filter(TALLOC_CTX *mem_ctx,
+                           struct sss_domain_info *domain,
+                           const char *name_filter,
+                           const char *addtl_filter,
+                           struct ldb_result **res);
+
 int sysdb_enumgrent_with_views(TALLOC_CTX *mem_ctx,
                                struct sss_domain_info *domain,
                                struct ldb_result **res);
+
+int sysdb_enumgrent_filter_with_views(TALLOC_CTX *mem_ctx,
+                                      struct sss_domain_info *domain,
+                                      const char *name_filter,
+                                      const char *addtl_filter,
+                                      struct ldb_result **res);
 
 struct sysdb_netgroup_ctx {
     enum {SYSDB_NETGROUP_TRIPLE_VAL, SYSDB_NETGROUP_GROUP_VAL} type;
@@ -681,10 +717,15 @@ int sysdb_delete_entry(struct sysdb_ctx *sysdb,
                        struct ldb_dn *dn,
                        bool ignore_not_found);
 
-
 int sysdb_delete_recursive(struct sysdb_ctx *sysdb,
                            struct ldb_dn *dn,
                            bool ignore_not_found);
+
+/* Mark entry as expired */
+errno_t sysdb_mark_entry_as_expired_ldb_dn(struct sss_domain_info *dom,
+                                           struct ldb_dn *ldbdn);
+errno_t sysdb_mark_entry_as_expired_ldb_val(struct sss_domain_info *dom,
+                                            struct ldb_val *dn_val);
 
 /* Search Entry */
 int sysdb_search_entry(TALLOC_CTX *mem_ctx,

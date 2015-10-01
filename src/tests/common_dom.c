@@ -292,19 +292,6 @@ create_dom_test_ctx(TALLOC_CTX *mem_ctx,
                                     id_provider, params);
 }
 
-void test_dom_suite_setup(const char *tests_path)
-{
-    errno_t ret;
-
-    /* Create tests directory if it doesn't exist */
-    /* (relative to current dir) */
-    ret = mkdir(tests_path, 0775);
-    if (ret != 0 && errno != EEXIST) {
-        DEBUG(SSSDBG_CRIT_FAILURE,
-              "Could not create test directory\n");
-    }
-}
-
 void test_multidom_suite_cleanup(const char *tests_path,
                                  const char *cdb_file,
                                  const char **domains)
@@ -383,4 +370,26 @@ void test_dom_suite_cleanup(const char *tests_path,
     const char *domains[] = {domain, NULL};
 
     test_multidom_suite_cleanup(tests_path, cdb_file, domains);
+}
+
+struct sss_domain_info *named_domain(TALLOC_CTX *mem_ctx,
+                                     const char *name,
+                                     struct sss_domain_info *parent)
+{
+    struct sss_domain_info *dom = NULL;
+
+    dom = talloc_zero(mem_ctx, struct sss_domain_info);
+    if (dom == NULL) {
+        return NULL;
+    }
+
+    dom->name = talloc_strdup(dom, name);
+    if (dom->name == NULL) {
+        talloc_free(dom);
+        return NULL;
+    }
+
+    dom->parent = parent;
+
+    return dom;
 }

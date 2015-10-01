@@ -30,12 +30,14 @@ import sys
 from util import *
 from ds import DS
 
+
 def hash_password(password):
     """Generate userPassword value for a password."""
     salt = os.urandom(4)
     hash = hashlib.sha1(password)
     hash.update(salt)
     return "{SSHA}" + base64.standard_b64encode(hash.digest() + salt)
+
 
 class DSOpenLDAP(DS):
     """OpenLDAP directory server instance."""
@@ -271,7 +273,7 @@ class DSOpenLDAP(DS):
                 if ++attempt > 30:
                     raise Exception("Failed to stop slapd")
                 time.sleep(1)
-        except IOError, e:
+        except IOError as e:
             if e.errno != errno.ENOENT:
                 raise
 

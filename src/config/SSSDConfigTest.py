@@ -403,9 +403,6 @@ class SSSDConfigTestSSSDService(unittest.TestCase):
     def testGetOption(self):
         service = SSSDConfig.SSSDService('sssd', self.schema)
 
-        # Positive test - Single-valued
-        self.assertEqual(service.get_option('config_file_version'), 2)
-
         # Positive test - List of values
         self.assertEqual(service.get_option('services'), ['nss', 'pam'])
 
@@ -417,9 +414,7 @@ class SSSDConfigTestSSSDService(unittest.TestCase):
 
         #Positive test
         options = service.get_all_options()
-        control_list = [
-            'config_file_version',
-            'services']
+        control_list = ['services']
 
         self.assertTrue(type(options) == dict,
                         "Options should be a dictionary")
@@ -527,6 +522,7 @@ class SSSDConfigTestSSSDDomain(unittest.TestCase):
             'dyndns_update_ptr',
             'dyndns_force_tcp',
             'dyndns_auth',
+            'dyndns_server',
             'subdomain_enumerate',
             'override_gid',
             'case_sensitive',
@@ -891,6 +887,7 @@ class SSSDConfigTestSSSDDomain(unittest.TestCase):
             'dyndns_update_ptr',
             'dyndns_force_tcp',
             'dyndns_auth',
+            'dyndns_server',
             'subdomain_enumerate',
             'override_gid',
             'case_sensitive',
@@ -1264,9 +1261,7 @@ class SSSDConfigTestSSSDConfig(unittest.TestCase):
         for section in sssdconfig.sections():
             self.assertTrue(section['name'] in control_list)
 
-        control_list = [
-            'config_file_version',
-            'services']
+        control_list = ['services']
         for option in control_list:
             self.assertTrue(sssdconfig.has_option('sssd', option),
                             "Option [%s] missing from [sssd]" %
@@ -1299,6 +1294,7 @@ class SSSDConfigTestSSSDConfig(unittest.TestCase):
             'nss',
             'pam']
         active_services = sssdconfig.list_active_services()
+        self.assertTrue(isinstance(active_services, list))
 
         for service in control_list:
             self.assertTrue(service in active_services,
@@ -1521,6 +1517,7 @@ class SSSDConfigTestSSSDConfig(unittest.TestCase):
             'IPA',
             'LOCAL']
         active_domains = sssdconfig.list_active_domains()
+        self.assertTrue(isinstance(active_domains, list))
 
         for domain in control_list:
             self.assertTrue(domain in active_domains,

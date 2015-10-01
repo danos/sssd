@@ -14,7 +14,7 @@ m4_ifdef([AC_USE_SYSTEM_EXTENSIONS],
 CFLAGS="$CFLAGS -D_FILE_OFFSET_BITS=64 -D_LARGEFILE_SOURCE -D_LARGEFILE64_SOURCE"
 
 
-AM_INIT_AUTOMAKE([-Wall foreign subdir-objects tar-pax])
+AM_INIT_AUTOMAKE([-Wall -Wno-portability foreign subdir-objects tar-pax])
 AM_PROG_CC_C_O
 m4_ifdef([AM_PROG_AR], [AM_PROG_AR])
 AC_DISABLE_STATIC
@@ -235,7 +235,7 @@ if test x$HAVE_MANPAGES != x; then
                      [HAVE_PROFILE_CATALOGS=1],
                      [AC_MSG_WARN([Man pages might contain documentation for experimental features])])
 
-    if test x$HAVE_PROFILE_CATALOGS == x; then
+    if test x$HAVE_PROFILE_CATALOGS = x; then
         DOCBOOK_XSLT=http://docbook.sourceforge.net/release/xsl/current/manpages/docbook.xsl
         CHECK_STYLESHEET([$SGML_CATALOG_FILES],
                          [$DOCBOOK_XSLT],
@@ -341,7 +341,9 @@ if test x$cryptolib = xnss; then
     AM_CHECK_NSS
 fi
 
-AM_CHECK_LIBCRYPTO
+if test x$cryptolib = xlibcrypto; then
+    AM_CHECK_LIBCRYPTO
+fi
 
 AM_CHECK_INOTIFY
 
@@ -397,6 +399,9 @@ AM_CONDITIONAL([HAVE_DEVSHM], [test -d /dev/shm])
 abs_build_dir=`pwd`
 AC_DEFINE_UNQUOTED([ABS_BUILD_DIR], ["$abs_build_dir"], [Absolute path to the build directory])
 AC_SUBST([abs_builddir], $abs_build_dir)
+
+my_srcdir=`readlink -f $srcdir`
+AC_DEFINE_UNQUOTED([ABS_SRC_DIR], ["$my_srcdir"], [Absolute path to the source directory])
 
 AC_CONFIG_FILES([Makefile contrib/sssd.spec src/examples/rwtab src/doxy.config
                  src/sysv/sssd src/sysv/gentoo/sssd src/sysv/SUSE/sssd

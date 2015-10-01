@@ -32,7 +32,7 @@
 #include "tests/common.h"
 #include "db/sysdb_private.h" /* for sysdb->ldb member */
 
-#define TESTS_PATH "test_sysdb_subdomains_dir"
+#define TESTS_PATH "tp_" BASE_FILE_STEM
 #define TEST_CONF_DB "test_sysdb_subdomains.ldb"
 
 #define TEST_DOM1_NAME "test_sysdb_subdomains_1"
@@ -151,7 +151,11 @@ static void test_sysdb_subdomain_create(void **state)
     ret = sysdb_update_subdomains(test_ctx->tctx->dom);
     assert_int_equal(ret, EOK);
 
-    assert_true(test_ctx->tctx->dom->subdomains->disabled);
+    assert_int_equal(sss_domain_get_state(test_ctx->tctx->dom->subdomains),
+                     DOM_DISABLED);
+    assert_int_equal(
+            sss_domain_get_state(test_ctx->tctx->dom->subdomains->next),
+            DOM_DISABLED);
 }
 
 static void test_sysdb_master_domain_ops(void **state)

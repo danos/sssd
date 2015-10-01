@@ -92,6 +92,7 @@ int get_fd_from_debug_file(void);
 #define SSSDBG_TRACE_LIBS     0x1000   /* level 7 */
 #define SSSDBG_TRACE_INTERNAL 0x2000   /* level 8 */
 #define SSSDBG_TRACE_ALL      0x4000   /* level 9 */
+#define SSSDBG_BE_FO          0x8000   /* level 9 */
 #define SSSDBG_IMPORTANT_INFO SSSDBG_OP_FAILURE
 
 #define SSSDBG_INVALID        -1
@@ -298,6 +299,9 @@ int sss_names_init(TALLOC_CTX *mem_ctx,
                    const char *domain,
                    struct sss_names_ctx **out);
 
+int sss_ad_default_names_ctx(TALLOC_CTX *mem_ctx,
+                             struct sss_names_ctx **_out);
+
 int sss_parse_name(TALLOC_CTX *memctx,
                    struct sss_names_ctx *snctx,
                    const char *orig, char **_domain, char **_name);
@@ -485,6 +489,11 @@ errno_t sss_filter_sanitize(TALLOC_CTX *mem_ctx,
                             const char *input,
                             char **sanitized);
 
+errno_t sss_filter_sanitize_ex(TALLOC_CTX *mem_ctx,
+                               const char *input,
+                               char **sanitized,
+                               const char *ignore);
+
 errno_t sss_filter_sanitize_for_dom(TALLOC_CTX *mem_ctx,
                                     const char *input,
                                     struct sss_domain_info *dom,
@@ -557,6 +566,9 @@ struct sss_domain_info *find_domain_by_name(struct sss_domain_info *domain,
                                             bool match_any);
 struct sss_domain_info *find_domain_by_sid(struct sss_domain_info *domain,
                                            const char *sid);
+enum sss_domain_state sss_domain_get_state(struct sss_domain_info *dom);
+void sss_domain_set_state(struct sss_domain_info *dom,
+                          enum sss_domain_state state);
 
 struct sss_domain_info*
 sss_get_domain_by_sid_ldap_fallback(struct sss_domain_info *domain,
@@ -652,5 +664,26 @@ int get_seuser(TALLOC_CTX *mem_ctx, const char *login_name,
 
 /* convert time from generalized form to unix time */
 errno_t sss_utc_to_time_t(const char *str, const char *format, time_t *unix_time);
+
+/* Creates a unique file using mkstemp with provided umask. The template
+ * must end with XXXXXX. Returns the fd, sets _err to an errno value on error.
+ *
+ * Prefer using sss_unique_file() as it uses a secure umask internally.
+ */
+int sss_unique_file_ex(TALLOC_CTX *mem_ctx,
+                       char *path_tmpl,
+                       mode_t file_umask,
+                       errno_t *_err);
+int sss_unique_file(TALLOC_CTX *owner,
+                    char *path_tmpl,
+                    errno_t *_err);
+
+/* Creates a unique filename using mkstemp with secure umask. The template
+ * must end with XXXXXX
+ *
+ * path_tmpl must be a talloc context. Destructor would be set on the filename
+ * so that it's guaranteed the file is removed.
+ */
+int sss_unique_filename(TALLOC_CTX *owner, char *path_tmpl);
 
 #endif /* __SSSD_UTIL_H__ */

@@ -69,7 +69,7 @@ int set_locale(void)
 }
 
 /* SSH public key request:
- * 
+ *
  * header:
  *   0..3: flags (unsigned int, must be combination of SSS_SSH_REQ_* flags)
  *   4..7: name length (unsigned int)
@@ -80,9 +80,9 @@ int set_locale(void)
  * domain (ony included if flags & SSS_SSH_REQ_DOMAIN):
  *   0..3: domain length (unsigned int, 0 means default domain)
  *   4..X: domain (null-terminated UTF-8 string)
- * 
+ *
  * SSH public key reply:
- * 
+ *
  * header:
  *   0..3: number of results (unsigned int)
  *   4..7: reserved (unsigned int, must be 0)
@@ -171,7 +171,7 @@ sss_ssh_get_ent(TALLOC_CTX *mem_ctx,
 
     /* parse reply */
     c = 0;
-    if (rep_len-c < 2*sizeof(uint32_t)) {
+    if (rep_len < c + 2*sizeof(uint32_t)) {
         ret = EINVAL;
         goto done;
     }
@@ -214,7 +214,7 @@ sss_ssh_get_ent(TALLOC_CTX *mem_ctx,
 
         SAFEALIGN_COPY_UINT32(&len, rep+c, &c);
 
-        if (rep_len-c < len + sizeof(uint32_t)) {
+        if (len > rep_len - c - sizeof(uint32_t)) {
             ret = EINVAL;
             goto done;
         }
@@ -237,7 +237,7 @@ sss_ssh_get_ent(TALLOC_CTX *mem_ctx,
 
         SAFEALIGN_COPY_UINT32(&len, rep+c, &c);
 
-        if (rep_len-c < len) {
+        if (len > rep_len - c) {
             ret = EINVAL;
             goto done;
         }

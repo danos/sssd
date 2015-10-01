@@ -34,15 +34,12 @@
 #include "util/util_sss_idmap.h"
 #include "db/sysdb_private.h"   /* new_subdomain() */
 
-#define TESTS_PATH "tests_nss"
+#define TESTS_PATH "tp_" BASE_FILE_STEM
 #define TEST_CONF_DB "test_nss_conf.ldb"
 #define TEST_DOM_NAME "nss_test"
 #define TEST_SUBDOM_NAME "test.subdomain"
 #define TEST_ID_PROVIDER "ldap"
 #define TEST_DOM_SID "S-1-5-21-444379608-1639770488-2995963434"
-
-#define N_ELEMENTS(arr) \
-    (sizeof(arr) / sizeof(arr[0]))
 
 struct nss_test_ctx {
     struct sss_test_ctx *tctx;
@@ -169,13 +166,15 @@ int __wrap_sss_ncache_check_user(struct sss_nc_ctx *ctx, int ttl,
     return ret;
 }
 
-int __real_sss_ncache_check_uid(struct sss_nc_ctx *ctx, int ttl, uid_t uid);
+int __real_sss_ncache_check_uid(struct sss_nc_ctx *ctx, int ttl,
+                                struct sss_domain_info *dom, uid_t uid);
 
-int __wrap_sss_ncache_check_uid(struct sss_nc_ctx *ctx, int ttl, uid_t uid)
+int __wrap_sss_ncache_check_uid(struct sss_nc_ctx *ctx, int ttl,
+                                struct sss_domain_info *dom, uid_t uid)
 {
     int ret;
 
-    ret = __real_sss_ncache_check_uid(ctx, ttl, uid);
+    ret = __real_sss_ncache_check_uid(ctx, ttl, dom, uid);
     if (ret == EEXIST) {
         nss_test_ctx->ncache_hits++;
     }
@@ -1046,8 +1045,8 @@ void test_nss_setup(struct sss_test_conf_param params[],
     nss_test_ctx->nctx = mock_nctx(nss_test_ctx);
     assert_non_null(nss_test_ctx->nctx);
 
-    ret = sss_names_init(nss_test_ctx->nctx, nss_test_ctx->tctx->confdb,
-                         NULL, &nss_test_ctx->nctx->global_names);
+    ret = sss_ad_default_names_ctx(nss_test_ctx->nctx,
+                                   &nss_test_ctx->nctx->global_names);
     assert_int_equal(ret, EOK);
     assert_non_null(nss_test_ctx->nctx->global_names);
 
@@ -1737,63 +1736,77 @@ void test_nss_well_known_getidbysid_failure(void **state)
 void test_nss_well_known_getsidbyname(void **state)
 {
     errno_t ret;
+    const char *names[] = { "Cryptographic Operators@BUILTIN",
+                            "BUILTIN\\Cryptographic Operators", NULL};
+    size_t c;
 
-    will_return(__wrap_sss_packet_get_body, WRAP_CALL_WRAPPER);
-    will_return(__wrap_sss_packet_get_body, "Cryptographic Operators@BUILTIN");
-    will_return(__wrap_sss_packet_get_body, 0);
-    will_return(__wrap_sss_packet_get_cmd, SSS_NSS_GETSIDBYNAME);
-    will_return(__wrap_sss_packet_get_body, WRAP_CALL_REAL);
-    will_return(test_nss_well_known_sid_check, "S-1-5-32-569");
+    for (c = 0; names[c] != NULL; c++) {
+        will_return(__wrap_sss_packet_get_body, WRAP_CALL_WRAPPER);
+        will_return(__wrap_sss_packet_get_body, names[c]);
+        will_return(__wrap_sss_packet_get_body, 0);
+        will_return(__wrap_sss_packet_get_cmd, SSS_NSS_GETSIDBYNAME);
+        will_return(__wrap_sss_packet_get_body, WRAP_CALL_REAL);
+        will_return(test_nss_well_known_sid_check, "S-1-5-32-569");
 
-    set_cmd_cb(test_nss_well_known_sid_check);
-    ret = sss_cmd_execute(nss_test_ctx->cctx, SSS_NSS_GETSIDBYNAME,
-                          nss_test_ctx->nss_cmds);
-    assert_int_equal(ret, EOK);
+        set_cmd_cb(test_nss_well_known_sid_check);
+        ret = sss_cmd_execute(nss_test_ctx->cctx, SSS_NSS_GETSIDBYNAME,
+                              nss_test_ctx->nss_cmds);
+        assert_int_equal(ret, EOK);
 
-    /* Wait until the test finishes with EOK */
-    ret = test_ev_loop(nss_test_ctx->tctx);
-    assert_int_equal(ret, EOK);
+        /* Wait until the test finishes with EOK */
+        ret = test_ev_loop(nss_test_ctx->tctx);
+        assert_int_equal(ret, EOK);
+    }
 }
 
 void test_nss_well_known_getsidbyname_nonexisting(void **state)
 {
     errno_t ret;
+    const char *names[] = { "Abc@BUILTIN", "BUILTIN\\Abc", NULL };
+    size_t c;
 
-    will_return(__wrap_sss_packet_get_body, WRAP_CALL_WRAPPER);
-    will_return(__wrap_sss_packet_get_body, "Abc@BUILTIN");
-    will_return(__wrap_sss_packet_get_body, 0);
-    will_return(__wrap_sss_packet_get_cmd, SSS_NSS_GETSIDBYNAME);
-    will_return(test_nss_well_known_sid_check, NULL);
+    for (c = 0; names[c] != NULL; c++) {
+        will_return(__wrap_sss_packet_get_body, WRAP_CALL_WRAPPER);
+        will_return(__wrap_sss_packet_get_body, names[c]);
+        will_return(__wrap_sss_packet_get_body, 0);
+        will_return(__wrap_sss_packet_get_cmd, SSS_NSS_GETSIDBYNAME);
+        will_return(test_nss_well_known_sid_check, NULL);
 
-    set_cmd_cb(test_nss_well_known_sid_check);
-    ret = sss_cmd_execute(nss_test_ctx->cctx, SSS_NSS_GETSIDBYNAME,
-                          nss_test_ctx->nss_cmds);
-    assert_int_equal(ret, EOK);
+        set_cmd_cb(test_nss_well_known_sid_check);
+        ret = sss_cmd_execute(nss_test_ctx->cctx, SSS_NSS_GETSIDBYNAME,
+                              nss_test_ctx->nss_cmds);
+        assert_int_equal(ret, EOK);
 
-    /* Wait until the test finishes with EOK */
-    ret = test_ev_loop(nss_test_ctx->tctx);
-    assert_int_equal(ret, EOK);
+        /* Wait until the test finishes with EOK */
+        ret = test_ev_loop(nss_test_ctx->tctx);
+        assert_int_equal(ret, EOK);
+    }
 }
 
 void test_nss_well_known_getsidbyname_special(void **state)
 {
     errno_t ret;
+    const char *names[] = { "CREATOR OWNER@CREATOR AUTHORITY",
+                            "CREATOR AUTHORITY\\CREATOR OWNER", NULL };
+    size_t c;
 
-    will_return(__wrap_sss_packet_get_body, WRAP_CALL_WRAPPER);
-    will_return(__wrap_sss_packet_get_body, "CREATOR OWNER@CREATOR AUTHORITY");
-    will_return(__wrap_sss_packet_get_body, 0);
-    will_return(__wrap_sss_packet_get_cmd, SSS_NSS_GETSIDBYNAME);
-    will_return(__wrap_sss_packet_get_body, WRAP_CALL_REAL);
-    will_return(test_nss_well_known_sid_check, "S-1-3-0");
+    for (c = 0; names[c] != NULL; c++) {
+        will_return(__wrap_sss_packet_get_body, WRAP_CALL_WRAPPER);
+        will_return(__wrap_sss_packet_get_body, names[c]);
+        will_return(__wrap_sss_packet_get_body, 0);
+        will_return(__wrap_sss_packet_get_cmd, SSS_NSS_GETSIDBYNAME);
+        will_return(__wrap_sss_packet_get_body, WRAP_CALL_REAL);
+        will_return(test_nss_well_known_sid_check, "S-1-3-0");
 
-    set_cmd_cb(test_nss_well_known_sid_check);
-    ret = sss_cmd_execute(nss_test_ctx->cctx, SSS_NSS_GETSIDBYNAME,
-                          nss_test_ctx->nss_cmds);
-    assert_int_equal(ret, EOK);
+        set_cmd_cb(test_nss_well_known_sid_check);
+        ret = sss_cmd_execute(nss_test_ctx->cctx, SSS_NSS_GETSIDBYNAME,
+                              nss_test_ctx->nss_cmds);
+        assert_int_equal(ret, EOK);
 
-    /* Wait until the test finishes with EOK */
-    ret = test_ev_loop(nss_test_ctx->tctx);
-    assert_int_equal(ret, EOK);
+        /* Wait until the test finishes with EOK */
+        ret = test_ev_loop(nss_test_ctx->tctx);
+        assert_int_equal(ret, EOK);
+    }
 }
 
 static int test_nss_getorigbyname_check(uint32_t status, uint8_t *body,

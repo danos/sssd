@@ -409,7 +409,7 @@ done:
 }
 
 errno_t write_krb5info_file(const char *realm, const char *server,
-                           const char *service)
+                            const char *service)
 {
     int ret;
     int fd = -1;
@@ -419,13 +419,19 @@ errno_t write_krb5info_file(const char *realm, const char *server,
     const char *name_tmpl = NULL;
     size_t server_len;
     ssize_t written;
-    mode_t old_umask;
 
     if (realm == NULL || *realm == '\0' || server == NULL || *server == '\0' ||
         service == NULL || *service == '\0') {
         DEBUG(SSSDBG_CRIT_FAILURE,
               "Missing or empty realm, server or service.\n");
         return EINVAL;
+    }
+
+    if (sss_krb5_realm_has_proxy(realm)) {
+        DEBUG(SSSDBG_CONF_SETTINGS,
+              "KDC Proxy available for realm [%s], no kdcinfo file created.\n",
+              realm);
+        return EOK;
     }
 
     if (strcmp(service, SSS_KRB5KDC_FO_SRV) == 0) {
@@ -459,13 +465,10 @@ errno_t write_krb5info_file(const char *realm, const char *server,
         goto done;
     }
 
-    old_umask = umask(077);
-    fd = mkstemp(tmp_name);
-    umask(old_umask);
+    fd = sss_unique_file(tmp_ctx, tmp_name, &ret);
     if (fd == -1) {
-        ret = errno;
         DEBUG(SSSDBG_CRIT_FAILURE,
-              "mkstemp failed [%d][%s].\n", ret, strerror(ret));
+              "sss_unique_file failed [%d][%s].\n", ret, strerror(ret));
         goto done;
     }
 
@@ -495,6 +498,7 @@ errno_t write_krb5info_file(const char *realm, const char *server,
     }
 
     ret = close(fd);
+    fd = -1;
     if (ret == -1) {
         ret = errno;
         DEBUG(SSSDBG_CRIT_FAILURE,
@@ -510,7 +514,12 @@ errno_t write_krb5info_file(const char *realm, const char *server,
         goto done;
     }
 
+    ret = EOK;
 done:
+    if (fd != -1) {
+        close(fd);
+    }
+
     talloc_free(tmp_ctx);
     return ret;
 }

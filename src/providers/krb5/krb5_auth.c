@@ -558,7 +558,7 @@ struct tevent_req *krb5_auth_send(TALLOC_CTX *mem_ctx,
     attrs[6] = SYSDB_AUTH_TYPE;
     attrs[7] = NULL;
 
-    ret = krb5_setup(state, pd, krb5_ctx, be_ctx->domain->case_sensitive,
+    ret = krb5_setup(state, pd, krb5_ctx, state->domain->case_sensitive,
                      &state->kr);
     if (ret != EOK) {
         DEBUG(SSSDBG_CRIT_FAILURE, "krb5_setup failed.\n");
@@ -720,7 +720,7 @@ static void krb5_auth_resolve_done(struct tevent_req *subreq)
              * was found good, setting offline,
              * but we still have to call the child to setup
              * the ccache file if we are performing auth */
-            be_mark_offline(state->be_ctx);
+            be_mark_dom_offline(state->domain, state->be_ctx);
             kr->is_offline = true;
 
             if (kr->pd->cmd == SSS_PAM_CHAUTHTOK ||
@@ -752,6 +752,22 @@ static void krb5_auth_resolve_done(struct tevent_req *subreq)
 
     if (!kr->is_offline) {
         kr->is_offline = be_is_offline(state->be_ctx);
+    }
+
+    if (!kr->is_offline
+            && sss_domain_get_state(state->domain) == DOM_INACTIVE) {
+        DEBUG(SSSDBG_TRACE_INTERNAL,
+              "Subdomain %s is inactive, will proceed offline\n",
+              state->domain->name);
+        kr->is_offline = true;
+    }
+
+    if (kr->is_offline
+            && sss_krb5_realm_has_proxy(dp_opt_get_cstring(kr->krb5_ctx->opts,
+                                        KRB5_REALM))) {
+        DEBUG(SSSDBG_TRACE_FUNC,
+              "Resetting offline status, KDC proxy is in use\n");
+        kr->is_offline = false;
     }
 
     subreq = handle_child_send(state, state->ev, kr);
@@ -1091,7 +1107,12 @@ static void krb5_auth_done(struct tevent_req *subreq)
         krb5_auth_store_creds(state->domain, pd);
     }
 
-    if (res->otp == true && pd->cmd == SSS_PAM_AUTHENTICATE) {
+    /* The SSS_OTP message will prevent pam_sss from putting the entered
+     * password on the PAM stack for other modules to use. This is not needed
+     * when both factors were entered separately because here the first factor
+     * (long term password) can be passed to the other modules. */
+    if (res->otp == true && pd->cmd == SSS_PAM_AUTHENTICATE
+            && sss_authtok_get_type(pd->authtok) != SSS_AUTHTOK_TYPE_2FA) {
         uint32_t otp_flag = 1;
         ret = pam_add_response(pd, SSS_OTP, sizeof(uint32_t),
                                (const uint8_t *) &otp_flag);

@@ -62,6 +62,7 @@ struct dp_option ipa_dyndns_opts[] = {
     { "dyndns_update_ptr", DP_OPT_BOOL, BOOL_FALSE, BOOL_FALSE },
     { "dyndns_force_tcp", DP_OPT_BOOL, BOOL_FALSE, BOOL_FALSE },
     { "dyndns_auth", DP_OPT_STRING, { "gss-tsig" }, NULL_STRING },
+    { "dyndns_server", DP_OPT_STRING, NULL_STRING, NULL_STRING },
     DP_OPTION_TERMINATOR
 };
 
@@ -157,6 +158,7 @@ struct dp_option ipa_def_ldap_opts[] = {
     { "ldap_min_id", DP_OPT_NUMBER, NULL_NUMBER, NULL_NUMBER},
     { "ldap_max_id", DP_OPT_NUMBER, NULL_NUMBER, NULL_NUMBER},
     { "ldap_pwdlockout_dn", DP_OPT_STRING, NULL_STRING, NULL_STRING },
+    { "wildcard_limit", DP_OPT_NUMBER, { .number = 1000 }, NULL_NUMBER},
     DP_OPTION_TERMINATOR
 };
 
@@ -203,7 +205,7 @@ struct sdap_attr_map ipa_user_map[] = {
     { "ldap_user_nds_login_allowed_time_map", "loginAllowedTimeMap", SYSDB_NDS_LOGIN_ALLOWED_TIME_MAP, NULL },
     { "ldap_user_ssh_public_key", "ipaSshPubKey", SYSDB_SSH_PUBKEY, NULL },
     { "ldap_user_auth_type", "ipaUserAuthType", SYSDB_AUTH_TYPE, NULL },
-    { "ldap_user_certificate", "userCertificate", SYSDB_USER_CERT, NULL },
+    { "ldap_user_certificate", "userCertificate;binary", SYSDB_USER_CERT, NULL },
     SDAP_ATTR_MAP_TERMINATOR
 };
 

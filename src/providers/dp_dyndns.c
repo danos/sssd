@@ -42,6 +42,9 @@
 #define DYNDNS_TIMEOUT 15
 #endif /* DYNDNS_TIMEOUT */
 
+/* MASK represents special value for matching all interfaces */
+#define MASK "*"
+
 struct sss_iface_addr {
     struct sss_iface_addr *next;
     struct sss_iface_addr *prev;
@@ -49,29 +52,62 @@ struct sss_iface_addr {
     struct sockaddr_storage *addr;
 };
 
-struct sss_iface_addr *
-sss_iface_addr_add(TALLOC_CTX *mem_ctx, struct sss_iface_addr **list,
-                   struct sockaddr_storage *ss)
+struct sockaddr_storage*
+sss_iface_addr_get_address(struct sss_iface_addr *address)
 {
-    struct sss_iface_addr *address;
-
-    address = talloc(mem_ctx, struct sss_iface_addr);
     if (address == NULL) {
         return NULL;
     }
 
-    address->addr = talloc_memdup(address, ss,
-                                  sizeof(struct sockaddr_storage));
-    if(address->addr == NULL) {
-        talloc_zfree(address);
-        return NULL;
+    return address->addr;
+}
+
+struct sss_iface_addr *sss_iface_addr_get_next(struct sss_iface_addr *address)
+{
+    if (address) {
+        return address->next;
     }
 
-    /* steal old dlist to the new head */
-    talloc_steal(address, *list);
-    DLIST_ADD(*list, address);
+    return NULL;
+}
 
-    return address;
+void sss_iface_addr_concatenate(struct sss_iface_addr **list,
+                                struct sss_iface_addr *list2)
+{
+    DLIST_CONCATENATE((*list), list2, struct sss_iface_addr*);
+}
+
+static errno_t addr_to_str(struct sockaddr_storage *addr,
+                           char *dst, size_t size)
+{
+    const void *src;
+    const char *res;
+    errno_t ret;
+
+    switch(addr->ss_family) {
+    case AF_INET:
+        src = &(((struct sockaddr_in *)addr)->sin_addr);
+        break;
+    case AF_INET6:
+        src = &(((struct sockaddr_in6 *)addr)->sin6_addr);
+        break;
+    default:
+        ret = ERR_ADDR_FAMILY_NOT_SUPPORTED;
+        goto done;
+    }
+
+    res = inet_ntop(addr->ss_family, src, dst, size);
+    if (res == NULL) {
+        ret = errno;
+        DEBUG(SSSDBG_OP_FAILURE, "inet_ntop failed [%d]: %s\n",
+              ret, sss_strerror(ret));
+        goto done;
+    }
+
+    ret = EOK;
+
+done:
+    return ret;
 }
 
 errno_t
@@ -83,7 +119,6 @@ sss_iface_addr_list_as_str_list(TALLOC_CTX *mem_ctx,
     size_t count;
     int ai;
     char **straddrs;
-    const char *ip;
     char ip_addr[INET6_ADDRSTRLEN];
     errno_t ret;
 
@@ -99,35 +134,17 @@ sss_iface_addr_list_as_str_list(TALLOC_CTX *mem_ctx,
 
     ai = 0;
     DLIST_FOR_EACH(ifaddr, ifaddr_list) {
-        switch(ifaddr->addr->ss_family) {
-        case AF_INET:
-            errno = 0;
-            ip = inet_ntop(ifaddr->addr->ss_family,
-                           &(((struct sockaddr_in *)ifaddr->addr)->sin_addr),
-                           ip_addr, INET6_ADDRSTRLEN);
-            if (ip == NULL) {
-                ret = errno;
-                goto fail;
-            }
-            break;
 
-        case AF_INET6:
-            errno = 0;
-            ip = inet_ntop(ifaddr->addr->ss_family,
-                           &(((struct sockaddr_in6 *)ifaddr->addr)->sin6_addr),
-                           ip_addr, INET6_ADDRSTRLEN);
-            if (ip == NULL) {
-                ret = errno;
-                goto fail;
-            }
-            break;
-
-        default:
-            DEBUG(SSSDBG_CRIT_FAILURE, "Unknown address family\n");
+        ret = addr_to_str(ifaddr->addr, ip_addr, INET6_ADDRSTRLEN);
+        if (ret == ERR_ADDR_FAMILY_NOT_SUPPORTED) {
             continue;
+        } else if (ret != EOK) {
+            DEBUG(SSSDBG_MINOR_FAILURE, "addr_to_str failed: %d:[%s],\n",
+                  ret, sss_strerror(ret));
+            goto fail;
         }
 
-        straddrs[ai] = talloc_strdup(straddrs, ip);
+        straddrs[ai] = talloc_strdup(straddrs, ip_addr);
         if (straddrs[ai] == NULL) {
             ret = ENOMEM;
             goto fail;
@@ -165,6 +182,16 @@ ok_for_dns(struct sockaddr *sa)
     return true;
 }
 
+static bool supported_address_family(sa_family_t sa_family)
+{
+    return sa_family == AF_INET || sa_family == AF_INET6;
+}
+
+static bool matching_name(const char *ifname, const char *ifname2)
+{
+    return (strcmp(MASK, ifname) == 0) || (strcasecmp(ifname, ifname2) == 0);
+}
+
 /* Collect IP addresses associated with an interface */
 errno_t
 sss_iface_addr_list_get(TALLOC_CTX *mem_ctx, const char *ifname,
@@ -194,14 +221,14 @@ sss_iface_addr_list_get(TALLOC_CTX *mem_ctx, const char *ifname,
         if (!ifa->ifa_addr) continue;
 
         /* Add IP addresses to the list */
-        if ((ifa->ifa_addr->sa_family == AF_INET ||
-             ifa->ifa_addr->sa_family == AF_INET6) &&
-             strcasecmp(ifa->ifa_name, ifname) == 0 &&
-             ok_for_dns(ifa->ifa_addr)) {
+        if (supported_address_family(ifa->ifa_addr->sa_family)
+                && matching_name(ifname, ifa->ifa_name)
+                && ok_for_dns(ifa->ifa_addr)) {
 
             /* Add this address to the IP address list */
             address = talloc_zero(mem_ctx, struct sss_iface_addr);
             if (!address) {
+                ret = ENOMEM;
                 goto done;
             }
 
@@ -222,8 +249,17 @@ sss_iface_addr_list_get(TALLOC_CTX *mem_ctx, const char *ifname,
         }
     }
 
-    ret = EOK;
-    *_addrlist = addrlist;
+    if (addrlist != NULL) {
+        /* OK, some result was found */
+        ret = EOK;
+        *_addrlist = addrlist;
+    } else {
+        /* No result was found */
+        DEBUG(SSSDBG_TRACE_FUNC,
+              "No IPs usable for DNS was found for interface: %s.\n", ifname);
+        ret = ENOENT;
+    }
+
 done:
     freeifaddrs(ifaces);
     return ret;
@@ -235,7 +271,6 @@ nsupdate_msg_add_fwd(char *update_msg, struct sss_iface_addr *addresses,
 {
     struct sss_iface_addr *new_record;
     char ip_addr[INET6_ADDRSTRLEN];
-    const char *ip;
     errno_t ret;
 
     /* Remove existing entries as needed */
@@ -257,33 +292,10 @@ nsupdate_msg_add_fwd(char *update_msg, struct sss_iface_addr *addresses,
     }
 
     DLIST_FOR_EACH(new_record, addresses) {
-        switch(new_record->addr->ss_family) {
-        case AF_INET:
-            ip = inet_ntop(new_record->addr->ss_family,
-                           &(((struct sockaddr_in *)new_record->addr)->sin_addr),
-                           ip_addr, INET6_ADDRSTRLEN);
-            if (ip == NULL) {
-                ret = errno;
-                DEBUG(SSSDBG_OP_FAILURE,
-                      "inet_ntop failed [%d]: %s\n", ret, strerror(ret));
-                return NULL;
-            }
-            break;
-
-        case AF_INET6:
-            ip = inet_ntop(new_record->addr->ss_family,
-                           &(((struct sockaddr_in6 *)new_record->addr)->sin6_addr),
-                           ip_addr, INET6_ADDRSTRLEN);
-            if (ip == NULL) {
-                ret = errno;
-                DEBUG(SSSDBG_OP_FAILURE,
-                      "inet_ntop failed [%d]: %s\n", ret, strerror(ret));
-                return NULL;
-            }
-            break;
-
-        default:
-            DEBUG(SSSDBG_CRIT_FAILURE, "Unknown address family\n");
+        ret = addr_to_str(new_record->addr, ip_addr, INET6_ADDRSTRLEN);
+        if (ret != EOK) {
+            DEBUG(SSSDBG_MINOR_FAILURE, "addr_to_str failed: %d:[%s],\n",
+                  ret, sss_strerror(ret));
             return NULL;
         }
 
@@ -296,86 +308,68 @@ nsupdate_msg_add_fwd(char *update_msg, struct sss_iface_addr *addresses,
         if (update_msg == NULL) {
             return NULL;
         }
-
     }
 
     return talloc_asprintf_append(update_msg, "send\n");
 }
 
-static char *
-nsupdate_msg_add_ptr(char *update_msg, struct sss_iface_addr *addresses,
-                     const char *hostname, int ttl, uint8_t remove_af,
-                     struct sss_iface_addr *old_addresses)
+static uint8_t *nsupdate_convert_address(struct sockaddr_storage *add_address)
 {
-    struct sss_iface_addr *new_record, *old_record;
+    uint8_t *addr;
+
+    switch(add_address->ss_family) {
+    case AF_INET:
+        addr = (uint8_t *) &((struct sockaddr_in *) add_address)->sin_addr;
+        break;
+    case AF_INET6:
+        addr = (uint8_t *) &((struct sockaddr_in6 *) add_address)->sin6_addr;
+        break;
+    default:
+        DEBUG(SSSDBG_CRIT_FAILURE, "Unknown address family\n");
+        addr = NULL;
+        break;
+    }
+
+    return addr;
+}
+
+static char *nsupdate_msg_add_ptr(char *update_msg,
+                                  struct sockaddr_storage *address,
+                                  const char *hostname,
+                                  int ttl,
+                                  bool delete)
+{
     char *strptr;
     uint8_t *addr;
 
-    DLIST_FOR_EACH(old_record, old_addresses) {
-        switch(old_record->addr->ss_family) {
-        case AF_INET:
-            if (!(remove_af & DYNDNS_REMOVE_A)) {
-                continue;
-            }
-            addr = (uint8_t *) &((struct sockaddr_in *) old_record->addr)->sin_addr;
-            break;
-        case AF_INET6:
-            if (!(remove_af & DYNDNS_REMOVE_AAAA)) {
-                continue;
-            }
-            addr = (uint8_t *) &((struct sockaddr_in6 *) old_record->addr)->sin6_addr;
-            break;
-        default:
-            DEBUG(SSSDBG_CRIT_FAILURE, "Unknown address family\n");
-            return NULL;
-        }
+    addr = nsupdate_convert_address(address);
+    if (addr == NULL) {
+        return NULL;
+    }
 
-        strptr = resolv_get_string_ptr_address(update_msg, old_record->addr->ss_family,
-                                               addr);
-        if (strptr == NULL) {
-            return NULL;
-        }
+    strptr = resolv_get_string_ptr_address(update_msg, address->ss_family,
+                                           addr);
+    if (strptr == NULL) {
+        return NULL;
+    }
 
+    if (delete) {
         /* example: update delete 38.78.16.10.in-addr.arpa. in PTR */
         update_msg = talloc_asprintf_append(update_msg,
                                             "update delete %s in PTR\n"
                                             "send\n",
                                             strptr);
-        talloc_free(strptr);
-        if (update_msg == NULL) {
-            return NULL;
-        }
-    }
-
-    /* example: update add 11.78.16.10.in-addr.arpa. 85000 in PTR testvm.example.com */
-    DLIST_FOR_EACH(new_record, addresses) {
-        switch(new_record->addr->ss_family) {
-        case AF_INET:
-            addr = (uint8_t *) &((struct sockaddr_in *) new_record->addr)->sin_addr;
-            break;
-        case AF_INET6:
-            addr = (uint8_t *) &((struct sockaddr_in6 *) new_record->addr)->sin6_addr;
-            break;
-        default:
-            DEBUG(SSSDBG_CRIT_FAILURE, "Unknown address family\n");
-            return NULL;
-        }
-
-        strptr = resolv_get_string_ptr_address(update_msg, new_record->addr->ss_family,
-                                               addr);
-        if (strptr == NULL) {
-            return NULL;
-        }
-
+    } else {
         /* example: update delete 38.78.16.10.in-addr.arpa. in PTR */
         update_msg = talloc_asprintf_append(update_msg,
                                             "update add %s %d in PTR %s.\n"
                                             "send\n",
                                             strptr, ttl, hostname);
-        talloc_free(strptr);
-        if (update_msg == NULL) {
-            return NULL;
-        }
+    }
+
+    talloc_free(strptr);
+    if (update_msg == NULL) {
+        return NULL;
     }
 
     return update_msg;
@@ -434,7 +428,7 @@ fail:
 
 errno_t
 be_nsupdate_create_fwd_msg(TALLOC_CTX *mem_ctx, const char *realm,
-                           const char *zone, const char *servername,
+                           const char *servername,
                            const char *hostname, const unsigned int ttl,
                            uint8_t remove_af, struct sss_iface_addr *addresses,
                            char **_update_msg)
@@ -455,16 +449,6 @@ be_nsupdate_create_fwd_msg(TALLOC_CTX *mem_ctx, const char *realm,
     if (update_msg == NULL) {
         ret = ENOMEM;
         goto done;
-    }
-
-    if (zone) {
-        DEBUG(SSSDBG_FUNC_DATA,
-              "Setting the zone explicitly to [%s].\n", zone);
-        update_msg = talloc_asprintf_append(update_msg, "zone %s.\n", zone);
-        if (update_msg == NULL) {
-            ret = ENOMEM;
-            goto done;
-        }
     }
 
     update_msg = nsupdate_msg_add_fwd(update_msg, addresses, hostname,
@@ -490,9 +474,9 @@ done:
 errno_t
 be_nsupdate_create_ptr_msg(TALLOC_CTX *mem_ctx, const char *realm,
                            const char *servername, const char *hostname,
-                           const unsigned int ttl, uint8_t remove_af,
-                           struct sss_iface_addr *addresses,
-                           struct sss_iface_addr *old_addresses,
+                           const unsigned int ttl,
+                           struct sockaddr_storage *address,
+                           bool delete,
                            char **_update_msg)
 {
     errno_t ret;
@@ -509,8 +493,8 @@ be_nsupdate_create_ptr_msg(TALLOC_CTX *mem_ctx, const char *realm,
         goto done;
     }
 
-    update_msg = nsupdate_msg_add_ptr(update_msg, addresses, hostname,
-                                      ttl, remove_af, old_addresses);
+    update_msg = nsupdate_msg_add_ptr(update_msg, address, hostname, ttl,
+                                      delete);
     if (update_msg == NULL) {
         ret = ENOMEM;
         goto done;
@@ -523,7 +507,8 @@ be_nsupdate_create_ptr_msg(TALLOC_CTX *mem_ctx, const char *realm,
           update_msg);
 
     ret = ERR_OK;
-    *_update_msg = talloc_steal(mem_ctx, update_msg);
+    *_update_msg = update_msg;
+
 done:
     return ret;
 }
@@ -1178,6 +1163,7 @@ static struct dp_option default_dyndns_opts[] = {
     { "dyndns_update_ptr", DP_OPT_BOOL, BOOL_TRUE, BOOL_FALSE },
     { "dyndns_force_tcp", DP_OPT_BOOL, BOOL_FALSE, BOOL_FALSE },
     { "dyndns_auth", DP_OPT_STRING, { "gss-tsig" }, NULL_STRING },
+    { "dyndns_server", DP_OPT_STRING, NULL_STRING, NULL_STRING },
 
     DP_OPTION_TERMINATOR
 };
@@ -1230,4 +1216,114 @@ errno_t be_nsupdate_init_timer(struct be_nsupdate_ctx *ctx,
     be_nsupdate_timer_schedule(ev, ctx);
 
     return ERR_OK;
+}
+
+static bool match_ip(const struct sockaddr *sa,
+                     const struct sockaddr *sb)
+{
+    size_t addrsize;
+    bool res;
+    const void *addr_a;
+    const void *addr_b;
+
+    if (sa->sa_family == AF_INET) {
+        addrsize = sizeof(struct in_addr);
+        addr_a = (const void *) &((const struct sockaddr_in *) sa)->sin_addr;
+        addr_b = (const void *) &((const struct sockaddr_in *) sb)->sin_addr;
+    } else if (sa->sa_family == AF_INET6) {
+        addrsize = sizeof(struct in6_addr);
+        addr_a = (const void *) &((const struct sockaddr_in6 *) sa)->sin6_addr;
+        addr_b = (const void *) &((const struct sockaddr_in6 *) sb)->sin6_addr;
+    } else {
+        res = false;
+        goto done;
+    }
+
+    if (sa->sa_family != sb->sa_family) {
+        res = false;
+        goto done;
+    }
+
+    res = memcmp(addr_a, addr_b, addrsize) == 0;
+
+done:
+    return res;
+}
+
+static errno_t find_iface_by_addr(TALLOC_CTX *mem_ctx,
+                                  const struct sockaddr *ss,
+                                  const char **_iface_name)
+{
+    struct ifaddrs *ifaces = NULL;
+    struct ifaddrs *ifa;
+    errno_t ret;
+
+    ret = getifaddrs(&ifaces);
+    if (ret == -1) {
+        ret = errno;
+        DEBUG(SSSDBG_OP_FAILURE,
+              "Could not read interfaces [%d][%s]\n", ret, sss_strerror(ret));
+        goto done;
+    }
+
+    for (ifa = ifaces; ifa != NULL; ifa = ifa->ifa_next) {
+
+        /* Some interfaces don't have an ifa_addr */
+        if (!ifa->ifa_addr) continue;
+
+        if (match_ip(ss, ifa->ifa_addr)) {
+            const char *iface_name;
+            iface_name = talloc_strdup(mem_ctx, ifa->ifa_name);
+            if (iface_name == NULL) {
+                ret = ENOMEM;
+            } else {
+                *_iface_name = iface_name;
+                ret = EOK;
+            }
+            goto done;
+        }
+    }
+    ret = ENOENT;
+
+done:
+    freeifaddrs(ifaces);
+    return ret;
+}
+
+errno_t sss_get_dualstack_addresses(TALLOC_CTX *mem_ctx,
+                                    struct sockaddr *ss,
+                                    struct sss_iface_addr **_iface_addrs)
+{
+    struct sss_iface_addr *iface_addrs;
+    const char *iface_name = NULL;
+    TALLOC_CTX *tmp_ctx;
+    errno_t ret;
+
+    tmp_ctx = talloc_new(NULL);
+    if (tmp_ctx == NULL) {
+        ret = ENOMEM;
+        goto done;
+    }
+
+    ret = find_iface_by_addr(tmp_ctx, ss, &iface_name);
+    if (ret != EOK) {
+        DEBUG(SSSDBG_MINOR_FAILURE, "find_iface_by_addr failed: %d:[%s]\n",
+              ret, sss_strerror(ret));
+        goto done;
+    }
+
+    ret = sss_iface_addr_list_get(tmp_ctx, iface_name, &iface_addrs);
+    if (ret != EOK) {
+        DEBUG(SSSDBG_MINOR_FAILURE,
+              "sss_iface_addr_list_get failed: %d:[%s]\n",
+              ret, sss_strerror(ret));
+        goto done;
+    }
+
+    ret = EOK;
+    *_iface_addrs = talloc_steal(mem_ctx, iface_addrs);
+
+done:
+    talloc_free(tmp_ctx);
+    return ret;
 }

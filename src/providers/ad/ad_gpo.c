@@ -560,14 +560,14 @@ ad_gpo_get_sids(TALLOC_CTX *mem_ctx,
         DEBUG(SSSDBG_OP_FAILURE,
               "sysdb_initgroups failed: [%d](%s)\n",
               ret, sss_strerror(ret));
-        return ret;
+        goto done;
     }
 
     if (res->count == 0) {
         ret = ENOENT;
         DEBUG(SSSDBG_OP_FAILURE,
               "sysdb_initgroups returned empty result\n");
-        return ret;
+        goto done;
     }
 
     user_sid = ldb_msg_find_attr_as_string(res->msgs[0], SYSDB_SID_STR, NULL);
@@ -602,7 +602,7 @@ ad_gpo_get_sids(TALLOC_CTX *mem_ctx,
     *_group_size = num_group_sids + 1;
     *_group_sids = talloc_steal(mem_ctx, group_sids);
     *_user_sid = talloc_steal(mem_ctx, user_sid);
-    return EOK;
+    ret = EOK;
 
  done:
     talloc_free(tmp_ctx);
@@ -1651,7 +1651,7 @@ ad_gpo_connect_done(struct tevent_req *subreq)
     struct tevent_req *req;
     struct ad_gpo_access_state *state;
     char *filter;
-    char *sam_account_name;
+    const char *sam_account_name;
     char *domain_dn;
     int dp_error;
     errno_t ret;
@@ -1721,7 +1721,9 @@ ad_gpo_connect_done(struct tevent_req *subreq)
     DEBUG(SSSDBG_TRACE_ALL, "server_hostname from uri: %s\n",
           state->server_hostname);
 
-    sam_account_name = sss_krb5_get_primary(state, "%S$", state->ad_hostname);
+    /* SDAP_SASL_AUTHID contains the name used for kinit and SASL bind which
+     * in the AD case is the NetBIOS name. */
+    sam_account_name = dp_opt_get_string(state->opts->basic, SDAP_SASL_AUTHID);
     if (sam_account_name == NULL) {
         ret = ENOMEM;
         goto done;
@@ -1744,7 +1746,6 @@ ad_gpo_connect_done(struct tevent_req *subreq)
                              state->opts->user_map[SDAP_OC_USER].name,
                              state->opts->user_map[SDAP_AT_USER_NAME].name,
                              sam_account_name);
-    talloc_zfree(sam_account_name);
     if (filter == NULL) {
         ret = ENOMEM;
         goto done;
@@ -1949,11 +1950,33 @@ ad_gpo_process_gpo_done(struct tevent_req *subreq)
 
     ret = sdap_id_op_done(state->sdap_op, ret, &dp_error);
 
-    if (ret != EOK) {
+    if (ret != EOK && ret != ENOENT) {
         DEBUG(SSSDBG_OP_FAILURE,
               "Unable to get GPO list: [%d](%s)\n",
               ret, sss_strerror(ret));
-        ret = ENOENT;
+        goto done;
+    } else if (ret == ENOENT) {
+        DEBUG(SSSDBG_TRACE_FUNC,
+              "No GPOs found that apply to this system.\n");
+        /*
+         * Delete the result object list, since there are no
+         * GPOs to include in it.
+         */
+        ret = sysdb_gpo_delete_gpo_result_object(state, state->host_domain);
+        if (ret != EOK) {
+            switch (ret) {
+            case ENOENT:
+                DEBUG(SSSDBG_TRACE_FUNC, "No GPO Result available in cache\n");
+                break;
+            default:
+                DEBUG(SSSDBG_FATAL_FAILURE,
+                      "Could not delete GPO Result from cache: [%s]\n",
+                      sss_strerror(ret));
+                goto done;
+            }
+        }
+
+        ret = EOK;
         goto done;
     }
 
@@ -1973,6 +1996,25 @@ ad_gpo_process_gpo_done(struct tevent_req *subreq)
         /* since no applicable gpos were found, there is nothing to enforce */
         DEBUG(SSSDBG_TRACE_FUNC,
               "no applicable gpos found after dacl filtering\n");
+
+        /*
+         * Delete the result object list, since there are no
+         * GPOs to include in it.
+         */
+        ret = sysdb_gpo_delete_gpo_result_object(state, state->host_domain);
+        if (ret != EOK) {
+            switch (ret) {
+            case ENOENT:
+                DEBUG(SSSDBG_TRACE_FUNC, "No GPO Result available in cache\n");
+                break;
+            default:
+                DEBUG(SSSDBG_FATAL_FAILURE,
+                      "Could not delete GPO Result from cache: [%s]\n",
+                      sss_strerror(ret));
+                goto done;
+            }
+        }
+
         ret = EOK;
         goto done;
     }
@@ -3422,7 +3464,6 @@ ad_gpo_process_gpo_send(TALLOC_CTX *mem_ctx,
         DEBUG(SSSDBG_OP_FAILURE,
               "Unable to retrieve GPO List: [%d](%s)\n",
               ret, sss_strerror(ret));
-        ret = ENOENT;
         goto immediately;
     }
 

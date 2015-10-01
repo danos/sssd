@@ -20,8 +20,10 @@
 import re
 import os
 import subprocess
+import config
 
 UNINDENT_RE = re.compile("^ +", re.MULTILINE)
+
 
 def unindent(text):
     """
@@ -35,18 +37,27 @@ def unindent(text):
         return match.group()[indent_ref[0]:]
     return UNINDENT_RE.sub(replace, text)
 
+
 def run_shell():
     """
         Execute an interactive shell under "screen", preserving environment.
         For use as a breakpoint for debugging.
     """
+    my_env = os.environ.copy()
+    my_env["ROOT_DIR"] = config.PREFIX
+
+    # screen filter out LD_* evniroment varibles.
+    # Back-up them and set them later in screenrc
+    my_env["_LD_LIBRARY_PATH"] = os.getenv("LD_LIBRARY_PATH", "")
+    my_env["_LD_PRELOAD"] = os.getenv("LD_PRELOAD", "")
+
     subprocess.call([
-        "screen", "-D", "-m", "bash", "-c",
-        "PATH='" + os.getenv("PATH", "") + "' " +
-        "LD_LIBRARY_PATH='" + os.getenv("LD_LIBRARY_PATH", "") + "' " +
-        "LD_PRELOAD='" + os.getenv("LD_PRELOAD", "") + "' " +
-        "bash -i"
-    ])
+        "screen", "-DAm", "-S", "sssd_cwrap_session", "-c",
+        ".config/screenrc"],
+        env=my_env
+    )
+
+
 
 def first_dir(*args):
     """Return first argument that points to an existing directory."""

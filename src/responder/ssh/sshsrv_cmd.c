@@ -27,6 +27,7 @@
 #include "util/util.h"
 #include "util/crypto/sss_crypto.h"
 #include "util/sss_ssh.h"
+#include "util/cert.h"
 #include "db/sysdb.h"
 #include "db/sysdb_ssh.h"
 #include "providers/data_provider.h"
@@ -219,7 +220,8 @@ static errno_t
 ssh_user_pubkeys_search_next(struct ssh_cmd_ctx *cmd_ctx)
 {
     errno_t ret;
-    const char *attrs[] = { SYSDB_NAME, SYSDB_SSH_PUBKEY, NULL };
+    const char *attrs[] = { SYSDB_NAME, SYSDB_SSH_PUBKEY, SYSDB_USER_CERT,
+                            NULL };
     struct ldb_result *res;
 
     DEBUG(SSSDBG_TRACE_FUNC,
@@ -536,7 +538,7 @@ static errno_t
 ssh_host_pubkeys_update_known_hosts(struct ssh_cmd_ctx *cmd_ctx)
 {
     TALLOC_CTX *tmp_ctx;
-    errno_t ret, tmp_ret;
+    errno_t ret;
     const char *attrs[] = {
         SYSDB_NAME,
         SYSDB_NAME_ALIAS,
@@ -555,7 +557,6 @@ ssh_host_pubkeys_update_known_hosts(struct ssh_cmd_ctx *cmd_ctx)
     char *filename = NULL;
     char *entstr;
     ssize_t wret;
-    mode_t old_mask;
 
     tmp_ctx = talloc_new(NULL);
     if (!tmp_ctx) {
@@ -578,12 +579,9 @@ ssh_host_pubkeys_update_known_hosts(struct ssh_cmd_ctx *cmd_ctx)
         goto done;
     }
 
-    old_mask = umask(0133);
-    fd = mkstemp(filename);
-    umask(old_mask);
+    fd = sss_unique_file_ex(tmp_ctx, filename, 0133, &ret);
     if (fd == -1) {
         filename = NULL;
-        ret = errno;
         goto done;
     }
 
@@ -653,18 +651,9 @@ ssh_host_pubkeys_update_known_hosts(struct ssh_cmd_ctx *cmd_ctx)
     ret = EOK;
 
 done:
-    if (fd != -1) close(fd);
-    if (ret != EOK && filename) {
-        tmp_ret = unlink(filename);
-        /* non-fatal failure */
-        if (tmp_ret != EOK) {
-            tmp_ret = errno;
-            DEBUG(SSSDBG_MINOR_FAILURE,
-                  "Failed to remove file: %s - %d : [%s]!\n",
-                  filename, tmp_ret, sss_strerror(tmp_ret));
-        }
+    if (fd != -1) {
+        close(fd);
     }
-
     talloc_free(tmp_ctx);
 
     return ret;
@@ -794,6 +783,8 @@ ssh_cmd_parse_request(struct ssh_cmd_ctx *cmd_ctx)
 
 static errno_t decode_and_add_base64_data(struct ssh_cmd_ctx *cmd_ctx,
                                           struct ldb_message_element *el,
+                                          bool cert_data,
+                                          struct ssh_ctx *ssh_ctx,
                                           size_t fqname_len,
                                           const char *fqname,
                                           size_t *c)
@@ -819,12 +810,22 @@ static errno_t decode_and_add_base64_data(struct ssh_cmd_ctx *cmd_ctx,
     }
 
     for (d = 0; d < el->num_values; d++) {
-        key = sss_base64_decode(tmp_ctx, (const char *) el->values[d].data,
-                                &key_len);
-        if (key == NULL) {
-            DEBUG(SSSDBG_OP_FAILURE, "sss_base64_decode failed.\n");
-            ret = ENOMEM;
-            goto done;
+        if (cert_data) {
+            ret = cert_to_ssh_key(tmp_ctx, ssh_ctx->ca_db,
+                                  el->values[d].data, el->values[d].length,
+                                  &key, &key_len);
+            if (ret != EOK) {
+                DEBUG(SSSDBG_OP_FAILURE, "cert_to_ssh_key failed.\n");
+                return ret;
+            }
+        } else  {
+            key = sss_base64_decode(tmp_ctx, (const char *) el->values[d].data,
+                                    &key_len);
+            if (key == NULL) {
+                DEBUG(SSSDBG_OP_FAILURE, "sss_base64_decode failed.\n");
+                ret = ENOMEM;
+                goto done;
+            }
         }
 
         ret = sss_packet_grow(cctx->creq->out,
@@ -862,10 +863,13 @@ ssh_cmd_build_reply(struct ssh_cmd_ctx *cmd_ctx)
     struct ldb_message_element *el = NULL;
     struct ldb_message_element *el_override = NULL;
     struct ldb_message_element *el_orig = NULL;
+    struct ldb_message_element *el_user_cert = NULL;
     uint32_t count = 0;
     const char *name;
     char *fqname;
     uint32_t fqname_len;
+    struct ssh_ctx *ssh_ctx = talloc_get_type(cctx->rctx->pvt_ctx,
+                                              struct ssh_ctx);
 
     ret = sss_packet_new(cctx->creq, 0,
                          sss_packet_get_cmd(cctx->creq->in),
@@ -891,6 +895,12 @@ ssh_cmd_build_reply(struct ssh_cmd_ctx *cmd_ctx)
         if (el_override) {
             count += el_override->num_values;
         }
+    }
+
+    el_user_cert = ldb_msg_find_element(cmd_ctx->result, SYSDB_USER_CERT);
+    if (el_user_cert) {
+        /* TODO check if cert is valid */
+        count += el_user_cert->num_values;
     }
 
     ret = sss_packet_grow(cctx->creq->out, 2*sizeof(uint32_t));
@@ -922,20 +932,29 @@ ssh_cmd_build_reply(struct ssh_cmd_ctx *cmd_ctx)
 
     fqname_len = strlen(fqname)+1;
 
-    ret = decode_and_add_base64_data(cmd_ctx, el, fqname_len, fqname, &c);
+    ret = decode_and_add_base64_data(cmd_ctx, el, false, ssh_ctx,
+                                     fqname_len, fqname, &c);
     if (ret != EOK) {
         DEBUG(SSSDBG_OP_FAILURE, "decode_and_add_base64_data failed.\n");
         return ret;
     }
 
-    ret = decode_and_add_base64_data(cmd_ctx, el_orig, fqname_len, fqname, &c);
+    ret = decode_and_add_base64_data(cmd_ctx, el_orig, false, ssh_ctx,
+                                     fqname_len, fqname, &c);
     if (ret != EOK) {
         DEBUG(SSSDBG_OP_FAILURE, "decode_and_add_base64_data failed.\n");
         return ret;
     }
 
-    ret = decode_and_add_base64_data(cmd_ctx, el_override, fqname_len, fqname,
-                                     &c);
+    ret = decode_and_add_base64_data(cmd_ctx, el_override, false, ssh_ctx,
+                                     fqname_len, fqname, &c);
+    if (ret != EOK) {
+        DEBUG(SSSDBG_OP_FAILURE, "decode_and_add_base64_data failed.\n");
+        return ret;
+    }
+
+    ret = decode_and_add_base64_data(cmd_ctx, el_user_cert, true, ssh_ctx,
+                                     fqname_len, fqname, &c);
     if (ret != EOK) {
         DEBUG(SSSDBG_OP_FAILURE, "decode_and_add_base64_data failed.\n");
         return ret;

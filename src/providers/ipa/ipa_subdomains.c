@@ -264,7 +264,7 @@ static errno_t ipa_ranges_parse_results(TALLOC_CTX *mem_ctx,
         ret = get_idmap_data_from_range(r, domain_name, &name1, &sid1, &rid1,
                                         &range1, &mapping1);
         if (ret != EOK) {
-            DEBUG(SSSDBG_OP_FAILURE, ("get_idmap_data_from_range failed.\n"));
+            DEBUG(SSSDBG_OP_FAILURE, "get_idmap_data_from_range failed.\n");
             goto done;
         }
         for (d = 0; d < c; d++) {
@@ -272,7 +272,7 @@ static errno_t ipa_ranges_parse_results(TALLOC_CTX *mem_ctx,
                                             &sid2, &rid2, &range2, &mapping2);
             if (ret != EOK) {
                 DEBUG(SSSDBG_OP_FAILURE,
-                      ("get_idmap_data_from_range failed.\n"));
+                      "get_idmap_data_from_range failed.\n");
                 goto done;
             }
 
@@ -528,7 +528,7 @@ static errno_t ipa_subdomains_refresh(struct ipa_subdomains_ctx *ctx,
 
         if (c >= count) {
             /* ok this subdomain does not exist anymore, let's clean up */
-            dom->disabled = true;
+            sss_domain_set_state(dom, DOM_DISABLED);
             ret = sysdb_subdomain_delete(dom->sysdb, dom->name);
             if (ret != EOK) {
                 goto done;
@@ -905,7 +905,8 @@ static void ipa_get_view_name_done(struct tevent_req *req)
                     goto done;
                 }
 
-                if (!is_default_view(ctx->sd_ctx->id_ctx->view_name)) {
+                if (!is_default_view(ctx->sd_ctx->id_ctx->view_name)
+                        && !is_local_view(ctx->sd_ctx->id_ctx->view_name)) {
                     /* Old view was not the default view, delete view tree */
                     ret = sysdb_delete_view_tree(
                                              ctx->sd_ctx->be_ctx->domain->sysdb,

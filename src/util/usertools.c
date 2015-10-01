@@ -295,6 +295,14 @@ done:
     return ret;
 }
 
+int sss_ad_default_names_ctx(TALLOC_CTX *mem_ctx,
+                             struct sss_names_ctx **_out)
+{
+    return sss_names_init_from_args(mem_ctx, IPA_AD_DEFAULT_RE,
+                                    CONFDB_DEFAULT_FULL_NAME_FORMAT,
+                                    _out);
+}
+
 int sss_parse_name(TALLOC_CTX *memctx,
                    struct sss_names_ctx *snctx,
                    const char *orig, char **_domain, char **_name)

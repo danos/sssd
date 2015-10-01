@@ -1,3 +1,4 @@
+%global rhel6_minor %(%{__grep} -o "6.[0-9]*" /etc/redhat-release |%{__sed} -s 's/6.//')
 %global rhel7_minor %(%{__grep} -o "7.[0-9]*" /etc/redhat-release |%{__sed} -s 's/7.//')
 
 %if 0%{?rhel} && 0%{?rhel} <= 6
@@ -10,6 +11,9 @@
 # we don't want to provide private python extension libs
 %define __provides_exclude_from %{python2_sitearch}/.*\.so$
 %define __provides_exclude_from %{python3_sitearch}/.*\.so$
+
+# workaround for rpm 4.13
+%define _empty_manifest_terminate_build 0
 
 %if (0%{?fedora} || 0%{?rhel} >= 7)
     %global use_systemd 1
@@ -41,7 +45,7 @@
     %global with_cifs_utils_plugin_option --disable-cifs-idmap-plugin
 %endif
 
-%if (0%{?fedora} >= 21 || (0%{?rhel} == 7 &&  0%{?rhel7_minor} >= 1))
+%if (0%{?fedora} || (0%{?rhel} == 7 &&  0%{?rhel7_minor} >= 1) || (0%{?rhel} == 6 &&  0%{?rhel6_minor} >= 7))
     %global with_krb5_localauth_plugin 1
 %endif
 
@@ -106,17 +110,12 @@ BuildRequires: dbus-libs
 BuildRequires: openldap-devel
 BuildRequires: pam-devel
 BuildRequires: nss-devel
-BuildRequires: openssl-devel
 BuildRequires: nspr-devel
 BuildRequires: pcre-devel
 BuildRequires: libxslt
 BuildRequires: libxml2
 BuildRequires: docbook-style-xsl
-%if (0%{?with_krb5_localauth_plugin} == 1)
-BuildRequires: krb5-devel >= 1.12
-%else
 BuildRequires: krb5-devel
-%endif
 BuildRequires: c-ares-devel
 BuildRequires: python-devel
 %if (0%{?with_python3} == 1)
@@ -685,6 +684,7 @@ rm -rf $RPM_BUILD_ROOT
 %{_libexecdir}/%{servicename}/sssd_autofs
 %{_libexecdir}/%{servicename}/sssd_ssh
 %{_libexecdir}/%{servicename}/sssd_sudo
+%attr(4750,root,sssd) %{_libexecdir}/%{servicename}/p11_child
 
 %dir %{_libdir}/%{name}
 %{_libdir}/%{name}/libsss_simple.so
@@ -777,7 +777,6 @@ rm -rf $RPM_BUILD_ROOT
 %defattr(-,root,root,-)
 %doc COPYING
 %{_libdir}/%{name}/libsss_ad.so
-%{_libdir}/%{name}/libsss_ad_common.so
 %{_libexecdir}/%{servicename}/gpo_child
 %{_mandir}/man5/sssd-ad.5*
 
@@ -837,6 +836,7 @@ rm -rf $RPM_BUILD_ROOT
 %{_sbindir}/sss_groupmod
 %{_sbindir}/sss_groupshow
 %{_sbindir}/sss_obfuscate
+%{_sbindir}/sss_override
 %{_sbindir}/sss_debuglevel
 %{_sbindir}/sss_seed
 %{_mandir}/man8/sss_groupadd.8*
@@ -847,6 +847,7 @@ rm -rf $RPM_BUILD_ROOT
 %{_mandir}/man8/sss_userdel.8*
 %{_mandir}/man8/sss_usermod.8*
 %{_mandir}/man8/sss_obfuscate.8*
+%{_mandir}/man8/sss_override.8*
 %{_mandir}/man8/sss_debuglevel.8*
 %{_mandir}/man8/sss_seed.8*
 

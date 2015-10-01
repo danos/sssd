@@ -34,6 +34,7 @@ from util import *
 
 LDAP_BASE_DN="dc=example,dc=com"
 
+
 @pytest.fixture(scope="module")
 def ds_inst(request):
     """LDAP server instance fixture"""
@@ -48,6 +49,7 @@ def ds_inst(request):
     request.addfinalizer(lambda: ds_inst.teardown())
     return ds_inst
 
+
 @pytest.fixture(scope="module")
 def ldap_conn(request, ds_inst):
     """LDAP server connection fixture"""
@@ -55,6 +57,7 @@ def ldap_conn(request, ds_inst):
     ldap_conn.ds_inst = ds_inst
     request.addfinalizer(lambda: ldap_conn.unbind_s())
     return ldap_conn
+
 
 def create_ldap_fixture(request, ldap_conn, ent_list):
     """Add LDAP entries and add teardown for removing them"""
@@ -65,6 +68,7 @@ def create_ldap_fixture(request, ldap_conn, ent_list):
             ldap_conn.delete_s(entry[0])
     request.addfinalizer(teardown)
 
+
 def create_conf_fixture(request, contents):
     """Generate sssd.conf and add teardown for removing it"""
     conf = open(config.CONF_PATH, "w")
@@ -72,6 +76,7 @@ def create_conf_fixture(request, contents):
     conf.close()
     os.chmod(config.CONF_PATH, stat.S_IRUSR | stat.S_IWUSR)
     request.addfinalizer(lambda: os.unlink(config.CONF_PATH))
+
 
 def create_sssd_fixture(request):
     """Start sssd and add teardown for stopping it and removing state"""
@@ -90,11 +95,13 @@ def create_sssd_fixture(request):
                 time.sleep(1)
         except:
             pass
+        subprocess.call(["sss_cache", "-E"])
         for path in os.listdir(config.DB_PATH):
             os.unlink(config.DB_PATH + "/" + path)
         for path in os.listdir(config.MCACHE_PATH):
             os.unlink(config.MCACHE_PATH + "/" + path)
     request.addfinalizer(teardown)
+
 
 @pytest.fixture
 def sanity_rfc2307(request, ldap_conn):
@@ -115,7 +122,6 @@ def sanity_rfc2307(request, ldap_conn):
     conf = unindent("""\
         [sssd]
         debug_level         = 0xffff
-        config_file_version = 2
         domains             = LDAP
         services            = nss, pam
 
@@ -140,6 +146,38 @@ def sanity_rfc2307(request, ldap_conn):
     create_conf_fixture(request, conf)
     create_sssd_fixture(request)
     return None
+
+
+@pytest.fixture
+def simple_rfc2307(request, ldap_conn):
+    ent_list = ldap_ent.List(LDAP_BASE_DN)
+    ent_list.add_user('usr\\\\001', 181818, 181818)
+    ent_list.add_group("group1", 181818)
+
+    create_ldap_fixture(request, ldap_conn, ent_list)
+
+    conf = unindent("""\
+        [sssd]
+        config_file_version = 2
+        domains             = LDAP
+        services            = nss, pam
+
+        [nss]
+
+        [pam]
+
+        [domain/LDAP]
+        ldap_auth_disable_tls_never_use_in_production = true
+        ldap_schema         = rfc2307
+        id_provider         = ldap
+        auth_provider       = ldap
+        ldap_uri            = {ldap_conn.ds_inst.ldap_url}
+        ldap_search_base    = {ldap_conn.ds_inst.base_dn}
+    """).format(**locals())
+    create_conf_fixture(request, conf)
+    create_sssd_fixture(request)
+    return None
+
 
 @pytest.fixture
 def sanity_rfc2307_bis(request, ldap_conn):
@@ -173,7 +211,6 @@ def sanity_rfc2307_bis(request, ldap_conn):
     conf = unindent("""\
         [sssd]
         debug_level             = 0xffff
-        config_file_version     = 2
         domains                 = LDAP
         services                = nss, pam
 
@@ -200,6 +237,14 @@ def sanity_rfc2307_bis(request, ldap_conn):
     create_sssd_fixture(request)
     return None
 
+
+def test_regression_ticket2163(ldap_conn, simple_rfc2307):
+    ent.assert_passwd_by_name(
+        'usr\\001',
+        dict(name='usr\\001', passwd='*', uid=181818, gid=181818,
+             gecos='181818', shell='/bin/bash'))
+
+
 def test_sanity_rfc2307(ldap_conn, sanity_rfc2307):
     passwd_pattern = ent.contains_only(
         dict(name='user1', passwd='*', uid=1001, gid=2001, gecos='1001', dir='/home/user1', shell='/bin/bash'),
@@ -225,6 +270,7 @@ def test_sanity_rfc2307(ldap_conn, sanity_rfc2307):
         grp.getgrnam("non_existent_group")
     with pytest.raises(KeyError):
         grp.getgrgid(1)
+
 
 def test_sanity_rfc2307_bis(ldap_conn, sanity_rfc2307_bis):
     passwd_pattern = ent.contains_only(
@@ -259,3 +305,64 @@ def test_sanity_rfc2307_bis(ldap_conn, sanity_rfc2307_bis):
         grp.getgrnam("non_existent_group")
     with pytest.raises(KeyError):
         grp.getgrgid(1)
+
+
+@pytest.fixture
+def refresh_after_cleanup_task(request, ldap_conn):
+    ent_list = ldap_ent.List(LDAP_BASE_DN)
+    ent_list.add_user("user1", 1001, 2001)
+
+    ent_list.add_group_bis("group1", 2001, ["user1"])
+    ent_list.add_group_bis("group2", 2002, [], ["group1"])
+
+    create_ldap_fixture(request, ldap_conn, ent_list)
+
+    conf = unindent("""\
+        [sssd]
+        config_file_version     = 2
+        domains                 = LDAP
+        services                = nss
+
+        [nss]
+        memcache_timeout        = 0
+
+        [domain/LDAP]
+        ldap_auth_disable_tls_never_use_in_production = true
+        debug_level             = 0xffff
+        ldap_schema             = rfc2307bis
+        ldap_group_object_class = groupOfNames
+        id_provider             = ldap
+        auth_provider           = ldap
+        sudo_provider           = ldap
+        ldap_uri                = {ldap_conn.ds_inst.ldap_url}
+        ldap_search_base        = {ldap_conn.ds_inst.base_dn}
+
+        entry_cache_user_timeout = 1
+        entry_cache_group_timeout = 5000
+        ldap_purge_cache_timeout = 3
+
+    """).format(**locals())
+    create_conf_fixture(request, conf)
+    create_sssd_fixture(request)
+    return None
+
+
+def test_refresh_after_cleanup_task(ldap_conn, refresh_after_cleanup_task):
+    """
+    Regression test for ticket:
+    https://fedorahosted.org/sssd/ticket/2676
+    """
+    ent.assert_group_by_name(
+        "group2",
+        dict(mem=ent.contains_only("user1")))
+
+    ent.assert_passwd_by_name(
+        'user1',
+        dict(name='user1', passwd='*', uid=1001, gid=2001,
+             gecos='1001', shell='/bin/bash'))
+
+    time.sleep(15)
+
+    ent.assert_group_by_name(
+        "group2",
+        dict(mem=ent.contains_only("user1")))
