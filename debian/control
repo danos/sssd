@@ -95,8 +95,10 @@ Architecture: any
 Depends: python, python-sss, ${misc:Depends}, ${shlibs:Depends}
 Recommends: bind9-host, libnss-sss, libpam-sss, libsss-sudo
 Suggests: apparmor, sssd-tools
-Breaks: sssd (<< 1.10.0~beta2-1)
-Replaces: sssd (<< 1.10.0~beta2-1)
+Breaks: sssd (<< 1.10.0~beta2-1),
+ sssd-krb5-common (<< 1.13.1-1),
+Replaces: sssd (<< 1.10.0~beta2-1),
+ sssd-krb5-common (<< 1.13.1-1),
 Description: System Security Services Daemon -- common files
  Provides a set of daemons to manage access to remote directories and
  authentication mechanisms. It provides an NSS and PAM interface toward

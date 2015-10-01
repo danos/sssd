@@ -10,6 +10,7 @@ usr/lib/*/sssd/libsss_cert.so
 usr/lib/*/sssd/libsss_child.so
 usr/lib/*/sssd/libsss_crypt.so
 usr/lib/*/sssd/libsss_debug.so
+usr/lib/*/sssd/libsss_krb5_common.so
 usr/lib/*/sssd/libsss_ldap_common.so
 usr/lib/*/sssd/libsss_semanage.so
 usr/lib/*/sssd/libsss_simple.so

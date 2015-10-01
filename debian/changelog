@@ -11,6 +11,8 @@ sssd (1.13.1-1) UNRELEASED; urgency=medium
   * common: Add p11_child.
   * ad: Drop libsss_ad_common, it was for tests only and not shipped
     anymore.
+  * common: Move libsss_krb5_common here from sssd-krb5-common to satisfy
+    libsss_ldap_common depending on it.
 
  -- Timo Aaltonen <tjaalton@debian.org>  Wed, 30 Sep 2015 08:46:31 +0300
 
