@@ -5,10 +5,10 @@ LIBDIR=/usr/lib/@TRIPLET@/sssd
 
 case "$1" in
     configure)
-        chown -f root:sssd $LIBDIR/selinux_child
-        chmod -f 4754 $LIBDIR/selinux_child
-        chown -f sssd:sssd /var/lib/sss/keytabs
-        chmod -f 700 /var/lib/sss/keytabs
+        chown root:sssd $LIBDIR/selinux_child
+        chmod 4754 $LIBDIR/selinux_child
+        chown sssd:sssd /var/lib/sss/keytabs
+        chmod 700 /var/lib/sss/keytabs
     ;;
 esac
 

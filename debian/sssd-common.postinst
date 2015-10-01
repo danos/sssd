@@ -26,22 +26,25 @@ case "$1" in
         if ! getent passwd sssd > $OUT; then
             echo "Creating SSSD system user & group..."
             adduser --quiet --system --home $HOME \
-                --disabled-password -- group \
+                --disabled-password --group \
                 --gecos "SSSD system user" \
                 sssd > $OUT
         fi
-        chown -f sssd:sssd \
+        chown sssd:sssd \
             $HOME/db $HOME/mc $HOME/pipes $HOME/pipes/private \
-            $HOME/pubconf  /etc/sssd /etc/sssd/sssd.conf \
+            $HOME/pubconf  /etc/sssd \
             /var/log/sssd
-        chown -f root:sssd $LIBDIR/p11_child
+        chown root:sssd $LIBDIR/p11_child
 
-        chmod -f 4754 $LIBDIR/p11_child
-        chmod -f 755 $HOME/mc $HOME/pipes $HOME/pubconf
-        chmod -f 750 /var/log/sssd
-        chmod -f 711 /etc/sssd
-        chmod -f 700 $HOME/db $HOME/pipes/private
-        chmod -f 0600 /etc/sssd/sssd.conf
+        chmod 4754 $LIBDIR/p11_child
+        chmod 755 $HOME/mc $HOME/pipes $HOME/pubconf
+        chmod 750 /var/log/sssd
+        chmod 711 /etc/sssd
+        chmod 700 $HOME/db $HOME/pipes/private
+        if [ -f /etc/sssd/sssd.conf ]; then
+            chown sssd:sssd /etc/sssd/sssd.conf
+            chmod 0600 /etc/sssd/sssd.conf
+        fi
     ;;
 
     abort-upgrade|abort-remove|abort-deconfigure)
