@@ -19,8 +19,7 @@ set -e
 
 OUT=/dev/null
 HOME=/var/lib/sss
-MA=`dpkg-architecture -q DEB_HOST_MULTIARCH`
-LIBDIR=/usr/lib/$MA/sssd
+LIBDIR=/usr/lib/@TRIPLET@/sssd
 
 case "$1" in
     configure)
