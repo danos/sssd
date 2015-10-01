@@ -1,5 +1,3 @@
 usr/lib/python2*/dist-packages/SSSDConfig/*.py
 usr/lib/python2*/dist-packages/pysss.so
-usr/lib/python2*/dist-packages/_py2sss.so
 usr/lib/python2*/dist-packages/pysss_murmur.so
-usr/lib/python2*/dist-packages/_py2sss_murmur.so
