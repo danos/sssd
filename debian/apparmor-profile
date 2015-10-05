@@ -42,7 +42,7 @@
   /{,var/}run/sssd.pid rw,
 
   profile /usr/lib/@{multiarch}/sssd/* {
-    /var/lib/sss/pubconf/krb5.include.d/ rwdc,
+    /var/lib/sss/pubconf/krb5.include.d/ rw,
   }
 
   # Site-specific additions and overrides. See local/README for details.
