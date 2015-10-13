@@ -5,8 +5,8 @@ LIBDIR=/usr/lib/@TRIPLET@/sssd
 
 case "$1" in
     configure)
-        chown root:sssd $LIBDIR/ldap_child $LIBDIR/krb5_child
-        chmod 4754 $LIBDIR/ldap_child $LIBDIR/krb5_child
+        chown root:sssd $LIBDIR/proxy_child
+        chmod 4754 $LIBDIR/proxy_child
     ;;
 esac
 

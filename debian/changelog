@@ -1,6 +1,8 @@
 sssd (1.13.1-2) UNRELEASED; urgency=medium
 
   * apparmor: Fix access to krb5.include.d. (LP: #1489378)
+  * {krb5-common,proxy}.postinst: Chmod the correct files. (Closes:
+    #801537, #801538)
 
  -- Timo Aaltonen <tjaalton@debian.org>  Tue, 06 Oct 2015 01:04:18 +0300
 
