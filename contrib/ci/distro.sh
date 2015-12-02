@@ -54,13 +54,14 @@ function distro_pkg_install()
         [ $# != 0 ] && sudo -p "$prompt" yum --assumeyes install -- "$@" |&
             # Pass input to output, fail if a missing package is reported
             # TODO Remove and switch to DNF once
-            # https://bugzilla.redhat.com/show_bug.cgi?id=1128139 is fixed
+            # https://bugzilla.redhat.com/show_bug.cgi?id=1215208 is fixed
             awk 'BEGIN {s=0}
                  /^No package .* available.$/ {s=1}
                  {print}
                  END {exit s}'
     elif [[ "$DISTRO_BRANCH" == -debian-* ]]; then
-        [ $# != 0 ] && sudo -p "$prompt" apt-get --yes install -- "$@"
+        [ $# != 0 ] && DEBIAN_FRONTEND=noninteractive \
+                       sudo -p "$prompt" apt-get --yes install -- "$@"
     else
         echo "Cannot install packages on $DISTRO_BRANCH" >&2
         exit 1

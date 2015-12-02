@@ -100,7 +100,6 @@ def create_sssd_fixture(request):
             stop_sssd()
         except:
             pass
-        subprocess.call(["sss_cache", "-E"])
         for path in os.listdir(config.DB_PATH):
             os.unlink(config.DB_PATH + "/" + path)
         for path in os.listdir(config.MCACHE_PATH):
@@ -109,7 +108,7 @@ def create_sssd_fixture(request):
 
 
 def load_data_to_ldap(request, ldap_conn):
-    ent_list = ldap_ent.List(LDAP_BASE_DN)
+    ent_list = ldap_ent.List(ldap_conn.ds_inst.base_dn)
     ent_list.add_user("user1", 1001, 2001)
     ent_list.add_user("user2", 1002, 2002)
     ent_list.add_user("user3", 1003, 2003)
@@ -743,3 +742,39 @@ def test_invalidate_everything_after_stop(ldap_conn, sanity_rfc2307):
     subprocess.call(["sss_cache", "-E"])
 
     assert_missing_mc_records_for_user1()
+
+
+def test_removed_mc(ldap_conn, sanity_rfc2307):
+    """
+    Regression test for ticket:
+    https://fedorahosted.org/sssd/ticket/2726
+    """
+
+    ent.assert_passwd_by_name(
+        'user1',
+        dict(name='user1', passwd='*', uid=1001, gid=2001,
+             gecos='1001', shell='/bin/bash'))
+    ent.assert_passwd_by_uid(
+        1001,
+        dict(name='user1', passwd='*', uid=1001, gid=2001,
+             gecos='1001', shell='/bin/bash'))
+
+    ent.assert_group_by_name("group1", dict(name="group1", gid=2001))
+    ent.assert_group_by_gid(2001, dict(name="group1", gid=2001))
+    stop_sssd()
+
+    # remove cache without invalidation
+    for path in os.listdir(config.MCACHE_PATH):
+        os.unlink(config.MCACHE_PATH + "/" + path)
+
+    # sssd is stopped; so the memory cache should not be used
+    # in long living clients (py.test in this case)
+    with pytest.raises(KeyError):
+        pwd.getpwnam('user1')
+    with pytest.raises(KeyError):
+        pwd.getpwuid(1001)
+
+    with pytest.raises(KeyError):
+        grp.getgrnam('group1')
+    with pytest.raises(KeyError):
+        grp.getgrgid(2001)

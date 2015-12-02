@@ -403,7 +403,7 @@ static void ifp_users_list_by_name_done(struct tevent_req *req)
         return;
     }
 
-    list_ctx->dom = get_next_domain(list_ctx->dom, true);
+    list_ctx->dom = get_next_domain(list_ctx->dom, SSS_GND_DESCEND);
     if (list_ctx->dom == NULL) {
         return ifp_users_list_by_name_reply(list_ctx);
     }
@@ -806,8 +806,10 @@ void ifp_users_user_get_groups(struct sbus_request *sbus_req,
             continue;
         }
 
-        out[i] = ifp_groups_build_path_from_msg(out, domain, res->msgs[i]);
-        if (out[i] == NULL) {
+        out[num_groups] = ifp_groups_build_path_from_msg(out,
+                                                         domain,
+                                                         res->msgs[i]);
+        if (out[num_groups] == NULL) {
             DEBUG(SSSDBG_CRIT_FAILURE, "ifp_groups_build_path() failed\n");
             return;
         }

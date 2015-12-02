@@ -191,12 +191,13 @@ static void link_forest_roots(struct sss_domain_info *domain)
 {
     struct sss_domain_info *d;
     struct sss_domain_info *dd;
+    uint32_t gnd_flags = SSS_GND_ALL_DOMAINS;
 
-    for (d = domain; d; d = get_next_domain(d, true)) {
+    for (d = domain; d; d = get_next_domain(d, gnd_flags)) {
         d->forest_root = NULL;
     }
 
-    for (d = domain; d; d = get_next_domain(d, true)) {
+    for (d = domain; d; d = get_next_domain(d, gnd_flags)) {
         if (d->forest_root != NULL) {
             continue;
         }
@@ -205,7 +206,7 @@ static void link_forest_roots(struct sss_domain_info *domain)
             d->forest_root = d;
             DEBUG(SSSDBG_TRACE_INTERNAL, "[%s] is a forest root\n", d->name);
 
-            for (dd = domain; dd; dd = get_next_domain(dd, true)) {
+            for (dd = domain; dd; dd = get_next_domain(dd, gnd_flags)) {
                 if (dd->forest_root != NULL) {
                     continue;
                 }
@@ -311,8 +312,8 @@ errno_t sysdb_update_subdomains(struct sss_domain_info *domain)
                                              SYSDB_SUBDOMAIN_TRUST_DIRECTION,
                                              0);
 
-        /* explicitly use dom->next as we need to check 'disabled' domains */
-        for (dom = domain->subdomains; dom; dom = dom->next) {
+        for (dom = domain->subdomains; dom;
+                dom = get_next_domain(dom, SSS_GND_INCLUDE_DISABLED)) {
             if (strcasecmp(dom->name, name) == 0) {
                 sss_domain_set_state(dom, DOM_ACTIVE);
 

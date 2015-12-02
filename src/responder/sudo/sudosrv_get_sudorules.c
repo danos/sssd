@@ -79,6 +79,7 @@ static errno_t sudosrv_get_user(struct sudo_dom_ctx *dctx)
     struct dp_callback_ctx *cb_ctx;
     const char *original_name = NULL;
     const char *extra_flag = NULL;
+    const char *search_name = NULL;
     char *name = NULL;
     uid_t uid = 0;
     errno_t ret;
@@ -93,7 +94,7 @@ static errno_t sudosrv_get_user(struct sudo_dom_ctx *dctx)
        /* if it is a domainless search, skip domains that require fully
         * qualified names instead */
         while (dom && cmd_ctx->check_next && dom->fqnames) {
-            dom = get_next_domain(dom, false);
+            dom = get_next_domain(dom, 0);
         }
 
         if (!dom) break;
@@ -140,7 +141,7 @@ static errno_t sudosrv_get_user(struct sudo_dom_ctx *dctx)
             /* if a multidomain search, try with next */
             if (cmd_ctx->check_next) {
                 dctx->check_provider = true;
-                dom = get_next_domain(dom, false);
+                dom = get_next_domain(dom, 0);
                 if (dom) continue;
             }
 
@@ -160,13 +161,23 @@ static errno_t sudosrv_get_user(struct sudo_dom_ctx *dctx)
         if ((user->count == 0 || cache_expire < time(NULL))
             && dctx->check_provider) {
 
-            if (DOM_HAS_VIEWS(dom) && user->count == 0) {
+            search_name = cmd_ctx->username;
+            if (is_local_view(dom->view_name)) {
+                /* Search with original name in case of local view. */
+                if (user->count != 0) {
+                    search_name = ldb_msg_find_attr_as_string(user->msgs[0],
+                                                              SYSDB_NAME, NULL);
+                }
+            } else if (DOM_HAS_VIEWS(dom) && (user->count == 0
+                || ldb_msg_find_attr_as_string(user->msgs[0],
+                                               OVERRIDE_PREFIX SYSDB_NAME,
+                                               NULL) != NULL)) {
                 extra_flag = EXTRA_INPUT_MAYBE_WITH_VIEW;
             }
 
             dpreq = sss_dp_get_account_send(cli_ctx, cli_ctx->rctx,
                                             dom, false, SSS_DP_INITGROUPS,
-                                            cmd_ctx->username, 0, extra_flag);
+                                            search_name, 0, extra_flag);
             if (!dpreq) {
                 DEBUG(SSSDBG_CRIT_FAILURE,
                       "Out of memory sending data provider request\n");
@@ -200,7 +211,7 @@ static errno_t sudosrv_get_user(struct sudo_dom_ctx *dctx)
             /* if a multidomain search, try with next */
             if (cmd_ctx->check_next) {
                 dctx->check_provider = true;
-                dom = get_next_domain(dom, false);
+                dom = get_next_domain(dom, 0);
                 if (dom) continue;
             }
 

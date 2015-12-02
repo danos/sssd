@@ -26,7 +26,7 @@ m4_ifdef([AC_PROG_MKDIR_P],
 LT_LIB_DLLOAD
 AC_CONFIG_MACRO_DIR([m4])
 AM_GNU_GETTEXT([external])
-AM_GNU_GETTEXT_VERSION([0.14])
+AM_GNU_GETTEXT_VERSION([0.14.4])
 
 AC_SUBST([PRERELEASE_VERSION],
          PRERELEASE_VERSION_NUMBER)
@@ -50,7 +50,9 @@ BUILD_WITH_SHARED_BUILD_DIR
 
 AC_COMPILE_IFELSE(
     [AC_LANG_PROGRAM([[#include <pthread.h>]],
-        [[pthread_mutex_t m = PTHREAD_MUTEX_INITIALIZER;]])],
+        [[pthread_mutex_t m = PTHREAD_MUTEX_INITIALIZER;
+          (void) m; /* unused */
+        ]])],
     [AC_DEFINE([HAVE_PTHREAD], [1], [Pthread mutexes available.])
      HAVE_PTHREAD=1
     ],
@@ -216,10 +218,19 @@ fi
 if test x$has_dbus != xno; then
     SAFE_LIBS="$LIBS"
     LIBS="$DBUS_LIBS"
+    SAFE_CFLAGS=$CFLAGS
+    CFLAGS="$CFLAGS $DBUS_CFLAGS"
+
     AC_CHECK_FUNC([dbus_watch_get_unix_fd],
                   AC_DEFINE([HAVE_DBUS_WATCH_GET_UNIX_FD], [1],
                             [Define if dbus_watch_get_unix_fd exists]))
+    AC_CHECK_TYPES([DBusBasicValue],
+                   [],
+                   [],
+                   [ #include <dbus/dbus.h> ])
+
     LIBS="$SAFE_LIBS"
+    CFLAGS=$SAFE_CFLAGS
 fi
 
 # work around a bug in cov-build from Coverity
@@ -375,6 +386,23 @@ AC_CACHE_CHECK([whether compiler supports __attribute__((format))],
 if test x"$sss_cv_attribute_format" = xyes ; then
    AC_DEFINE(HAVE_FUNCTION_ATTRIBUTE_FORMAT, 1,
              [whether compiler supports __attribute__((format))])
+fi
+
+AC_CACHE_CHECK([whether compiler supports __attribute__((warn_unused_result))],
+               sss_cv_attribute_warn_unused_result,
+               [AC_COMPILE_IFELSE(
+                    [AC_LANG_SOURCE(
+                        [ char _check_leaks(int bytes) __attribute__ ((warn_unused_result)); ]
+                    )],
+                    [sss_cv_attribute_warn_unused_result=yes],
+                    [
+                        AC_MSG_RESULT([no])
+                        AC_MSG_WARN([compiler does NOT support __attribute__((warn_unused_result))])
+                    ])
+               ])
+if test x"$sss_cv_attribute_warn_unused_result" = xyes ; then
+   AC_DEFINE(HAVE_FUNCTION_ATTRIBUTE_WARN_UNUSED_RESULT, 1,
+             [whether compiler supports __attribute__((warn_unused_result))])
 fi
 
 PKG_CHECK_MODULES([CHECK], [check >= 0.9.5], [have_check=1], [have_check=])

@@ -37,6 +37,7 @@
 #include <security/pam_modules.h>
 
 #include "util/util.h"
+#include "util/sss_utf8.h"
 #include "confdb/confdb.h"
 #include "db/sysdb.h"
 #include "sbus/sssd_dbus.h"
@@ -114,6 +115,45 @@ struct bet_queue_item {
     be_req_fn_t fn;
 
 };
+
+static const char *dp_err_to_string(int dp_err_type)
+{
+    switch (dp_err_type) {
+    case DP_ERR_OK:
+        return "Success";
+    case DP_ERR_OFFLINE:
+        return "Provider is Offline";
+    case DP_ERR_TIMEOUT:
+        return "Request timed out";
+    case DP_ERR_FATAL:
+    default:
+        return "Internal Error";
+    }
+
+    return "Unknown Error";
+}
+
+static const char *safe_be_req_err_msg(const char *msg_in,
+                                       int dp_err_type)
+{
+    bool ok;
+
+    if (msg_in == NULL) {
+        /* No custom error, just use default */
+        return dp_err_to_string(dp_err_type);
+    }
+
+    ok = sss_utf8_check((const uint8_t *) msg_in,
+                        strlen(msg_in));
+    if (!ok) {
+        DEBUG(SSSDBG_MINOR_FAILURE,
+              "Back end message [%s] contains invalid non-UTF8 character, " \
+              "using default\n", msg_in);
+        return dp_err_to_string(dp_err_type);
+    }
+
+    return msg_in;
+}
 
 #define REQ_PHASE_ACCESS 0
 #define REQ_PHASE_SELINUX 1
@@ -616,37 +656,6 @@ static void be_reset_offline(struct be_ctx *ctx)
     be_run_online_cb(ctx);
 }
 
-static char *dp_pam_err_to_string(TALLOC_CTX *memctx, int dp_err_type, int errnum)
-{
-    switch (dp_err_type) {
-    case DP_ERR_OK:
-        return talloc_asprintf(memctx, "Success (%s)",
-                               pam_strerror(NULL, errnum));
-        break;
-
-    case DP_ERR_OFFLINE:
-        return talloc_asprintf(memctx,
-                               "Provider is Offline (%s)",
-                               pam_strerror(NULL, errnum));
-        break;
-
-    case DP_ERR_TIMEOUT:
-        return talloc_asprintf(memctx,
-                               "Request timed out (%s)",
-                               pam_strerror(NULL, errnum));
-        break;
-
-    case DP_ERR_FATAL:
-    default:
-        return talloc_asprintf(memctx,
-                               "Internal Error (%s)",
-                               pam_strerror(NULL, errnum));
-        break;
-    }
-
-    return NULL;
-}
-
 static void get_subdomains_callback(struct be_req *req,
                                     int dp_err_type,
                                     int errnum,
@@ -659,7 +668,7 @@ static void get_subdomains_callback(struct be_req *req,
 
     DEBUG(SSSDBG_TRACE_FUNC, "Backend returned: (%d, %d, %s) [%s]\n",
               dp_err_type, errnum, errstr?errstr:"<NULL>",
-              dp_pam_err_to_string(req, dp_err_type, errnum));
+              dp_err_to_string(dp_err_type));
 
     be_queue_next_request(req, BET_SUBDOMAINS);
 
@@ -672,16 +681,7 @@ static void get_subdomains_callback(struct be_req *req,
          */
         err_maj = dp_err_type;
         err_min = errnum;
-        if (errstr) {
-            err_msg = errstr;
-        } else {
-            err_msg = dp_pam_err_to_string(req, dp_err_type, errnum);
-        }
-        if (!err_msg) {
-            DEBUG(SSSDBG_CRIT_FAILURE,
-                  "Failed to set err_msg, Out of memory?\n");
-            err_msg = "OOM";
-        }
+        err_msg = safe_be_req_err_msg(errstr, dp_err_type);
 
         sbus_request_return_and_finish(dbus_req,
                                        DBUS_TYPE_UINT16, &err_maj,
@@ -816,16 +816,7 @@ static void acctinfo_callback(struct be_req *req,
 
         err_maj = dp_err_type;
         err_min = errnum;
-        if (errstr) {
-            err_msg = errstr;
-        } else {
-            err_msg = dp_pam_err_to_string(req, dp_err_type, errnum);
-        }
-        if (!err_msg) {
-            DEBUG(SSSDBG_CRIT_FAILURE,
-                  "Failed to set err_msg, Out of memory?\n");
-            err_msg = "OOM";
-        }
+        err_msg = safe_be_req_err_msg(errstr, dp_err_type);
 
         sbus_request_return_and_finish(dbus_req,
                                        DBUS_TYPE_UINT16, &err_maj,
@@ -1365,7 +1356,7 @@ static void be_pam_handler_callback(struct be_req *req,
 
     DEBUG(SSSDBG_CONF_SETTINGS, "Backend returned: (%d, %d, %s) [%s]\n",
               dp_err_type, errnum, errstr?errstr:"<NULL>",
-              dp_pam_err_to_string(req, dp_err_type, errnum));
+              dp_err_to_string(dp_err_type));
 
     pd = talloc_get_type(be_req_get_data(req), struct pam_data);
 
@@ -1571,10 +1562,13 @@ static void be_sudo_handler_callback(struct be_req *req,
                                      int dp_ret,
                                      const char *errstr)
 {
+    const char *err_msg = NULL;
     struct sbus_request *dbus_req;
+
     dbus_req = (struct sbus_request *)(req->pvt);
 
-    be_sudo_handler_reply(dbus_req, dp_err, dp_ret, errstr);
+    err_msg = safe_be_req_err_msg(errstr, dp_err);
+    be_sudo_handler_reply(dbus_req, dp_err, dp_ret, err_msg);
 
     talloc_free(req);
 }
@@ -1915,16 +1909,7 @@ static void be_autofs_handler_callback(struct be_req *req,
 
         err_maj = dp_err_type;
         err_min = errnum;
-        if (errstr) {
-            err_msg = errstr;
-        } else {
-            err_msg = dp_pam_err_to_string(req, dp_err_type, errnum);
-        }
-        if (!err_msg) {
-            DEBUG(SSSDBG_CRIT_FAILURE,
-                  "Failed to set err_msg, Out of memory?\n");
-            err_msg = "OOM";
-        }
+        err_msg = safe_be_req_err_msg(errstr, dp_err_type);
 
         sbus_request_return_and_finish(dbus_req,
                                        DBUS_TYPE_UINT16, &err_maj,
@@ -2107,6 +2092,9 @@ static int be_client_destructor(void *ctx)
         } else if (becli->bectx->pac_cli == becli) {
             DEBUG(SSSDBG_TRACE_FUNC, "Removed PAC client\n");
             becli->bectx->pac_cli = NULL;
+        } else if (becli->bectx->ifp_cli == becli) {
+            DEBUG(SSSDBG_TRACE_FUNC, "Removed IFP client\n");
+            becli->bectx->ifp_cli = NULL;
         } else {
             DEBUG(SSSDBG_CRIT_FAILURE, "Unknown client removed ...\n");
         }
@@ -2208,7 +2196,7 @@ static void check_online_callback(struct be_req *req, int dp_err_type,
 
     DEBUG(SSSDBG_CONF_SETTINGS, "Backend returned: (%d, %d, %s) [%s]\n",
               dp_err_type, errnum, errstr?errstr:"<NULL>",
-              dp_pam_err_to_string(req, dp_err_type, errnum));
+              dp_err_to_string(dp_err_type));
 
     req->be_ctx->check_online_ref_count--;
 

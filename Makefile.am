@@ -488,7 +488,6 @@ SSSD_LIBS = \
     $(INI_CONFIG_LIBS) \
     $(COLLECTION_LIBS) \
     $(DHASH_LIBS) \
-    $(SSS_CRYPT_LIBS) \
     $(OPENLDAP_LIBS) \
     $(TDB_LIBS)
 
@@ -680,7 +679,7 @@ if BUILD_SUDO
 endif
 
 if BUILD_IFP
-    SSSD_DOCS += libsss_simpleifp_doc
+    SSSD_DOCS += sss_simpleifp_doc
 endif
 
 CLIENT_LIBS = $(LTLIBINTL)
@@ -719,6 +718,11 @@ libsss_child_la_LDFLAGS = -avoid-version
 
 pkglib_LTLIBRARIES += libsss_crypt.la
 
+# NOTE:
+# Please try to avoid using SSS_CRYPT_{CFLAGS,LIBS} directly for compiling and
+# linking programs or libraries. This is purpose of wrapper library
+# libsss_crypt.so to hide internals. SSS_CRYPT_{CFLAGS,LIBS} might be used
+# in unit tests if you directly uses functions from underlining crypto libraries
 if HAVE_NSS
     SSS_CRYPT_SOURCES = src/util/crypto/nss/nss_base64.c \
                         src/util/crypto/nss/nss_hmac_sha1.c \
@@ -1719,17 +1723,16 @@ debug_tests_LDADD = \
     libsss_debug.la
 
 crypto_tests_SOURCES = \
-    $(SSS_CRYPT_SOURCES) \
     src/tests/crypto-tests.c
 crypto_tests_CFLAGS = \
-    $(SSS_CRYPT_CFLAGS) \
     $(AM_CFLAGS) \
     $(CHECK_CFLAGS)
 crypto_tests_LDADD = \
-    libsss_debug.la \
-    $(SSS_CRYPT_LIBS) \
-    $(SSSD_LIBS) \
     $(CHECK_LIBS) \
+    $(POPT_LIBS) \
+    $(TALLOC_LIBS) \
+    libsss_crypt.la \
+    libsss_debug.la \
     libsss_test_common.la
 
 ipa_hbac_tests_SOURCES = \
@@ -2063,7 +2066,6 @@ fqnames_tests_LDADD = \
     libsss_test_common.la
 
 nestedgroups_tests_SOURCES = \
-    $(TEST_MOCK_OBJ) \
     $(TEST_MOCK_PROVIDER_OBJ) \
     src/providers/ldap/sdap_idmap.c \
     src/tests/cmocka/test_nested_groups.c \
@@ -2244,7 +2246,6 @@ sdap_tests_SOURCES = \
     $(NULL)
 sdap_tests_CFLAGS = \
     $(AM_CFLAGS) \
-    $(SSS_CRYPT_CFLAGS) \
     $(NULL)
 sdap_tests_LDFLAGS = \
     -Wl,-wrap,ldap_set_option \
@@ -2261,7 +2262,6 @@ sdap_tests_LDADD = \
     $(LDB_LIBS) \
     $(POPT_LIBS) \
     $(SSSD_INTERNAL_LTLIBS) \
-    $(SSS_CRYPT_LIBS) \
     $(OPENLDAP_LIBS) \
     libsss_test_common.la \
     $(NULL)
@@ -2436,7 +2436,6 @@ test_child_common_LDADD = \
     $(NULL)
 
 responder_cache_req_tests_SOURCES = \
-    $(TEST_MOCK_OBJ) \
     $(TEST_MOCK_RESP_OBJ) \
     src/tests/cmocka/test_responder_cache_req.c \
     $(NULL)
@@ -3523,10 +3522,10 @@ if BUILD_PYTHON2_BINDINGS
 			--record=$(abs_builddir)/src/config/.files2 --root=$(DESTDIR); \
 	fi
 	cd $(DESTDIR)$(py2execdir) && \
-		$(LN_S) -f _py2sss.so pysss.so ; \
-		$(LN_S) -f _py2hbac.so pyhbac.so ; \
-		$(LN_S) -f _py2sss_murmur.so pysss_murmur.so ; \
-		$(LN_S) -f _py2sss_nss_idmap.so pysss_nss_idmap.so
+		mv -f _py2sss.so pysss.so ; \
+		mv -f _py2hbac.so pyhbac.so ; \
+		mv -f _py2sss_murmur.so pysss_murmur.so ; \
+		mv -f _py2sss_nss_idmap.so pysss_nss_idmap.so
 endif
 if BUILD_PYTHON3_BINDINGS
 	if [ "$(DESTDIR)" = "" ]; then \
@@ -3541,10 +3540,10 @@ if BUILD_PYTHON3_BINDINGS
 			--record=$(abs_builddir)/src/config/.files3 --root=$(DESTDIR); \
 	fi
 	cd $(DESTDIR)$(py3execdir) && \
-		$(LN_S) -f _py3sss.so pysss.so ; \
-		$(LN_S) -f _py3hbac.so pyhbac.so ; \
-		$(LN_S) -f _py3sss_murmur.so pysss_murmur.so ; \
-		$(LN_S) -f _py3sss_nss_idmap.so pysss_nss_idmap.so
+		mv -f _py3sss.so pysss.so ; \
+		mv -f _py3hbac.so pyhbac.so ; \
+		mv -f _py3sss_murmur.so pysss_murmur.so ; \
+		mv -f _py3sss_nss_idmap.so pysss_nss_idmap.so
 endif
 	for doc in $(SSSD_DOCS); do \
 		$(MKDIR_P) $$doc $(DESTDIR)/$(docdir); \

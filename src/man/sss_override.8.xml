@@ -34,8 +34,15 @@
             and groups. This change takes effect only on local machine.
         </para>
         <para>
-            Overrides data are stored in SSSD cache. If the cache is deleted
-            all local overrides are lost.
+            Overrides data are stored in the SSSD cache. If the cache is deleted,
+            all local overrides are lost. Please note that after the first
+            override is created using any of the following
+            <emphasis>user-add</emphasis>, <emphasis>group-add</emphasis>,
+            <emphasis>user-import</emphasis> or
+            <emphasis>group-import</emphasis> command. SSSD needs to be
+            restarted to take effect.
+            <emphasis>sss_override</emphasis> prints message when a restart is
+            required.
         </para>
     </refsect1>
 
@@ -60,7 +67,9 @@
                 </term>
                 <listitem>
                     <para>
-                        Override attributes of an user.
+                        Override attributes of an user. Please be aware that
+                        calling this command will replace any previous override
+                        for the (NAMEd) user.
                     </para>
                 </listitem>
             </varlistentry>
@@ -71,7 +80,34 @@
                 </term>
                 <listitem>
                     <para>
-                        Remove user overrides.
+                        Remove user overrides. However be aware that overridden
+                        attributes might be returned from memory cache. Please
+                        see SSSD option <emphasis>memcache_timeout</emphasis>
+                        for more details.
+                    </para>
+                </listitem>
+            </varlistentry>
+            <varlistentry>
+                <term>
+                    <option>user-find</option>
+                    <optional><option>-d,--domain</option> DOMAIN</optional>
+                </term>
+                <listitem>
+                    <para>
+                        List all users with set overrides.
+                        If <emphasis>DOMAIN</emphasis> parameter is set,
+                        only users from the domain are listed.
+                    </para>
+                </listitem>
+            </varlistentry>
+            <varlistentry>
+                <term>
+                    <option>user-show</option>
+                    <emphasis>NAME</emphasis>
+                </term>
+                <listitem>
+                    <para>
+                        Show user overrides.
                     </para>
                 </listitem>
             </varlistentry>
@@ -128,7 +164,9 @@
                 </term>
                 <listitem>
                     <para>
-                        Override attributes of a group.
+                        Override attributes of a group. Please be aware that
+                        calling this command will replace any previous override
+                        for the (NAMEd) group.
                     </para>
                 </listitem>
             </varlistentry>
@@ -139,7 +177,34 @@
                 </term>
                 <listitem>
                     <para>
-                        Remove group overrides.
+                        Remove group overrides. However be aware that overridden
+                        attributes might be returned from memory cache. Please
+                        see SSSD option <emphasis>memcache_timeout</emphasis>
+                        for more details.
+                    </para>
+                </listitem>
+            </varlistentry>
+            <varlistentry>
+                <term>
+                    <option>group-find</option>
+                    <optional><option>-d,--domain</option> DOMAIN</optional>
+                </term>
+                <listitem>
+                    <para>
+                        List all groups with set overrides.
+                        If <emphasis>DOMAIN</emphasis> parameter is set,
+                        only groups from the domain are listed.
+                    </para>
+                </listitem>
+            </varlistentry>
+            <varlistentry>
+                <term>
+                    <option>group-show</option>
+                    <emphasis>NAME</emphasis>
+                </term>
+                <listitem>
+                    <para>
+                        Show group overrides.
                     </para>
                 </listitem>
             </varlistentry>

@@ -25,27 +25,32 @@
 #ifndef __TESTS_COMMON_H__
 #define __TESTS_COMMON_H__
 
+#include "config.h"
+
 #include <talloc.h>
 #include "util/util.h"
 #include "providers/data_provider.h"
 #include "providers/ldap/sdap.h"
 
+
+#ifdef HAVE_FUNCTION_ATTRIBUTE_WARN_UNUSED_RESULT
+#define SSS_ATTRIBUTE_WARN_UNUSED_RESULT __attribute__((warn_unused_result))
+#else
+#define SSS_ATTRIBUTE_WARN_UNUSED_RESULT
+#endif
+
 #define N_ELEMENTS(arr) (sizeof(arr) / sizeof(arr[0]))
 
 extern TALLOC_CTX *global_talloc_context;
 
-#define check_leaks(ctx, bytes) _check_leaks((ctx), (bytes), __location__)
-bool _check_leaks(TALLOC_CTX *ctx,
-                  size_t bytes,
-                  const char *location);
-
 void check_leaks_push(TALLOC_CTX *ctx);
 
 #define check_leaks_pop(ctx) _check_leaks_pop((ctx), __location__)
-bool _check_leaks_pop(TALLOC_CTX *ctx, const char *location);
+bool _check_leaks_pop(TALLOC_CTX *ctx, const char *location)
+                      SSS_ATTRIBUTE_WARN_UNUSED_RESULT;
 
-bool leak_check_setup(void);
-bool leak_check_teardown(void);
+bool leak_check_setup(void) SSS_ATTRIBUTE_WARN_UNUSED_RESULT;
+bool leak_check_teardown(void) SSS_ATTRIBUTE_WARN_UNUSED_RESULT;
 const char *check_leaks_err_msg(void);
 
 void tests_set_cwd(void);
@@ -137,5 +142,13 @@ test_dbus_call_sync(DBusConnection *conn,
 struct sss_domain_info *named_domain(TALLOC_CTX *mem_ctx,
                                      const char *name,
                                      struct sss_domain_info *parent);
+
+/* Returns true if all values are in array (else returns false) */
+bool are_values_in_array(const char **values, size_t values_len,
+                         const char **array, size_t array_len);
+
+#define tc_are_values_in_array(values, array) \
+        are_values_in_array(values, talloc_array_length(values), \
+                            array, talloc_array_length(array))
 
 #endif /* !__TESTS_COMMON_H__ */

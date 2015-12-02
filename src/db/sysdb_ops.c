@@ -474,6 +474,59 @@ int sysdb_search_user_by_sid_str(TALLOC_CTX *mem_ctx,
                                         sid_str, attrs, msg);
 }
 
+int sysdb_search_user_by_upn_res(TALLOC_CTX *mem_ctx,
+                                 struct sss_domain_info *domain,
+                                 const char *upn,
+                                 const char **attrs,
+                                 struct ldb_result **out_res)
+{
+    TALLOC_CTX *tmp_ctx;
+    struct ldb_result *res;
+    struct ldb_dn *base_dn;
+    int ret;
+    const char *def_attrs[] = { SYSDB_NAME, SYSDB_UPN, SYSDB_CANONICAL_UPN,
+                                NULL };
+
+    tmp_ctx = talloc_new(NULL);
+    if (tmp_ctx == NULL) {
+        ret = ENOMEM;
+        goto done;
+    }
+
+    base_dn = sysdb_base_dn(domain->sysdb, tmp_ctx);
+    if (base_dn == NULL) {
+        ret = ENOMEM;
+        goto done;
+    }
+
+    ret = ldb_search(domain->sysdb->ldb, tmp_ctx, &res,
+                     base_dn, LDB_SCOPE_SUBTREE, attrs ? attrs : def_attrs,
+                     SYSDB_PWUPN_FILTER, upn, upn);
+    if (ret != EOK) {
+        ret = sysdb_error_to_errno(ret);
+        goto done;
+    }
+
+    if (res->count == 0) {
+        /* set result anyway */
+        *out_res = talloc_steal(mem_ctx, res);
+        ret = ENOENT;
+        goto done;
+    } else if (res->count > 1) {
+        DEBUG(SSSDBG_OP_FAILURE,
+              "Search for upn [%s] returns more than one result.\n", upn);
+        ret = EINVAL;
+        goto done;
+    }
+
+    *out_res = talloc_steal(mem_ctx, res);
+    ret = EOK;
+
+done:
+    talloc_zfree(tmp_ctx);
+    return ret;
+}
+
 int sysdb_search_user_by_upn(TALLOC_CTX *mem_ctx,
                              struct sss_domain_info *domain,
                              const char *upn,
@@ -481,54 +534,29 @@ int sysdb_search_user_by_upn(TALLOC_CTX *mem_ctx,
                              struct ldb_message **msg)
 {
     TALLOC_CTX *tmp_ctx;
-    const char *def_attrs[] = { SYSDB_NAME, SYSDB_UPN, SYSDB_CANONICAL_UPN,
-                                NULL };
-    struct ldb_message **msgs = NULL;
-    struct ldb_dn *basedn;
-    size_t msgs_count = 0;
-    char *filter;
-    int ret;
+    struct ldb_result *res;
+    errno_t ret;
 
     tmp_ctx = talloc_new(NULL);
     if (tmp_ctx == NULL) {
-        return ENOMEM;
-    }
-
-    basedn = sysdb_user_base_dn(tmp_ctx, domain);
-    if (basedn == NULL) {
         ret = ENOMEM;
         goto done;
     }
 
-    filter = talloc_asprintf(tmp_ctx, SYSDB_PWUPN_FILTER, upn, upn);
-    if (filter == NULL) {
-        ret = ENOMEM;
-        goto done;
-    }
-
-    ret = sysdb_search_entry(tmp_ctx, domain->sysdb, basedn, LDB_SCOPE_SUBTREE,
-                             filter, attrs?attrs:def_attrs, &msgs_count,
-                             &msgs);
-    if (ret != EOK) {
-        goto done;
-    }
-
-    if (msgs_count > 1) {
-        DEBUG(SSSDBG_OP_FAILURE,
-              "Search for upn [%s] returns more than one result.\n", upn);
-        ret = EINVAL;
-        goto done;
-    }
-
-    *msg = talloc_steal(mem_ctx, msgs[0]);
-
-done:
+    ret = sysdb_search_user_by_upn_res(tmp_ctx, domain, upn, attrs, &res);
     if (ret == ENOENT) {
         DEBUG(SSSDBG_TRACE_FUNC, "No entry with upn [%s] found.\n", upn);
+        goto done;
     } else if (ret != EOK) {
         DEBUG(SSSDBG_OP_FAILURE, "Error: %d (%s)\n", ret, strerror(ret));
+        goto done;
     }
 
+    *msg = talloc_steal(mem_ctx, res->msgs[0]);
+
+    ret = EOK;
+
+done:
     talloc_zfree(tmp_ctx);
     return ret;
 }

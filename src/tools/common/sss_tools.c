@@ -43,6 +43,19 @@ static void sss_tool_print_common_opts(void)
                     _("Enable debug at level"));
 }
 
+static struct poptOption *sss_tool_common_opts_table(void)
+{
+    static struct poptOption common_opts[] = {
+        {"debug", '\0', POPT_ARG_INT, NULL,
+            0, NULL, NULL },
+        POPT_TABLEEND
+    };
+
+    common_opts[0].descrip = _("The debug level to run with");
+
+    return common_opts;
+}
+
 static void sss_tool_common_opts(struct sss_tool_ctx *tool_ctx,
                                  int *argc, const char **argv)
 {
@@ -121,7 +134,8 @@ static errno_t sss_tool_domains_init(TALLOC_CTX *mem_ctx,
         return ret;
     }
 
-    for (dom = domains; dom != NULL; dom = get_next_domain(dom, true)) {
+    for (dom = domains; dom != NULL;
+            dom = get_next_domain(dom, SSS_GND_DESCEND)) {
         if (!IS_SUBDOMAIN(dom)) {
             /* Update list of subdomains for this domain */
             ret = sysdb_update_subdomains(dom);
@@ -133,7 +147,8 @@ static errno_t sss_tool_domains_init(TALLOC_CTX *mem_ctx,
         }
     }
 
-    for (dom = domains; dom != NULL; dom = get_next_domain(dom, true)) {
+    for (dom = domains; dom != NULL;
+            dom = get_next_domain(dom, SSS_GND_DESCEND)) {
         ret = sss_names_init(mem_ctx, confdb, dom->name, &dom->names);
         if (ret != EOK) {
             DEBUG(SSSDBG_CRIT_FAILURE, "sss_names_init() failed\n");
@@ -247,11 +262,17 @@ int sss_tool_route(int argc, const char **argv,
     return sss_tool_usage(argv[0], commands);
 }
 
-static void sss_tool_popt_print_help(poptContext pc)
+static struct poptOption *nonnull_popt_table(struct poptOption *options)
 {
-    poptPrintHelp(pc, stderr, 0);
-    fprintf(stderr, "\n");
-    sss_tool_print_common_opts();
+    static struct poptOption empty[] = {
+        POPT_TABLEEND
+    };
+
+    if (options == NULL) {
+        return empty;
+    }
+
+    return options;
 }
 
 int sss_tool_popt_ex(struct sss_cmdline *cmdline,
@@ -263,20 +284,27 @@ int sss_tool_popt_ex(struct sss_cmdline *cmdline,
                      const char *fopt_help,
                      const char **_fopt)
 {
-    const char *optstr;
+    struct poptOption opts_table[] = {
+        {NULL, '\0', POPT_ARG_INCLUDE_TABLE, nonnull_popt_table(options), \
+         0, _("Command options:"), NULL },
+        {NULL, '\0', POPT_ARG_INCLUDE_TABLE, sss_tool_common_opts_table(), \
+         0, _("Common options:"), NULL },
+        POPT_AUTOHELP
+        POPT_TABLEEND
+    };
+    const char *fopt;
     char *help;
     poptContext pc;
     int ret;
 
     /* Create help option string. We always need to append command name since
      * we use POPT_CONTEXT_KEEP_FIRST. */
-    optstr = options == NULL ? "" : _(" [OPTIONS...]");
     if (fopt_name == NULL) {
-        help = talloc_asprintf(NULL, "%s %s%s",
-                               cmdline->exec, cmdline->command, optstr);
+        help = talloc_asprintf(NULL, "%s %s %s", cmdline->exec,
+                               cmdline->command, _("[OPTIONS...]"));
     } else {
-        help = talloc_asprintf(NULL, "%s %s %s%s",
-                           cmdline->exec, cmdline->command, fopt_name, optstr);
+        help = talloc_asprintf(NULL, "%s %s %s %s", cmdline->exec,
+                               cmdline->command, fopt_name, _("[OPTIONS...]"));
     }
     if (help == NULL) {
         DEBUG(SSSDBG_CRIT_FAILURE, "talloc_asprintf() failed\n");
@@ -287,7 +315,7 @@ int sss_tool_popt_ex(struct sss_cmdline *cmdline,
      * command argv which does not contain executable (argv[0]), therefore
      * we need to use KEEP_FIRST that ensures argv[0] is also processed. */
     pc = poptGetContext(cmdline->exec, cmdline->argc, cmdline->argv,
-                        options, POPT_CONTEXT_KEEP_FIRST);
+                        opts_table, POPT_CONTEXT_KEEP_FIRST);
 
     poptSetOtherOptionHelp(pc, help);
 
@@ -303,18 +331,18 @@ int sss_tool_popt_ex(struct sss_cmdline *cmdline,
         } else {
             fprintf(stderr, _("Invalid option %s: %s\n\n"),
                     poptBadOption(pc, 0), poptStrerror(ret));
-            sss_tool_popt_print_help(pc);
+            poptPrintHelp(pc, stderr, 0);
             ret = EXIT_FAILURE;
             goto done;
         }
     }
 
     /* Parse free option which is always required if requested. */
+    fopt = poptGetArg(pc);
     if (_fopt != NULL) {
-        *_fopt = poptGetArg(pc);
-        if (*_fopt == NULL) {
+        if (fopt == NULL) {
             fprintf(stderr, _("Missing option: %s\n\n"), fopt_help);
-            sss_tool_popt_print_help(pc);
+            poptPrintHelp(pc, stderr, 0);
             ret = EXIT_FAILURE;
             goto done;
         }
@@ -322,17 +350,25 @@ int sss_tool_popt_ex(struct sss_cmdline *cmdline,
         /* No more arguments expected. If something follows it is an error. */
         if (poptGetArg(pc)) {
             fprintf(stderr, _("Only one free argument is expected!\n\n"));
-            sss_tool_popt_print_help(pc);
+            poptPrintHelp(pc, stderr, 0);
             ret = EXIT_FAILURE;
             goto done;
         }
+
+        *_fopt = fopt;
+    } else if (_fopt == NULL && fopt != NULL) {
+        /* Unexpected free argument. */
+        fprintf(stderr, _("Unexpected parameter: %s\n\n"), fopt);
+        poptPrintHelp(pc, stderr, 0);
+        ret = EXIT_FAILURE;
+        goto done;
     }
 
     /* If at least one option is required and not provided, print error. */
     if (require_option == SSS_TOOL_OPT_REQUIRED
             && ((_fopt != NULL && cmdline->argc < 2) || cmdline->argc < 1)) {
         fprintf(stderr, _("At least one option is required!\n\n"));
-        sss_tool_popt_print_help(pc);
+        poptPrintHelp(pc, stderr, 0);
         ret = EXIT_FAILURE;
         goto done;
     }

@@ -60,6 +60,8 @@ errno_t sss_nss_check_header(struct sss_cli_mc_ctx *ctx)
     struct sss_mc_header h;
     bool copy_ok;
     int count;
+    int ret;
+    struct stat fdstat;
 
     /* retry barrier protected reading max 5 times then give up */
     for (count = 5; count > 0; count--) {
@@ -99,11 +101,23 @@ errno_t sss_nss_check_header(struct sss_cli_mc_ctx *ctx)
         }
     }
 
+    ret = fstat(ctx->fd, &fdstat);
+    if (ret == -1) {
+        return EIO;
+    }
+
+    if (fdstat.st_nlink == 0) {
+        /* memory cache was removed; we need to reinitialize it. */
+        return EINVAL;
+    }
+
     return 0;
 }
 
 static void sss_nss_mc_destroy_ctx(struct sss_cli_mc_ctx *ctx)
 {
+    uint32_t active_threads = ctx->active_threads;
+
     if ((ctx->mmap_base != NULL) && (ctx->mmap_size != 0)) {
         munmap(ctx->mmap_base, ctx->mmap_size);
     }
@@ -112,6 +126,9 @@ static void sss_nss_mc_destroy_ctx(struct sss_cli_mc_ctx *ctx)
     }
     memset(ctx, 0, sizeof(struct sss_cli_mc_ctx));
     ctx->fd = -1;
+
+    /* restore count of active threads */
+    ctx->active_threads = active_threads;
 }
 
 static errno_t sss_nss_mc_init_ctx(const char *name,

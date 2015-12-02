@@ -1146,7 +1146,6 @@ struct sdap_get_generic_ext_state {
     const char *filter;
     const char **attrs;
     int timeout;
-    int attrsonly;
     int sizelimit;
 
     struct sdap_op *op;
@@ -1163,7 +1162,7 @@ struct sdap_get_generic_ext_state {
     sdap_parse_cb parse_cb;
     void *cb_data;
 
-    bool allow_paging;
+    unsigned int flags;
 };
 
 static errno_t sdap_get_generic_ext_step(struct tevent_req *req);
@@ -1171,6 +1170,17 @@ static errno_t sdap_get_generic_ext_step(struct tevent_req *req);
 static void sdap_get_generic_op_finished(struct sdap_op *op,
                                          struct sdap_msg *reply,
                                          int error, void *pvt);
+
+enum {
+    /* Be silent about exceeded size limit */
+    SDAP_SRCH_FLG_SIZELIMIT_SILENT = 1 << 0,
+
+    /* Allow paging */
+    SDAP_SRCH_FLG_PAGING           = 1 << 1,
+
+    /* Only attribute descriptions are requested */
+    SDAP_SRCH_FLG_ATTRS_ONLY       = 1 << 2,
+};
 
 static struct tevent_req *
 sdap_get_generic_ext_send(TALLOC_CTX *memctx,
@@ -1181,14 +1191,13 @@ sdap_get_generic_ext_send(TALLOC_CTX *memctx,
                           int scope,
                           const char *filter,
                           const char **attrs,
-                          int attrsonly,
                           LDAPControl **serverctrls,
                           LDAPControl **clientctrls,
                           int sizelimit,
                           int timeout,
-                          bool allow_paging,
                           sdap_parse_cb parse_cb,
-                          void *cb_data)
+                          void *cb_data,
+                          unsigned int flags)
 {
     errno_t ret;
     struct sdap_get_generic_ext_state *state;
@@ -1206,7 +1215,6 @@ sdap_get_generic_ext_send(TALLOC_CTX *memctx,
     state->scope = scope;
     state->filter = filter;
     state->attrs = attrs;
-    state->attrsonly = attrsonly;
     state->op = NULL;
     state->sizelimit = sizelimit;
     state->timeout = timeout;
@@ -1215,6 +1223,7 @@ sdap_get_generic_ext_send(TALLOC_CTX *memctx,
     state->parse_cb = parse_cb;
     state->cb_data = cb_data;
     state->clientctrls = clientctrls;
+    state->flags = flags;
 
     if (state->sh == NULL || state->sh->ldap == NULL) {
         DEBUG(SSSDBG_CRIT_FAILURE,
@@ -1229,10 +1238,11 @@ sdap_get_generic_ext_send(TALLOC_CTX *memctx,
     /* Be extra careful and never allow paging for BASE searches,
      * even if requested.
      */
-    if (scope == LDAP_SCOPE_BASE) {
-        state->allow_paging = false;
-    } else {
-        state->allow_paging = allow_paging;
+    if (scope == LDAP_SCOPE_BASE && (flags & SDAP_SRCH_FLG_PAGING)) {
+        /* Disable paging */
+        flags &= ~SDAP_SRCH_FLG_PAGING;
+        DEBUG(SSSDBG_TRACE_FUNC,
+              "WARNING: Disabling paging because scope is set to base.\n");
     }
 
     /* Also check for deref/asq requests and force
@@ -1243,7 +1253,7 @@ sdap_get_generic_ext_send(TALLOC_CTX *memctx,
                                 serverctrls,
                                 NULL);
     if (control) {
-        state->allow_paging = true;
+        flags |= SDAP_SRCH_FLG_PAGING;
     }
 
     /* ASQ */
@@ -1251,7 +1261,7 @@ sdap_get_generic_ext_send(TALLOC_CTX *memctx,
                                 serverctrls,
                                 NULL);
     if (control) {
-        state->allow_paging = true;
+        flags |= SDAP_SRCH_FLG_PAGING;
     }
 
     for (state->nserverctrls=0;
@@ -1319,7 +1329,7 @@ static errno_t sdap_get_generic_ext_step(struct tevent_req *req)
     disable_paging = dp_opt_get_bool(state->opts->basic, SDAP_DISABLE_PAGING);
 
     if (!disable_paging
-            && state->allow_paging
+            && (state->flags & SDAP_SRCH_FLG_PAGING)
             && sdap_is_control_supported(state->sh,
                                          LDAP_CONTROL_PAGEDRESULTS)) {
         lret = ldap_create_page_control(state->sh->ldap,
@@ -1340,7 +1350,8 @@ static errno_t sdap_get_generic_ext_step(struct tevent_req *req)
     lret = ldap_search_ext(state->sh->ldap, state->search_base,
                            state->scope, state->filter,
                            discard_const(state->attrs),
-                           state->attrsonly, state->serverctrls,
+                           (state->flags & SDAP_SRCH_FLG_ATTRS_ONLY),
+                           state->serverctrls,
                            state->clientctrls, NULL, state->sizelimit, &msgid);
     ldap_control_free(page_control);
     state->serverctrls[state->nserverctrls] = NULL;
@@ -1500,8 +1511,12 @@ static void sdap_get_generic_op_finished(struct sdap_op *op,
 
         if (result == LDAP_SIZELIMIT_EXCEEDED) {
             /* Try to return what we've got */
-            DEBUG(SSSDBG_MINOR_FAILURE,
-                  "LDAP sizelimit was exceeded, returning incomplete data\n");
+
+            if ( ! (state->flags & SDAP_SRCH_FLG_SIZELIMIT_SILENT)) {
+                DEBUG(SSSDBG_MINOR_FAILURE,
+                      "LDAP sizelimit was exceeded, "
+                      "returning incomplete data\n");
+            }
         } else if (result == LDAP_INAPPROPRIATE_MATCHING) {
             /* This error should only occur when we're testing for
              * specialized functionality like the ldap matching rule
@@ -1696,6 +1711,7 @@ struct tevent_req *sdap_get_and_parse_generic_send(TALLOC_CTX *memctx,
     struct tevent_req *req = NULL;
     struct tevent_req *subreq = NULL;
     struct sdap_get_and_parse_generic_state *state = NULL;
+    unsigned int flags = 0;
 
     req = tevent_req_create(memctx, &state,
                             struct sdap_get_and_parse_generic_state);
@@ -1705,10 +1721,19 @@ struct tevent_req *sdap_get_and_parse_generic_send(TALLOC_CTX *memctx,
     state->map_num_attrs = map_num_attrs;
     state->opts = opts;
 
+    if (allow_paging) {
+        flags |= SDAP_SRCH_FLG_PAGING;
+    }
+
+    if (attrsonly) {
+        flags |= SDAP_SRCH_FLG_ATTRS_ONLY;
+    }
+
     subreq = sdap_get_generic_ext_send(state, ev, opts, sh, search_base,
-                                       scope, filter, attrs, false, NULL,
-                                       NULL, sizelimit, timeout, allow_paging,
-                                       sdap_get_and_parse_generic_parse_entry, state);
+                                       scope, filter, attrs, serverctrls,
+                                       clientctrls, sizelimit, timeout,
+                                       sdap_get_and_parse_generic_parse_entry,
+                                       state, flags);
     if (!subreq) {
         talloc_zfree(req);
         return NULL;
@@ -1917,9 +1942,9 @@ sdap_x_deref_search_send(TALLOC_CTX *memctx, struct tevent_context *ev,
                                        filter == NULL ? LDAP_SCOPE_BASE
                                                       : LDAP_SCOPE_SUBTREE,
                                        filter, attrs,
-                                       false, state->ctrls, NULL, 0, timeout,
-                                       true, sdap_x_deref_parse_entry,
-                                       state);
+                                       state->ctrls, NULL, 0, timeout,
+                                       sdap_x_deref_parse_entry,
+                                       state, SDAP_SRCH_FLG_PAGING);
     if (!subreq) {
         talloc_zfree(req);
         return NULL;
@@ -2141,9 +2166,9 @@ sdap_sd_search_send(TALLOC_CTX *memctx, struct tevent_context *ev,
     DEBUG(SSSDBG_TRACE_FUNC, "Searching entry [%s] using SD\n", base_dn);
     subreq = sdap_get_generic_ext_send(state, ev, opts, sh, base_dn,
                                        LDAP_SCOPE_BASE, "(objectclass=*)", attrs,
-                                       false, state->ctrls, NULL, 0, timeout,
-                                       true, sdap_sd_search_parse_entry,
-                                       state);
+                                       state->ctrls, NULL, 0, timeout,
+                                       sdap_sd_search_parse_entry,
+                                       state, SDAP_SRCH_FLG_PAGING);
     if (!subreq) {
         ret = EIO;
         goto fail;
@@ -2340,9 +2365,9 @@ sdap_asq_search_send(TALLOC_CTX *memctx, struct tevent_context *ev,
     DEBUG(SSSDBG_TRACE_FUNC, "Dereferencing entry [%s] using ASQ\n", base_dn);
     subreq = sdap_get_generic_ext_send(state, ev, opts, sh, base_dn,
                                        LDAP_SCOPE_BASE, NULL, attrs,
-                                       false, state->ctrls, NULL, 0, timeout,
-                                       true, sdap_asq_search_parse_entry,
-                                       state);
+                                       state->ctrls, NULL, 0, timeout,
+                                       sdap_asq_search_parse_entry,
+                                       state, SDAP_SRCH_FLG_PAGING);
     if (!subreq) {
         talloc_zfree(req);
         return NULL;
@@ -2586,9 +2611,12 @@ sdap_posix_check_send(TALLOC_CTX *memctx, struct tevent_context *ev,
     state->attrs[2] = opts->group_map[SDAP_AT_GROUP_GID].name;
     state->attrs[3] = NULL;
 
-    state->filter = talloc_asprintf(state, "(|(%s=*)(%s=*))",
+    state->filter = talloc_asprintf(state,
+        "(|(&(%s=*)(objectclass=%s))(&(%s=*)(objectclass=%s)))",
                                     opts->user_map[SDAP_AT_USER_UID].name,
-                                    opts->group_map[SDAP_AT_GROUP_GID].name);
+                                    opts->user_map[SDAP_OC_USER].name,
+                                    opts->group_map[SDAP_AT_GROUP_GID].name,
+                                    opts->group_map[SDAP_OC_GROUP].name);
     if (state->filter == NULL) {
         ret = ENOMEM;
         goto fail;
@@ -2621,10 +2649,10 @@ static errno_t sdap_posix_check_next(struct tevent_req *req)
                                  state->sh,
                                  state->search_bases[state->base_iter]->basedn,
                                  LDAP_SCOPE_SUBTREE, state->filter,
-                                 state->attrs, false,
+                                 state->attrs,
                                  NULL, NULL, 1, state->timeout,
-                                 false, sdap_posix_check_parse,
-                                 state);
+                                 sdap_posix_check_parse, state,
+                                 SDAP_SRCH_FLG_SIZELIMIT_SILENT);
     if (subreq == NULL) {
         return ENOMEM;
     }
@@ -2671,9 +2699,8 @@ static errno_t sdap_posix_check_parse(struct sdap_handle *sh,
     errno = 0;
     strtouint32(vals[0]->bv_val, &endptr, 10);
     if (errno || *endptr || (vals[0]->bv_val == endptr)) {
-        DEBUG(SSSDBG_OP_FAILURE,
+        DEBUG(SSSDBG_MINOR_FAILURE,
               "POSIX attribute is not a number: %s\n", vals[0]->bv_val);
-        goto done;
     }
 
     state->has_posix = true;

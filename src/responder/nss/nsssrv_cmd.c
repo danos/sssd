@@ -135,7 +135,7 @@ void nss_update_pw_memcache(struct nss_ctx *nctx)
 
     now = time(NULL);
 
-    for (dom = nctx->rctx->domains; dom; dom = get_next_domain(dom, false)) {
+    for (dom = nctx->rctx->domains; dom; dom = get_next_domain(dom, 0)) {
         ret = sysdb_enumpwent_with_views(nctx, dom, &res);
         if (ret != EOK) {
             DEBUG(SSSDBG_CRIT_FAILURE,
@@ -600,6 +600,124 @@ is_refreshed_on_bg(enum sss_dp_acct_type req_type,
 
 static void nsssrv_dp_send_acct_req_done(struct tevent_req *req);
 
+static void get_dp_name_and_id(TALLOC_CTX *mem_ctx,
+                              struct sss_domain_info *dom,
+                              enum sss_dp_acct_type req_type,
+                              const char *opt_name,
+                              uint32_t opt_id,
+                              const char **_name,
+                              uint32_t *_id)
+{
+    TALLOC_CTX *tmp_ctx;
+    struct ldb_result *res = NULL;
+    const char *attr;
+    const char *name;
+    uint32_t id;
+    errno_t ret;
+
+    /* First set the same values to make things easier. */
+    *_name = opt_name;
+    *_id = opt_id;
+
+    if (!DOM_HAS_VIEWS(dom) || !is_local_view(dom->view_name)) {
+        DEBUG(SSSDBG_TRACE_FUNC, "Not a LOCAL view, continuing with "
+              "provided values.\n");
+        return;
+    }
+
+    tmp_ctx = talloc_new(NULL);
+    if (tmp_ctx == NULL) {
+        DEBUG(SSSDBG_CRIT_FAILURE, "talloc_new() failed\n");
+        return;
+    }
+
+    if (opt_name != NULL) {
+        switch (req_type) {
+        case SSS_DP_USER:
+        case SSS_DP_INITGROUPS:
+            ret = sysdb_getpwnam_with_views(tmp_ctx, dom, opt_name, &res);
+            if (ret != EOK) {
+                DEBUG(SSSDBG_CONF_SETTINGS,
+                      "sysdb_getpwnam_with_views() failed [%d]: %s\n",
+                      ret, sss_strerror(ret));
+                goto done;
+            }
+            break;
+        case SSS_DP_GROUP:
+            ret = sysdb_getgrnam_with_views(tmp_ctx, dom, opt_name, &res);
+            if (ret != EOK) {
+                DEBUG(SSSDBG_CONF_SETTINGS,
+                      "sysdb_getgrnam_with_views() failed [%d]: %s\n",
+                      ret, sss_strerror(ret));
+                goto done;
+            }
+            break;
+        default:
+            goto done;
+        }
+
+        if (res == NULL || res->count != 1) {
+            /* This should not happen with LOCAL view and overridden value. */
+            DEBUG(SSSDBG_TRACE_FUNC, "Entry is missing?! Continuing with "
+                  "provided values.\n");
+            goto done;
+        }
+
+        name = ldb_msg_find_attr_as_string(res->msgs[0], SYSDB_NAME, NULL);
+        if (name == NULL) {
+            DEBUG(SSSDBG_CRIT_FAILURE, "Bug: name cannot be NULL\n");
+            goto done;
+        }
+
+        *_name = talloc_steal(mem_ctx, name);
+    } else if (opt_id != 0) {
+        switch (req_type) {
+        case SSS_DP_USER:
+            ret = sysdb_getpwuid_with_views(tmp_ctx, dom, opt_id, &res);
+            if (ret != EOK) {
+                DEBUG(SSSDBG_CONF_SETTINGS,
+                      "sysdb_getpwuid_with_views() failed [%d]: %s\n",
+                      ret, sss_strerror(ret));
+                goto done;
+            }
+
+            attr = SYSDB_UIDNUM;
+            break;
+        case SSS_DP_GROUP:
+            ret = sysdb_getgrgid_with_views(tmp_ctx, dom, opt_id, &res);
+            if (ret != EOK) {
+                DEBUG(SSSDBG_CONF_SETTINGS,
+                      "sysdb_getgrgid_with_views() failed [%d]: %s\n",
+                      ret, sss_strerror(ret));
+                goto done;
+            }
+
+            attr = SYSDB_GIDNUM;
+            break;
+        default:
+            goto done;
+        }
+
+        if (res == NULL || res->count != 1) {
+            /* This should not happen with LOCAL view and overridden value. */
+            DEBUG(SSSDBG_TRACE_FUNC, "Entry is missing?! Continuing with "
+                  "provided values.\n");
+            goto done;
+        }
+
+        id = ldb_msg_find_attr_as_uint64(res->msgs[0], attr, 0);
+        if (id == 0) {
+            DEBUG(SSSDBG_CRIT_FAILURE, "Bug: id cannot be 0\n");
+            goto done;
+        }
+
+        *_id = id;
+    }
+
+done:
+    talloc_free(tmp_ctx);
+}
+
 /* FIXME: do not check res->count, but get in a msgs and check in parent */
 errno_t check_cache(struct nss_dom_ctx *dctx,
                     struct nss_ctx *nctx,
@@ -617,6 +735,8 @@ errno_t check_cache(struct nss_dom_ctx *dctx,
     struct tevent_req *req = NULL;
     struct dp_callback_ctx *cb_ctx = NULL;
     uint64_t cacheExpire = 0;
+    const char *name = opt_name;
+    uint32_t id = opt_id;
 
     /* when searching for a user or netgroup, more than one reply is a
      * db error
@@ -627,6 +747,11 @@ errno_t check_cache(struct nss_dom_ctx *dctx,
               "getpwXXX call returned more than one result! DB Corrupted?\n");
         return ENOENT;
     }
+
+    /* In case of local view we have to always contant DP with the original
+     * name or id. */
+    get_dp_name_and_id(dctx->cmdctx, dctx->domain, req_type, opt_name, opt_id,
+                       &name, &id);
 
     /* if we have any reply let's check cache validity, but ignore netgroups
      * if refresh_expired_interval is set (which implies that another method
@@ -672,10 +797,10 @@ errno_t check_cache(struct nss_dom_ctx *dctx,
          * immediately.
          */
         DEBUG(SSSDBG_TRACE_FUNC,
-             "Performing midpoint cache update on [%s]\n", opt_name);
+             "Performing midpoint cache update on [%s]\n", name);
 
         req = sss_dp_get_account_send(cctx, cctx->rctx, dctx->domain, true,
-                                      req_type, opt_name, opt_id, extra);
+                                      req_type, name, id, extra);
         if (!req) {
             DEBUG(SSSDBG_CRIT_FAILURE,
                   "Out of memory sending out-of-band data provider "
@@ -704,7 +829,7 @@ errno_t check_cache(struct nss_dom_ctx *dctx,
         }
 
         req = sss_dp_get_account_send(cctx, cctx->rctx, dctx->domain, true,
-                                      req_type, opt_name, opt_id, extra);
+                                      req_type, name, id, extra);
         if (!req) {
             DEBUG(SSSDBG_CRIT_FAILURE,
                   "Out of memory sending data provider request\n");
@@ -857,7 +982,7 @@ static int nss_cmd_getpwnam_search(struct nss_dom_ctx *dctx)
          * qualified names instead */
         while (dom && cmdctx->check_next && dom->fqnames
                 && !cmdctx->name_is_upn) {
-            dom = get_next_domain(dom, false);
+            dom = get_next_domain(dom, 0);
         }
 
         if (!dom) break;
@@ -895,7 +1020,11 @@ static int nss_cmd_getpwnam_search(struct nss_dom_ctx *dctx)
                    name, dom->name);
             /* if a multidomain search, try with next */
             if (cmdctx->check_next) {
-                dom = get_next_domain(dom, false);
+                if (cmdctx->name_is_upn) {
+                    dom = get_next_domain(dom, SSS_GND_DESCEND);
+                } else {
+                    dom = get_next_domain(dom, 0);
+                }
                 continue;
             }
             /* There are no further domains or this was a
@@ -970,7 +1099,11 @@ static int nss_cmd_getpwnam_search(struct nss_dom_ctx *dctx)
 
             /* if a multidomain search, try with next */
             if (cmdctx->check_next) {
-                dom = get_next_domain(dom, false);
+                if (cmdctx->name_is_upn) {
+                    dom = get_next_domain(dom, SSS_GND_DESCEND);
+                } else {
+                    dom = get_next_domain(dom, 0);
+                }
                 if (dom) continue;
             }
 
@@ -1087,7 +1220,7 @@ static void nss_cmd_getby_dp_callback(uint16_t err_maj, uint32_t err_min,
     struct nss_cmd_ctx *cmdctx = dctx->cmdctx;
     struct cli_ctx *cctx = cmdctx->cctx;
     int ret;
-    bool check_subdomains;
+    uint32_t gnd_flags;
     struct nss_ctx *nctx = talloc_get_type(cctx->rctx->pvt_ctx, struct nss_ctx);
 
     if (err_maj) {
@@ -1133,7 +1266,7 @@ static void nss_cmd_getby_dp_callback(uint16_t err_maj, uint32_t err_min,
 
         /* Since subdomain users and groups are fully qualified they are
          * typically not subject of multi-domain searches. But since POSIX
-         * ID do not contain a domain name we have to decend to subdomains
+         * ID do not contain a domain name we have to descend to subdomains
          * here. */
         switch (dctx->cmdctx->cmd) {
         case SSS_NSS_GETPWUID:
@@ -1144,7 +1277,7 @@ static void nss_cmd_getby_dp_callback(uint16_t err_maj, uint32_t err_min,
                       "Cannot set negative cache for UID %"PRIu32"\n",
                       cmdctx->id);
             }
-            check_subdomains = true;
+            gnd_flags = SSS_GND_DESCEND;
             break;
         case SSS_NSS_GETGRGID:
             ret = sss_ncache_set_gid(nctx->ncache, false, dctx->domain,
@@ -1154,7 +1287,7 @@ static void nss_cmd_getby_dp_callback(uint16_t err_maj, uint32_t err_min,
                       "Cannot set negative cache for GID %"PRIu32"\n",
                       cmdctx->id);
             }
-            check_subdomains = true;
+            gnd_flags = SSS_GND_DESCEND;
             break;
         case SSS_NSS_GETSIDBYID:
             ret = sss_ncache_set_uid(nctx->ncache, false, dctx->domain,
@@ -1171,16 +1304,17 @@ static void nss_cmd_getby_dp_callback(uint16_t err_maj, uint32_t err_min,
                       "Cannot set negative cache for GID %"PRIu32"\n",
                       cmdctx->id);
             }
-            check_subdomains = true;
+            gnd_flags = SSS_GND_DESCEND;
             break;
         default:
-            check_subdomains = false;
+            /* Do not descend to subdomains */
+            gnd_flags = 0;
         }
 
         /* no previous results, just loop to next domain if possible */
         if (cmdctx->check_next &&
-            get_next_domain(dctx->domain, check_subdomains)) {
-            dctx->domain = get_next_domain(dctx->domain, check_subdomains);
+            get_next_domain(dctx->domain, gnd_flags)) {
+            dctx->domain = get_next_domain(dctx->domain, gnd_flags);
             dctx->check_provider = NEED_CHECK_PROVIDER(dctx->domain->provider);
         } else {
             /* nothing available */
@@ -1652,7 +1786,7 @@ static int nss_cmd_getpwuid_search(struct nss_dom_ctx *dctx)
                       "(id out of range)\n",
                       cmdctx->id, dom->name);
             if (cmdctx->check_next) {
-                dom = get_next_domain(dom, true);
+                dom = get_next_domain(dom, SSS_GND_DESCEND);
                 continue;
             }
             ret = ENOENT;
@@ -1699,7 +1833,7 @@ static int nss_cmd_getpwuid_search(struct nss_dom_ctx *dctx)
         if (dctx->res->count == 0 && !dctx->check_provider) {
             /* if a multidomain search, try with next */
             if (cmdctx->check_next) {
-                dom = get_next_domain(dom, true);
+                dom = get_next_domain(dom, SSS_GND_DESCEND);
                 continue;
             }
 
@@ -2057,7 +2191,8 @@ struct tevent_req *nss_cmd_setpwent_send(TALLOC_CTX *mem_ctx,
     }
 
     /* check if enumeration is enabled in any domain */
-    for (dom = client->rctx->domains; dom; dom = get_next_domain(dom, true)) {
+    for (dom = client->rctx->domains; dom;
+            dom = get_next_domain(dom, SSS_GND_DESCEND)) {
         if (dom->enumerate == true) break;
     }
     state->dctx->domain = dom;
@@ -2169,7 +2304,7 @@ static errno_t nss_cmd_setpwent_step(struct setent_step_ctx *step_ctx)
 
     while (dom) {
         while (dom && dom->enumerate == false) {
-            dom = get_next_domain(dom, true);
+            dom = get_next_domain(dom, SSS_GND_DESCEND);
         }
 
         if (!dom) break;
@@ -2229,14 +2364,14 @@ static errno_t nss_cmd_setpwent_step(struct setent_step_ctx *step_ctx)
             DEBUG(SSSDBG_CRIT_FAILURE,
                   "Enum from cache failed, skipping domain [%s]\n",
                       dom->name);
-            dom = get_next_domain(dom, true);
+            dom = get_next_domain(dom, SSS_GND_DESCEND);
             continue;
         }
 
         if (res->count == 0) {
             DEBUG(SSSDBG_CONF_SETTINGS,
                   "Domain [%s] has no users, skipping.\n", dom->name);
-            dom = get_next_domain(dom, true);
+            dom = get_next_domain(dom, SSS_GND_DESCEND);
             continue;
         }
 
@@ -2254,7 +2389,7 @@ static errno_t nss_cmd_setpwent_step(struct setent_step_ctx *step_ctx)
         nctx->pctx->num++;
 
         /* do not reply until all domain searches are done */
-        dom = get_next_domain(dom, true);
+        dom = get_next_domain(dom, SSS_GND_DESCEND);
     }
 
     /* We've finished all our lookups
@@ -2556,7 +2691,7 @@ void nss_update_gr_memcache(struct nss_ctx *nctx)
 
     now = time(NULL);
 
-    for (dom = nctx->rctx->domains; dom; dom = get_next_domain(dom, false)) {
+    for (dom = nctx->rctx->domains; dom; dom = get_next_domain(dom, 0)) {
         ret = sysdb_enumgrent_with_views(nctx, dom, &res);
         if (ret != EOK) {
             DEBUG(SSSDBG_CRIT_FAILURE,
@@ -3063,7 +3198,7 @@ static int nss_cmd_getgrnam_search(struct nss_dom_ctx *dctx)
        /* if it is a domainless search, skip domains that require fully
          * qualified names instead */
         while (dom && cmdctx->check_next && dom->fqnames) {
-            dom = get_next_domain(dom, false);
+            dom = get_next_domain(dom, 0);
         }
 
         if (!dom) break;
@@ -3101,7 +3236,7 @@ static int nss_cmd_getgrnam_search(struct nss_dom_ctx *dctx)
                    name, dom->name);
             /* if a multidomain search, try with next */
             if (cmdctx->check_next) {
-                dom = get_next_domain(dom, false);
+                dom = get_next_domain(dom, 0);
                 continue;
             }
             /* There are no further domains or this was a
@@ -3146,7 +3281,7 @@ static int nss_cmd_getgrnam_search(struct nss_dom_ctx *dctx)
 
             /* if a multidomain search, try with next */
             if (cmdctx->check_next) {
-                dom = get_next_domain(dom, false);
+                dom = get_next_domain(dom, 0);
                 if (dom) continue;
             }
 
@@ -3234,7 +3369,7 @@ static int nss_cmd_getgrgid_search(struct nss_dom_ctx *dctx)
                       "(id out of range)\n",
                       cmdctx->id, dom->name);
             if (cmdctx->check_next) {
-                dom = get_next_domain(dom, true);
+                dom = get_next_domain(dom, SSS_GND_DESCEND);
                 continue;
             }
             ret = ENOENT;
@@ -3281,7 +3416,7 @@ static int nss_cmd_getgrgid_search(struct nss_dom_ctx *dctx)
         if (dctx->res->count == 0 && !dctx->check_provider) {
             /* if a multidomain search, try with next */
             if (cmdctx->check_next) {
-                dom = get_next_domain(dom, true);
+                dom = get_next_domain(dom, SSS_GND_DESCEND);
                 continue;
             }
 
@@ -3419,7 +3554,8 @@ struct tevent_req *nss_cmd_setgrent_send(TALLOC_CTX *mem_ctx,
     }
 
     /* check if enumeration is enabled in any domain */
-    for (dom = client->rctx->domains; dom; dom = get_next_domain(dom, true)) {
+    for (dom = client->rctx->domains; dom;
+            dom = get_next_domain(dom, SSS_GND_DESCEND)) {
         if (dom->enumerate == true) break;
     }
     state->dctx->domain = dom;
@@ -3531,7 +3667,7 @@ static errno_t nss_cmd_setgrent_step(struct setent_step_ctx *step_ctx)
 
     while (dom) {
         while (dom && dom->enumerate == false) {
-            dom = get_next_domain(dom, true);
+            dom = get_next_domain(dom, SSS_GND_DESCEND);
         }
 
         if (!dom) break;
@@ -3591,14 +3727,14 @@ static errno_t nss_cmd_setgrent_step(struct setent_step_ctx *step_ctx)
             DEBUG(SSSDBG_CRIT_FAILURE,
                   "Enum from cache failed, skipping domain [%s]\n",
                       dom->name);
-            dom = get_next_domain(dom, true);
+            dom = get_next_domain(dom, SSS_GND_DESCEND);
             continue;
         }
 
         if (res->count == 0) {
             DEBUG(SSSDBG_CONF_SETTINGS,
                   "Domain [%s] has no groups, skipping.\n", dom->name);
-            dom = get_next_domain(dom, true);
+            dom = get_next_domain(dom, SSS_GND_DESCEND);
             continue;
         }
 
@@ -3616,7 +3752,7 @@ static errno_t nss_cmd_setgrent_step(struct setent_step_ctx *step_ctx)
         nctx->gctx->num++;
 
         /* do not reply until all domain searches are done */
-        dom = get_next_domain(dom, true);
+        dom = get_next_domain(dom, SSS_GND_DESCEND);
     }
 
     /* We've finished all our lookups
@@ -3908,7 +4044,7 @@ void nss_update_initgr_memcache(struct nss_ctx *nctx,
     int ret;
     int i, j;
 
-    for (dom = nctx->rctx->domains; dom; dom = get_next_domain(dom, false)) {
+    for (dom = nctx->rctx->domains; dom; dom = get_next_domain(dom, 0)) {
         if (strcasecmp(dom->name, domain) == 0) {
             break;
         }
@@ -4177,7 +4313,7 @@ static int nss_cmd_initgroups_search(struct nss_dom_ctx *dctx)
          * qualified names instead */
         while (dom && cmdctx->check_next && dom->fqnames
                 && !cmdctx->name_is_upn) {
-            dom = get_next_domain(dom, false);
+            dom = get_next_domain(dom, 0);
         }
 
         if (!dom) break;
@@ -4217,7 +4353,7 @@ static int nss_cmd_initgroups_search(struct nss_dom_ctx *dctx)
                    name, dom->name);
             /* if a multidomain search, try with next */
             if (cmdctx->check_next) {
-                dom = get_next_domain(dom, false);
+                dom = get_next_domain(dom, 0);
                 continue;
             }
             /* There are no further domains or this was a
@@ -4291,7 +4427,7 @@ static int nss_cmd_initgroups_search(struct nss_dom_ctx *dctx)
 
             /* if a multidomain search, try with next */
             if (cmdctx->check_next) {
-                dom = get_next_domain(dom, false);
+                dom = get_next_domain(dom, 0);
                 if (dom) continue;
             }
 
@@ -4388,7 +4524,7 @@ static errno_t nss_cmd_getsidby_search(struct nss_dom_ctx *dctx)
                        "(id out of range)\n",
                        cmdctx->id, dom->name);
                 if (cmdctx->check_next) {
-                    dom = get_next_domain(dom, true);
+                    dom = get_next_domain(dom, SSS_GND_DESCEND);
                     continue;
                 }
                 ret = ENOENT;
@@ -4398,7 +4534,7 @@ static errno_t nss_cmd_getsidby_search(struct nss_dom_ctx *dctx)
            /* if it is a domainless search, skip domains that require fully
             * qualified names instead */
             while (dom && cmdctx->check_next && dom->fqnames) {
-                dom = get_next_domain(dom, false);
+                dom = get_next_domain(dom, 0);
             }
 
             if (!dom) break;
@@ -4429,7 +4565,7 @@ static errno_t nss_cmd_getsidby_search(struct nss_dom_ctx *dctx)
                     /* if a multidomain search, try with next, including
                      * sub-domains */
                     if (cmdctx->check_next) {
-                        dom = get_next_domain(dom, true);
+                        dom = get_next_domain(dom, SSS_GND_DESCEND);
                         continue;
                     }
                     /* There are no further domains. */
@@ -4485,7 +4621,7 @@ static errno_t nss_cmd_getsidby_search(struct nss_dom_ctx *dctx)
                            name, dom->name);
                     /* if a multidomain search, try with next */
                     if (cmdctx->check_next) {
-                        dom = get_next_domain(dom, false);
+                        dom = get_next_domain(dom, 0);
                         continue;
                     }
                     /* There are no further domains or this was a
@@ -4614,7 +4750,7 @@ static errno_t nss_cmd_getsidby_search(struct nss_dom_ctx *dctx)
             }
             /* if a multidomain search, try with next */
             if (cmdctx->check_next) {
-                dom = get_next_domain(dom, true);
+                dom = get_next_domain(dom, SSS_GND_DESCEND);
                 continue;
             }
 
