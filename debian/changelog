@@ -1,3 +1,11 @@
+sssd (1.13.2-1) UNRELEASED; urgency=medium
+
+  * New upstream release.
+  * patches: Removed fix-obsolete-target.diff, fix-python-modules.diff,
+    both upstream now.
+
+ -- Timo Aaltonen <tjaalton@debian.org>  Wed, 02 Dec 2015 20:24:42 +0200
+
 sssd (1.13.1-2) unstable; urgency=medium
 
   * apparmor: Fix access to krb5.include.d. (LP: #1489378)
