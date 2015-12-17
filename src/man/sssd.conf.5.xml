@@ -365,6 +365,35 @@
                             </para>
                         </listitem>
                     </varlistentry>
+                    <varlistentry>
+                        <term>certificate_verification (string)</term>
+                        <listitem>
+                            <para>
+                                With this parameter the certificate verification
+                                can be tuned with a comma separated list of
+                                options. Supported options are:
+                                <variablelist>
+                                <varlistentry>
+                                    <term>no_ocsp</term>
+                                    <listitem>
+                                        <para>Disables Online Certificate Status
+                                        Protocol (OCSP) checks. This might be
+                                        needed if the OCSP servers defined in
+                                        the certificate are not reachable from
+                                        the client.</para>
+                                    </listitem>
+                                </varlistentry>
+                                </variablelist>
+                            </para>
+                            <para>
+                                Unknown options are reported but ignored.
+                            </para>
+                            <para>
+                                Default: not set, i.e. do not restrict
+                                certificate vertification
+                            </para>
+                        </listitem>
+                    </varlistentry>
                 </variablelist>
             </para>
         </refsect2>
@@ -742,10 +771,16 @@ fallback_homedir = /home/%u
                     <listitem>
                         <para>
                             Specifies time in seconds for which records
-                            in the in-memory cache will be valid
+                            in the in-memory cache will be valid.
                         </para>
                         <para>
                             Default: 300
+                        </para>
+                        <para>
+                            NOTE: If the environment variable
+                            SSS_NSS_USE_MEMCACHE is set to "NO", client
+                            applications will not use the fast in-memory
+                            cache.
                         </para>
                     </listitem>
                 </varlistentry>
@@ -1907,6 +1942,15 @@ pam_account_expired_message = Account expired, please call help desk.
                                 <refentrytitle>sssd-ipa</refentrytitle>
                                 <manvolnum>5</manvolnum>
                             </citerefentry> for more information on configuring IPA.
+                        </para>
+                        <para>
+                            <quote>ad</quote> to load maps stored in an AD
+                            server. See
+                            <citerefentry>
+                                <refentrytitle>sssd-ad</refentrytitle>
+                                <manvolnum>5</manvolnum>
+                            </citerefentry> for more information on configuring
+                            the AD provider.
                         </para>
                         <para>
                             <quote>none</quote> disables autofs explicitly.

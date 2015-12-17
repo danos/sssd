@@ -506,7 +506,7 @@ sdap_idmap_sid_to_unix(struct sdap_idmap_ctx *idmap_ctx,
         DEBUG(SSSDBG_IMPORTANT_INFO,
               "Object SID [%s] has a RID that is larger than the "
               "ldap_idmap_range_size. See the \"ID MAPPING\" section of "
-              "sssd-ad(5) for an explanation of how to resolve this issue.",
+              "sssd-ad(5) for an explanation of how to resolve this issue.\n",
               sid_str);
         /* Fall through intentionally */
     default:
@@ -559,6 +559,12 @@ bool sdap_idmap_domain_has_algorithmic_mapping(struct sdap_idmap_ctx *ctx,
     if (err == IDMAP_SUCCESS) {
         return has_algorithmic_mapping;
     } else if (err != IDMAP_NAME_UNKNOWN && err != IDMAP_NO_DOMAIN) {
+        return false;
+    }
+
+    /* If there is no SID, e.g. IPA without enabled trust support, we cannot
+     * have algorithmic mapping */
+    if (dom_sid == NULL) {
         return false;
     }
 

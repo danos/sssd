@@ -76,6 +76,7 @@ keytabdir = $(sss_statedir)/keytabs
 pkgconfigdir = $(libdir)/pkgconfig
 krb5rcachedir = @krb5rcachedir@
 sudolibdir = @sudolibpath@
+polkitdir = @polkitdir@
 
 UNICODE_LIBS=@UNICODE_LIBS@
 
@@ -150,6 +151,12 @@ sssdlibexec_PROGRAMS += selinux_child
 endif
 if HAVE_NSS
 sssdlibexec_PROGRAMS += p11_child
+if SSSD_USER
+if HAVE_POLKIT_RULES_D
+polkit_rulesdir = $(polkitdir)
+dist_polkit_rules_DATA = contrib/sssd-pcsc.rules
+endif
+endif
 endif
 
 if BUILD_PAC_RESPONDER
@@ -1515,6 +1522,7 @@ krb5_utils_tests_SOURCES = \
     src/providers/krb5/krb5_utils.c \
     src/providers/krb5/krb5_ccache.c \
     src/providers/krb5/krb5_common.c \
+    src/providers/krb5/krb5_opts.c \
     src/util/sss_krb5.c \
     src/providers/data_provider_fo.c \
     src/providers/data_provider_opts.c \
@@ -1649,6 +1657,10 @@ ipa_ldap_opt_tests_SOURCES = \
     src/providers/ldap/sdap.c \
     src/providers/ldap/sdap_range.c \
     src/providers/ldap/sdap_domain.c \
+    src/providers/ldap/ldap_opts.c \
+    src/providers/ad/ad_opts.c \
+    src/providers/ipa/ipa_opts.c \
+    src/providers/krb5/krb5_opts.c \
     src/util/sss_ldap.c \
     src/tests/ipa_ldap_opt-tests.c
 ipa_ldap_opt_tests_CFLAGS = \
@@ -1663,6 +1675,9 @@ ipa_ldap_opt_tests_LDADD = \
     libsss_test_common.la
 
 ad_ldap_opt_tests_SOURCES = \
+    src/providers/ldap/ldap_opts.c \
+    src/providers/ad/ad_opts.c \
+    src/providers/krb5/krb5_opts.c \
     src/tests/ad_ldap_opt-tests.c
 ad_ldap_opt_tests_CFLAGS = \
     $(AM_CFLAGS) \
@@ -1784,6 +1799,7 @@ krb5_child_test_SOURCES = \
     src/providers/krb5/krb5_ccache.c \
     src/providers/krb5/krb5_child_handler.c \
     src/providers/krb5/krb5_common.c \
+    src/providers/krb5/krb5_opts.c \
     src/util/sss_krb5.c \
     src/providers/data_provider_fo.c \
     src/providers/data_provider_opts.c \
@@ -1861,6 +1877,7 @@ TEST_MOCK_RESP_OBJ = \
 TEST_MOCK_PROVIDER_OBJ = \
      src/util/sss_ldap.c \
      src/providers/data_provider_opts.c \
+     src/providers/ldap/ldap_opts.c \
      src/providers/ldap/ldap_options.c \
      src/providers/ldap/sdap_domain.c \
      src/providers/ldap/sdap.c \
@@ -2208,6 +2225,7 @@ ad_common_tests_SOURCES = \
     $(libsss_krb5_common_la_SOURCES) \
     src/tests/cmocka/common_mock_krb5.c \
     src/tests/cmocka/test_ad_common.c \
+    src/providers/ad/ad_opts.c \
     $(NULL)
 ad_common_tests_LDFLAGS = \
     -Wl,-wrap,sdap_set_sasl_options \
@@ -2241,6 +2259,8 @@ sdap_tests_SOURCES = \
     src/providers/ldap/sdap_domain.c \
     src/providers/ldap/sdap.c \
     src/providers/ldap/sdap_range.c \
+    src/providers/ldap/ldap_opts.c \
+    src/providers/ipa/ipa_opts.c \
     src/util/sss_ldap.c \
     src/tests/cmocka/test_sdap.c \
     $(NULL)
@@ -2529,6 +2549,7 @@ test_ipa_subdom_server_SOURCES = \
     src/tests/cmocka/test_ipa_subdomains_server.c \
     src/providers/ipa/ipa_subdomains_server.c \
     src/providers/ipa/ipa_subdomains_utils.c \
+    src/providers/ipa/ipa_opts.c \
     $(NULL)
 test_ipa_subdom_server_CFLAGS = \
     $(AM_CFLAGS) \
@@ -2791,6 +2812,7 @@ libsss_ldap_common_la_SOURCES = \
     src/providers/ldap/ldap_auth.c \
     src/providers/ldap/ldap_common.c \
     src/providers/ldap/ldap_options.c \
+    src/providers/ldap/ldap_opts.c \
     src/providers/ldap/sdap_access.c \
     src/providers/ldap/sdap_async.c \
     src/providers/ldap/sdap_async_users.c \
@@ -2837,8 +2859,8 @@ if BUILD_SUDO
 libsss_ldap_common_la_SOURCES += \
     src/providers/ldap/sdap_sudo_cache.c \
     src/providers/ldap/sdap_async_sudo.c \
-    src/providers/ldap/sdap_async_sudo_timer.c \
     src/providers/ldap/sdap_async_sudo_hostinfo.c \
+    src/providers/ldap/sdap_sudo_refresh.c \
     src/providers/ldap/sdap_sudo.c
 endif
 
@@ -2854,6 +2876,7 @@ libsss_krb5_common_la_SOURCES = \
     src/providers/krb5/krb5_renew_tgt.c \
     src/providers/krb5/krb5_wait_queue.c \
     src/providers/krb5/krb5_common.c \
+    src/providers/krb5/krb5_opts.c \
     src/providers/krb5/krb5_auth.c \
     src/providers/krb5/krb5_access.c \
     src/providers/krb5/krb5_child_handler.c \
@@ -2930,6 +2953,7 @@ libsss_krb5_la_LDFLAGS = \
 
 libsss_ipa_la_SOURCES = \
     src/providers/ipa/ipa_init.c \
+    src/providers/ipa/ipa_opts.c \
     src/providers/ipa/ipa_common.c \
     src/providers/ipa/ipa_config.c \
     src/providers/ipa/ipa_id.c \
@@ -2957,6 +2981,7 @@ libsss_ipa_la_SOURCES = \
     src/providers/ipa/ipa_selinux_maps.c \
     src/providers/ipa/ipa_srv.c \
     src/providers/ipa/ipa_idmap.c \
+    src/providers/ad/ad_opts.c \
     src/providers/ad/ad_common.c \
     src/providers/ad/ad_common.h \
     src/providers/ad/ad_dyndns.c \
@@ -3001,6 +3026,7 @@ endif
 
 
 libsss_ad_la_SOURCES = \
+    src/providers/ad/ad_opts.c \
     src/providers/ad/ad_common.c \
     src/providers/ad/ad_common.h \
     src/providers/ad/ad_init.c \
@@ -3022,6 +3048,11 @@ libsss_ad_la_SOURCES = \
 if BUILD_SUDO
 libsss_ad_la_SOURCES += \
     src/providers/ad/ad_sudo.c
+endif
+
+if BUILD_AUTOFS
+libsss_ad_la_SOURCES += \
+    src/providers/ad/ad_autofs.c
 endif
 
 libsss_ad_la_CFLAGS = \
@@ -3159,6 +3190,7 @@ proxy_child_LDADD = \
 p11_child_SOURCES = \
     src/p11_child/p11_child_nss.c \
     src/util/atomic_io.c \
+    src/util/util.c \
     $(NULL)
 p11_child_CFLAGS = \
     $(AM_CFLAGS) \
@@ -3168,6 +3200,7 @@ p11_child_CFLAGS = \
 p11_child_LDADD = \
     libsss_debug.la \
     $(TALLOC_LIBS) \
+    $(DHASH_LIBS) \
     $(POPT_LIBS) \
     $(NSS_LIBS) \
     libsss_crypt.la \
@@ -3567,10 +3600,6 @@ if SSSD_USER
 if BUILD_SEMANAGE
 	-chgrp $(SSSD_USER) $(DESTDIR)$(sssdlibexecdir)/selinux_child
 	chmod 4750 $(DESTDIR)$(sssdlibexecdir)/selinux_child
-endif
-if HAVE_NSS
-	-chgrp $(SSSD_USER) $(DESTDIR)$(sssdlibexecdir)/p11_child
-	chmod 4750 $(DESTDIR)$(sssdlibexecdir)/p11_child
 endif
 endif
 

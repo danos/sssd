@@ -19,6 +19,14 @@
     %global use_systemd 1
 %endif
 
+# on Fedora and RHEL7 p11_child needs a polkit config snippet to be allowed to
+# talk to pcscd if SSSD runs as unpriviledged user
+%if (0%{?fedora} || 0%{?rhel} >= 7)
+    %global install_pcscd_polkit_rule 1
+%else
+    %global enable_polkit_rules_option --disable-polkit-rules-path
+%endif
+
 %if (0%{?use_systemd} == 1)
     %global with_initscript --with-initscript=systemd --with-systemdunitdir=%{_unitdir}
     %global with_syslog --with-syslog=journald
@@ -559,10 +567,12 @@ autoreconf -ivf
     --enable-nfsidmaplibdir=%{_libdir}/libnfsidmap \
     --disable-static \
     --disable-rpath \
+    --with-sssd-user=sssd \
     %{with_initscript} \
     %{?with_syslog} \
     %{?with_cifs_utils_plugin_option} \
     %{?with_python3_option} \
+    %{?enable_polkit_rules_option} \
     %{?experimental}
 
 make %{?_smp_mflags} all
@@ -684,7 +694,11 @@ rm -rf $RPM_BUILD_ROOT
 %{_libexecdir}/%{servicename}/sssd_autofs
 %{_libexecdir}/%{servicename}/sssd_ssh
 %{_libexecdir}/%{servicename}/sssd_sudo
-%attr(4750,root,sssd) %{_libexecdir}/%{servicename}/p11_child
+%{_libexecdir}/%{servicename}/p11_child
+
+%if (0%{?install_pcscd_polkit_rule} == 1)
+%{_datadir}/polkit-1/rules.d/*
+%endif
 
 %dir %{_libdir}/%{name}
 %{_libdir}/%{name}/libsss_simple.so

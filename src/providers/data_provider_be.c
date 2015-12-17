@@ -126,8 +126,9 @@ static const char *dp_err_to_string(int dp_err_type)
     case DP_ERR_TIMEOUT:
         return "Request timed out";
     case DP_ERR_FATAL:
-    default:
         return "Internal Error";
+    default:
+        break;
     }
 
     return "Unknown Error";
@@ -636,7 +637,7 @@ static void reactivate_subdoms(struct sss_domain_info *head)
 {
     struct sss_domain_info *dom;
 
-    DEBUG(SSSDBG_TRACE_LIBS, "Resetting all subdomains");
+    DEBUG(SSSDBG_TRACE_LIBS, "Resetting all subdomains\n");
 
     for (dom = head; dom; dom = get_next_domain(dom, true)) {
         if (sss_domain_get_state(dom) == DOM_INACTIVE) {

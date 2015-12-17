@@ -307,7 +307,8 @@ class SSSDConfigTestSSSDService(unittest.TestCase):
             'reconnection_retries',
             'fd_limit',
             'client_idle_timeout',
-            'description']
+            'description',
+            'certificate_verification']
 
         self.assertTrue(type(options) == dict,
                         "Options should be a dictionary")
@@ -751,7 +752,8 @@ class SSSDConfigTestSSSDDomain(unittest.TestCase):
         control_provider_dict = {
             'ipa': ['id', 'auth', 'access', 'chpass', 'sudo', 'autofs',
                     'session', 'hostid', 'subdomains'],
-            'ad': ['id', 'auth', 'access', 'chpass', 'sudo', 'subdomains'],
+            'ad': ['id', 'auth', 'access', 'chpass', 'sudo', 'autofs',
+                   'subdomains'],
             'local': ['id', 'auth', 'chpass'],
             'ldap': ['id', 'auth', 'access', 'chpass', 'sudo', 'autofs'],
             'krb5': ['auth', 'access', 'chpass'],

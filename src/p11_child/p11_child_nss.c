@@ -38,10 +38,12 @@
 #include <keyhi.h>
 #include <pk11pub.h>
 #include <prerror.h>
+#include <ocsp.h>
 
 #include "util/child_common.h"
 #include "providers/dp_backend.h"
 #include "util/crypto/sss_crypto.h"
+#include "util/cert.h"
 
 enum op_mode {
     OP_NONE,
@@ -68,7 +70,7 @@ static char *password_passthrough(PK11SlotInfo *slot, PRBool retry, void *arg)
 
 
 int do_work(TALLOC_CTX *mem_ctx, const char *nss_db, const char *slot_name_in,
-            enum op_mode mode, const char *pin, char **cert,
+            enum op_mode mode, const char *pin, bool do_ocsp, char **cert,
             char **token_name_out)
 {
     int ret;
@@ -261,6 +263,14 @@ int do_work(TALLOC_CTX *mem_ctx, const char *nss_db, const char *slot_name_in,
         return EIO;
     }
 
+    if (do_ocsp) {
+        rv = CERT_EnableOCSPChecking(handle);
+        if (rv != SECSuccess) {
+            DEBUG(SSSDBG_OP_FAILURE, "CERT_EnableOCSPChecking failed: [%d].\n",
+                                     PR_GetError());
+            return EIO;
+        }
+    }
 
     found_cert = NULL;
     DEBUG(SSSDBG_TRACE_ALL, "Filtered certificates:\n");
@@ -271,6 +281,18 @@ int do_work(TALLOC_CTX *mem_ctx, const char *nss_db, const char *slot_name_in,
             DEBUG(SSSDBG_TRACE_ALL, "found cert[%s][%s]\n",
                              cert_list_node->cert->nickname,
                              cert_list_node->cert->subjectName);
+
+            rv = CERT_VerifyCertificateNow(handle, cert_list_node->cert,
+                                           PR_TRUE, certificateUsageSSLClient,
+                                           NULL, NULL);
+            if (rv != SECSuccess) {
+                DEBUG(SSSDBG_OP_FAILURE,
+                      "Certificate [%s][%s] not valid [%d], skipping.\n",
+                      cert_list_node->cert->nickname,
+                      cert_list_node->cert->subjectName, PR_GetError());
+                continue;
+            }
+
 
             if (found_cert == NULL) {
                 found_cert = cert_list_node->cert;
@@ -288,16 +310,6 @@ int do_work(TALLOC_CTX *mem_ctx, const char *nss_db, const char *slot_name_in,
         *cert = NULL;
         *token_name_out = NULL;
         ret = EOK;
-        goto done;
-    }
-
-    rv = CERT_VerifyCertificateNow(handle, found_cert, PR_TRUE,
-                                   certificateUsageSSLClient, NULL, NULL);
-    if (rv != SECSuccess) {
-        DEBUG(SSSDBG_OP_FAILURE,
-              "CERT_VerifyCertificateNow failed [%d].\n",
-              PR_GetError());
-        ret = EIO;
         goto done;
     }
 
@@ -323,7 +335,7 @@ int do_work(TALLOC_CTX *mem_ctx, const char *nss_db, const char *slot_name_in,
         if (algtag == SEC_OID_UNKNOWN) {
             SECKEY_DestroyPrivateKey(priv_key);
             DEBUG(SSSDBG_OP_FAILURE,
-                  "SEC_GetSignatureAlgorithmOidTag failed [%d].",
+                  "SEC_GetSignatureAlgorithmOidTag failed [%d].\n",
                   PR_GetError());
             ret = EIO;
             goto done;
@@ -334,7 +346,7 @@ int do_work(TALLOC_CTX *mem_ctx, const char *nss_db, const char *slot_name_in,
                           priv_key, algtag);
         SECKEY_DestroyPrivateKey(priv_key);
         if (rv != SECSuccess) {
-            DEBUG(SSSDBG_OP_FAILURE, "SEC_SignData failed [%d].",
+            DEBUG(SSSDBG_OP_FAILURE, "SEC_SignData failed [%d].\n",
                                      PR_GetError());
             ret = EIO;
             goto done;
@@ -343,7 +355,7 @@ int do_work(TALLOC_CTX *mem_ctx, const char *nss_db, const char *slot_name_in,
         pub_key = CERT_ExtractPublicKey(found_cert);
         if (pub_key == NULL) {
             DEBUG(SSSDBG_OP_FAILURE,
-                  "CERT_ExtractPublicKey failed [%d].", PR_GetError());
+                  "CERT_ExtractPublicKey failed [%d].\n", PR_GetError());
             ret = EIO;
             goto done;
         }
@@ -353,7 +365,7 @@ int do_work(TALLOC_CTX *mem_ctx, const char *nss_db, const char *slot_name_in,
                             NULL);
         SECKEY_DestroyPublicKey(pub_key);
         if (rv != SECSuccess) {
-            DEBUG(SSSDBG_OP_FAILURE, "VFY_VerifyData failed [%d].",
+            DEBUG(SSSDBG_OP_FAILURE, "VFY_VerifyData failed [%d].\n",
                                      PR_GetError());
             ret = EACCES;
             goto done;
@@ -454,6 +466,8 @@ int main(int argc, const char *argv[])
     char *slot_name_in = NULL;
     char *token_name_out = NULL;
     char *nss_db = NULL;
+    bool do_ocsp = true;
+    char *verify_opts = NULL;
 
     struct poptOption long_options[] = {
         POPT_AUTOHELP
@@ -473,6 +487,8 @@ int main(int argc, const char *argv[])
         {"pin", 0, POPT_ARG_NONE, NULL, 'i', _("Expect PIN on stdin"), NULL},
         {"keypad", 0, POPT_ARG_NONE, NULL, 'k', _("Expect PIN on keypad"),
          NULL},
+        {"verify", 0, POPT_ARG_STRING, &verify_opts, 0 , _("Tune validation"),
+         NULL},
         {"nssdb", 0, POPT_ARG_STRING, &nss_db, 0, _("NSS DB to use"),
          NULL},
         POPT_TABLEEND
@@ -481,7 +497,14 @@ int main(int argc, const char *argv[])
     /* Set debug level to invalid value so we can decide if -d 0 was used. */
     debug_level = SSSDBG_INVALID;
 
-    clearenv();
+    /*
+     * This child can run as root or as sssd user relying on policy kit to
+     * grant access to pcscd. This means that no setuid or setgid bit must be
+     * set on the binary. We still should make sure to run with a restrictive
+     * umask but do not have to make additional precautions like clearing the
+     * environment. This would allow to use e.g. pkcs11-spy.so for further
+     * debugging.
+     */
     umask(077);
 
     pc = poptGetContext(argv[0], argc, argv, long_options, 0);
@@ -578,24 +601,6 @@ int main(int argc, const char *argv[])
           "Running with effective IDs: [%"SPRIuid"][%"SPRIgid"].\n",
           geteuid(), getegid());
 
-    if (getuid() != 0) {
-        ret = setuid(0);
-        if (ret == -1) {
-            ret = errno;
-            DEBUG(SSSDBG_CRIT_FAILURE,
-                  "setuid failed: %d, p11_child might not work!\n", ret);
-        }
-    }
-
-    if (getgid() != 0) {
-        ret = setgid(0);
-        if (ret == -1) {
-            ret = errno;
-            DEBUG(SSSDBG_CRIT_FAILURE,
-                  "setgid failed: %d, p11_child might not work!\n", ret);
-        }
-    }
-
     DEBUG(SSSDBG_TRACE_INTERNAL,
           "Running with real IDs [%"SPRIuid"][%"SPRIgid"].\n",
           getuid(), getgid());
@@ -608,6 +613,13 @@ int main(int argc, const char *argv[])
     }
     talloc_steal(main_ctx, debug_prg_name);
 
+    if (verify_opts != NULL) {
+        ret = parse_cert_verify_opts(verify_opts, &do_ocsp);
+        if (ret != EOK) {
+            DEBUG(SSSDBG_FATAL_FAILURE, "Failed to parse verifiy option.\n");
+            goto fail;
+        }
+    }
 
     if (mode == OP_AUTH && pin_mode == PIN_STDIN) {
         ret = p11c_recv_data(main_ctx, STDIN_FILENO, &pin);
@@ -617,7 +629,7 @@ int main(int argc, const char *argv[])
         }
     }
 
-    ret = do_work(main_ctx, nss_db, slot_name_in, mode, pin, &cert,
+    ret = do_work(main_ctx, nss_db, slot_name_in, mode, pin, do_ocsp, &cert,
                   &token_name_out);
     if (ret != EOK) {
         DEBUG(SSSDBG_OP_FAILURE, "do_work failed.\n");

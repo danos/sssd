@@ -424,6 +424,10 @@ SSS_ENABLE_INTGCHECK_REQS
 
 AM_CONDITIONAL([HAVE_DEVSHM], [test -d /dev/shm])
 
+# Check if we should install polkit rules
+ENABLE_POLKIT_RULES_PATH
+AM_CONDITIONAL([HAVE_POLKIT_RULES_D], [test x$HAVE_POLKIT_RULES_D != x])
+
 abs_build_dir=`pwd`
 AC_DEFINE_UNQUOTED([ABS_BUILD_DIR], ["$abs_build_dir"], [Absolute path to the build directory])
 AC_SUBST([abs_builddir], $abs_build_dir)
@@ -432,6 +436,7 @@ my_srcdir=`readlink -f $srcdir`
 AC_DEFINE_UNQUOTED([ABS_SRC_DIR], ["$my_srcdir"], [Absolute path to the source directory])
 
 AC_CONFIG_FILES([Makefile contrib/sssd.spec src/examples/rwtab src/doxy.config
+                 contrib/sssd-pcsc.rules
                  src/sysv/sssd src/sysv/gentoo/sssd src/sysv/SUSE/sssd
                  po/Makefile.in src/man/Makefile src/tests/cwrap/Makefile
                  src/tests/intg/Makefile
