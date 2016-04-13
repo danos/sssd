@@ -1,4 +1,4 @@
-sssd (1.13.3-2) UNRELEASED; urgency=medium
+sssd (1.13.4-1) UNRELEASED; urgency=medium
 
   * apparmor-profile: Fixed and tidied.
 
