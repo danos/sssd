@@ -381,9 +381,35 @@ static char *get_fqname(TALLOC_CTX *mem_ctx,
     char *fqname;
     int fqlen;
     int check;
+    char *dummy_domain = NULL;
+    int ret;
 
-    if (domain == NULL) {
+    if (domain == NULL || domain->names == NULL) {
         return NULL;
+    }
+
+    /* check if the name already contains domain part */
+    ret = sss_parse_name(mem_ctx, domain->names, name, &dummy_domain, NULL);
+    if (ret == ERR_REGEX_NOMATCH) {
+        DEBUG(SSSDBG_TRACE_FUNC,
+              "sss_parse_name could not parse domain from [%s]. "
+              "Assuming it is not FQDN.\n", name);
+    } else if (ret != EOK) {
+        DEBUG(SSSDBG_TRACE_FUNC,
+              "sss_parse_name failed [%d]: %s\n", ret, sss_strerror(ret));
+        return NULL;
+    }
+
+    if (dummy_domain != NULL) {
+        talloc_free(dummy_domain);
+        DEBUG(SSSDBG_TRACE_FUNC, "Name is already fully qualified.\n");
+        fqname = talloc_strdup(mem_ctx, name);
+        if (fqname == NULL) {
+            DEBUG(SSSDBG_CRIT_FAILURE, "talloc_strdup failed.\n");
+            return NULL;
+        }
+
+        return fqname;
     }
 
     /* Get length. */
@@ -586,6 +612,7 @@ static errno_t get_object_dn(TALLOC_CTX *mem_ctx,
     struct ldb_dn *ldb_dn;
     const char *str_dn;
     errno_t ret;
+    struct ldb_result *res;
 
     tmp_ctx = talloc_new(NULL);
     if (tmp_ctx == NULL) {
@@ -595,16 +622,35 @@ static errno_t get_object_dn(TALLOC_CTX *mem_ctx,
 
     switch (type) {
     case SYSDB_MEMBER_USER:
-       ldb_dn = sysdb_user_dn(tmp_ctx, domain, name);
-       break;
+        ret = sysdb_getpwnam(tmp_ctx, domain, name, &res);
+        break;
     case SYSDB_MEMBER_GROUP:
-       ldb_dn = sysdb_group_dn(tmp_ctx, domain, name);
-       break;
+        ret = sysdb_getgrnam(tmp_ctx, domain, name, &res);
+        break;
     default:
-       DEBUG(SSSDBG_CRIT_FAILURE, "Unsupported member type %d\n", type);
-       ret = ERR_INTERNAL;
-       goto done;
+        DEBUG(SSSDBG_CRIT_FAILURE, "Unsupported member type %d\n", type);
+        ret = ERR_INTERNAL;
+        goto done;
     }
+
+    if (ret != EOK) {
+        DEBUG(SSSDBG_CRIT_FAILURE,
+              "Failed to look up original object in cache.\n");
+        goto done;
+    }
+
+    if (res->count == 0) {
+        DEBUG(SSSDBG_MINOR_FAILURE, "Original object not found in cache.\n");
+        ret = ENOENT;
+        goto done;
+    } else if (res->count > 1) {
+        DEBUG(SSSDBG_CRIT_FAILURE,
+              "There are multiple object with name [%s] in the cache.\n", name);
+        ret = EINVAL;
+        goto done;
+    }
+
+    ldb_dn = res->msgs[0]->dn;
 
     if (ldb_dn == NULL) {
         ret = ENOMEM;

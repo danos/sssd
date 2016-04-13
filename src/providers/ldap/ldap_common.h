@@ -167,8 +167,7 @@ int ldap_get_options(TALLOC_CTX *memctx,
                      const char *conf_path,
                      struct sdap_options **_opts);
 
-int ldap_get_sudo_options(TALLOC_CTX *memctx,
-                          struct confdb_ctx *cdb,
+int ldap_get_sudo_options(struct confdb_ctx *cdb,
                           const char *conf_path,
                           struct sdap_options *opts,
                           bool *use_host_filter,
@@ -265,9 +264,13 @@ errno_t list_missing_attrs(TALLOC_CTX *mem_ctx,
 
 bool sdap_is_secure_uri(const char *uri);
 
-char *sdap_get_id_specific_filter(TALLOC_CTX *mem_ctx,
-                                  const char *base_filter,
-                                  const char *extra_filter);
+char *sdap_or_filters(TALLOC_CTX *mem_ctx,
+                      const char *base_filter,
+                      const char *extra_filter);
+
+char *sdap_combine_filters(TALLOC_CTX *mem_ctx,
+                           const char *base_filter,
+                           const char *extra_filter);
 
 char *sdap_get_access_filter(TALLOC_CTX *mem_ctx,
                              const char *base_filter);

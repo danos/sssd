@@ -46,6 +46,35 @@
 #define SYSDB_SUDO_CACHE_AT_NOTAFTER   "sudoNotAfter"
 #define SYSDB_SUDO_CACHE_AT_ORDER      "sudoOrder"
 
+/* sysdb ipa attributes */
+#define SYSDB_IPA_SUDORULE_OC                 "ipasudorule"
+#define SYSDB_IPA_SUDORULE_ENABLED            "ipaEnabledFlag"
+#define SYSDB_IPA_SUDORULE_OPTION             "ipaSudoOpt"
+#define SYSDB_IPA_SUDORULE_RUNASUSER          "ipaSudoRunAs"
+#define SYSDB_IPA_SUDORULE_RUNASGROUP         "ipaSudoRunAsGroup"
+#define SYSDB_IPA_SUDORULE_ORIGCMD            "originalMemberCommand"
+#define SYSDB_IPA_SUDORULE_ALLOWCMD           "memberAllowCmd"
+#define SYSDB_IPA_SUDORULE_DENYCMD            "memberDenyCmd"
+#define SYSDB_IPA_SUDORULE_HOST               "memberHost"
+#define SYSDB_IPA_SUDORULE_USER               "memberUser"
+#define SYSDB_IPA_SUDORULE_NOTAFTER           "sudoNotAfter"
+#define SYSDB_IPA_SUDORULE_NOTBEFORE          "sudoNotBefore"
+#define SYSDB_IPA_SUDORULE_SUDOORDER          "sudoOrder"
+#define SYSDB_IPA_SUDORULE_CMDCATEGORY        "cmdCategory"
+#define SYSDB_IPA_SUDORULE_HOSTCATEGORY       "hostCategory"
+#define SYSDB_IPA_SUDORULE_USERCATEGORY       "userCategory"
+#define SYSDB_IPA_SUDORULE_RUNASUSERCATEGORY  "ipaSudoRunAsUserCategory"
+#define SYSDB_IPA_SUDORULE_RUNASGROUPCATEGORY "ipaSudoRunAsGroupCategory"
+#define SYSDB_IPA_SUDORULE_RUNASEXTUSER       "ipaSudoRunAsExtUser"
+#define SYSDB_IPA_SUDORULE_RUNASEXTGROUP      "ipaSudoRunAsExtGroup"
+#define SYSDB_IPA_SUDORULE_RUNASEXTUSERGROUP  "ipaSudoRunAsExtUserGroup"
+#define SYSDB_IPA_SUDORULE_EXTUSER            "externalUser"
+
+#define SYSDB_IPA_SUDOCMDGROUP_OC                 "ipasudocmdgrp"
+
+#define SYSDB_IPA_SUDOCMD_OC                 "ipasudocmd"
+#define SYSDB_IPA_SUDOCMD_SUDOCMD            "sudoCmd"
+
 /* When constructing a sysdb filter, OR these values to include..   */
 #define SYSDB_SUDO_FILTER_NONE           0x00       /* no additional filter */
 #define SYSDB_SUDO_FILTER_USERNAME       0x01       /* username             */
@@ -78,20 +107,19 @@ sysdb_get_sudo_user_info(TALLOC_CTX *mem_ctx,
                          const char *username, uid_t *_uid,
                          char ***groupnames);
 
-errno_t
-sysdb_save_sudorule(struct sss_domain_info *domain,
-                    const char *rule_name,
-                    struct sysdb_attrs *attrs);
-
 errno_t sysdb_sudo_set_last_full_refresh(struct sss_domain_info *domain,
                                          time_t value);
 errno_t sysdb_sudo_get_last_full_refresh(struct sss_domain_info *domain,
                                          time_t *value);
 
-errno_t sysdb_sudo_purge_byname(struct sss_domain_info *domain,
-                                const char *name);
+errno_t sysdb_sudo_purge(struct sss_domain_info *domain,
+                         const char *delete_filter,
+                         struct sysdb_attrs **rules,
+                         size_t num_rules);
 
-errno_t sysdb_sudo_purge_byfilter(struct sss_domain_info *domain,
-                                  const char *filter);
+errno_t
+sysdb_sudo_store(struct sss_domain_info *domain,
+                 struct sysdb_attrs **rules,
+                 size_t num_rules);
 
 #endif /* _SYSDB_SUDO_H_ */

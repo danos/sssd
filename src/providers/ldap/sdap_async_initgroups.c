@@ -493,9 +493,8 @@ static errno_t sdap_initgr_rfc2307_next_base(struct tevent_req *req)
 
     talloc_zfree(state->filter);
 
-    state->filter = sdap_get_id_specific_filter(
-            state, state->base_filter,
-            state->search_bases[state->base_iter]->filter);
+    state->filter = sdap_combine_filters( state, state->base_filter,
+                        state->search_bases[state->base_iter]->filter);
     if (!state->filter) {
         return ENOMEM;
     }
@@ -1667,10 +1666,8 @@ static errno_t sdap_initgr_rfc2307bis_next_base(struct tevent_req *req)
     state = tevent_req_data(req, struct sdap_initgr_rfc2307bis_state);
 
     talloc_zfree(state->filter);
-    state->filter = sdap_get_id_specific_filter(
-            state,
-            state->base_filter,
-            state->search_bases[state->base_iter]->filter);
+    state->filter = sdap_combine_filters(state, state->base_filter,
+                        state->search_bases[state->base_iter]->filter);
     if (!state->filter) {
         return ENOMEM;
     }
@@ -2430,9 +2427,8 @@ static errno_t rfc2307bis_nested_groups_next_base(struct tevent_req *req)
     state = tevent_req_data(req, struct sdap_rfc2307bis_nested_ctx);
 
     talloc_zfree(state->filter);
-    state->filter = sdap_get_id_specific_filter(
-            state, state->base_filter,
-            state->search_bases[state->base_iter]->filter);
+    state->filter = sdap_combine_filters(state, state->base_filter,
+                        state->search_bases[state->base_iter]->filter);
     if (!state->filter) {
         return ENOMEM;
     }
@@ -2798,10 +2794,8 @@ static errno_t sdap_get_initgr_next_base(struct tevent_req *req)
     state = tevent_req_data(req, struct sdap_get_initgr_state);
 
     talloc_zfree(state->filter);
-    state->filter = sdap_get_id_specific_filter(
-            state,
-            state->user_base_filter,
-            state->user_search_bases[state->user_base_iter]->filter);
+    state->filter = sdap_combine_filters(state, state->user_base_filter,
+                      state->user_search_bases[state->user_base_iter]->filter);
     if (!state->filter) {
         return ENOMEM;
     }
@@ -2838,10 +2832,6 @@ static void sdap_get_initgr_user(struct tevent_req *subreq)
     const char *orig_dn;
     const char *cname;
     bool in_transaction = false;
-    char *expected_basedn;
-    size_t expected_basedn_len;
-    size_t dn_len;
-    size_t c = 0;
 
     DEBUG(SSSDBG_TRACE_ALL, "Receiving info for the user\n");
 
@@ -2878,53 +2868,21 @@ static void sdap_get_initgr_user(struct tevent_req *subreq)
             tevent_req_error(req, ret);
             return;
         }
+    } else if (count == 1) {
+        state->orig_user = usr_attrs[0];
     } else if (count != 1) {
         DEBUG(SSSDBG_OP_FAILURE,
               "Expected one user entry and got %zu\n", count);
 
-        ret = domain_to_basedn(state, state->dom->name, &expected_basedn);
+        ret = sysdb_try_to_find_expected_dn(state->dom, "dc", usr_attrs, count,
+                                            &state->orig_user);
         if (ret != EOK) {
-            DEBUG(SSSDBG_OP_FAILURE, "domain_to_basedn failed.\n");
-            tevent_req_error(req, ret);
-            return;
-        }
-        expected_basedn = talloc_asprintf(state, "%s%s",
-                                                 "cn=users,", expected_basedn);
-        if (expected_basedn == NULL) {
-            DEBUG(SSSDBG_OP_FAILURE, "talloc_append failed.\n");
-            tevent_req_error(req, ENOMEM);
-            return;
-        }
-
-        DEBUG(SSSDBG_TRACE_ALL, "Expected BaseDN is [%s].\n", expected_basedn);
-        expected_basedn_len = strlen(expected_basedn);
-
-        for (c = 0; c < count; c++) {
-            ret = sysdb_attrs_get_string(usr_attrs[c], SYSDB_ORIG_DN, &orig_dn);
-            if (ret != EOK) {
-                DEBUG(SSSDBG_OP_FAILURE, "sysdb_attrs_get_string failed.\n");
-                tevent_req_error(req, ret);
-                return;
-            }
-            dn_len = strlen(orig_dn);
-
-            if (dn_len > expected_basedn_len
-                    && strcasecmp(orig_dn + (dn_len - expected_basedn_len),
-                                  expected_basedn) == 0) {
-                DEBUG(SSSDBG_TRACE_ALL,
-                      "Found matching dn [%s].\n", orig_dn);
-                break;
-            }
-        }
-
-        if (c == count) {
-            DEBUG(SSSDBG_OP_FAILURE, "No matching DN found.\n");
+            DEBUG(SSSDBG_OP_FAILURE,
+                  "try_to_find_expected_dn failed. No matching DN found.\n");
             tevent_req_error(req, EINVAL);
             return;
         }
     }
-
-    state->orig_user = usr_attrs[c];
 
     ret = sysdb_transaction_start(state->sysdb);
     if (ret) {

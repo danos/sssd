@@ -111,6 +111,7 @@ struct dp_option default_basic_opts[] = {
     { "ldap_idmap_autorid_compat", DP_OPT_BOOL, BOOL_FALSE, BOOL_FALSE },
     { "ldap_idmap_default_domain", DP_OPT_STRING, NULL_STRING, NULL_STRING },
     { "ldap_idmap_default_domain_sid", DP_OPT_STRING, NULL_STRING, NULL_STRING },
+    { "ldap_idmap_helper_table_size", DP_OPT_NUMBER, { .number = 10 }, NULL_NUMBER },
     { "ldap_groups_use_matching_rule_in_chain", DP_OPT_BOOL, BOOL_FALSE, BOOL_FALSE },
     { "ldap_initgroups_use_matching_rule_in_chain", DP_OPT_BOOL, BOOL_FALSE, BOOL_FALSE },
     { "ldap_use_tokengroups", DP_OPT_BOOL, BOOL_FALSE, BOOL_FALSE},
@@ -194,6 +195,7 @@ struct sdap_attr_map rfc2307_group_map[] = {
     { "ldap_group_modify_timestamp", "modifyTimestamp", SYSDB_ORIG_MODSTAMP, NULL },
     { "ldap_group_entry_usn", NULL, SYSDB_USN, NULL },
     { "ldap_group_type", NULL, SYSDB_GROUP_TYPE, NULL },
+    { "ldap_group_external_member", NULL, SYSDB_EXTERNAL_MEMBER, NULL },
     SDAP_ATTR_MAP_TERMINATOR
 };
 
@@ -250,6 +252,7 @@ struct sdap_attr_map rfc2307bis_group_map[] = {
     { "ldap_group_modify_timestamp", "modifyTimestamp", SYSDB_ORIG_MODSTAMP, NULL },
     { "ldap_group_entry_usn", NULL, SYSDB_USN, NULL },
     { "ldap_group_type", NULL, SYSDB_GROUP_TYPE, NULL },
+    { "ldap_group_external_member", NULL, SYSDB_EXTERNAL_MEMBER, NULL },
     SDAP_ATTR_MAP_TERMINATOR
 };
 
@@ -306,6 +309,7 @@ struct sdap_attr_map gen_ad2008r2_group_map[] = {
     { "ldap_group_modify_timestamp", "whenChanged", SYSDB_ORIG_MODSTAMP, NULL },
     { "ldap_group_entry_usn", SDAP_AD_USN, SYSDB_USN, NULL },
     { "ldap_group_type", "groupType", SYSDB_GROUP_TYPE, NULL },
+    { "ldap_group_external_member", NULL, SYSDB_EXTERNAL_MEMBER, NULL },
     SDAP_ATTR_MAP_TERMINATOR
 };
 

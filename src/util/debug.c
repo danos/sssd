@@ -206,13 +206,14 @@ journal_done:
 }
 #endif /* WiTH_JOURNALD */
 
-void debug_fn(const char *file,
-              long line,
-              const char *function,
-              int level,
-              const char *format, ...)
+void sss_vdebug_fn(const char *file,
+                   long line,
+                   const char *function,
+                   int level,
+                   int flags,
+                   const char *format,
+                   va_list ap)
 {
-    va_list ap;
     struct timeval tv;
     struct tm *tm;
     char datetime[20];
@@ -230,10 +231,8 @@ void debug_fn(const char *file,
          * can also provide extra structuring data to make it more easily
          * searchable.
          */
-        va_start(ap, format);
         va_copy(ap_fallback, ap);
         ret = journal_send(file, line, function, level, format, ap);
-        va_end(ap);
         if (ret != EOK) {
             /* Emergency fallback, send to STDERR */
             debug_vprintf(format, ap_fallback);
@@ -266,18 +265,30 @@ void debug_fn(const char *file,
                      debug_prg_name, function, level);
     }
 
-    va_start(ap, format);
     debug_vprintf(format, ap);
-    va_end(ap);
+    if (flags & APPEND_LINE_FEED) {
+        debug_printf("\n");
+    }
     debug_fflush();
+}
+
+void sss_debug_fn(const char *file,
+                  long line,
+                  const char *function,
+                  int level,
+                  const char *format, ...)
+{
+    va_list ap;
+
+    va_start(ap, format);
+    sss_vdebug_fn(file, line, function, level, 0, format, ap);
+    va_end(ap);
 }
 
 void ldb_debug_messages(void *context, enum ldb_debug_level level,
                         const char *fmt, va_list ap)
 {
     int loglevel = SSSDBG_UNRESOLVED;
-    int ret;
-    char * message = NULL;
 
     switch(level) {
     case LDB_DEBUG_FATAL:
@@ -294,16 +305,10 @@ void ldb_debug_messages(void *context, enum ldb_debug_level level,
         break;
     }
 
-    ret = vasprintf(&message, fmt, ap);
-    if (ret < 0) {
-        /* ENOMEM */
-        return;
+    if (DEBUG_IS_SET(loglevel)) {
+        sss_vdebug_fn(__FILE__, __LINE__, "ldb", loglevel, APPEND_LINE_FEED,
+                      fmt, ap);
     }
-
-    if (DEBUG_IS_SET(loglevel))
-        debug_fn(__FILE__, __LINE__, "ldb", loglevel, "%s\n", message);
-
-    free(message);
 }
 
 /* In cases SSSD used to run as the root user, but runs as the SSSD user now,
@@ -316,27 +321,31 @@ int chown_debug_file(const char *filename,
     const char *log_file;
     errno_t ret;
 
-    if (debug_file) {
+    if (filename == NULL) {
+        log_file = debug_log_file;
+    } else {
+        log_file = filename;
+    }
 
-        if (filename == NULL) {
-            log_file = debug_log_file;
-        } else {
-            log_file = filename;
+    ret = asprintf(&logpath, "%s/%s.log", LOG_PATH, log_file);
+    if (ret == -1) {
+        return ENOMEM;
+    }
+
+    ret = chown(logpath, uid, gid);
+    free(logpath);
+    if (ret != 0) {
+        ret = errno;
+        if (ret == ENOENT) {
+            /* Log does not exist. We might log to journald
+             * or starting for first time.
+             * It's not a failure. */
+            return EOK;
         }
 
-        ret = asprintf(&logpath, "%s/%s.log", LOG_PATH, log_file);
-        if (ret == -1) {
-            return ENOMEM;
-        }
-
-        ret = chown(logpath, uid, gid);
-        free(logpath);
-        if (ret != 0) {
-            ret = errno;
-            DEBUG(SSSDBG_FATAL_FAILURE, "chown failed for [%s]: [%d]\n",
-                  log_file, ret);
-            return ret;
-        }
+        DEBUG(SSSDBG_FATAL_FAILURE, "chown failed for [%s]: [%d]\n",
+              log_file, ret);
+        return ret;
     }
 
     return EOK;
@@ -365,7 +374,7 @@ int open_debug_file_ex(const char *filename, FILE **filep, bool want_cloexec)
 
     if (debug_file && !filep) fclose(debug_file);
 
-    old_umask = umask(0177);
+    old_umask = umask(SSS_DFL_UMASK);
     errno = 0;
     f = fopen(logpath, "a");
     if (f == NULL) {

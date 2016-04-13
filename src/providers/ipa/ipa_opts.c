@@ -147,6 +147,7 @@ struct dp_option ipa_def_ldap_opts[] = {
     { "ldap_idmap_autorid_compat", DP_OPT_BOOL, BOOL_FALSE, BOOL_FALSE },
     { "ldap_idmap_default_domain", DP_OPT_STRING, NULL_STRING, NULL_STRING },
     { "ldap_idmap_default_domain_sid", DP_OPT_STRING, NULL_STRING, NULL_STRING },
+    { "ldap_idmap_helper_table_size", DP_OPT_NUMBER, { .number = 10 }, NULL_NUMBER },
     { "ldap_groups_use_matching_rule_in_chain", DP_OPT_BOOL, BOOL_FALSE, BOOL_FALSE },
     { "ldap_initgroups_use_matching_rule_in_chain", DP_OPT_BOOL, BOOL_FALSE, BOOL_FALSE },
     { "ldap_use_tokengroups", DP_OPT_BOOL, BOOL_TRUE, BOOL_TRUE},
@@ -218,6 +219,7 @@ struct sdap_attr_map ipa_group_map[] = {
     { "ldap_group_modify_timestamp", "modifyTimestamp", SYSDB_ORIG_MODSTAMP, NULL },
     { "ldap_group_entry_usn", NULL, SYSDB_USN, NULL },
     { "ldap_group_type", NULL, SYSDB_GROUP_TYPE, NULL },
+    { "ldap_group_external_member", "ipaExternalMember", SYSDB_EXTERNAL_MEMBER, NULL },
     SDAP_ATTR_MAP_TERMINATOR
 };
 
@@ -333,5 +335,50 @@ struct sdap_attr_map ipa_autofs_entry_map[] = {
     { "ldap_autofs_entry_object_class", "automount", SYSDB_AUTOFS_ENTRY_OC, NULL },
     { "ldap_autofs_entry_key", "automountKey", SYSDB_AUTOFS_ENTRY_KEY, NULL },
     { "ldap_autofs_entry_value", "automountInformation", SYSDB_AUTOFS_ENTRY_VALUE, NULL },
+    SDAP_ATTR_MAP_TERMINATOR
+};
+
+struct sdap_attr_map ipa_sudorule_map[] = {
+    { "ipa_sudorule_object_class", "ipasudorule", SYSDB_IPA_SUDORULE_OC, NULL },
+    { "ipa_sudorule_name", "cn", SYSDB_NAME, NULL },
+    { "ipa_sudorule_uuid", "ipaUniqueID", SYSDB_UUID, NULL },
+    { "ipa_sudorule_enabled_flag", "ipaEnabledFlag", SYSDB_IPA_SUDORULE_ENABLED, NULL },
+    { "ipa_sudorule_option", "ipaSudoOpt", SYSDB_IPA_SUDORULE_OPTION, NULL },
+    { "ipa_sudorule_runasuser", "ipaSudoRunAs", SYSDB_IPA_SUDORULE_RUNASUSER, NULL },
+    { "ipa_sudorule_runasgroup", "ipaSudoRunAsGroup", SYSDB_IPA_SUDORULE_RUNASGROUP, NULL },
+    { "ipa_sudorule_allowcmd", "memberAllowCmd", SYSDB_IPA_SUDORULE_ALLOWCMD, NULL },
+    { "ipa_sudorule_denycmd", "memberDenyCmd", SYSDB_IPA_SUDORULE_DENYCMD, NULL },
+    { "ipa_sudorule_host", "memberHost", SYSDB_IPA_SUDORULE_HOST, NULL },
+    { "ipa_sudorule_user", "memberUser", SYSDB_IPA_SUDORULE_USER, NULL },
+    { "ipa_sudorule_notafter", "sudoNotAfter", SYSDB_IPA_SUDORULE_NOTAFTER, NULL },
+    { "ipa_sudorule_notbefore", "sudoNotBefore", SYSDB_IPA_SUDORULE_NOTBEFORE, NULL },
+    { "ipa_sudorule_sudoorder", "sudoOrder", SYSDB_IPA_SUDORULE_SUDOORDER, NULL },
+    { "ipa_sudorule_cmdcategory", "cmdCategory", SYSDB_IPA_SUDORULE_CMDCATEGORY, NULL },
+    { "ipa_sudorule_hostcategory", "hostCategory", SYSDB_IPA_SUDORULE_HOSTCATEGORY, NULL },
+    { "ipa_sudorule_usercategory", "userCategory", SYSDB_IPA_SUDORULE_USERCATEGORY, NULL },
+    { "ipa_sudorule_runasusercategory", "ipaSudoRunAsUserCategory", SYSDB_IPA_SUDORULE_RUNASUSERCATEGORY, NULL },
+    { "ipa_sudorule_runasgroupcategory", "ipaSudoRunAsGroupCategory", SYSDB_IPA_SUDORULE_RUNASGROUPCATEGORY, NULL },
+    { "ipa_sudorule_runasextuser", "ipaSudoRunAsExtUser", SYSDB_IPA_SUDORULE_RUNASEXTUSER, NULL },
+    { "ipa_sudorule_runasextgroup", "ipaSudoRunAsExtGroup", SYSDB_IPA_SUDORULE_RUNASEXTGROUP, NULL },
+    { "ipa_sudorule_runasextusergroup", "ipaSudoRunAsExtUserGroup", SYSDB_IPA_SUDORULE_RUNASEXTUSERGROUP, NULL },
+    { "ipa_sudorule_externaluser", "externalUser", SYSDB_IPA_SUDORULE_EXTUSER, NULL },
+    { "ipa_sudorule_entry_usn", "entryUSN", SYSDB_USN, NULL },
+    SDAP_ATTR_MAP_TERMINATOR
+};
+
+struct sdap_attr_map ipa_sudocmdgroup_map[] = {
+    { "ipa_sudocmdgroup_object_class", "ipasudocmdgrp", SYSDB_IPA_SUDOCMDGROUP_OC, NULL },
+    { "ipa_sudocmdgroup_uuid", "ipaUniqueID", SYSDB_UUID, NULL },
+    { "ipa_sudocmdgroup_name", "cn", SYSDB_NAME, NULL },
+    { "ipa_sudocmdgroup_member", "member", SYSDB_MEMBER, NULL },
+    { "ipa_sudocmdgroup_entry_usn", "entryUSN", SYSDB_USN, NULL },
+    SDAP_ATTR_MAP_TERMINATOR
+};
+
+struct sdap_attr_map ipa_sudocmd_map[] = {
+    { "ipa_sudocmd_object_class", "ipasudocmd", SYSDB_IPA_SUDOCMD_OC, NULL },
+    { "ipa_sudocmd_uuid", "ipaUniqueID", SYSDB_UUID, NULL },
+    { "ipa_sudocmd_sudoCmd", "sudoCmd", SYSDB_IPA_SUDOCMD_SUDOCMD, NULL },
+    { "ipa_sudocmd_memberof", "memberOf", SYSDB_MEMBEROF, NULL },
     SDAP_ATTR_MAP_TERMINATOR
 };

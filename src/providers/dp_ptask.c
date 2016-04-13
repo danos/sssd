@@ -384,6 +384,11 @@ time_t be_ptask_get_period(struct be_ptask *task)
     return task->period;
 }
 
+time_t be_ptask_get_timeout(struct be_ptask *task)
+{
+    return task->timeout;
+}
+
 struct be_ptask_sync_ctx {
     be_ptask_sync_t fn;
     void *pvt;
@@ -465,6 +470,8 @@ errno_t be_ptask_create_sync(TALLOC_CTX *mem_ctx,
     if (ret != EOK) {
         goto done;
     }
+
+    talloc_steal(*_task, ctx);
 
     ret = EOK;
 

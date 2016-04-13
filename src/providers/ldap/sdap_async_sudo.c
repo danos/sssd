@@ -29,27 +29,16 @@
 #include "providers/dp_backend.h"
 #include "providers/ldap/ldap_common.h"
 #include "providers/ldap/sdap.h"
-#include "providers/ldap/sdap_async.h"
+#include "providers/ldap/sdap_ops.h"
 #include "providers/ldap/sdap_sudo.h"
-#include "providers/ldap/sdap_sudo_cache.h"
+#include "providers/ldap/sdap_sudo_shared.h"
 #include "db/sysdb_sudo.h"
 
 struct sdap_sudo_load_sudoers_state {
-    struct tevent_context *ev;
-    struct sdap_options *opts;
-    struct sdap_handle *sh;
-
-    int timeout;
-    const char **attrs;
-    const char *filter;
-    size_t base_iter;
-    struct sdap_search_base **search_bases;
-
     struct sysdb_attrs **rules;
     size_t num_rules;
 };
 
-static errno_t sdap_sudo_load_sudoers_next_base(struct tevent_req *req);
 static void sdap_sudo_load_sudoers_done(struct tevent_req *subreq);
 
 static struct tevent_req *
@@ -60,7 +49,9 @@ sdap_sudo_load_sudoers_send(TALLOC_CTX *mem_ctx,
                             const char *ldap_filter)
 {
     struct tevent_req *req;
+    struct tevent_req *subreq;
     struct sdap_sudo_load_sudoers_state *state;
+    struct sdap_search_base **sb;
     int ret;
 
     req = tevent_req_create(mem_ctx, &state,
@@ -69,133 +60,61 @@ sdap_sudo_load_sudoers_send(TALLOC_CTX *mem_ctx,
         return NULL;
     }
 
-    state->ev = ev;
-    state->opts = opts;
-    state->sh = sh;
-    state->base_iter = 0;
-    state->search_bases = opts->sdom->sudo_search_bases;
-    state->filter = ldap_filter;
-    state->timeout = dp_opt_get_int(opts->basic, SDAP_SEARCH_TIMEOUT);
     state->rules = NULL;
     state->num_rules = 0;
 
-    if (state->search_bases == NULL) {
+    sb = opts->sdom->sudo_search_bases;
+    if (sb == NULL) {
         DEBUG(SSSDBG_CRIT_FAILURE,
               "SUDOERS lookup request without a search base\n");
         ret = EINVAL;
         goto immediately;
     }
 
-    /* create attrs from map */
-    ret = build_attrs_from_map(state, opts->sudorule_map, SDAP_OPTS_SUDO,
-                               NULL, &state->attrs, NULL);
-    if (ret != EOK) {
-        goto immediately;
-    }
+    DEBUG(SSSDBG_TRACE_FUNC, "About to fetch sudo rules\n");
 
-    /* begin search */
-    ret = sdap_sudo_load_sudoers_next_base(req);
-    if (ret == EAGAIN) {
-        /* asynchronous processing */
-        return req;
-    }
-
-immediately:
-    if (ret == EOK) {
-        tevent_req_done(req);
-    } else {
-        tevent_req_error(req, ret);
-    }
-    tevent_req_post(req, ev);
-
-    return req;
-}
-
-static errno_t sdap_sudo_load_sudoers_next_base(struct tevent_req *req)
-{
-    struct sdap_sudo_load_sudoers_state *state;
-    struct sdap_search_base *base;
-    struct tevent_req *subreq;
-    char *filter;
-
-    state = tevent_req_data(req, struct sdap_sudo_load_sudoers_state);
-    base = state->search_bases[state->base_iter];
-    if (base == NULL) {
-        return EOK;
-    }
-
-    /* Combine lookup and search base filters. */
-    filter = sdap_get_id_specific_filter(state, state->filter, base->filter);
-    if (filter == NULL) {
-        return ENOMEM;
-    }
-
-    DEBUG(SSSDBG_TRACE_FUNC, "Searching for sudo rules with base [%s]\n",
-                             base->basedn);
-
-    subreq = sdap_get_generic_send(state, state->ev, state->opts, state->sh,
-                                   base->basedn, base->scope, filter,
-                                   state->attrs, state->opts->sudorule_map,
-                                   SDAP_OPTS_SUDO, state->timeout, true);
+    subreq = sdap_search_bases_send(state, ev, opts, sh, sb,
+                                    opts->sudorule_map, true, 0,
+                                    ldap_filter, NULL);
     if (subreq == NULL) {
-        return ENOMEM;
+        ret = ENOMEM;
+        goto immediately;
     }
 
     tevent_req_set_callback(subreq, sdap_sudo_load_sudoers_done, req);
 
-    state->base_iter++;
-    return EAGAIN;
+    ret = EOK;
+
+immediately:
+    if (ret != EOK) {
+        tevent_req_error(req, ret);
+        tevent_req_post(req, ev);
+    }
+
+    return req;
 }
 
 static void sdap_sudo_load_sudoers_done(struct tevent_req *subreq)
 {
     struct tevent_req *req;
     struct sdap_sudo_load_sudoers_state *state;
-    struct sdap_search_base *search_base;
-    struct sysdb_attrs **attrs = NULL;
-    size_t count;
-    int ret;
-    size_t i;
+    errno_t ret;
 
     req = tevent_req_callback_data(subreq, struct tevent_req);
     state = tevent_req_data(req, struct sdap_sudo_load_sudoers_state);
-    search_base = state->search_bases[state->base_iter - 1];
 
-    DEBUG(SSSDBG_TRACE_FUNC, "Receiving sudo rules with base [%s]\n",
-                             search_base->basedn);
-
-    ret = sdap_get_generic_recv(subreq, state, &count, &attrs);
+    ret = sdap_search_bases_recv(subreq, state, &state->num_rules,
+                                 &state->rules);
     talloc_zfree(subreq);
     if (ret != EOK) {
         tevent_req_error(req, ret);
         return;
     }
 
-    /* Add rules to result. */
-    if (count > 0) {
-        state->rules = talloc_realloc(state, state->rules,
-                                      struct sysdb_attrs *,
-                                      state->num_rules + count);
-        if (state->rules == NULL) {
-            tevent_req_error(req, ENOMEM);
-            return;
-        }
+    DEBUG(SSSDBG_IMPORTANT_INFO, "Received %zu sudo rules\n",
+          state->num_rules);
 
-        for (i = 0; i < count; i++) {
-            state->rules[state->num_rules + i] = talloc_steal(state->rules,
-                                                              attrs[i]);
-        }
-
-        state->num_rules += count;
-    }
-
-    /* Try next search base. */
-    ret = sdap_sudo_load_sudoers_next_base(req);
-    if (ret == EOK) {
-        tevent_req_done(req);
-    } else if (ret != EAGAIN) {
-        tevent_req_error(req, ret);
-    }
+    tevent_req_done(req);
 
     return;
 }
@@ -215,128 +134,6 @@ static int sdap_sudo_load_sudoers_recv(struct tevent_req *req,
     *rules = talloc_steal(mem_ctx, state->rules);
 
     return EOK;
-}
-
-static int sdap_sudo_purge_sudoers(struct sss_domain_info *dom,
-                                   const char *filter,
-                                   struct sdap_attr_map *map,
-                                   size_t rules_count,
-                                   struct sysdb_attrs **rules)
-{
-    const char *name;
-    size_t i;
-    errno_t ret;
-
-    if (filter == NULL) {
-        /* removes downloaded rules from the cache */
-        if (rules_count == 0 || rules == NULL) {
-            return EOK;
-        }
-
-        for (i = 0; i < rules_count; i++) {
-            ret = sysdb_attrs_get_string(rules[i],
-                                         map[SDAP_AT_SUDO_NAME].sys_name,
-                                         &name);
-            if (ret != EOK) {
-                DEBUG(SSSDBG_MINOR_FAILURE,
-                      "Failed to retrieve rule name: [%s]\n", strerror(ret));
-                continue;
-            }
-
-            ret = sysdb_sudo_purge_byname(dom, name);
-            if (ret != EOK) {
-                DEBUG(SSSDBG_MINOR_FAILURE,
-                      "Failed to delete rule %s: [%s]\n",
-                      name, strerror(ret));
-                continue;
-            }
-        }
-
-        ret = EOK;
-    } else {
-        /* purge cache by provided filter */
-        ret = sysdb_sudo_purge_byfilter(dom, filter);
-        if (ret != EOK) {
-            goto done;
-        }
-    }
-
-done:
-    if (ret != EOK) {
-        DEBUG(SSSDBG_OP_FAILURE, "failed to purge sudo rules [%d]: %s\n",
-                                 ret, strerror(ret));
-    }
-
-    return ret;
-}
-
-static int sdap_sudo_store_sudoers(TALLOC_CTX *mem_ctx,
-                                   struct sss_domain_info *domain,
-                                   struct sdap_options *opts,
-                                   size_t rules_count,
-                                   struct sysdb_attrs **rules,
-                                   int cache_timeout,
-                                   time_t now,
-                                   char **_usn)
-{
-    errno_t ret;
-
-    /* Empty sudoers? Done. */
-    if (rules_count == 0 || rules == NULL) {
-        *_usn = NULL;
-        return EOK;
-    }
-
-    ret = sdap_save_native_sudorule_list(mem_ctx, domain,
-                                         opts->sudorule_map, rules,
-                                         rules_count, cache_timeout, now,
-                                         _usn);
-    if (ret != EOK) {
-        DEBUG(SSSDBG_OP_FAILURE, "failed to save sudo rules [%d]: %s\n",
-              ret, strerror(ret));
-        return ret;
-    }
-
-    return EOK;
-}
-
-static void sdap_sudo_set_usn(struct sdap_server_opts *srv_opts, char *usn)
-{
-    unsigned int usn_number;
-    char *endptr = NULL;
-
-    if (srv_opts == NULL) {
-        DEBUG(SSSDBG_TRACE_FUNC, "Bug: srv_opts is NULL\n");
-        return;
-    }
-
-    if (usn == NULL) {
-        /* If the USN value is unknown and we don't have max_sudo_value set
-         * (possibly first full refresh which did not find any rule) we will
-         * set zero so smart refresh can pick up. */
-        if (srv_opts->max_sudo_value == NULL) {
-            srv_opts->max_sudo_value = talloc_strdup(srv_opts, "0");
-            if (srv_opts->max_sudo_value == NULL) {
-                DEBUG(SSSDBG_CRIT_FAILURE, "talloc_strdup() failed\n");
-            }
-            return;
-        }
-
-        DEBUG(SSSDBG_TRACE_FUNC, "Empty USN, ignoring\n");
-        return;
-    }
-
-    talloc_zfree(srv_opts->max_sudo_value);
-    srv_opts->max_sudo_value = talloc_steal(srv_opts, usn);
-
-    usn_number = strtoul(usn, &endptr, 10);
-    if ((endptr == NULL || (*endptr == '\0' && endptr != usn))
-         && (usn_number > srv_opts->last_usn)) {
-         srv_opts->last_usn = usn_number;
-    }
-
-    DEBUG(SSSDBG_FUNC_DATA, "SUDO higher USN value: [%s]\n",
-                             srv_opts->max_sudo_value);
 }
 
 static char *sdap_sudo_build_host_filter(TALLOC_CTX *mem_ctx,
@@ -467,7 +264,7 @@ static char *sdap_sudo_get_filter(TALLOC_CTX *mem_ctx,
         goto done;
     }
 
-    filter = sdap_get_id_specific_filter(tmp_ctx, rule_filter, host_filter);
+    filter = sdap_combine_filters(tmp_ctx, rule_filter, host_filter);
     if (filter == NULL) {
         goto done;
     }
@@ -706,7 +503,6 @@ static void sdap_sudo_refresh_done(struct tevent_req *subreq)
     int ret;
     errno_t sret;
     bool in_transaction = false;
-    time_t now;
 
     req = tevent_req_callback_data(subreq, struct tevent_req);
     state = tevent_req_data(req, struct sdap_sudo_refresh_state);
@@ -722,6 +518,9 @@ static void sdap_sudo_refresh_done(struct tevent_req *subreq)
             tevent_req_error(req, ret);
         }
         return;
+    } else if (ret != EOK) {
+        tevent_req_error(req, ret);
+        return;
     }
 
     DEBUG(SSSDBG_TRACE_FUNC, "Received %zu rules\n", rules_count);
@@ -735,17 +534,14 @@ static void sdap_sudo_refresh_done(struct tevent_req *subreq)
     in_transaction = true;
 
     /* purge cache */
-    ret = sdap_sudo_purge_sudoers(state->domain, state->delete_filter,
-                                  state->opts->sudorule_map, rules_count, rules);
+    ret = sysdb_sudo_purge(state->domain, state->delete_filter,
+                           rules, rules_count);
     if (ret != EOK) {
         goto done;
     }
 
     /* store rules */
-    now = time(NULL);
-    ret = sdap_sudo_store_sudoers(state, state->domain,
-                                  state->opts, rules_count, rules,
-                                  state->domain->sudo_timeout, now, &usn);
+    ret = sysdb_sudo_store(state->domain, rules, rules_count);
     if (ret != EOK) {
         goto done;
     }
@@ -761,7 +557,13 @@ static void sdap_sudo_refresh_done(struct tevent_req *subreq)
     DEBUG(SSSDBG_TRACE_FUNC, "Sudoers is successfuly stored in cache\n");
 
     /* remember new usn */
-    sdap_sudo_set_usn(state->srv_opts, usn);
+    ret = sysdb_get_highest_usn(state, rules, rules_count, &usn);
+    if (ret == EOK) {
+        sdap_sudo_set_usn(state->srv_opts, usn);
+    } else {
+        DEBUG(SSSDBG_MINOR_FAILURE, "Unable to get highest USN [%d]: %s\n",
+              ret, sss_strerror(ret));
+    }
 
     ret = EOK;
     state->num_rules = rules_count;

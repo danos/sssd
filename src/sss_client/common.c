@@ -734,6 +734,22 @@ enum nss_status sss_nss_make_request(enum sss_cli_command cmd,
     }
 
     ret = sss_cli_make_request_nochecks(cmd, rd, repbuf, replen, errnop);
+    if (ret == SSS_STATUS_UNAVAIL && *errnop == EPIPE) {
+        /* try reopen socket */
+        ret = sss_cli_check_socket(errnop, SSS_NSS_SOCKET_NAME);
+        if (ret != SSS_STATUS_SUCCESS) {
+#ifdef NONSTANDARD_SSS_NSS_BEHAVIOUR
+            *errnop = 0;
+            errno = 0;
+            return NSS_STATUS_NOTFOUND;
+#else
+            return NSS_STATUS_UNAVAIL;
+#endif
+        }
+
+        /* and make request one more time */
+        ret = sss_cli_make_request_nochecks(cmd, rd, repbuf, replen, errnop);
+    }
     switch (ret) {
     case SSS_STATUS_TRYAGAIN:
         return NSS_STATUS_TRYAGAIN;
@@ -784,6 +800,16 @@ int sss_pac_make_request(enum sss_cli_command cmd,
     }
 
     ret = sss_cli_make_request_nochecks(cmd, rd, repbuf, replen, errnop);
+    if (ret == SSS_STATUS_UNAVAIL && *errnop == EPIPE) {
+        /* try reopen socket */
+        ret = sss_cli_check_socket(errnop, SSS_PAC_SOCKET_NAME);
+        if (ret != SSS_STATUS_SUCCESS) {
+            return NSS_STATUS_UNAVAIL;
+        }
+
+        /* and make request one more time */
+        ret = sss_cli_make_request_nochecks(cmd, rd, repbuf, replen, errnop);
+    }
     switch (ret) {
     case SSS_STATUS_TRYAGAIN:
         return NSS_STATUS_TRYAGAIN;
@@ -829,6 +855,7 @@ int sss_pam_make_request(enum sss_cli_command cmd,
     enum sss_status status;
     char *envval;
     struct stat stat_buf;
+    const char *socket_name;
 
     sss_pam_lock();
 
@@ -841,7 +868,8 @@ int sss_pam_make_request(enum sss_cli_command cmd,
 
     /* only root shall use the privileged pipe */
     if (getuid() == 0 && getgid() == 0) {
-        statret = stat(SSS_PAM_PRIV_SOCKET_NAME, &stat_buf);
+        socket_name = SSS_PAM_PRIV_SOCKET_NAME;
+        statret = stat(socket_name, &stat_buf);
         if (statret != 0) {
             ret = PAM_SERVICE_ERR;
             goto out;
@@ -854,10 +882,9 @@ int sss_pam_make_request(enum sss_cli_command cmd,
             ret = PAM_SERVICE_ERR;
             goto out;
         }
-
-        status = sss_cli_check_socket(errnop, SSS_PAM_PRIV_SOCKET_NAME);
     } else {
-        statret = stat(SSS_PAM_SOCKET_NAME, &stat_buf);
+        socket_name = SSS_PAM_SOCKET_NAME;
+        statret = stat(socket_name, &stat_buf);
         if (statret != 0) {
             ret = PAM_SERVICE_ERR;
             goto out;
@@ -870,9 +897,9 @@ int sss_pam_make_request(enum sss_cli_command cmd,
             ret = PAM_SERVICE_ERR;
             goto out;
         }
-
-        status = sss_cli_check_socket(errnop, SSS_PAM_SOCKET_NAME);
     }
+
+    status = sss_cli_check_socket(errnop, socket_name);
     if (status != SSS_STATUS_SUCCESS) {
         ret = PAM_SERVICE_ERR;
         goto out;
@@ -887,6 +914,18 @@ int sss_pam_make_request(enum sss_cli_command cmd,
     }
 
     status = sss_cli_make_request_nochecks(cmd, rd, repbuf, replen, errnop);
+    if (status == SSS_STATUS_UNAVAIL && *errnop == EPIPE) {
+        /* try reopen socket */
+        status = sss_cli_check_socket(errnop, socket_name);
+        if (status != SSS_STATUS_SUCCESS) {
+            ret = PAM_SERVICE_ERR;
+            goto out;
+        }
+
+        /* and make request one more time */
+        status = sss_cli_make_request_nochecks(cmd, rd, repbuf, replen, errnop);
+    }
+
     if (status == SSS_STATUS_SUCCESS) {
         ret = PAM_SUCCESS;
     } else {
@@ -910,21 +949,42 @@ void sss_pam_close_fd(void)
     sss_pam_unlock();
 }
 
-int sss_sudo_make_request(enum sss_cli_command cmd,
-                          struct sss_cli_req_data *rd,
-                          uint8_t **repbuf, size_t *replen,
-                          int *errnop)
+static enum sss_status
+sss_cli_make_request_with_checks(enum sss_cli_command cmd,
+                                 struct sss_cli_req_data *rd,
+                                 uint8_t **repbuf, size_t *replen,
+                                 int *errnop,
+                                 const char *socket_name)
 {
     enum sss_status ret = SSS_STATUS_UNAVAIL;
 
-    ret = sss_cli_check_socket(errnop, SSS_SUDO_SOCKET_NAME);
+    ret = sss_cli_check_socket(errnop, socket_name);
     if (ret != SSS_STATUS_SUCCESS) {
         return SSS_STATUS_UNAVAIL;
     }
 
     ret = sss_cli_make_request_nochecks(cmd, rd, repbuf, replen, errnop);
+    if (ret == SSS_STATUS_UNAVAIL && *errnop == EPIPE) {
+        /* try reopen socket */
+        ret = sss_cli_check_socket(errnop, socket_name);
+        if (ret != SSS_STATUS_SUCCESS) {
+            return SSS_STATUS_UNAVAIL;
+        }
+
+        /* and make request one more time */
+        ret = sss_cli_make_request_nochecks(cmd, rd, repbuf, replen, errnop);
+    }
 
     return ret;
+}
+
+int sss_sudo_make_request(enum sss_cli_command cmd,
+                          struct sss_cli_req_data *rd,
+                          uint8_t **repbuf, size_t *replen,
+                          int *errnop)
+{
+    return sss_cli_make_request_with_checks(cmd, rd, repbuf, replen, errnop,
+                                            SSS_SUDO_SOCKET_NAME);
 }
 
 int sss_autofs_make_request(enum sss_cli_command cmd,
@@ -932,16 +992,8 @@ int sss_autofs_make_request(enum sss_cli_command cmd,
                             uint8_t **repbuf, size_t *replen,
                             int *errnop)
 {
-    enum sss_status ret = SSS_STATUS_UNAVAIL;
-
-    ret = sss_cli_check_socket(errnop, SSS_AUTOFS_SOCKET_NAME);
-    if (ret != SSS_STATUS_SUCCESS) {
-        return SSS_STATUS_UNAVAIL;
-    }
-
-    ret = sss_cli_make_request_nochecks(cmd, rd, repbuf, replen, errnop);
-
-    return ret;
+    return sss_cli_make_request_with_checks(cmd, rd, repbuf, replen, errnop,
+                                            SSS_AUTOFS_SOCKET_NAME);
 }
 
 int sss_ssh_make_request(enum sss_cli_command cmd,
@@ -949,16 +1001,8 @@ int sss_ssh_make_request(enum sss_cli_command cmd,
                          uint8_t **repbuf, size_t *replen,
                          int *errnop)
 {
-    enum sss_status ret = SSS_STATUS_UNAVAIL;
-
-    ret = sss_cli_check_socket(errnop, SSS_SSH_SOCKET_NAME);
-    if (ret != SSS_STATUS_SUCCESS) {
-        return SSS_STATUS_UNAVAIL;
-    }
-
-    ret = sss_cli_make_request_nochecks(cmd, rd, repbuf, replen, errnop);
-
-    return ret;
+    return sss_cli_make_request_with_checks(cmd, rd, repbuf, replen, errnop,
+                                            SSS_SSH_SOCKET_NAME);
 }
 
 

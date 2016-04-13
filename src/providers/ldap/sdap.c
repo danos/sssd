@@ -312,7 +312,7 @@ int sdap_get_map(TALLOC_CTX *memctx,
     char *name;
     int i, ret;
 
-    map = talloc_array(memctx, struct sdap_attr_map, num_entries);
+    map = talloc_zero_array(memctx, struct sdap_attr_map, num_entries + 1);
     if (!map) {
         return ENOMEM;
     }
@@ -1284,7 +1284,7 @@ int sdap_get_server_opts_from_rootdse(TALLOC_CTX *memctx,
                     break;
                 default:
                     DEBUG(SSSDBG_CRIT_FAILURE,
-                          "Unkown error (%d) checking rootdse!\n", ret);
+                          "Unknown error (%d) checking rootdse!\n", ret);
                 }
             } else {
                 if (!entry_usn_name) {
@@ -1346,6 +1346,7 @@ int sdap_get_server_opts_from_rootdse(TALLOC_CTX *memctx,
             case DS_BEHAVIOR_WIN2008R2:
             case DS_BEHAVIOR_WIN2012:
             case DS_BEHAVIOR_WIN2012R2:
+            case DS_BEHAVIOR_WIN2016:
                 opts->dc_functional_level = dc_level;
                 DEBUG(SSSDBG_CONF_SETTINGS,
                       "Setting AD compatibility level to [%d]\n",
@@ -1353,8 +1354,9 @@ int sdap_get_server_opts_from_rootdse(TALLOC_CTX *memctx,
                 break;
             default:
                 DEBUG(SSSDBG_MINOR_FAILURE,
-                      "Received invalid value for AD compatibility level. "
-                      "Using the lowest-common compatibility level\n");
+                      "Received invalid value [%d] for AD compatibility level. "
+                      "Using the lowest-common compatibility level\n",
+                      dc_level);
                 opts->dc_functional_level = DS_BEHAVIOR_WIN2003;
             }
         } else if (ret != ENOENT) {

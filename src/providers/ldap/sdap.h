@@ -223,6 +223,7 @@ enum sdap_basic_opt {
     SDAP_IDMAP_AUTORID_COMPAT,
     SDAP_IDMAP_DEFAULT_DOMAIN,
     SDAP_IDMAP_DEFAULT_DOMAIN_SID,
+    SDAP_IDMAP_EXTRA_SLICE_INIT,
     SDAP_AD_MATCHING_RULE_GROUPS,
     SDAP_AD_MATCHING_RULE_INITGROUPS,
     SDAP_AD_USE_TOKENGROUPS,
@@ -303,6 +304,7 @@ enum sdap_group_attrs {
     SDAP_AT_GROUP_MODSTAMP,
     SDAP_AT_GROUP_USN,
     SDAP_AT_GROUP_TYPE,
+    SDAP_AT_GROUP_EXT_MEMBER,
 
     SDAP_OPTS_GROUP /* attrs counter */
 };
@@ -389,7 +391,8 @@ enum dc_functional_level {
     DS_BEHAVIOR_WIN2008 = 3,
     DS_BEHAVIOR_WIN2008R2 = 4,
     DS_BEHAVIOR_WIN2012 = 5,
-    DS_BEHAVIOR_WIN2012R2 = 6
+    DS_BEHAVIOR_WIN2012R2 = 6,
+    DS_BEHAVIOR_WIN2016 = 7,
 };
 
 struct sdap_domain {
@@ -421,6 +424,26 @@ struct sdap_domain {
     void *pvt;
 };
 
+typedef struct tevent_req *
+(*ext_member_send_fn_t)(TALLOC_CTX *mem_ctx,
+                        struct tevent_context *ev,
+                        const char *ext_member,
+                        void *pvt);
+typedef errno_t
+(*ext_member_recv_fn_t)(TALLOC_CTX *mem_ctx,
+                        struct tevent_req *req,
+                        enum sysdb_member_type *member_type,
+                        struct sss_domain_info **_dom,
+                        struct sysdb_attrs **_member);
+
+struct sdap_ext_member_ctx {
+    /* Typically ID context of the external ID provider */
+    void *pvt;
+
+    ext_member_send_fn_t ext_member_resolve_send;
+    ext_member_recv_fn_t ext_member_resolve_recv;
+};
+
 struct sdap_options {
     struct dp_option *basic;
     struct sdap_attr_map *gen_map;
@@ -432,6 +455,9 @@ struct sdap_options {
 
     /* ID-mapping support */
     struct sdap_idmap_ctx *idmap_ctx;
+
+    /* Resolving external members */
+    struct sdap_ext_member_ctx *ext_ctx;
 
     /* FIXME - should this go to a special struct to avoid mixing with name-service-switch maps? */
     struct sdap_attr_map *sudorule_map;

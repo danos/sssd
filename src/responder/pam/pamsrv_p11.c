@@ -45,7 +45,7 @@ bool may_do_cert_auth(struct pam_ctx *pctx, struct pam_data *pd)
     size_t c;
     const char *sc_services[] = { "login", "su", "su-l", "gdm-smartcard",
                                   "gdm-password", "kdm", "sudo", "sudo-i",
-                                  NULL };
+                                  "gnome-screensaver", NULL };
     if (!pctx->cert_auth) {
         return false;
     }
@@ -144,7 +144,7 @@ static errno_t parse_p11_child_response(TALLOC_CTX *mem_ctx, uint8_t *buf,
 
     if (buf_len < 0) {
         DEBUG(SSSDBG_CRIT_FAILURE,
-              "Error occured while reading data from p11_child.\n");
+              "Error occurred while reading data from p11_child.\n");
         return EIO;
     }
 
@@ -322,7 +322,7 @@ struct tevent_req *pam_check_cert_send(TALLOC_CTX *mem_ctx,
     child_pid = fork();
     if (child_pid == 0) { /* child */
         ret = exec_child_ex(state, pipefd_to_child, pipefd_from_child,
-                            P11_CHILD_PATH, child_debug_fd, extra_args,
+                            P11_CHILD_PATH, child_debug_fd, extra_args, false,
                             STDIN_FILENO, STDOUT_FILENO);
         if (ret != EOK) {
             DEBUG(SSSDBG_CRIT_FAILURE, "Could not exec p11 child: [%d][%s].\n",

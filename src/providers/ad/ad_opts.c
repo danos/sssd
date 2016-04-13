@@ -48,6 +48,8 @@ struct dp_option ad_basic_opts[] = {
     { "ad_gpo_default_right", DP_OPT_STRING, NULL_STRING, NULL_STRING },
     { "ad_site", DP_OPT_STRING, NULL_STRING, NULL_STRING },
     { "krb5_confd_path", DP_OPT_STRING, { KRB5_MAPPING_DIR }, NULL_STRING },
+    { "ad_maximum_machine_account_password_age", DP_OPT_NUMBER, { .number = 30 }, NULL_NUMBER },
+    { "ad_machine_account_password_renewal_opts", DP_OPT_STRING, { "86400:750" }, NULL_STRING },
     DP_OPTION_TERMINATOR
 };
 
@@ -135,6 +137,7 @@ struct dp_option ad_def_ldap_opts[] = {
     { "ldap_idmap_autorid_compat", DP_OPT_BOOL, BOOL_FALSE, BOOL_FALSE },
     { "ldap_idmap_default_domain", DP_OPT_STRING, NULL_STRING, NULL_STRING },
     { "ldap_idmap_default_domain_sid", DP_OPT_STRING, NULL_STRING, NULL_STRING },
+    { "ldap_idmap_helper_table_size", DP_OPT_NUMBER, { .number = 10 }, NULL_NUMBER },
     { "ldap_groups_use_matching_rule_in_chain", DP_OPT_BOOL, BOOL_FALSE, BOOL_FALSE },
     { "ldap_initgroups_use_matching_rule_in_chain", DP_OPT_BOOL, BOOL_FALSE, BOOL_FALSE },
     { "ldap_use_tokengroups", DP_OPT_BOOL, BOOL_TRUE, BOOL_TRUE},
@@ -230,6 +233,7 @@ struct sdap_attr_map ad_2008r2_group_map[] = {
     { "ldap_group_modify_timestamp", "whenChanged", SYSDB_ORIG_MODSTAMP, NULL },
     { "ldap_group_entry_usn", SDAP_AD_USN, SYSDB_USN, NULL },
     { "ldap_group_type", "groupType", SYSDB_GROUP_TYPE, NULL },
+    { "ldap_group_external_member", NULL, SYSDB_EXTERNAL_MEMBER, NULL },
     SDAP_ATTR_MAP_TERMINATOR
 };
 

@@ -208,6 +208,7 @@ static errno_t prepare_gpo_cache(TALLOC_CTX *mem_ctx,
     char *last = NULL;
     char *smb_path_with_suffix = NULL;
     errno_t ret;
+    mode_t old_umask;
 
     smb_path_with_suffix = talloc_strdup(mem_ctx, input_smb_path_with_suffix);
     if (smb_path_with_suffix == NULL) {
@@ -229,11 +230,13 @@ static errno_t prepare_gpo_cache(TALLOC_CTX *mem_ctx,
 
     ptr = smb_path_with_suffix + 1;
 
+    old_umask = umask(SSS_DFL_X_UMASK);
     for (i = 0; i < num_dirs; i++) {
         first = ptr;
         last = strchr(first, delim);
         if (last == NULL) {
-            return EINVAL;
+            ret = EINVAL;
+            goto done;
         }
         *last = '\0';
         last++;
@@ -241,22 +244,27 @@ static errno_t prepare_gpo_cache(TALLOC_CTX *mem_ctx,
         current_dir = talloc_asprintf(mem_ctx, "%s/%s", current_dir, first);
         if (current_dir == NULL) {
             DEBUG(SSSDBG_CRIT_FAILURE, "talloc_asprintf failed.\n");
-            return ENOMEM;
+            ret = ENOMEM;
+            goto done;
         }
         DEBUG(SSSDBG_TRACE_FUNC, "Storing GPOs in %s\n", current_dir);
 
-        if ((mkdir(current_dir, 0644)) < 0 && errno != EEXIST) {
+        if ((mkdir(current_dir, 0700)) < 0 && errno != EEXIST) {
             ret = errno;
             DEBUG(SSSDBG_CRIT_FAILURE,
                   "mkdir(%s) failed: %d\n", current_dir, ret);
-            return ret;
+            goto done;
         }
 
         ptr = last;
     }
 
-    return EOK;
+    ret = EOK;
 
+done:
+    umask(old_umask);
+
+    return ret;
 }
 
 /*
@@ -463,8 +471,27 @@ ad_gpo_parse_ini_file(const char *smb_path,
 
     ret = ini_config_parse(file_ctx, INI_STOP_ON_NONE, 0, 0, ini_config);
     if (ret != 0) {
+        int lret;
+        char **errors;
+
         DEBUG(SSSDBG_CRIT_FAILURE,
-              "ini_config_parse failed [%d][%s]\n", ret, strerror(ret));
+              "[%s]: ini_config_parse failed [%d][%s]\n",
+              ini_filename, ret, strerror(ret));
+
+        /* Now get specific errors if there are any */
+        lret = ini_config_get_errors(ini_config, &errors);
+        if (lret != 0) {
+            DEBUG(SSSDBG_CRIT_FAILURE,
+                  "Failed to get specific parse error [%d][%s]\n", lret,
+                  strerror(lret));
+            goto done;
+        }
+
+        for (int i = 0; errors[i]; i++) {
+             DEBUG(SSSDBG_CRIT_FAILURE, "%s\n", errors[i]);
+        }
+        ini_config_free_errors(errors);
+
         goto done;
     }
 

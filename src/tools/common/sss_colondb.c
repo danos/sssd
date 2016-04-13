@@ -121,6 +121,10 @@ errno_t sss_colondb_readline(TALLOC_CTX *mem_ctx,
     readchars = getline(&line, &linelen, db->file);
     if (readchars == -1) {
         /* Nothing was read. */
+
+        free(line);
+        line = NULL;
+
         if (errno != 0) {
             ret = errno;
             DEBUG(SSSDBG_CRIT_FAILURE, "Unable to read line [%d]: %s\n",
@@ -196,6 +200,13 @@ errno_t sss_colondb_writeline(struct sss_colondb *db,
     if (tmp_ctx == NULL) {
         DEBUG(SSSDBG_CRIT_FAILURE, "talloc_new() failed.\n");
         return ENOMEM;
+    }
+
+    line = talloc_strdup(tmp_ctx, "");
+    if (line == NULL) {
+        DEBUG(SSSDBG_CRIT_FAILURE, "talloc_new() failed.\n");
+        ret = ENOMEM;
+        goto done;
     }
 
     for (i = 0; table[i].type != SSS_COLONDB_SENTINEL; i++) {

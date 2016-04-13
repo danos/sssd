@@ -90,6 +90,7 @@ option_strings = {
     'pam_trusted_users' : _('List of trusted uids or user\'s name'),
     'pam_public_domains' : _('List of domains accessible even for untrusted users.'),
     'pam_account_expired_message' : _('Message printed when user account is expired.'),
+    'pam_account_locked_message' : _('Message printed when user account is locked.'),
     'p11_child_timeout' : _('How many seconds will pam_sss wait for p11_child to finish'),
 
     # [sudo]
@@ -199,6 +200,8 @@ option_strings = {
     'ad_gpo_map_deny' : _('PAM service names for which GPO-based access is always denied'),
     'ad_gpo_default_right' : _('Default logon right (or permit/deny) to use for unmapped PAM service names'),
     'ad_site' : _('a particular site to be used by the client'),
+    'ad_maximum_machine_account_password_age' : _('Maximum age in days before the machine account password should be renewed'),
+    'ad_machine_account_password_renewal_opts' : _('Option for tuing the machine account renewal task'),
 
     # [provider/krb5]
     'krb5_kdcip' : _('Kerberos server address'),
@@ -330,6 +333,7 @@ option_strings = {
     'ldap_group_objectsid' : _("objectSID attribute"),
     'ldap_group_modify_timestamp' : _('Modification time attribute for groups'),
     'ldap_group_type' : _('Type of the group and other flags'),
+    'ldap_group_external_member' : _('The LDAP group external member attribute'),
     #replaced by ldap_entry_usn# 'ldap_group_entry_usn' : _('entryUSN attribute'),
     'ldap_group_nesting_level' : _('Maximum nesting level SSSd will follow'),
 
@@ -353,6 +357,7 @@ option_strings = {
     'ldap_idmap_autorid_compat' : _('Use autorid-compatible algorithm for ID-mapping'),
     'ldap_idmap_default_domain' : _('Name of the default domain for ID-mapping'),
     'ldap_idmap_default_domain_sid' : _('SID of the default domain for ID-mapping'),
+    'ldap_idmap_helper_table_size' : _('Number of secondary slices'),
 
     'ldap_groups_use_matching_rule_in_chain' : _('Use LDAP_MATCHING_RULE_IN_CHAIN for group lookups'),
     'ldap_initgroups_use_matching_rule_in_chain' : _('Use LDAP_MATCHING_RULE_IN_CHAIN for initgroup lookups'),

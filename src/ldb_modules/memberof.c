@@ -411,7 +411,7 @@ static int mbof_add_fill_ghop_ex(struct mbof_add_ctx *add_ctx,
         return LDB_SUCCESS;
 
     default:
-        /* an error occured, return */
+        /* an error occurred, return */
         return ret;
     }
 
@@ -911,7 +911,7 @@ static int mbof_add_operation(struct mbof_add_operation *addop)
         break;
 
     default:
-        /* an error occured, return */
+        /* an error occurred, return */
         return ret;
     }
 
@@ -2133,7 +2133,7 @@ static int mbof_del_mod_entry(struct mbof_del_operation *delop)
         is_user = false;
         break;
     default:
-        /* an error occured, return */
+        /* an error occurred, return */
         return ret;
     }
 
@@ -2145,7 +2145,7 @@ static int mbof_del_mod_entry(struct mbof_del_operation *delop)
         if (!el || !el->num_values) {
             return LDB_ERR_OPERATIONS_ERROR;
         }
-        diff = talloc_array(del_ctx->muops, struct ldb_dn *,
+        diff = talloc_array(del_ctx, struct ldb_dn *,
                             el->num_values + 1);
         if (!diff) {
             return LDB_ERR_OPERATIONS_ERROR;
@@ -2241,6 +2241,7 @@ static int mbof_del_mod_entry(struct mbof_del_operation *delop)
             if (ret != LDB_SUCCESS) {
                 return ret;
             }
+            talloc_steal(del_ctx->muops, diff[i]);
         }
     }
 
@@ -2457,7 +2458,7 @@ static int mbof_del_fill_muop(struct mbof_del_ctx *del_ctx,
         return LDB_SUCCESS;
 
     default:
-        /* an error occured, return */
+        /* an error occurred, return */
         return ret;
     }
 
@@ -2470,7 +2471,7 @@ static int mbof_del_fill_muop(struct mbof_del_ctx *del_ctx,
     for (i = 0; i < el->num_values; i++) {
         struct ldb_dn *valdn;
 
-        valdn = ldb_dn_from_ldb_val(del_ctx->muops,
+        valdn = ldb_dn_from_ldb_val(del_ctx,
                                     ldb_module_get_ctx(del_ctx->ctx->module),
                                     &el->values[i]);
         if (!valdn || !ldb_dn_validate(valdn)) {
@@ -2488,6 +2489,7 @@ static int mbof_del_fill_muop(struct mbof_del_ctx *del_ctx,
         if (ret != LDB_SUCCESS) {
             return ret;
         }
+        talloc_steal(del_ctx->muops, valdn);
     }
 
     return LDB_SUCCESS;
@@ -2520,7 +2522,7 @@ static int mbof_del_fill_ghop_ex(struct mbof_del_ctx *del_ctx,
         return LDB_SUCCESS;
 
     default:
-        /* an error occured, return */
+        /* an error occurred, return */
         return ret;
     }
 
@@ -2530,7 +2532,7 @@ static int mbof_del_fill_ghop_ex(struct mbof_del_ctx *del_ctx,
               num_gh_vals, mbof->num_values);
 
     for (i = 0; i < mbof->num_values; i++) {
-        valdn = ldb_dn_from_ldb_val(del_ctx->ghops,
+        valdn = ldb_dn_from_ldb_val(del_ctx,
                                     ldb_module_get_ctx(del_ctx->ctx->module),
                                     &mbof->values[i]);
         if (!valdn || !ldb_dn_validate(valdn)) {
@@ -2555,6 +2557,7 @@ static int mbof_del_fill_ghop_ex(struct mbof_del_ctx *del_ctx,
             if (ret != LDB_SUCCESS) {
                 return ret;
             }
+            talloc_steal(del_ctx->ghops, valdn);
         }
     }
 

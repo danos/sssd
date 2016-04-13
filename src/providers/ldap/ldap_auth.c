@@ -695,7 +695,7 @@ static void auth_resolve_done(struct tevent_req *subreq)
     int ret;
     bool use_tls;
 
-    ret = be_resolve_server_recv(subreq, &state->srv);
+    ret = be_resolve_server_recv(subreq, state, &state->srv);
     talloc_zfree(subreq);
     if (ret) {
         /* all servers have been tried and none
@@ -1301,6 +1301,10 @@ static void sdap_pam_auth_done(struct tevent_req *req)
         break;
     case ERR_PASSWORD_EXPIRED:
         state->pd->pam_status = PAM_NEW_AUTHTOK_REQD;
+        break;
+    case ERR_ACCOUNT_LOCKED:
+        state->pd->account_locked = true;
+        state->pd->pam_status = PAM_PERM_DENIED;
         break;
     default:
         state->pd->pam_status = PAM_SYSTEM_ERR;

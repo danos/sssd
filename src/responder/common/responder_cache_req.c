@@ -568,6 +568,124 @@ static bool cache_req_bypass_cache(struct cache_req_input *input)
     return false;
 }
 
+static errno_t cache_req_expiration_status(struct cache_req_input *input,
+                                           struct ldb_result *result,
+                                           time_t cache_refresh_percent)
+{
+    time_t expire;
+
+    if (result == NULL || result->count == 0 || cache_req_bypass_cache(input)) {
+        return ENOENT;
+    }
+
+    if (input->type == CACHE_REQ_INITGROUPS) {
+        expire = ldb_msg_find_attr_as_uint64(result->msgs[0],
+                                             SYSDB_INITGR_EXPIRE, 0);
+    } else {
+        expire = ldb_msg_find_attr_as_uint64(result->msgs[0],
+                                             SYSDB_CACHE_EXPIRE, 0);
+    }
+
+    return sss_cmd_check_cache(result->msgs[0], cache_refresh_percent, expire);
+}
+
+static void cache_req_dpreq_params(TALLOC_CTX *mem_ctx,
+                                   struct cache_req_input *input,
+                                   struct ldb_result *result,
+                                   const char **_string,
+                                   uint32_t *_id,
+                                   const char **_flag)
+{
+    struct ldb_result *user = NULL;
+    const char *name = NULL;
+    uint32_t id = 0;
+    errno_t ret;
+
+    *_id = input->id;
+    *_string = input->dom_objname;
+    *_flag = NULL;
+
+    if (cache_req_input_is_upn(input)) {
+        *_flag = EXTRA_NAME_IS_UPN;
+        return;
+    }
+
+    if (input->type == CACHE_REQ_USER_BY_CERT) {
+        *_string = input->cert;
+        return;
+    }
+
+    if (!DOM_HAS_VIEWS(input->domain)) {
+        return;
+    }
+
+    /* We must search with views. */
+    if (result == NULL || result->count == 0) {
+        *_flag = EXTRA_INPUT_MAYBE_WITH_VIEW;
+        return;
+    }
+
+    /* If domain has views we will try to user original values instead of the
+     * overridden ones. This is a must for the LOCAL view since we can't look
+     * it up otherwise. But it is also a shortcut for non-local views where
+     * we will not fail over to the overridden value. */
+
+    switch (input->type) {
+    case CACHE_REQ_USER_BY_NAME:
+    case CACHE_REQ_GROUP_BY_NAME:
+       name = ldb_msg_find_attr_as_string(result->msgs[0], SYSDB_NAME, NULL);
+       if (name == NULL) {
+           DEBUG(SSSDBG_CRIT_FAILURE, "Bug: name cannot be NULL\n");
+       }
+       break;
+    case CACHE_REQ_USER_BY_ID:
+       id = ldb_msg_find_attr_as_uint64(result->msgs[0], SYSDB_UIDNUM, 0);
+       if (id == 0) {
+           DEBUG(SSSDBG_CRIT_FAILURE, "Bug: id cannot be 0\n");
+       }
+       break;
+    case CACHE_REQ_GROUP_BY_ID:
+       id = ldb_msg_find_attr_as_uint64(result->msgs[0], SYSDB_GIDNUM, 0);
+       if (id == 0) {
+           DEBUG(SSSDBG_CRIT_FAILURE, "Bug: id cannot be 0\n");
+       }
+       break;
+    case CACHE_REQ_INITGROUPS:
+        ret = sysdb_getpwnam_with_views(NULL, input->domain,
+                                        input->dom_objname, &user);
+        if (ret != EOK || user == NULL || user->count != 1) {
+            /* Case where the user is not found has been already handled. If
+             * this is not OK, it is an error. */
+            DEBUG(SSSDBG_CRIT_FAILURE, "Unable to match initgroups user "
+                  "[%d]: %s\n", ret, sss_strerror(ret));
+            break;
+        }
+
+        name = ldb_msg_find_attr_as_string(user->msgs[0], SYSDB_NAME,
+                                           NULL);
+        if (name == NULL) {
+            DEBUG(SSSDBG_CRIT_FAILURE, "Bug: name cannot be NULL\n");
+            break;
+        }
+
+        talloc_steal(mem_ctx, name);
+        talloc_free(user);
+        break;
+    default:
+        return;
+    }
+
+    /* Now we have the original name and id. We don't have to search with
+     * views unless some error occurred. */
+    if (name == NULL && id == 0) {
+        *_flag = EXTRA_INPUT_MAYBE_WITH_VIEW;
+        return;
+    }
+
+    *_string = talloc_steal(mem_ctx, name);
+    *_id = id;
+}
+
 struct cache_req_cache_state {
     /* input data */
     struct tevent_context *ev;
@@ -669,38 +787,17 @@ static errno_t cache_req_cache_check(struct tevent_req *req)
     struct cache_req_cache_state *state = NULL;
     struct tevent_req *subreq = NULL;
     const char *extra_flag = NULL;
-    uint64_t cache_expire = 0;
-    errno_t ret;
     const char *search_str;
+    uint32_t search_id;
+    errno_t ret;
 
     state = tevent_req_data(req, struct cache_req_cache_state);
 
-    if (state->result == NULL || state->result->count == 0 ||
-            cache_req_bypass_cache(state->input) == true) {
-        ret = ENOENT;
-    } else {
-        if (state->input->type == CACHE_REQ_INITGROUPS) {
-            cache_expire = ldb_msg_find_attr_as_uint64(state->result->msgs[0],
-                                                       SYSDB_INITGR_EXPIRE, 0);
-        } else {
-            cache_expire = ldb_msg_find_attr_as_uint64(state->result->msgs[0],
-                                                       SYSDB_CACHE_EXPIRE, 0);
-        }
+    cache_req_dpreq_params(state, state->input, state->result,
+                           &search_str, &search_id, &extra_flag);
 
-        ret = sss_cmd_check_cache(state->result->msgs[0],
-                                  state->cache_refresh_percent, cache_expire);
-    }
-
-    search_str = state->input->dom_objname;
-    if (state->input->type == CACHE_REQ_USER_BY_CERT) {
-        search_str = state->input->cert;
-    }
-
-    if (DOM_HAS_VIEWS(state->input->domain)) {
-        extra_flag = EXTRA_INPUT_MAYBE_WITH_VIEW;
-    } else if (cache_req_input_is_upn(state->input)) {
-        extra_flag = EXTRA_NAME_IS_UPN;
-    }
+    ret = cache_req_expiration_status(state->input, state->result,
+                                      state->cache_refresh_percent);
 
     switch (ret) {
     case EOK:
@@ -715,8 +812,7 @@ static errno_t cache_req_cache_check(struct tevent_req *req)
         subreq = sss_dp_get_account_send(state, state->rctx,
                                          state->input->domain, true,
                                          state->input->dp_type,
-                                         search_str,
-                                         state->input->id, extra_flag);
+                                         search_str, search_id, extra_flag);
         if (subreq == NULL) {
             DEBUG(SSSDBG_CRIT_FAILURE, "Out of memory sending out-of-band "
                                        "data provider request\n");
@@ -733,8 +829,7 @@ static errno_t cache_req_cache_check(struct tevent_req *req)
         subreq = sss_dp_get_account_send(state, state->rctx,
                                          state->input->domain, true,
                                          state->input->dp_type,
-                                         search_str,
-                                         state->input->id, extra_flag);
+                                         search_str, search_id, extra_flag);
         if (subreq == NULL) {
             DEBUG(SSSDBG_CRIT_FAILURE,
                   "Out of memory sending data provider request\n");

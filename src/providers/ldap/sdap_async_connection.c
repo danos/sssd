@@ -75,6 +75,12 @@ struct tevent_req *sdap_connect_send(TALLOC_CTX *memctx,
     req = tevent_req_create(memctx, &state, struct sdap_connect_state);
     if (!req) return NULL;
 
+    if (uri == NULL || sockaddr == NULL) {
+        DEBUG(SSSDBG_CRIT_FAILURE, "Invalid uri or sockaddr\n");
+        ret = EINVAL;
+        goto fail;
+    }
+
     state->reply = talloc(state, struct sdap_msg);
     if (!state->reply) {
         talloc_zfree(req);
@@ -748,6 +754,12 @@ static void simple_bind_done(struct sdap_op *op,
 
     if (result == LDAP_SUCCESS) {
         ret = EOK;
+    } else if (result == LDAP_INVALID_CREDENTIALS
+                   && errmsg != NULL && strstr(errmsg, "data 775,") != NULL) {
+        /* Value 775 is described in
+         * https://msdn.microsoft.com/en-us/library/windows/desktop/ms681386%28v=vs.85%29.aspx
+         * for more details please see commit message. */
+        ret = ERR_ACCOUNT_LOCKED;
     } else {
         ret = ERR_AUTH_FAILED;
     }
@@ -1148,7 +1160,7 @@ static void sdap_kinit_kdc_resolved(struct tevent_req *subreq)
     struct tevent_req *tgtreq;
     int ret;
 
-    ret = be_resolve_server_recv(subreq, &state->kdc_srv);
+    ret = be_resolve_server_recv(subreq, state, &state->kdc_srv);
     talloc_zfree(subreq);
     if (ret != EOK) {
         /* all servers have been tried and none
@@ -1508,7 +1520,7 @@ static void sdap_cli_resolve_done(struct tevent_req *subreq)
                                              struct sdap_cli_connect_state);
     int ret;
 
-    ret = be_resolve_server_recv(subreq, &state->srv);
+    ret = be_resolve_server_recv(subreq, state, &state->srv);
     talloc_zfree(subreq);
     if (ret) {
         state->srv = NULL;

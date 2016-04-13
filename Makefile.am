@@ -241,10 +241,12 @@ if HAVE_CMOCKA
         pam-srv-tests \
         test_ipa_subdom_util \
         test_ipa_subdom_server \
+        test_tools_colondb \
         test_krb5_wait_queue \
         test_cert_utils \
         test_ldap_id_cleanup \
         test_data_provider_be \
+        test_ipa_dn \
         $(NULL)
 
 if HAVE_LIBRESOLV
@@ -366,7 +368,6 @@ dist_noinst_SCRIPTS = \
     contrib/fedora/bashrc_sssd \
     contrib/fedora/make_srpm.sh \
     contrib/ci/clean \
-    contrib/ci/make-check-wrap \
     contrib/ci/rpm-spec-builddeps \
     contrib/ci/run \
     contrib/ci/valgrind-condense \
@@ -528,6 +529,7 @@ dist_noinst_HEADERS = \
     src/util/crypto/sss_crypto.h \
     src/util/cert.h \
     src/util/dlinklist.h \
+    src/util/debug.h \
     src/util/util.h \
     src/util/io.h \
     src/util/util_errors.h \
@@ -618,8 +620,8 @@ dist_noinst_HEADERS = \
     src/providers/ldap/sdap_access.h \
     src/providers/ldap/sdap_async.h \
     src/providers/ldap/sdap_async_private.h \
-    src/providers/ldap/sdap_sudo_cache.h \
     src/providers/ldap/sdap_sudo.h \
+    src/providers/ldap/sdap_sudo_shared.h \
     src/providers/ldap/sdap_autofs.h \
     src/providers/ldap/sdap_id_op.h \
     src/providers/ldap/ldap_opts.h \
@@ -628,6 +630,7 @@ dist_noinst_HEADERS = \
     src/providers/ldap/sdap_users.h \
     src/providers/ldap/sdap_dyndns.h \
     src/providers/ldap/sdap_async_enum.h \
+    src/providers/ldap/sdap_ops.h \
     src/providers/ipa/ipa_common.h \
     src/providers/ipa/ipa_config.h \
     src/providers/ipa/ipa_access.h \
@@ -641,6 +644,8 @@ dist_noinst_HEADERS = \
     src/providers/ipa/ipa_hostid.h \
     src/providers/ipa/ipa_opts.h \
     src/providers/ipa/ipa_srv.h \
+    src/providers/ipa/ipa_dn.h \
+    src/providers/ipa/ipa_sudo.h \
     src/providers/ad/ad_srv.h \
     src/providers/proxy/proxy.h \
     src/tools/tools_util.h \
@@ -956,7 +961,7 @@ libsss_idmap_la_SOURCES = \
     src/util/murmurhash3.c
 libsss_idmap_la_LDFLAGS = \
     -Wl,--version-script,$(srcdir)/src/lib/idmap/sss_idmap.exports \
-    -version-info 4:0:4
+    -version-info 5:0:5
 
 dist_noinst_DATA += src/lib/idmap/sss_idmap.exports
 
@@ -2089,9 +2094,11 @@ nestedgroups_tests_SOURCES = \
     src/tests/cmocka/common_mock_be.c \
     src/providers/ldap/sdap_async_nested_groups.c \
     src/providers/ldap/sdap_ad_groups.c \
+    src/providers/ipa/ipa_dn.c \
     $(NULL)
 nestedgroups_tests_CFLAGS = \
     $(AM_CFLAGS) \
+    -DEXTERNAL_MEMBERS_CHUNK=1 \
     $(NULL)
 nestedgroups_tests_LDADD = \
     $(CMOCKA_LIBS) \
@@ -2574,6 +2581,22 @@ test_ipa_subdom_server_LDADD = \
     libdlopen_test_providers.la \
     $(NULL)
 
+test_tools_colondb_SOURCES = \
+    src/tests/cmocka/test_tools_colondb.c \
+    src/tools/common/sss_colondb.c \
+    $(NULL)
+test_tools_colondb_CFLAGS = \
+    $(AM_CFLAGS) \
+    $(NULL)
+test_tools_colondb_LDFLAGS = \
+    $(NULL)
+test_tools_colondb_LDADD = \
+    $(CMOCKA_LIBS) \
+    $(SSSD_INTERNAL_LTLIBS) \
+    $(POPT_LIBS) \
+    libsss_test_common.la \
+    $(NULL)
+
 test_krb5_wait_queue_SOURCES = \
     src/tests/cmocka/common_mock_be.c \
     src/tests/cmocka/test_krb5_wait_queue.c \
@@ -2630,6 +2653,25 @@ test_data_provider_be_LDADD = \
     libdlopen_test_providers.la \
     $(NULL)
 
+test_ipa_dn_SOURCES = \
+    src/providers/ipa/ipa_dn.c \
+    src/tests/cmocka/test_ipa_dn.c \
+    $(NULL)
+test_ipa_dn_CFLAGS = \
+    $(AM_CFLAGS) \
+    -DUNIT_TESTING \
+    $(NULL)
+test_ipa_dn_LDFLAGS = \
+    -Wl,-wrap,_tevent_add_timer \
+    $(NULL)
+test_ipa_dn_LDADD = \
+    $(CMOCKA_LIBS) \
+    $(SSSD_LIBS) \
+    $(SSSD_INTERNAL_LTLIBS) \
+    $(LIBADD_DL) \
+    libsss_test_common.la \
+    $(NULL)
+
 endif # HAVE_CMOCKA
 
 noinst_PROGRAMS = pam_test_client
@@ -2668,6 +2710,7 @@ intgcheck:
 	    --prefix="$$prefix" \
 	    --with-ldb-lib-dir="$$prefix"/lib/ldb \
 	    --enable-intgcheck-reqs \
+	    --without-semanage \
 	    $(INTGCHECK_CONFIGURE_FLAGS); \
 	$(MAKE) $(AM_MAKEFLAGS); \
 	: Force single-thread install to workaround concurrency issues; \
@@ -2836,7 +2879,9 @@ libsss_ldap_common_la_SOURCES = \
     src/providers/ldap/sdap_refresh.c \
     src/providers/ldap/sdap_utils.c \
     src/providers/ldap/sdap_domain.c \
+    src/providers/ldap/sdap_ops.c \
     src/providers/ldap/sdap.c \
+    src/providers/ipa/ipa_dn.c \
     src/util/user_info_msg.c \
     src/util/sss_ldap.c \
     $(NULL)
@@ -2857,10 +2902,10 @@ libsss_ldap_common_la_LDFLAGS = \
 
 if BUILD_SUDO
 libsss_ldap_common_la_SOURCES += \
-    src/providers/ldap/sdap_sudo_cache.c \
     src/providers/ldap/sdap_async_sudo.c \
     src/providers/ldap/sdap_async_sudo_hostinfo.c \
     src/providers/ldap/sdap_sudo_refresh.c \
+    src/providers/ldap/sdap_sudo_shared.c \
     src/providers/ldap/sdap_sudo.c
 endif
 
@@ -2981,6 +3026,7 @@ libsss_ipa_la_SOURCES = \
     src/providers/ipa/ipa_selinux_maps.c \
     src/providers/ipa/ipa_srv.c \
     src/providers/ipa/ipa_idmap.c \
+    src/providers/ipa/ipa_dn.c \
     src/providers/ad/ad_opts.c \
     src/providers/ad/ad_common.c \
     src/providers/ad/ad_common.h \
@@ -3017,7 +3063,10 @@ endif
 
 if BUILD_SUDO
 libsss_ipa_la_SOURCES += \
-    src/providers/ipa/ipa_sudo.c
+    src/providers/ipa/ipa_sudo.c \
+    src/providers/ipa/ipa_sudo_refresh.c \
+    src/providers/ipa/ipa_sudo_conversion.c \
+    src/providers/ipa/ipa_sudo_async.c
 endif
 
 if BUILD_SSH
@@ -3031,6 +3080,7 @@ libsss_ad_la_SOURCES = \
     src/providers/ad/ad_common.h \
     src/providers/ad/ad_init.c \
     src/providers/ad/ad_dyndns.c \
+    src/providers/ad/ad_machine_pw_renewal.c \
     src/providers/ad/ad_id.c \
     src/providers/ad/ad_id.h \
     src/providers/ad/ad_access.c \

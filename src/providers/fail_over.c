@@ -79,6 +79,8 @@ struct fo_service {
 };
 
 struct fo_server {
+    REFCOUNT_COMMON;
+
     struct fo_server *prev;
     struct fo_server *next;
 
@@ -90,6 +92,8 @@ struct fo_server {
     struct fo_service *service;
     struct timeval last_status_change;
     struct server_common *common;
+
+    TALLOC_CTX *fo_internal_owner;
 };
 
 struct server_common {
@@ -127,6 +131,7 @@ struct resolve_service_request {
 
     struct server_common *server_common;
     struct tevent_req *req;
+    struct tevent_context *ev;
 };
 
 struct status {
@@ -217,6 +222,15 @@ int fo_is_srv_lookup(struct fo_server *s)
     return s && s->srv_data;
 }
 
+static void fo_server_free(struct fo_server *server)
+{
+    if (server == NULL) {
+        return;
+    }
+
+    talloc_free(server->fo_internal_owner);
+}
+
 static struct fo_server *
 collapse_srv_lookup(struct fo_server **_server)
 {
@@ -231,12 +245,12 @@ collapse_srv_lookup(struct fo_server **_server)
         while (server->prev && server->prev->srv_data == meta->srv_data) {
             tmp = server->prev;
             DLIST_REMOVE(server->service->server_list, tmp);
-            talloc_zfree(tmp);
+            fo_server_free(tmp);
         }
         while (server->next && server->next->srv_data == meta->srv_data) {
             tmp = server->next;
             DLIST_REMOVE(server->service->server_list, tmp);
-            talloc_zfree(tmp);
+            fo_server_free(tmp);
         }
 
         if (server == server->service->active_server) {
@@ -249,7 +263,7 @@ collapse_srv_lookup(struct fo_server **_server)
         /* add back the meta server to denote SRV lookup */
         DLIST_ADD_AFTER(server->service->server_list, meta, server);
         DLIST_REMOVE(server->service->server_list, server);
-        talloc_zfree(server);
+        fo_server_free(server);
     }
 
     meta->srv_data->srv_lookup_status = SRV_NEUTRAL;
@@ -502,12 +516,12 @@ create_server_common(TALLOC_CTX *mem_ctx, struct fo_ctx *ctx, const char *name)
     struct server_common *common;
 
     common = rc_alloc(mem_ctx, struct server_common);
-    if (common == NULL)
+    if (common == NULL) {
         return NULL;
+    }
 
     common->name = talloc_strdup(common, name);
     if (common->name == NULL) {
-        talloc_free(common);
         return NULL;
     }
 
@@ -523,6 +537,41 @@ create_server_common(TALLOC_CTX *mem_ctx, struct fo_ctx *ctx, const char *name)
     talloc_set_destructor((TALLOC_CTX *) common, server_common_destructor);
     DLIST_ADD_END(ctx->server_common_list, common, struct server_common *);
     return common;
+}
+
+static struct fo_server *
+fo_server_alloc(struct fo_service *service, int port,
+                void *user_data, bool primary)
+{
+    static struct fo_server *server;
+    TALLOC_CTX *server_owner;
+
+    server_owner = talloc_new(service);
+    if (server_owner == NULL) {
+        return NULL;
+    }
+
+    server = rc_alloc(server_owner, struct fo_server);
+    if (server == NULL) {
+        return NULL;
+    }
+
+    server->fo_internal_owner = server_owner;
+
+    server->common = NULL;
+    server->next = NULL;
+    server->prev = NULL;
+    server->srv_data = NULL;
+    server->last_status_change.tv_sec = 0;
+    server->last_status_change.tv_usec = 0;
+
+    server->port = port;
+    server->user_data = user_data;
+    server->service = service;
+    server->port_status = DEFAULT_PORT_STATUS;
+    server->primary = primary;
+
+    return server;
 }
 
 int
@@ -558,14 +607,11 @@ fo_add_srv_server(struct fo_service *service, const char *srv,
         }
     }
 
-    server = talloc_zero(service, struct fo_server);
-    if (server == NULL)
+    /* SRV servers are always primary */
+    server = fo_server_alloc(service, 0, user_data, true);
+    if (server == NULL) {
         return ENOMEM;
-
-    server->user_data = user_data;
-    server->service = service;
-    server->port_status = DEFAULT_PORT_STATUS;
-    server->primary = true; /* SRV servers are never back up */
+    }
 
     /* add the SRV-specific data */
     server->srv_data = talloc_zero(service, struct srv_data);
@@ -609,7 +655,7 @@ create_fo_server(struct fo_service *service, const char *name,
     struct fo_server *server;
     int ret;
 
-    server = talloc_zero(service, struct fo_server);
+    server = fo_server_alloc(service, port, user_data, primary);
     if (server == NULL)
         return NULL;
 
@@ -624,11 +670,11 @@ create_fo_server(struct fo_service *service, const char *name,
         if (ret == ENOENT) {
             server->common = create_server_common(server, service->ctx, name);
             if (server->common == NULL) {
-                talloc_free(server);
+                fo_server_free(server);
                 return NULL;
             }
         } else if (ret != EOK) {
-            talloc_free(server);
+            fo_server_free(server);
             return NULL;
         }
     }
@@ -761,7 +807,6 @@ static errno_t fo_add_server_list(struct fo_service *service,
         server = create_fo_server(service, servers[i].host, servers[i].port,
                                   user_data, primary);
         if (server == NULL) {
-            talloc_free(srv_list);
             return ENOMEM;
         }
 
@@ -770,7 +815,7 @@ static errno_t fo_add_server_list(struct fo_service *service,
         ret = fo_add_server_to_list(&srv_list, service->server_list,
                                     server, service->name);
         if (ret != EOK) {
-            talloc_zfree(server);
+            fo_server_free(server);
             continue;
         }
 
@@ -804,10 +849,18 @@ fo_add_server(struct fo_service *service, const char *name, int port,
     ret = fo_add_server_to_list(&service->server_list, service->server_list,
                                 server, service->name);
     if (ret != EOK) {
-        talloc_free(server);
+        fo_server_free(server);
     }
 
     return ret;
+}
+
+void fo_ref_server(TALLOC_CTX *ref_ctx,
+                   struct fo_server *server)
+{
+    if (server) {
+        server = rc_reference(ref_ctx, struct fo_server, server);
+    }
 }
 
 static int
@@ -888,7 +941,9 @@ resolve_service_request_destructor(struct resolve_service_request *request)
 }
 
 static int
-set_lookup_hook(struct fo_server *server, struct tevent_req *req)
+set_lookup_hook(struct tevent_context *ev,
+                struct fo_server *server,
+                struct tevent_req *req)
 {
     struct resolve_service_request *request;
 
@@ -904,6 +959,7 @@ set_lookup_hook(struct fo_server *server, struct tevent_req *req)
         talloc_free(request);
         return ENOMEM;
     }
+    request->ev = ev;
     request->req = req;
     DLIST_ADD(server->common->request_list, request);
     talloc_set_destructor(request, resolve_service_request_destructor);
@@ -1090,7 +1146,7 @@ fo_resolve_service_server(struct tevent_req *req)
     case SERVER_RESOLVING_NAME:
         /* Name resolution is already under way. Just add ourselves into the
          * waiting queue so we get notified after the operation is finished. */
-        ret = set_lookup_hook(state->server, req);
+        ret = set_lookup_hook(state->ev, state->server, req);
         if (ret != EOK) {
             tevent_req_error(req, ret);
             return true;
@@ -1142,6 +1198,13 @@ fo_resolve_service_done(struct tevent_req *subreq)
     /* Take care of all requests for this server. */
     while ((request = common->request_list) != NULL) {
         DLIST_REMOVE(common->request_list, request);
+
+        /* If the request callback decresed refcount on the returned
+         * server, we would have crashed as common would not be valid
+         * anymore. Rather schedule the notify for next tev iteration
+         */
+        tevent_req_defer_callback(request->req, request->ev);
+
         if (ret) {
             tevent_req_error(request->req, ret);
         } else {
@@ -1151,7 +1214,9 @@ fo_resolve_service_done(struct tevent_req *subreq)
 }
 
 int
-fo_resolve_service_recv(struct tevent_req *req, struct fo_server **server)
+fo_resolve_service_recv(struct tevent_req *req,
+                        TALLOC_CTX *ref_ctx,
+                        struct fo_server **server)
 {
     struct resolve_service_state *state;
 
@@ -1159,8 +1224,10 @@ fo_resolve_service_recv(struct tevent_req *req, struct fo_server **server)
 
     /* always return the server if asked for, otherwise the caller
      * cannot mark it as faulty in case we return an error */
-    if (server)
+    if (server != NULL) {
+        fo_ref_server(ref_ctx, state->server);
         *server = state->server;
+    }
 
     TEVENT_REQ_RETURN_ON_ERROR(req);
 
@@ -1455,6 +1522,11 @@ fo_set_port_status(struct fo_server *server, enum port_status status)
             gettimeofday(&siter->last_status_change, NULL);
         }
     }
+}
+
+struct fo_server *fo_get_active_server(struct fo_service *service)
+{
+    return service->active_server;
 }
 
 void fo_try_next_server(struct fo_service *service)

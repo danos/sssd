@@ -184,6 +184,10 @@ int ad_gpo_process_cse_recv(struct tevent_req *req);
 #define GPO_GDM_PASSWORD "gdm-password"
 #define GPO_GDM_SMARTCARD "gdm-smartcard"
 #define GPO_KDM "kdm"
+#define GPO_LIGHTDM "lightdm"
+#define GPO_LXDM "lxdm"
+#define GPO_SDDM "sddm"
+#define GPO_XDM "xdm"
 #define GPO_SSHD "sshd"
 #define GPO_FTP "ftp"
 #define GPO_SAMBA "samba"
@@ -191,6 +195,7 @@ int ad_gpo_process_cse_recv(struct tevent_req *req);
 #define GPO_SUDO "sudo"
 #define GPO_SUDO_I "sudo-i"
 #define GPO_SYSTEMD_USER "systemd-user"
+#define GPO_COCKPIT "cockpit"
 
 struct gpo_map_option_entry {
     enum gpo_map_type gpo_map_type;
@@ -202,8 +207,10 @@ struct gpo_map_option_entry {
 
 const char *gpo_map_interactive_defaults[] =
     {GPO_LOGIN, GPO_SU, GPO_SU_L,
-     GPO_GDM_FINGERPRINT, GPO_GDM_PASSWORD, GPO_GDM_SMARTCARD, GPO_KDM, NULL};
-const char *gpo_map_remote_interactive_defaults[] = {GPO_SSHD, NULL};
+     GPO_GDM_FINGERPRINT, GPO_GDM_PASSWORD, GPO_GDM_SMARTCARD, GPO_KDM,
+     GPO_LIGHTDM, GPO_LXDM, GPO_SDDM, GPO_XDM, NULL};
+const char *gpo_map_remote_interactive_defaults[] = {GPO_SSHD, GPO_COCKPIT,
+                                                     NULL};
 const char *gpo_map_network_defaults[] = {GPO_FTP, GPO_SAMBA, NULL};
 const char *gpo_map_batch_defaults[] = {GPO_CROND, NULL};
 const char *gpo_map_service_defaults[] = {NULL};
@@ -1130,8 +1137,27 @@ ad_gpo_store_policy_settings(struct sss_domain_info *domain,
 
     ret = ini_config_parse(file_ctx, INI_STOP_ON_NONE, 0, 0, ini_config);
     if (ret != 0) {
+        int lret;
+        char **errors;
+
         DEBUG(SSSDBG_CRIT_FAILURE,
-              "ini_config_parse failed [%d][%s]\n", ret, strerror(ret));
+              "[%s]: ini_config_parse failed [%d][%s]\n",
+              filename, ret, strerror(ret));
+
+        /* Now get specific errors if there are any */
+        lret = ini_config_get_errors(ini_config, &errors);
+        if (lret != 0) {
+            DEBUG(SSSDBG_CRIT_FAILURE,
+                  "Failed to get specific parse error [%d][%s]\n", lret,
+                  strerror(lret));
+            goto done;
+        }
+
+        for (int a = 0; errors[a]; a++) {
+             DEBUG(SSSDBG_CRIT_FAILURE, "%s\n", errors[a]);
+        }
+        ini_config_free_errors(errors);
+
         goto done;
     }
 
@@ -1794,6 +1820,26 @@ ad_gpo_target_dn_retrieval_done(struct tevent_req *subreq)
     talloc_zfree(subreq);
     if (ret != EOK) {
         ret = sdap_id_op_done(state->sdap_op, ret, &dp_error);
+        if (ret == EAGAIN && dp_error == DP_ERR_OFFLINE) {
+            DEBUG(SSSDBG_TRACE_FUNC, "Preparing for offline operation.\n");
+            ret = process_offline_gpos(state,
+                                       state->user,
+                                       state->gpo_mode,
+                                       state->user_domain,
+                                       state->host_domain,
+                                       state->gpo_map_type);
+
+            if (ret == EOK) {
+                DEBUG(SSSDBG_TRACE_FUNC, "process_offline_gpos succeeded\n");
+                tevent_req_done(req);
+                goto done;
+            } else {
+                DEBUG(SSSDBG_OP_FAILURE,
+                      "process_offline_gpos failed [%d](%s)\n",
+                      ret, sss_strerror(ret));
+                goto done;
+            }
+        }
 
         DEBUG(SSSDBG_OP_FAILURE,
               "Unable to get policy target's DN: [%d](%s)\n",
@@ -4139,7 +4185,7 @@ gpo_fork_child(struct tevent_req *req)
     if (pid == 0) { /* child */
         err = exec_child_ex(state,
                             pipefd_to_child, pipefd_from_child,
-                            GPO_CHILD, gpo_child_debug_fd, NULL,
+                            GPO_CHILD, gpo_child_debug_fd, NULL, false,
                             STDIN_FILENO, AD_GPO_CHILD_OUT_FILENO);
         DEBUG(SSSDBG_CRIT_FAILURE, "Could not exec gpo_child: [%d][%s].\n",
               err, strerror(err));

@@ -726,8 +726,8 @@ ipa_subdomains_handler_get(struct ipa_subdomains_req_ctx *ctx,
     }
 
     talloc_free(ctx->current_filter);
-    ctx->current_filter = sdap_get_id_specific_filter(ctx, params->filter,
-                                                            base->filter);
+    ctx->current_filter = sdap_combine_filters(ctx, params->filter,
+                                               base->filter);
     if (ctx->current_filter == NULL) {
         return ENOMEM;
     }
@@ -792,6 +792,9 @@ static errno_t ipa_get_view_name(struct ipa_subdomains_req_ctx *ctx)
         return EOK;
     }
 
+    /* We add SDAP_DEREF_FLG_SILENT because old IPA servers don't have
+     * the attribute we dereference, causing the deref call to fail
+     */
     req = sdap_deref_search_with_filter_send(ctx, ctx->sd_ctx->be_ctx->ev,
                         ctx->sd_ctx->sdap_id_ctx->opts,
                         sdap_id_op_handle(ctx->sdap_op),
@@ -799,7 +802,8 @@ static errno_t ipa_get_view_name(struct ipa_subdomains_req_ctx *ctx)
                         ctx->current_filter, IPA_ASSIGNED_ID_VIEW, attrs,
                         1, maps,
                         dp_opt_get_int(ctx->sd_ctx->sdap_id_ctx->opts->basic,
-                                       SDAP_SEARCH_TIMEOUT));
+                                       SDAP_SEARCH_TIMEOUT),
+                        SDAP_DEREF_FLG_SILENT);
 
     if (req == NULL) {
         DEBUG(SSSDBG_OP_FAILURE, "sdap_get_generic_send failed.\n");
@@ -894,9 +898,19 @@ static void ipa_get_view_name_done(struct tevent_req *req)
     } else {
         if (ctx->sd_ctx->id_ctx->view_name == NULL
             || strcmp(ctx->sd_ctx->id_ctx->view_name, view_name) != 0) {
-            /* View name changed */
+            /* View name changed. If there was a non-default non-local view
+             * was used the tree in cache containing the override values is
+             * removed. In all cases sysdb_invalidate_overrides() is called to
+             * remove the override attribute from the cached user objects.
+             *
+             * Typically ctx->sd_ctx->id_ctx->view_name == NULL means that the
+             * cache was empty but there was a bug in with caused that the
+             * view name was not written to the cache at all. In this case the
+             * cache must be invalidated if the new view is not the
+             * default-view as well. */
 
-            if (ctx->sd_ctx->id_ctx->view_name != NULL) {
+            if (ctx->sd_ctx->id_ctx->view_name != NULL
+                    || !is_default_view(view_name)) {
                 ret = sysdb_transaction_start(
                                             ctx->sd_ctx->be_ctx->domain->sysdb);
                 if (ret != EOK) {
@@ -1215,6 +1229,9 @@ static void ipa_subdomains_handler_master_done(struct tevent_req *req)
     size_t reply_count = 0;
     struct sysdb_attrs **reply = NULL;
     struct ipa_subdomains_req_ctx *ctx;
+    const char *flat = NULL;
+    const char *id = NULL;
+    const char *realm = NULL;
 
     ctx = tevent_req_callback_data(req, struct ipa_subdomains_req_ctx);
 
@@ -1226,10 +1243,6 @@ static void ipa_subdomains_handler_master_done(struct tevent_req *req)
     }
 
     if (reply_count) {
-        const char *flat = NULL;
-        const char *id = NULL;
-        const char *realm;
-
         ret = sysdb_attrs_get_string(reply[0], IPA_FLATNAME, &flat);
         if (ret != EOK) {
             goto done;
@@ -1240,31 +1253,9 @@ static void ipa_subdomains_handler_master_done(struct tevent_req *req)
             goto done;
         }
 
-        realm = dp_opt_get_string(ctx->sd_ctx->id_ctx->ipa_options->basic,
-                                  IPA_KRB5_REALM);
-        if (realm == NULL) {
-            DEBUG(SSSDBG_CRIT_FAILURE, "No Kerberos realm for IPA?\n");
-            ret = EINVAL;
-            goto done;
-        }
-
-        ret = sysdb_master_domain_add_info(ctx->sd_ctx->be_ctx->domain,
-                                           realm, flat, id, NULL);
-        if (ret != EOK) {
-            goto done;
-        }
-
         /* There is only one master record. Don't bother checking other IPA
          * search bases; move to checking subdomains instead
          */
-        ret = ipa_subdomains_handler_get_start(ctx,
-                                               ctx->sd_ctx->search_bases,
-                                               IPA_SUBDOMAINS_SLAVE);
-        if (ret == EAGAIN) {
-            return;
-        }
-
-        /* Either no search bases or an error. End the request in both cases */
     } else {
         ret = ipa_subdomains_handler_get_cont(ctx, IPA_SUBDOMAINS_MASTER);
         if (ret == EAGAIN) {
@@ -1273,17 +1264,48 @@ static void ipa_subdomains_handler_master_done(struct tevent_req *req)
             goto done;
         }
 
-        /* Right now we know there has been an error
-         * and we don't have the master domain record
-         */
-        DEBUG(SSSDBG_CRIT_FAILURE, "Master domain record not found!\n");
+        /* All search paths are searched and no master domain record was
+         * found.
+         *
+         * A default IPA installation will not have a master domain record,
+         * this is only created by ipa-adtrust-install. Nevertheless we should
+         * continue to read other data like the idview on IPA clients. */
 
-        if (!ctx->sd_ctx->configured_explicit) {
-            ctx->sd_ctx->disabled_until = time(NULL) +
-                                          IPA_SUBDOMAIN_DISABLED_PERIOD;
+        DEBUG(SSSDBG_TRACE_INTERNAL, "Master domain record not found!\n");
+
+    }
+
+    realm = dp_opt_get_string(ctx->sd_ctx->id_ctx->ipa_options->basic,
+                              IPA_KRB5_REALM);
+    if (realm == NULL) {
+        DEBUG(SSSDBG_CRIT_FAILURE, "No Kerberos realm for IPA?\n");
+        ret = EINVAL;
+        goto done;
+    }
+
+    ret = sysdb_master_domain_add_info(ctx->sd_ctx->be_ctx->domain,
+                                       realm, flat, id, NULL);
+    if (ret != EOK) {
+        goto done;
+    }
+
+    ret = ipa_subdomains_handler_get_start(ctx,
+                                           ctx->sd_ctx->search_bases,
+                                           IPA_SUBDOMAINS_SLAVE);
+    if (ret == EAGAIN) {
+        return;
+    } else if (ret == EOK) {
+        /* If there are no search bases defined for subdomains try to get the
+         * idview before ending the request */
+        if (ctx->sd_ctx->id_ctx->server_mode == NULL) {
+            /* Only get view on clients, on servers it is always 'default' */
+            ret = ipa_get_view_name(ctx);
+            if (ret == EAGAIN) {
+                return;
+            } else if (ret != EOK) {
+                goto done;
+            }
         }
-
-        ret = EIO;
     }
 
 done:

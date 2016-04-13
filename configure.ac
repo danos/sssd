@@ -14,12 +14,13 @@ m4_ifdef([AC_USE_SYSTEM_EXTENSIONS],
 CFLAGS="$CFLAGS -D_FILE_OFFSET_BITS=64 -D_LARGEFILE_SOURCE -D_LARGEFILE64_SOURCE"
 
 
-AM_INIT_AUTOMAKE([-Wall -Wno-portability foreign subdir-objects tar-pax])
+AM_INIT_AUTOMAKE([-Wall -Wno-portability foreign subdir-objects tar-pax
+                  parallel-tests])
 AM_PROG_CC_C_O
 m4_ifdef([AM_PROG_AR], [AM_PROG_AR])
 AC_DISABLE_STATIC
 AC_PROG_INSTALL
-AC_PROG_LIBTOOL
+LT_INIT
 m4_ifdef([AC_PROG_MKDIR_P],
          [AC_PROG_MKDIR_P],
          [AC_SUBST([MKDIR_P], "mkdir -p")])
@@ -75,6 +76,9 @@ AC_CHECK_FUNCS([ utimensat \
 
 #Check for endian headers
 AC_CHECK_HEADERS([endian.h sys/endian.h byteswap.h])
+
+AC_C_BIGENDIAN([AC_DEFINE(HAVE_BIG_ENDIAN, [1], [whether platform is big endian])],
+               [AC_DEFINE(HAVE_LITTLE_ENDIAN, [1], [whether platform is little endian])])
 
 #Set the NSS library install path
 AC_ARG_ENABLE([nsslibdir], [AS_HELP_STRING([--enable-nsslibdir],

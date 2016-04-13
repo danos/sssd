@@ -606,7 +606,7 @@ errno_t be_resolve_server_process(struct tevent_req *subreq,
     time_t srv_status_change;
     struct be_svc_callback *callback;
 
-    ret = fo_resolve_service_recv(subreq, &state->srv);
+    ret = fo_resolve_service_recv(subreq, state, &state->srv);
     switch (ret) {
     case EOK:
         if (!state->srv) {
@@ -699,7 +699,9 @@ errno_t be_resolve_server_process(struct tevent_req *subreq,
     return EOK;
 }
 
-int be_resolve_server_recv(struct tevent_req *req, struct fo_server **srv)
+int be_resolve_server_recv(struct tevent_req *req,
+                           TALLOC_CTX *ref_ctx,
+                           struct fo_server **srv)
 {
     struct be_resolve_server_state *state = tevent_req_data(req,
                                              struct be_resolve_server_state);
@@ -707,6 +709,7 @@ int be_resolve_server_recv(struct tevent_req *req, struct fo_server **srv)
     TEVENT_REQ_RETURN_ON_ERROR(req);
 
     if (srv) {
+        fo_ref_server(ref_ctx, state->srv);
         *srv = state->srv;
     }
 
@@ -721,6 +724,23 @@ void be_fo_try_next_server(struct be_ctx *ctx, const char *service_name)
     if (svc) {
         fo_try_next_server(svc->fo_service);
     }
+}
+
+const char *be_fo_get_active_server_name(struct be_ctx *ctx,
+                                         const char *service_name)
+{
+    struct be_svc_data *svc;
+    struct fo_server *server;
+
+    svc = be_fo_find_svc_data(ctx, service_name);
+    if (svc != NULL) {
+        server = fo_get_active_server(svc->fo_service);
+        if (server != NULL) {
+            return fo_get_server_name(server);
+        }
+    }
+
+    return NULL;
 }
 
 int be_fo_run_callbacks_at_next_request(struct be_ctx *ctx,

@@ -874,6 +874,7 @@ static int sdap_save_grpmem(TALLOC_CTX *memctx,
     const char *group_name;
     char **userdns = NULL;
     size_t nuserdns = 0;
+    struct sss_domain_info *group_dom = NULL;
     int ret;
 
     if (dom->ignore_group_members) {
@@ -884,7 +885,34 @@ static int sdap_save_grpmem(TALLOC_CTX *memctx,
         return EOK;
     }
 
-    ret = sdap_get_group_primary_name(memctx, opts, attrs, dom, &group_name);
+    ret = sysdb_attrs_get_string(attrs, SYSDB_SID_STR, &group_sid);
+    if (ret != EOK) {
+        /* Try harder. */
+        ret = sdap_attrs_get_sid_str(memctx, opts->idmap_ctx, attrs,
+                              opts->group_map[SDAP_AT_GROUP_OBJECTSID].sys_name,
+                              discard_const(&group_sid));
+        if (ret != EOK) {
+            DEBUG(SSSDBG_TRACE_FUNC, "Failed to get group sid\n");
+            group_sid = NULL;
+        }
+    }
+
+    if (group_sid != NULL) {
+        group_dom = sss_get_domain_by_sid_ldap_fallback(get_domains_head(dom),
+                                                        group_sid);
+        if (group_dom == NULL) {
+            DEBUG(SSSDBG_TRACE_FUNC, "SID [%s] does not belong to any known "
+                                     "domain, using [%s].\n", group_sid,
+                                                              dom->name);
+        }
+    }
+
+    if (group_dom == NULL) {
+        group_dom = dom;
+    }
+
+    ret = sdap_get_group_primary_name(memctx, opts, attrs, group_dom,
+                                      &group_name);
     if (ret != EOK) {
         DEBUG(SSSDBG_OP_FAILURE, "Failed to get group name\n");
         goto fail;
@@ -895,7 +923,7 @@ static int sdap_save_grpmem(TALLOC_CTX *memctx,
      * are reported with tokenGroups, too
      */
     if (opts->schema_type == SDAP_SCHEMA_AD) {
-        ret = sdap_dn_by_primary_gid(memctx, attrs, dom, opts,
+        ret = sdap_dn_by_primary_gid(memctx, attrs, group_dom, opts,
                                      &userdns, &nuserdns);
         if (ret != EOK) {
             DEBUG(SSSDBG_MINOR_FAILURE,
@@ -910,15 +938,9 @@ static int sdap_save_grpmem(TALLOC_CTX *memctx,
      * https://fedorahosted.org/sssd/ticket/2522
      */
     if (opts->schema_type == SDAP_SCHEMA_IPA_V1) {
-        ret = sysdb_attrs_get_string(attrs, SYSDB_SID_STR, &group_sid);
-        if (ret != EOK) {
-            DEBUG(SSSDBG_TRACE_FUNC, "Failed to get group sid\n");
-            group_sid = NULL;
-        }
-
         if (group_sid != NULL) {
-            ret = retain_extern_members(memctx, dom, group_name, group_sid,
-                                        &userdns, &nuserdns);
+            ret = retain_extern_members(memctx, group_dom, group_name,
+                                        group_sid, &userdns, &nuserdns);
             if (ret != EOK) {
                 DEBUG(SSSDBG_TRACE_INTERNAL,
                       "retain_extern_members failed: %d:[%s].\n",
@@ -949,7 +971,7 @@ static int sdap_save_grpmem(TALLOC_CTX *memctx,
             goto fail;
         }
 
-        ret = sdap_fill_memberships(opts, group_attrs, ctx, dom, ghosts,
+        ret = sdap_fill_memberships(opts, group_attrs, ctx, group_dom, ghosts,
                                     el->values, el->num_values,
                                     userdns, nuserdns);
         if (ret) {
@@ -960,8 +982,8 @@ static int sdap_save_grpmem(TALLOC_CTX *memctx,
         }
     }
 
-    ret = sysdb_store_group(dom, group_name, 0, group_attrs,
-                            dom->group_timeout, now);
+    ret = sysdb_store_group(group_dom, group_name, 0, group_attrs,
+                            group_dom->group_timeout, now);
     if (ret) {
         DEBUG(SSSDBG_MINOR_FAILURE, "sysdb_store_group failed: [%d][%s].\n",
               ret, strerror(ret));
@@ -1736,6 +1758,7 @@ struct sdap_get_groups_state {
     struct sysdb_attrs **groups;
     size_t count;
     size_t check_count;
+    hash_table_t *missing_external;
 
     hash_table_t *user_hash;
     hash_table_t *group_hash;
@@ -1869,8 +1892,7 @@ static errno_t sdap_get_groups_next_base(struct tevent_req *req)
     state = tevent_req_data(req, struct sdap_get_groups_state);
 
     talloc_zfree(state->filter);
-    state->filter = sdap_get_id_specific_filter(state,
-                        state->base_filter,
+    state->filter = sdap_combine_filters(state, state->base_filter,
                         state->search_bases[state->base_iter]->filter);
     if (!state->filter) {
         return ENOMEM;
@@ -2312,6 +2334,8 @@ int sdap_get_groups_recv(struct tevent_req *req,
     return EOK;
 }
 
+static void sdap_nested_ext_done(struct tevent_req *subreq);
+
 static void sdap_nested_done(struct tevent_req *subreq)
 {
     errno_t ret, tret;
@@ -2327,7 +2351,8 @@ static void sdap_nested_done(struct tevent_req *subreq)
                                             struct sdap_get_groups_state);
 
     ret = sdap_nested_group_recv(state, subreq, &user_count, &users,
-                                 &group_count, &groups);
+                                 &group_count, &groups,
+                                 &state->missing_external);
     talloc_zfree(subreq);
     if (ret != EOK) {
         DEBUG(SSSDBG_CRIT_FAILURE, "Nested group processing failed: [%d][%s]\n",
@@ -2366,8 +2391,25 @@ static void sdap_nested_done(struct tevent_req *subreq)
     }
     in_transaction = false;
 
-    /* Processing complete */
-    tevent_req_done(req);
+    if (hash_count(state->missing_external) == 0) {
+        /* No external members. Processing complete */
+        DEBUG(SSSDBG_TRACE_INTERNAL, "No external members, done");
+        tevent_req_done(req);
+        return;
+    }
+
+    /* At the moment, we need to save the direct groups & members in one
+     * transaction and then query the others in a separate requests
+     */
+    subreq = sdap_nested_group_lookup_external_send(state, state->ev,
+                                                    state->dom,
+                                                    state->opts->ext_ctx,
+                                                    state->missing_external);
+    if (subreq == NULL) {
+        ret = ENOMEM;
+        goto fail;
+    }
+    tevent_req_set_callback(subreq, sdap_nested_ext_done, req);
     return;
 
 fail:
@@ -2378,6 +2420,28 @@ fail:
         }
     }
     tevent_req_error(req, ret);
+}
+
+static void sdap_nested_ext_done(struct tevent_req *subreq)
+{
+    errno_t ret;
+    struct tevent_req *req = tevent_req_callback_data(subreq,
+                                                      struct tevent_req);
+    struct sdap_get_groups_state *state = tevent_req_data(req,
+                                            struct sdap_get_groups_state);
+
+    ret = sdap_nested_group_lookup_external_recv(state, subreq);
+    talloc_free(subreq);
+    if (ret != EOK) {
+        DEBUG(SSSDBG_OP_FAILURE,
+              "Cannot resolve external members [%d]: %s\n",
+              ret, sss_strerror(ret));
+        tevent_req_error(req, ret);
+        return;
+    }
+
+    tevent_req_done(req);
+    return;
 }
 
 static errno_t sdap_nested_group_populate_users(TALLOC_CTX *mem_ctx,
@@ -2474,7 +2538,7 @@ static errno_t sdap_nested_group_populate_users(TALLOC_CTX *mem_ctx,
             ret = ENOMEM;
             goto done;
         }
-        ret = sysdb_search_users(tmp_ctx, domain, filter,
+        ret = sysdb_search_users(tmp_ctx, user_dom, filter,
                                  search_attrs, &count, &msgs);
         talloc_zfree(filter);
         talloc_zfree(clean_orig_dn);

@@ -27,7 +27,6 @@
 #include "providers/ldap/sdap.h"
 #include "providers/ldap/sdap_async.h"
 #include "providers/ldap/sdap_sudo.h"
-#include "providers/ldap/sdap_sudo_cache.h"
 #include "db/sysdb_sudo.h"
 
 static void sdap_sudo_handler(struct be_req *breq);
@@ -72,11 +71,7 @@ int sdap_sudo_init(struct be_ctx *be_ctx,
     *ops = &sdap_sudo_ops;
     *pvt_data = sudo_ctx;
 
-    /* we didn't do any full refresh now,
-     * so we don't have current usn values available */
-    sudo_ctx->full_refresh_done = false;
-
-    ret = ldap_get_sudo_options(id_ctx, be_ctx->cdb,
+    ret = ldap_get_sudo_options(be_ctx->cdb,
                                 be_ctx->conf_path, id_ctx->opts,
                                 &sudo_ctx->use_host_filter,
                                 &sudo_ctx->include_regexp,

@@ -81,6 +81,7 @@
 #define SYSDB_USER_CATEGORY "userCategory"
 #define SYSDB_HOST_CATEGORY "hostCategory"
 #define SYSDB_GROUP_TYPE "groupType"
+#define SYSDB_EXTERNAL_MEMBER "externalMember"
 
 #define SYSDB_GECOS "gecos"
 #define SYSDB_LAST_LOGIN "lastLogin"
@@ -385,6 +386,13 @@ errno_t sysdb_get_real_name(TALLOC_CTX *mem_ctx,
 errno_t sysdb_msg2attrs(TALLOC_CTX *mem_ctx, size_t count,
                         struct ldb_message **msgs,
                         struct sysdb_attrs ***attrs);
+
+int sysdb_compare_usn(const char *a, const char *b);
+
+errno_t sysdb_get_highest_usn(TALLOC_CTX *mem_ctx,
+                              struct sysdb_attrs **attrs,
+                              size_t num_attrs,
+                              char **_usn);
 
 /* convert an ldb error into an errno error */
 int sysdb_error_to_errno(int ldberr);
@@ -1147,7 +1155,8 @@ errno_t sysdb_search_user_by_cert(TALLOC_CTX *mem_ctx,
                                   const char *cert,
                                   struct ldb_result **res);
 
-
+errno_t sysdb_remove_cert(struct sss_domain_info *domain,
+                          const char *cert);
 
 /* === Functions related to GPOs === */
 
@@ -1219,4 +1228,10 @@ errno_t sysdb_handle_original_uuid(const char *orig_name,
                                    const char *src_name,
                                    struct sysdb_attrs *dest_attrs,
                                    const char *dest_name);
+
+errno_t sysdb_try_to_find_expected_dn(struct sss_domain_info *dom,
+                                      const char *domain_component_name,
+                                      struct sysdb_attrs **usr_attrs,
+                                      size_t count,
+                                      struct sysdb_attrs **exp_usr);
 #endif /* __SYS_DB_H__ */
