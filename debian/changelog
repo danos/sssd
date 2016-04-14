@@ -1,5 +1,6 @@
-sssd (1.13.4-1) UNRELEASED; urgency=medium
+sssd (1.13.4-1) unstable; urgency=medium
 
+  * New upstream release.
   * apparmor-profile: Fixed and tidied.
 
  -- Timo Aaltonen <tjaalton@debian.org>  Wed, 30 Mar 2016 19:31:33 +0300
