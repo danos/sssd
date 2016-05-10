@@ -34,6 +34,7 @@
 
   /var/lib/sss/* rw,
   /var/lib/sss/db/* rwk,
+  /var/lib/sss/gpo_cache/* rw,
   /var/lib/sss/mc/* rw,
   /var/lib/sss/pipes/* rw,
   /var/lib/sss/pipes/private/* rw,
