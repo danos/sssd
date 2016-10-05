@@ -10,6 +10,7 @@ usr/sbin/sss_seed
 usr/sbin/sss_useradd
 usr/sbin/sss_userdel
 usr/sbin/sss_usermod
+usr/sbin/sssctl
 usr/share/man/man8/sss_cache.8*
 usr/share/man/man8/sss_debuglevel.8*
 usr/share/man/man8/sss_groupadd.8*
@@ -22,3 +23,4 @@ usr/share/man/man8/sss_seed.8*
 usr/share/man/man8/sss_useradd.8*
 usr/share/man/man8/sss_userdel.8*
 usr/share/man/man8/sss_usermod.8*
+usr/share/man/man8/sssctl.8*
