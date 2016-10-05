@@ -1,3 +1,12 @@
+sssd (1.14.1-1) UNRELEASED; urgency=medium
+
+  * New upstream release.
+  * ipa-terminate-if-view-name-fails.diff,
+    gpo-add-unity-to-ad-gpo-map-interactive.diff:
+    Dropped, upstream.
+
+ -- Timo Aaltonen <tjaalton@debian.org>  Wed, 05 Oct 2016 10:03:04 +0300
+
 sssd (1.13.4-3) unstable; urgency=medium
 
   * common: Add /var/lib/sss/gpo_cache. (LP: #1579092)
