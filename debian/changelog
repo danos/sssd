@@ -10,6 +10,8 @@ sssd (1.14.1-1) UNRELEASED; urgency=medium
   * sssd-common.install: Add sssd-secrets and winbind idmap plugin.
   * Drop the upstart job, it was only shipped on Ubuntu which has
     switched to systemd.
+  * rules, default, import-daemon-opts.diff: Import daemon options from
+    default/sssd also with systemd. (LP: #1587395)
 
  -- Timo Aaltonen <tjaalton@debian.org>  Wed, 05 Oct 2016 10:03:04 +0300
 
