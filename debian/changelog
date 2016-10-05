@@ -5,6 +5,7 @@ sssd (1.14.1-1) UNRELEASED; urgency=medium
     gpo-add-unity-to-ad-gpo-map-interactive.diff:
     Dropped, upstream.
   * sssd-common.dirs: Add etc/sssd/conf.d for config snippets.
+  * control: Add libhttp-parser-dev and libjansson-dev to build-deps.
 
  -- Timo Aaltonen <tjaalton@debian.org>  Wed, 05 Oct 2016 10:03:04 +0300
 
