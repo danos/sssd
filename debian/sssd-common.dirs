@@ -1,4 +1,5 @@
 etc/sssd
+etc/sssd/conf.d
 var/lib/sss
 var/lib/sss/db
 var/lib/sss/gpo_cache
