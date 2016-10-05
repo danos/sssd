@@ -12,6 +12,7 @@ sssd (1.14.1-1) UNRELEASED; urgency=medium
     switched to systemd.
   * rules, default, import-daemon-opts.diff: Import daemon options from
     default/sssd also with systemd. (LP: #1587395)
+  * rules: Don't install a default config file.
 
  -- Timo Aaltonen <tjaalton@debian.org>  Wed, 05 Oct 2016 10:03:04 +0300
 
