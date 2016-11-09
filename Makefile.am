@@ -321,6 +321,7 @@ TESTS = \
     $(non_interactive_cmocka_based_tests) \
     $(non_interactive_check_based_tests) \
     src/tests/whitespace_test \
+    src/tests/double_semicolon_test \
     $(NULL)
 
 sssdlib_LTLIBRARIES = \
@@ -410,6 +411,7 @@ dist_noinst_SCRIPTS = \
     src/tests/pysss_murmur-test.py3.sh \
     src/tests/python-test.py \
     src/tests/whitespace_test \
+    src/tests/double_semicolon_test \
     src/tests/krb5_proxy_check_test_data.conf \
     $(NULL)
 
@@ -420,6 +422,7 @@ dist_noinst_DATA = \
     src/config/testconfigs/sssd-badversion.conf \
     src/config/testconfigs/sssd-invalid.conf \
     src/config/testconfigs/sssd-invalid-badbool.conf \
+    src/config/testconfigs/sssd-nonexisting-services-domains.conf \
     src/config/etc/sssd.api.d/crash_test_dummy \
     contrib/ci/README.md \
     contrib/ci/configure.sh \
@@ -1570,6 +1573,7 @@ sss_override_CFLAGS = \
 
 sssctl_SOURCES = \
     src/tools/sssctl/sssctl.c \
+    src/tools/sssctl/sssctl_systemd.c \
     src/tools/sssctl/sssctl_cache.c \
     src/tools/sssctl/sssctl_data.c \
     src/tools/sssctl/sssctl_logs.c \
@@ -1828,6 +1832,7 @@ refcount_tests_SOURCES = \
     src/tests/refcount-tests.c \
     $(NULL)
 refcount_tests_CFLAGS = \
+    $(AM_CFLAGS) \
     $(CHECK_CFLAGS)
 refcount_tests_LDADD = \
     $(SSSD_LIBS) \
@@ -1840,6 +1845,7 @@ fail_over_tests_SOURCES = \
     $(SSSD_FAILOVER_OBJ) \
     $(NULL)
 fail_over_tests_CFLAGS = \
+    $(AM_CFLAGS) \
     $(CHECK_CFLAGS)
 fail_over_tests_LDADD = \
     $(SSSD_LIBS) \
@@ -2044,6 +2050,7 @@ sbus_tests_SOURCES = \
    src/tests/common_dbus.c \
    src/tests/sbus_tests.c
 sbus_tests_CFLAGS = \
+    $(AM_CFLAGS) \
     $(CHECK_CFLAGS)
 sbus_tests_LDADD = \
     $(SSSD_INTERNAL_LTLIBS) \
@@ -2056,6 +2063,7 @@ sbus_codegen_tests_SOURCES = \
     src/tests/sbus_codegen_tests_generated.c \
     $(NULL)
 sbus_codegen_tests_CFLAGS = \
+    $(AM_CFLAGS) \
     $(CHECK_CFLAGS)
 sbus_codegen_tests_LDADD = \
     $(SSSD_INTERNAL_LTLIBS) \
@@ -2468,6 +2476,7 @@ ad_common_tests_SOURCES = \
     src/providers/ldap/sdap_async_initgroups_ad.c \
     $(NULL)
 ad_common_tests_CFLAGS = \
+    $(AM_CFLAGS) \
     $(NDR_NBT_CFLAGS) \
     $(NDR_KRB5PAC_CFLAGS) \
     $(NULL)
@@ -3076,8 +3085,7 @@ endif
 # Integration tests #
 #####################
 
-intgcheck:
-	echo "temporarily disabled"
+intgcheck-prepare:
 	set -e; \
 	rm -Rf intg; \
 	$(MKDIR_P) intg/bld; \
@@ -3096,9 +3104,24 @@ intgcheck:
 	$(MAKE) $(AM_MAKEFLAGS) -j1 install; \
 	: Remove .la files from LDB module directory to avoid loader warnings; \
 	rm "$$prefix"/lib/ldb/*.la; \
+	cd ../..
+
+intgcheck-run:
+	set -e; \
+	if [ ! -d intg/pfx ]; then $(MAKE) intgcheck-prepare; fi; \
+	cd intg/bld; \
 	$(MAKE) $(AM_MAKEFLAGS) -C src/tests/intg intgcheck-installed; \
-	cd ../..; \
+	cd ../..
+
+intgcheck-clean:
+	set -e; \
+	prefix=`readlink -e intg/pfx`; \
 	rm -Rf "$$prefix" intg
+
+intgcheck:
+	$(MAKE) intgcheck-prepare
+	$(MAKE) intgcheck-run
+	$(MAKE) intgcheck-clean
 
 ####################
 # Client Libraries #
@@ -3952,7 +3975,6 @@ SSSD_USER_DIRS = \
     $(DESTDIR)$(keytabdir) \
     $(DESTDIR)$(mcpath) \
     $(DESTDIR)$(pipepath) \
-    $(DESTDIR)$(pipepath)/private \
     $(DESTDIR)$(pubconfpath) \
     $(DESTDIR)$(pubconfpath)/krb5.include.d \
     $(DESTDIR)$(gpocachepath) \
@@ -3979,16 +4001,17 @@ installsssddirs::
     $(DESTDIR)$(sssddatadir) \
     $(DESTDIR)$(sudolibdir) \
     $(DESTDIR)$(autofslibdir) \
+    $(DESTDIR)$(pipepath)/private \
     $(SSSD_USER_DIRS) \
     $(NULL);
 if SSSD_USER
-	-chown $(SSSD_USER):$(SSSD_USER) \
-	$(SSSD_USER_DIRS)
+	-chown $(SSSD_USER):$(SSSD_USER) $(SSSD_USER_DIRS)
+	-chown $(SSSD_USER) $(DESTDIR)$(pipepath)/private
 endif
 	$(INSTALL) -d -m 0700 $(DESTDIR)$(dbpath) $(DESTDIR)$(logpath) \
-            $(DESTDIR)$(pipepath)/private \
 	    $(DESTDIR)$(keytabdir) \
 	    $(NULL)
+	$(INSTALL) -d -m 0750 $(DESTDIR)$(pipepath)/private
 	$(INSTALL) -d -m 0755 $(DESTDIR)$(mcpath) $(DESTDIR)$(pipepath) \
             $(DESTDIR)$(pubconfpath) \
             $(DESTDIR)$(pubconfpath)/krb5.include.d $(DESTDIR)$(gpocachepath)
@@ -4189,6 +4212,14 @@ rpmroot:
 	$(MKDIR_P) $(RPMBUILD)/SPECS
 	$(MKDIR_P) $(RPMBUILD)/SRPMS
 
+# pre-release related vars
+
+PR_VERSION_DATE := $(shell date +%Y%m%d.%H%M)
+PR_VERSION_COMMIT_HASH := $(shell git log -1 --pretty=format:%h)
+PR_VERSION_NUMBER = $(PR_VERSION_DATE).git$(PR_VERSION_COMMIT_HASH)
+PR_VERSION_REGEX = m4_define(\[PRERELEASE_VERSION_NUMBER\], \[.*\])
+PR_VERSION_REPL = m4_define(\[PRERELEASE_VERSION_NUMBER\], \[.$(PR_VERSION_NUMBER)\])
+
 rpmbrprep: dist-gzip rpmroot
 if GIT_CHECKOUT
 # When we're building RPMs from a git checkout,
@@ -4206,7 +4237,8 @@ rpms: rpmbrprep
 if GIT_CHECKOUT
 prerelease-rpms:
 	cp $(srcdir)/version.m4 $(srcdir)/version.m4.orig
-	sed -e "s/m4_define(\[PRERELEASE_VERSION_NUMBER\], \[.*\])/m4_define(\[PRERELEASE_VERSION_NUMBER\], \[.`date +%Y%m%d.%H%M`.git`git log -1 --pretty=format:%h`\])/" < $(srcdir)/version.m4.orig > $(srcdir)/version.m4
+	sed -e "s/$(PR_VERSION_REGEX)/$(PR_VERSION_REPL)/" \
+		< $(srcdir)/version.m4.orig > $(srcdir)/version.m4
 	$(MAKE) rpms
 	mv $(srcdir)/version.m4.orig $(srcdir)/version.m4
 endif
@@ -4221,7 +4253,8 @@ srpm: rpmbrprep
 if GIT_CHECKOUT
 prerelease-srpm:
 	cp $(srcdir)/version.m4 $(srcdir)/version.m4.orig
-	sed -e "s/m4_define(\[PRERELEASE_VERSION_NUMBER\], \[.*\])/m4_define(\[PRERELEASE_VERSION_NUMBER\], \[.`date +%Y%m%d.%H%M`.git`git log -1 --pretty=format:%h`\])/" < $(srcdir)/version.m4.orig > $(srcdir)/version.m4
+	sed -e "s/$(PR_VERSION_REGEX)/$(PR_VERSION_REPL)/" \
+		< $(srcdir)/version.m4.orig > $(srcdir)/version.m4
 	$(MAKE) srpm
 	mv $(srcdir)/version.m4.orig $(srcdir)/version.m4
 endif

@@ -816,7 +816,7 @@ static struct tevent_req *sdap_initgr_nested_send(TALLOC_CTX *memctx,
     }
 
     state->groups = talloc_zero_array(state, struct sysdb_attrs *,
-                                      state->memberof->num_values + 1);;
+                                      state->memberof->num_values + 1);
     if (!state->groups) {
         ret = ENOMEM;
         goto immediate;
@@ -1414,7 +1414,7 @@ sdap_initgr_nested_get_membership_diff(TALLOC_CTX *mem_ctx,
                group_name, parents_count);
 
     if (parents_count > 0) {
-        ret = sysdb_attrs_primary_name_list(dom, tmp_ctx,
+        ret = sysdb_attrs_primary_fqdn_list(dom, tmp_ctx,
                                             ldap_parentlist,
                                             parents_count,
                                             opts->group_map[SDAP_AT_GROUP_NAME].name,

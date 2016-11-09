@@ -29,19 +29,45 @@
 #include "resolv/async_resolv.h"
 
 #define DEFAULT_SEC_FD_LIMIT 2048
+#define DEFAULT_SEC_CONTAINERS_NEST_LEVEL 4
+#define DEFAULT_SEC_MAX_SECRETS 1024
 
 static int sec_get_config(struct sec_ctx *sctx)
 {
     int ret;
 
     ret = confdb_get_int(sctx->rctx->cdb,
-                         CONFDB_SEC_CONF_ENTRY,
+                         sctx->rctx->confdb_service_path,
                          CONFDB_SERVICE_FD_LIMIT,
                          DEFAULT_SEC_FD_LIMIT,
                          &sctx->fd_limit);
     if (ret != EOK) {
         DEBUG(SSSDBG_FATAL_FAILURE,
               "Failed to get file descriptors limit\n");
+        goto fail;
+    }
+
+    ret = confdb_get_int(sctx->rctx->cdb,
+                         sctx->rctx->confdb_service_path,
+                         CONFDB_SEC_CONTAINERS_NEST_LEVEL,
+                         DEFAULT_SEC_CONTAINERS_NEST_LEVEL,
+                         &sctx->containers_nest_level);
+
+    if (ret != EOK) {
+        DEBUG(SSSDBG_FATAL_FAILURE,
+              "Failed to get containers' maximum depth\n");
+        goto fail;
+    }
+
+    ret = confdb_get_int(sctx->rctx->cdb,
+                         sctx->rctx->confdb_service_path,
+                         CONFDB_SEC_MAX_SECRETS,
+                         DEFAULT_SEC_MAX_SECRETS,
+                         &sctx->max_secrets);
+
+    if (ret != EOK) {
+        DEBUG(SSSDBG_FATAL_FAILURE,
+              "Failed to get maximum number of entries\n");
         goto fail;
     }
 

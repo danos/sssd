@@ -2661,7 +2661,6 @@ static errno_t sysdb_store_new_group(struct sss_domain_info *domain,
 static errno_t sysdb_store_group_attrs(struct sss_domain_info *domain,
                                        const char *name,
                                        gid_t gid,
-                                       struct ldb_message *cached_group,
                                        struct sysdb_attrs *attrs,
                                        uint64_t cache_timeout,
                                        time_t now);
@@ -2731,7 +2730,7 @@ int sysdb_store_group(struct sss_domain_info *domain,
         ret = sysdb_store_new_group(domain, name, gid, attrs,
                                     cache_timeout, now);
     } else {
-        ret = sysdb_store_group_attrs(domain, name, gid, msg, attrs,
+        ret = sysdb_store_group_attrs(domain, name, gid, attrs,
                                       cache_timeout, now);
     }
     if (ret != EOK) {
@@ -2811,7 +2810,6 @@ static errno_t sysdb_store_new_group(struct sss_domain_info *domain,
 static errno_t sysdb_store_group_attrs(struct sss_domain_info *domain,
                                        const char *name,
                                        gid_t gid,
-                                       struct ldb_message *cached_group,
                                        struct sysdb_attrs *attrs,
                                        uint64_t cache_timeout,
                                        time_t now)
@@ -4738,6 +4736,9 @@ errno_t sysdb_get_user_members_recursively(TALLOC_CTX *mem_ctx,
 
     ret = sysdb_search_entry(tmp_ctx, dom->sysdb, base_dn, LDB_SCOPE_SUBTREE,
                              filter, attrs, &count, &msgs);
+    if (ret != EOK) {
+        goto done;
+    }
 
     res = talloc_zero(tmp_ctx, struct ldb_result);
     if (res == NULL) {
@@ -4814,7 +4815,7 @@ errno_t sysdb_handle_original_uuid(const char *orig_name,
 
     if (ret != EOK) {
         DEBUG(SSSDBG_OP_FAILURE, "sysdb_attrs_add_string failed.\n");
-        return ret;;
+        return ret;
     }
 
     return EOK;

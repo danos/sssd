@@ -31,8 +31,8 @@
 /* =Getpwnam-wrapper======================================================*/
 
 static int save_user(struct sss_domain_info *domain,
-                     bool lowercase, struct passwd *pwd, const char *real_name,
-                     const char *alias, uint64_t cache_timeout);
+                     struct passwd *pwd, const char *real_name,
+                     const char *alias);
 
 static int
 handle_getpw_result(enum nss_status status, struct passwd *pwd,
@@ -143,8 +143,7 @@ static int get_pw_name(struct proxy_id_ctx *ctx,
     }
 
     /* Both lookups went fine, we can save the user now */
-    ret = save_user(dom, !dom->case_sensitive, pwd,
-                    real_name, i_name, dom->user_timeout);
+    ret = save_user(dom, pwd, real_name, i_name);
 
 done:
     talloc_zfree(tmpctx);
@@ -223,16 +222,77 @@ delete_user(struct sss_domain_info *domain,
     return ret;
 }
 
+static int
+prepare_attrs_for_saving_ops(TALLOC_CTX *mem_ctx,
+                             bool case_sensitive,
+                             const char *real_name, /* already_qualified */
+                             const char *alias, /* already qualified */
+                             struct sysdb_attrs **attrs)
+{
+    const char *lc_name = NULL;
+    const char *cased_alias = NULL;
+    errno_t ret;
+
+    if (!case_sensitive || alias != NULL) {
+        if (*attrs == NULL) {
+            *attrs = sysdb_new_attrs(mem_ctx);
+            if (*attrs == NULL) {
+                DEBUG(SSSDBG_CRIT_FAILURE, "Allocation error ?!\n");
+                ret = ENOMEM;
+                goto done;
+            }
+        }
+    }
+
+    if (!case_sensitive) {
+        lc_name = sss_tc_utf8_str_tolower(*attrs, real_name);
+        if (lc_name == NULL) {
+            DEBUG(SSSDBG_OP_FAILURE, "Cannot convert name to lowercase.\n");
+            ret = ENOMEM;
+            goto done;
+        }
+
+        ret = sysdb_attrs_add_string(*attrs, SYSDB_NAME_ALIAS, lc_name);
+        if (ret != EOK) {
+            DEBUG(SSSDBG_OP_FAILURE, "Could not add name alias\n");
+            ret = ENOMEM;
+            goto done;
+        }
+
+    }
+
+    if (alias != NULL) {
+        cased_alias = sss_get_cased_name(*attrs, alias, case_sensitive);
+        if (cased_alias == NULL) {
+            ret = ENOMEM;
+            goto done;
+        }
+
+        /* Add the alias only if it differs from lowercased pw_name */
+        if (lc_name == NULL || strcmp(cased_alias, lc_name) != 0) {
+            ret = sysdb_attrs_add_string(*attrs, SYSDB_NAME_ALIAS,
+                                         cased_alias);
+            if (ret != EOK) {
+                DEBUG(SSSDBG_OP_FAILURE, "Could not add name alias\n");
+                goto done;
+            }
+        }
+    }
+
+    ret = EOK;
+done:
+    return ret;
+}
+
 static int save_user(struct sss_domain_info *domain,
-                     bool lowercase, struct passwd *pwd, const char *real_name,
-                     const char *alias, uint64_t cache_timeout)
+                     struct passwd *pwd,
+                     const char *real_name, /* already qualified */
+                     const char *alias) /* already qualified */
 {
     const char *shell;
     const char *gecos;
     struct sysdb_attrs *attrs = NULL;
     errno_t ret;
-    const char *cased_alias;
-    const char *lc_pw_name = NULL;
 
     if (pwd->pw_shell && pwd->pw_shell[0] != '\0') {
         shell = pwd->pw_shell;
@@ -246,47 +306,10 @@ static int save_user(struct sss_domain_info *domain,
         gecos = NULL;
     }
 
-    if (lowercase || alias) {
-        attrs = sysdb_new_attrs(NULL);
-        if (!attrs) {
-            DEBUG(SSSDBG_CRIT_FAILURE, "Allocation error ?!\n");
-            ret = ENOMEM;
-            goto done;
-        }
-    }
-
-    if (lowercase) {
-        lc_pw_name = sss_tc_utf8_str_tolower(attrs, pwd->pw_name);
-        if (lc_pw_name == NULL) {
-            DEBUG(SSSDBG_OP_FAILURE, "Cannot convert name to lowercase.\n");
-            ret = ENOMEM;
-            goto done;
-        }
-
-        ret = sysdb_attrs_add_string(attrs, SYSDB_NAME_ALIAS, lc_pw_name);
-        if (ret) {
-            DEBUG(SSSDBG_OP_FAILURE, "Could not add name alias\n");
-            ret = ENOMEM;
-            goto done;
-        }
-
-    }
-
-    if (alias) {
-        cased_alias = sss_get_cased_name(attrs, alias, !lowercase);
-        if (!cased_alias) {
-            ret = ENOMEM;
-            goto done;
-        }
-
-        /* Add the alias only if it differs from lowercased pw_name */
-        if (lc_pw_name == NULL || strcmp(cased_alias, lc_pw_name) != 0) {
-            ret = sysdb_attrs_add_string(attrs, SYSDB_NAME_ALIAS, cased_alias);
-            if (ret) {
-                DEBUG(SSSDBG_OP_FAILURE, "Could not add name alias\n");
-                goto done;
-            }
-        }
+    ret = prepare_attrs_for_saving_ops(NULL, domain->case_sensitive,
+                                       real_name, alias, &attrs);
+    if (ret != EOK) {
+        goto done;
     }
 
     ret = sysdb_store_user(domain,
@@ -300,7 +323,7 @@ static int save_user(struct sss_domain_info *domain,
                            NULL,
                            attrs,
                            NULL,
-                           cache_timeout,
+                           domain->user_timeout,
                            0);
     if (ret) {
         DEBUG(SSSDBG_OP_FAILURE, "Could not add user to cache\n");
@@ -366,8 +389,7 @@ static int get_pw_uid(struct proxy_id_ctx *ctx,
               pwd->pw_name);
         goto done;
     }
-    ret = save_user(dom, !dom->case_sensitive, pwd,
-                    name, NULL, dom->user_timeout);
+    ret = save_user(dom, pwd, name, NULL);
 
 done:
     talloc_zfree(tmpctx);
@@ -497,8 +519,7 @@ static int enum_users(TALLOC_CTX *mem_ctx,
                           pwd->pw_name);
                     goto done;
                 }
-                ret = save_user(dom, !dom->case_sensitive, pwd,
-                                name, NULL, dom->user_timeout);
+                ret = save_user(dom, pwd, name, NULL);
                 if (ret) {
                     /* Do not fail completely on errors.
                      * Just report the failure to save and go on */
@@ -561,13 +582,10 @@ static errno_t proxy_process_missing_users(struct sysdb_ctx *sysdb,
 static int save_group(struct sysdb_ctx *sysdb, struct sss_domain_info *dom,
                       struct group *grp,
                       const char *real_name, /* already qualified */
-                      const char *alias, /* already qualified */
-                      uint64_t cache_timeout)
+                      const char *alias) /* already qualified */
 {
     errno_t ret, sret;
     struct sysdb_attrs *attrs = NULL;
-    const char *cased_alias;
-    const char *lc_gr_name = NULL;
     TALLOC_CTX *tmp_ctx;
     time_t now = time(NULL);
     bool in_transaction = false;
@@ -621,53 +639,17 @@ static int save_group(struct sysdb_ctx *sysdb, struct sss_domain_info *dom,
         }
     }
 
-    if (dom->case_sensitive == false || alias) {
-        if (!attrs) {
-            attrs = sysdb_new_attrs(tmp_ctx);
-            if (!attrs) {
-                DEBUG(SSSDBG_CRIT_FAILURE, "Allocation error ?!\n");
-                ret = ENOMEM;
-                goto done;
-            }
-        }
-    }
-
-    if (dom->case_sensitive == false) {
-        lc_gr_name = sss_tc_utf8_str_tolower(attrs, real_name);
-        if (lc_gr_name == NULL) {
-            DEBUG(SSSDBG_OP_FAILURE, "Cannot convert name to lowercase.\n");
-            ret = ENOMEM;
-            goto done;
-        }
-
-        ret = sysdb_attrs_add_string(attrs, SYSDB_NAME_ALIAS, lc_gr_name);
-        if (ret != EOK) {
-            goto done;
-        }
-    }
-
-    if (alias) {
-        cased_alias = sss_get_cased_name(attrs, alias, dom->case_sensitive);
-        if (!cased_alias) {
-            ret = ENOMEM;
-            DEBUG(SSSDBG_OP_FAILURE, "Could not add name alias\n");
-            goto done;
-        }
-
-        if (lc_gr_name == NULL || strcmp(cased_alias, lc_gr_name)) {
-            ret = sysdb_attrs_add_string(attrs, SYSDB_NAME_ALIAS, cased_alias);
-            if (ret) {
-                DEBUG(SSSDBG_OP_FAILURE, "Could not add name alias\n");
-                goto done;
-            }
-        }
+    ret = prepare_attrs_for_saving_ops(tmp_ctx, dom->case_sensitive,
+                                       real_name, alias, &attrs);
+    if (ret != EOK) {
+        goto done;
     }
 
     ret = sysdb_store_group(dom,
                             real_name,
                             grp->gr_gid,
                             attrs,
-                            cache_timeout,
+                            dom->group_timeout,
                             now);
     if (ret) {
         DEBUG(SSSDBG_OP_FAILURE, "Could not add group to cache\n");
@@ -950,7 +932,7 @@ static int get_gr_name(struct proxy_id_ctx *ctx,
         goto done;
     }
 
-    ret = save_group(sysdb, dom, grp, real_name, i_name, dom->group_timeout);
+    ret = save_group(sysdb, dom, grp, real_name, i_name);
     if (ret) {
         DEBUG(SSSDBG_OP_FAILURE,
               "Cannot save group [%d]: %s\n", ret, strerror(ret));
@@ -1035,7 +1017,7 @@ static int get_gr_gid(TALLOC_CTX *mem_ctx,
         goto done;
     }
 
-    ret = save_group(sysdb, dom, grp, name, NULL, dom->group_timeout);
+    ret = save_group(sysdb, dom, grp, name, NULL);
     if (ret) {
         DEBUG(SSSDBG_OP_FAILURE,
               "Cannot save user [%d]: %s\n", ret, strerror(ret));
@@ -1168,8 +1150,7 @@ static int enum_groups(TALLOC_CTX *mem_ctx,
                           "Ignoring\n");
                     ret = ENOMEM;
                 }
-                ret = save_group(sysdb, dom, grp, name,
-                        NULL, dom->group_timeout);
+                ret = save_group(sysdb, dom, grp, name, NULL);
                 if (ret) {
                     /* Do not fail completely on errors.
                      * Just report the failure to save and go on */
@@ -1331,8 +1312,7 @@ static int get_initgr(TALLOC_CTX *mem_ctx,
         goto done;
     }
 
-    ret = save_user(dom, !dom->case_sensitive, pwd,
-                    real_name, i_name, dom->user_timeout);
+    ret = save_user(dom, pwd, real_name, i_name);
     if (ret) {
         DEBUG(SSSDBG_OP_FAILURE, "Could not save user\n");
         goto fail;

@@ -1374,6 +1374,8 @@ static errno_t map_krb5_error(krb5_error_code kerr)
 
     case KRB5_KDCREP_SKEW:
     case KRB5KRB_AP_ERR_SKEW:
+    case KRB5KRB_AP_ERR_TKT_EXPIRED:
+    case KRB5KRB_AP_ERR_TKT_NYV:
     case KRB5_KDC_UNREACH:
     case KRB5_REALM_CANT_RESOLVE:
     case KRB5_REALM_UNKNOWN:
@@ -2610,7 +2612,7 @@ static krb5_error_code privileged_krb5_setup(struct krb5_req *kr,
     ret = check_use_fast(&kr->fast_val);
     if (ret != EOK) {
         DEBUG(SSSDBG_CRIT_FAILURE, "check_use_fast failed.\n");
-        return ret;;
+        return ret;
     }
 
     /* For ccache types FILE: and DIR: we might need to create some directory

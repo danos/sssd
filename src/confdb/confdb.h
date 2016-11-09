@@ -58,7 +58,6 @@
 #define CONFDB_SERVICE_DEBUG_TIMESTAMPS "debug_timestamps"
 #define CONFDB_SERVICE_DEBUG_MICROSECONDS "debug_microseconds"
 #define CONFDB_SERVICE_DEBUG_TO_FILES "debug_to_files"
-#define CONFDB_SERVICE_FORCE_TIMEOUT "force_timeout"
 #define CONFDB_SERVICE_RECON_RETRIES "reconnection_retries"
 #define CONFDB_SERVICE_FD_LIMIT "fd_limit"
 #define CONFDB_SERVICE_ALLOWED_UIDS "allowed_uids"
@@ -73,8 +72,8 @@
 #define CONFDB_MONITOR_DEFAULT_DOMAIN "default_domain_suffix"
 #define CONFDB_MONITOR_OVERRIDE_SPACE "override_space"
 #define CONFDB_MONITOR_USER_RUNAS "user"
-#define CONFDB_MONITOR_PRE_KILL_CMD "diag_cmd"
 #define CONFDB_MONITOR_CERT_VERIFICATION "certificate_verification"
+#define CONFDB_MONITOR_DISABLE_NETLINK "disable_netlink"
 
 /* Both monitor and domains */
 #define CONFDB_NAME_REGEX   "re_expression"
@@ -220,9 +219,12 @@
 #define CONFDB_PROXY_LIBNAME "proxy_lib_name"
 #define CONFDB_PROXY_PAM_TARGET "proxy_pam_target"
 #define CONFDB_PROXY_FAST_ALIAS "proxy_fast_alias"
+#define CONFDB_PROXY_MAX_CHILDREN "proxy_max_children"
 
 /* Secrets Service */
 #define CONFDB_SEC_CONF_ENTRY "config/secrets"
+#define CONFDB_SEC_CONTAINERS_NEST_LEVEL "containers_nest_level"
+#define CONFDB_SEC_MAX_SECRETS "max_secrets"
 
 
 struct confdb_ctx;

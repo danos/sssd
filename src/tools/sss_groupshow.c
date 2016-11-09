@@ -58,7 +58,7 @@ const char *rdn_as_string(TALLOC_CTX *mem_ctx,
         return NULL;
     }
 
-    return ldb_dn_escape_value(mem_ctx, *val);;
+    return ldb_dn_escape_value(mem_ctx, *val);
 }
 
 static int parse_memberofs(struct ldb_context *ldb,
@@ -318,7 +318,7 @@ int group_show(TALLOC_CTX *mem_ctx,
                struct sysdb_ctx *sysdb,
                struct sss_domain_info *domain,
                bool   recursive,
-               const char *name,
+               const char *shortname,
                struct group_info **res)
 {
     struct group_info *root;
@@ -326,11 +326,20 @@ int group_show(TALLOC_CTX *mem_ctx,
     struct ldb_message *msg = NULL;
     const char **group_members = NULL;
     int nmembers = 0;
+    char *sysdb_fqname = NULL;
     int ret;
     int i;
 
+    sysdb_fqname = sss_create_internal_fqname(mem_ctx,
+                                              shortname,
+                                              domain->name);
+    if (sysdb_fqname == NULL) {
+        return ENOMEM;
+    }
+
     /* First, search for the root group */
-    ret = sysdb_search_group_by_name(mem_ctx, domain, name, attrs, &msg);
+    ret = sysdb_search_group_by_name(mem_ctx, domain, sysdb_fqname, attrs,
+                                     &msg);
     if (ret) {
         DEBUG(SSSDBG_OP_FAILURE,
               "Search failed: %s (%d)\n", strerror(ret), ret);
@@ -544,13 +553,14 @@ int group_show_recurse(TALLOC_CTX *mem_ctx,
 
 static int group_show_mpg(TALLOC_CTX *mem_ctx,
                           struct sss_domain_info *domain,
-                          const char *name,
+                          const char *shortname,
                           struct group_info **res)
 {
     const char *attrs[] = GROUP_SHOW_MPG_ATTRS;
     struct ldb_message *msg;
     struct group_info *info;
     int ret;
+    char *sysdb_fqname;
 
     info = talloc_zero(mem_ctx, struct group_info);
     if (!info) {
@@ -558,7 +568,14 @@ static int group_show_mpg(TALLOC_CTX *mem_ctx,
         goto fail;
     }
 
-    ret = sysdb_search_user_by_name(info, domain, name, attrs, &msg);
+    sysdb_fqname = sss_create_internal_fqname(mem_ctx,
+                                              shortname,
+                                              domain->name);
+    if (sysdb_fqname == NULL) {
+        return ENOMEM;
+    }
+
+    ret = sysdb_search_user_by_name(info, domain, sysdb_fqname, attrs, &msg);
     if (ret) {
         DEBUG(SSSDBG_OP_FAILURE,
               "Search failed: %s (%d)\n", strerror(ret), ret);

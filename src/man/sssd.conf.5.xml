@@ -482,6 +482,24 @@
                             </para>
                         </listitem>
                     </varlistentry>
+                    <varlistentry>
+                        <term>disable_netlink (boolean)</term>
+                        <listitem>
+                            <para>
+                                SSSD hooks into the netlink interface to
+                                monitor changes to routes, addresses, links
+                                and trigger certain actions.
+                            </para>
+                            <para>
+                                The SSSD state changes caused by netlink
+                                events may be undesirable and can be disabled
+                                by setting this option to 'true'
+                            </para>
+                            <para>
+                                Default: false (netlink changes are detected)
+                            </para>
+                        </listitem>
+                    </varlistentry>
                 </variablelist>
             </para>
         </refsect2>
@@ -542,22 +560,6 @@
                             descriptor without communicating on it. This value
                             is limited in order to avoid resource exhaustion
                             on the system.
-                        </para>
-                        <para>
-                            Default: 60
-                        </para>
-                    </listitem>
-                </varlistentry>
-                <varlistentry>
-                    <term>force_timeout (integer)</term>
-                    <listitem>
-                        <para>
-                            If a service is not responding to ping checks (see
-                            the <quote>timeout</quote> option), it is first sent
-                            the SIGTERM signal that instructs it to quit gracefully.
-                            If the service does not terminate after <quote>force_timeout</quote>
-                            seconds, the monitor will forcibly shut it down by
-                            sending a SIGKILL signal.
                         </para>
                         <para>
                             Default: 60
@@ -1448,23 +1450,6 @@ pam_account_locked_message = Account locked, please contact help desk.
                         </para>
                         <para>
                             Default: none
-                        </para>
-                    </listitem>
-                </varlistentry>
-
-                <varlistentry>
-                    <term>force_timeout (integer)</term>
-                    <listitem>
-                        <para>
-                            If a service is not responding to ping checks (see
-                            the <quote>timeout</quote> option), it is first sent
-                            the SIGTERM signal that instructs it to quit gracefully.
-                            If the service does not terminate after <quote>force_timeout</quote>
-                            seconds, the monitor will forcibly shut it down by
-                            sending a SIGKILL signal.
-                        </para>
-                        <para>
-                            Default: 60
                         </para>
                     </listitem>
                 </varlistentry>
@@ -2493,6 +2478,22 @@ subdomain_inherit = ldap_purge_cache_timeout
                         </para>
                         <para>
                             Default: false
+                        </para>
+                    </listitem>
+                </varlistentry>
+
+                <varlistentry>
+                    <term>proxy_max_children (integer)</term>
+                    <listitem>
+                        <para>
+                            This option specifies the number of pre-forked
+                            proxy children. It is useful for high-load SSSD
+                            environments where sssd may run out of available
+                            child slots, which would cause some issues due to
+                            the requests being queued.
+                        </para>
+                        <para>
+                            Default: 10
                         </para>
                     </listitem>
                 </varlistentry>

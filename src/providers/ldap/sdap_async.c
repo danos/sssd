@@ -1254,7 +1254,7 @@ sdap_get_generic_ext_send(TALLOC_CTX *memctx,
      */
     if (scope == LDAP_SCOPE_BASE && (flags & SDAP_SRCH_FLG_PAGING)) {
         /* Disable paging */
-        flags &= ~SDAP_SRCH_FLG_PAGING;
+        state->flags &= ~SDAP_SRCH_FLG_PAGING;
         DEBUG(SSSDBG_TRACE_FUNC,
               "WARNING: Disabling paging because scope is set to base.\n");
     }
@@ -1267,7 +1267,7 @@ sdap_get_generic_ext_send(TALLOC_CTX *memctx,
                                 serverctrls,
                                 NULL);
     if (control) {
-        flags |= SDAP_SRCH_FLG_PAGING;
+        state->flags |= SDAP_SRCH_FLG_PAGING;
     }
 
     /* ASQ */
@@ -1275,7 +1275,7 @@ sdap_get_generic_ext_send(TALLOC_CTX *memctx,
                                 serverctrls,
                                 NULL);
     if (control) {
-        flags |= SDAP_SRCH_FLG_PAGING;
+        state->flags |= SDAP_SRCH_FLG_PAGING;
     }
 
     for (state->nserverctrls=0;
@@ -1526,7 +1526,8 @@ static void sdap_get_generic_op_finished(struct sdap_op *op,
                   sss_ldap_err2string(result), result,
                   errmsg ? errmsg : "no errmsg set");
 
-        if (result == LDAP_SIZELIMIT_EXCEEDED) {
+        if (result == LDAP_SIZELIMIT_EXCEEDED
+                || result == LDAP_ADMINLIMIT_EXCEEDED) {
             /* Try to return what we've got */
 
             if ( ! (state->flags & SDAP_SRCH_FLG_SIZELIMIT_SILENT)) {
@@ -2096,7 +2097,7 @@ static void sdap_x_deref_search_done(struct tevent_req *subreq)
 
 static int sdap_x_deref_search_ctrls_destructor(void *ptr)
 {
-    LDAPControl **ctrls = talloc_get_type(ptr, LDAPControl *);;
+    LDAPControl **ctrls = talloc_get_type(ptr, LDAPControl *);
 
     if (ctrls && ctrls[0]) {
         ldap_control_free(ctrls[0]);
@@ -2288,7 +2289,7 @@ static void sdap_sd_search_done(struct tevent_req *subreq)
 
 static int sdap_sd_search_ctrls_destructor(void *ptr)
 {
-    LDAPControl **ctrls = talloc_get_type(ptr, LDAPControl *);;
+    LDAPControl **ctrls = talloc_get_type(ptr, LDAPControl *);
     if (ctrls && ctrls[0]) {
         ldap_control_free(ctrls[0]);
     }
@@ -2547,7 +2548,7 @@ static void sdap_asq_search_done(struct tevent_req *subreq)
 
 static int sdap_asq_search_ctrls_destructor(void *ptr)
 {
-    LDAPControl **ctrls = talloc_get_type(ptr, LDAPControl *);;
+    LDAPControl **ctrls = talloc_get_type(ptr, LDAPControl *);
 
     if (ctrls && ctrls[0]) {
         ldap_control_free(ctrls[0]);

@@ -293,7 +293,6 @@ class SSSDConfigTestSSSDService(unittest.TestCase):
             'services',
             'domains',
             'timeout',
-            'force_timeout',
             'sbus_timeout',
             're_expression',
             'full_name_format',
@@ -309,10 +308,10 @@ class SSSDConfigTestSSSDService(unittest.TestCase):
             'reconnection_retries',
             'fd_limit',
             'client_idle_timeout',
-            'diag_cmd',
             'description',
             'certificate_verification',
-            'override_space']
+            'override_space',
+            'disable_netlink']
 
         self.assertTrue(type(options) == dict,
                         "Options should be a dictionary")
@@ -506,7 +505,6 @@ class SSSDConfigTestSSSDDomain(unittest.TestCase):
             'min_id',
             'max_id',
             'timeout',
-            'force_timeout',
             'offline_timeout',
             'try_inotify',
             'command',
@@ -554,9 +552,9 @@ class SSSDConfigTestSSSDDomain(unittest.TestCase):
             'chpass_provider',
             'sudo_provider',
             'autofs_provider',
-            'session_provider',
             'hostid_provider',
             'subdomains_provider',
+            'selinux_provider',
             'realmd_tags',
             'subdomain_refresh_interval',
             'subdomain_inherit',
@@ -875,7 +873,6 @@ class SSSDConfigTestSSSDDomain(unittest.TestCase):
             'min_id',
             'max_id',
             'timeout',
-            'force_timeout',
             'offline_timeout',
             'try_inotify',
             'command',
@@ -923,9 +920,9 @@ class SSSDConfigTestSSSDDomain(unittest.TestCase):
             'chpass_provider',
             'sudo_provider',
             'autofs_provider',
-            'session_provider',
             'hostid_provider',
             'subdomains_provider',
+            'selinux_provider',
             'realmd_tags',
             'subdomain_refresh_interval',
             'subdomain_inherit',
@@ -1355,7 +1352,8 @@ class SSSDConfigTestSSSDConfig(unittest.TestCase):
             'autofs',
             'ssh',
             'pac',
-            'ifp']
+            'ifp',
+            'secrets']
         for section in control_list:
             self.assertTrue(sssdconfig.has_section(section),
                             "Section [%s] missing" %
@@ -1448,7 +1446,8 @@ class SSSDConfigTestSSSDConfig(unittest.TestCase):
             'autofs',
             'ssh',
             'pac',
-            'ifp']
+            'ifp',
+            'secrets']
         service_list = sssdconfig.list_services()
         for service in control_list:
             self.assertTrue(service in service_list,
@@ -1685,6 +1684,39 @@ class SSSDConfigTestSSSDConfig(unittest.TestCase):
             self.assertTrue(domain in control_list,
                             "Domain [%s] unexpectedly found" %
                             domain)
+
+    def testListWithInvalidDomain(self):
+        sssdconfig = SSSDConfig.SSSDConfig(srcdir + "/etc/sssd.api.conf",
+                                           srcdir + "/etc/sssd.api.d")
+
+        # Negative Test - Not Initialized
+        self.assertRaises(SSSDConfig.NotInitializedError,
+                          sssdconfig.list_domains)
+
+        # Positive Test
+        sssdconfig.import_config(
+            srcdir + '/testconfigs/sssd-nonexisting-services-domains.conf'
+        )
+
+        domains = sssdconfig.list_active_domains()
+        self.assertTrue("active" in domains and len(domains) == 1,
+                        "domain 'active' not found among active domains")
+
+        domains = sssdconfig.list_inactive_domains()
+        self.assertTrue("inactive" in domains and len(domains) == 1,
+                        "domain 'inactive' not found among inactive domains")
+
+        services = sssdconfig.list_active_services()
+        self.assertTrue("nss" in services and len(services) == 1,
+                        "service 'nss' not found among active services")
+
+        services = sssdconfig.list_inactive_services()
+        self.assertTrue(len(services) == 2,
+                        "unexpected count of inactive services")
+        for service in ("sssd", "pam"):
+            self.assertTrue(service in services,
+                            "service '%s' not found among inactive services"
+                            % service)
 
     def testGetDomain(self):
         sssdconfig = SSSDConfig.SSSDConfig(srcdir + "/etc/sssd.api.conf",

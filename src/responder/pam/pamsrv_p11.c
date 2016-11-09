@@ -505,7 +505,11 @@ errno_t pam_check_cert_recv(struct tevent_req *req, TALLOC_CTX *mem_ctx,
 }
 
 /* The PKCS11_LOGIN_TOKEN_NAME environment variable is e.g. used by the Gnome
- * Settings Daemon to determine the name of the token used for login */
+ * Settings Daemon to determine the name of the token used for login but it
+ * should be only set if SSSD is called by gdm-smartcard. Otherwise desktop
+ * components might assume that gdm-smartcard PAM stack is configured
+ * correctly which might not be the case e.g. if Smartcard authentication was
+ * used when running gdm-password. */
 #define PKCS11_LOGIN_TOKEN_ENV_NAME "PKCS11_LOGIN_TOKEN_NAME"
 
 errno_t add_pam_cert_response(struct pam_data *pd, const char *sysdb_username,
@@ -517,33 +521,31 @@ errno_t add_pam_cert_response(struct pam_data *pd, const char *sysdb_username,
     size_t msg_len;
     size_t slot_len;
     int ret;
-    char *username;
 
     if (sysdb_username == NULL || token_name == NULL) {
         DEBUG(SSSDBG_CRIT_FAILURE, "Missing mandatory user or slot name.\n");
         return EINVAL;
     }
 
-    ret = sss_parse_internal_fqname(pd, sysdb_username, &username, NULL);
-    if (ret != EOK) {
-        DEBUG(SSSDBG_CRIT_FAILURE, "Cannot parse [%s]\n", sysdb_username);
-        return ret;
-    }
-
-    user_len = strlen(username) + 1;
+    user_len = strlen(sysdb_username) + 1;
     slot_len = strlen(token_name) + 1;
     msg_len = user_len + slot_len;
 
     msg = talloc_zero_size(pd, msg_len);
     if (msg == NULL) {
         DEBUG(SSSDBG_OP_FAILURE, "talloc_zero_size failed.\n");
-        talloc_free(username);
         return ENOMEM;
     }
 
-    memcpy(msg, username, user_len);
+    /* sysdb_username is a fully-qualified name which is used by pam_sss when
+     * prompting the user for the PIN and as login name if it wasn't set by
+     * the PAM caller but has to be determined based on the inserted
+     * Smartcard. If this type of name is irritating at the PIN prompt or the
+     * re_expression config option was set in a way that user@domain cannot be
+     * handled anymore some more logic has to be added here. But for the time
+     * being I think using sysdb_username is fine. */
+    memcpy(msg, sysdb_username, user_len);
     memcpy(msg + user_len, token_name, slot_len);
-    talloc_free(username);
 
     ret = pam_add_response(pd, SSS_PAM_CERT_INFO, msg_len, msg);
     talloc_free(msg);
@@ -553,19 +555,22 @@ errno_t add_pam_cert_response(struct pam_data *pd, const char *sysdb_username,
         return ret;
     }
 
-    env = talloc_asprintf(pd, "%s=%s", PKCS11_LOGIN_TOKEN_ENV_NAME, token_name);
-    if (env == NULL) {
-        DEBUG(SSSDBG_OP_FAILURE, "talloc_asprintf failed.\n");
-        return ENOMEM;
-    }
+    if (strcmp(pd->service, "gdm-smartcard") == 0) {
+        env = talloc_asprintf(pd, "%s=%s", PKCS11_LOGIN_TOKEN_ENV_NAME,
+                              token_name);
+        if (env == NULL) {
+            DEBUG(SSSDBG_OP_FAILURE, "talloc_asprintf failed.\n");
+            return ENOMEM;
+        }
 
-    ret = pam_add_response(pd, SSS_PAM_ENV_ITEM, strlen(env) + 1,
-                           (uint8_t *)env);
-    talloc_free(env);
-    if (ret != EOK) {
-        DEBUG(SSSDBG_OP_FAILURE,
-              "pam_add_response failed to add environment variable.\n");
-        return ret;
+        ret = pam_add_response(pd, SSS_PAM_ENV_ITEM, strlen(env) + 1,
+                               (uint8_t *)env);
+        talloc_free(env);
+        if (ret != EOK) {
+            DEBUG(SSSDBG_OP_FAILURE,
+                  "pam_add_response failed to add environment variable.\n");
+            return ret;
+        }
     }
 
     return ret;
