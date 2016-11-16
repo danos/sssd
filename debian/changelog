@@ -1,8 +1,9 @@
 sssd (1.14.2-1) UNRELEASED; urgency=medium
 
   * New upstream release.
-    - allow building PAC responder with MIT krb5 1.15 (Closes: #843385)
   * control: Add adcli to sssd-ad Recommends. (LP: #1590471)
+  * accept-krb5-1.15.diff: Allow building PAC responder with MIT krb5
+    1.15. (Closes: #843385)
 
  -- Timo Aaltonen <tjaalton@debian.org>  Wed, 09 Nov 2016 23:40:14 +0200
 
