@@ -1,0 +1,14 @@
+#!/bin/sh
+set -e
+
+LIBDIR=/usr/lib/@TRIPLET@/sssd
+
+case "$1" in
+    configure)
+        chown root:sssd $LIBDIR/krb5_child $LIBDIR/ldap_child
+        chmod 4754 $LIBDIR/krb5_child $LIBDIR/ldap_child
+    ;;
+esac
+
+#DEBHELPER#
+

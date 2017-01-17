@@ -1,0 +1,13 @@
+#!/bin/sh
+set -e
+
+LIBDIR=/usr/lib/@TRIPLET@/sssd
+
+case "$1" in
+    configure)
+        chown root:sssd $LIBDIR/proxy_child
+        chmod 4754 $LIBDIR/proxy_child
+    ;;
+esac
+
+#DEBHELPER#

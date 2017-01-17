@@ -1,0 +1,3 @@
+usr/include/wbclient_sssd.h
+usr/lib/*/pkgconfig/wbclient_sssd.pc
+usr/lib/*/sssd/modules/libwbclient.so
