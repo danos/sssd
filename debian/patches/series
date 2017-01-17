@@ -1,2 +1,3 @@
+fix-prefix-substitution.diff
 import-daemon-opts.diff
 accept-krb5-1.15.diff
