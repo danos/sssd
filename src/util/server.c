@@ -460,18 +460,31 @@ int server_setup(const char *name, int flags,
     struct logrotate_ctx *lctx;
     char *locale;
     int watchdog_interval;
+    pid_t my_pid;
 
-    ret = chown_debug_file(NULL, uid, gid);
+    my_pid = getpid();
+    ret = setpgid(my_pid, my_pid);
     if (ret != EOK) {
+        ret = errno;
         DEBUG(SSSDBG_MINOR_FAILURE,
-              "Cannot chown the debug files, debugging might not work!\n");
+              "Failed setting process group: %s[%d]. "
+              "We might leak processes in case of failure\n",
+              sss_strerror(ret), ret);
     }
 
-    ret = become_user(uid, gid);
-    if (ret != EOK) {
-        DEBUG(SSSDBG_FUNC_DATA,
-              "Cannot become user [%"SPRIuid"][%"SPRIgid"].\n", uid, gid);
-        return ret;
+    if (!is_socket_activated()) {
+        ret = chown_debug_file(NULL, uid, gid);
+        if (ret != EOK) {
+            DEBUG(SSSDBG_MINOR_FAILURE,
+                  "Cannot chown the debug files, debugging might not work!\n");
+        }
+
+        ret = become_user(uid, gid);
+        if (ret != EOK) {
+            DEBUG(SSSDBG_FUNC_DATA,
+                  "Cannot become user [%"SPRIuid"][%"SPRIgid"].\n", uid, gid);
+            return ret;
+        }
     }
 
     debug_prg_name = strdup(name);
