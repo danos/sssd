@@ -1,6 +1,7 @@
 sssd (1.15.0-1) UNRELEASED; urgency=medium
 
   * New upstream release. (Closes: #852450) (LP: #1566508)
+  * Drop upstreamed patches.
 
  -- Timo Aaltonen <tjaalton@debian.org>  Tue, 17 Jan 2017 16:48:41 +0200
 
