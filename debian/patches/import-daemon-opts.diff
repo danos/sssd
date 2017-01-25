@@ -1,13 +1,11 @@
-diff --git a/src/sysv/systemd/sssd.service.in b/src/sysv/systemd/sssd.service.in
-index a4f9125..8a18af1 100644
 --- a/src/sysv/systemd/sssd.service.in
 +++ b/src/sysv/systemd/sssd.service.in
 @@ -6,7 +6,7 @@ Wants=nss-user-lookup.target
  
  [Service]
  EnvironmentFile=-@environment_file@
--ExecStart=@sbindir@/sssd -D -f
+-ExecStart=@sbindir@/sssd -i -f
 +ExecStart=@sbindir@/sssd $DAEMON_OPTS
- # These two should be used with traditional UNIX forking daemons
- # consult systemd.service(5) for more details
- Type=forking
+ Type=notify
+ NotifyAccess=main
+ 
