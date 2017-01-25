@@ -5,6 +5,8 @@ sssd (1.15.0-1) UNRELEASED; urgency=medium
   * sssd-common.sssd.default, import-daemon-opts.diff: Change default
     daemon options to match current upstream.
   * sssd-dbus.install: Drop libsss_config, which was removed.
+  * sssd-{ad,common,dbus}.install: Add systemd service and socket files
+    for pac, sudo, ssh, autofs, pam, nss and ifp responders.
 
  -- Timo Aaltonen <tjaalton@debian.org>  Tue, 17 Jan 2017 16:48:41 +0200
 
