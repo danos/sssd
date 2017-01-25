@@ -1,3 +1,9 @@
+sssd (1.15.0-1) UNRELEASED; urgency=medium
+
+  * New upstream release. (Closes: #852450) (LP: #1566508)
+
+ -- Timo Aaltonen <tjaalton@debian.org>  Tue, 17 Jan 2017 16:48:41 +0200
+
 sssd (1.14.2-2) unstable; urgency=medium
 
   * fix-prefix-substitution.diff: Fix IFP service file path substitution.
