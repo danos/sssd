@@ -1,10 +1,10 @@
-sssd (1.15.0-3) UNRELEASED; urgency=medium
+sssd (1.15.0-3) unstable; urgency=medium
 
   * rules, install: Remove responder service and socket files for now, the
     sockets weren't supposed to be enabled anyway and can cause issues.
     (Closes: #854048)
 
- -- Timo Aaltonen <tjaalton@debian.org>  Fri, 03 Feb 2017 14:15:55 +0200
+ -- Timo Aaltonen <tjaalton@debian.org>  Sat, 04 Feb 2017 18:34:06 +0200
 
 sssd (1.15.0-2) unstable; urgency=medium
 
