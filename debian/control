@@ -121,7 +121,7 @@ Depends:
  sssd-krb5-common (= ${binary:Version}),
  ${misc:Depends},
  ${shlibs:Depends}
-Recommends:
+Suggests:
  adcli,
 Breaks: sssd (<< 1.10.0~beta2-1)
 Replaces: sssd (<< 1.10.0~beta2-1)

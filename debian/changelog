@@ -1,3 +1,9 @@
+sssd (1.15.0-4) UNRELEASED; urgency=medium
+
+  * control: Demote adcli to sssd-ad suggests.
+
+ -- Timo Aaltonen <tjaalton@debian.org>  Thu, 09 Feb 2017 10:53:03 +0200
+
 sssd (1.15.0-3) unstable; urgency=medium
 
   * rules, install: Remove responder service and socket files for now, the
