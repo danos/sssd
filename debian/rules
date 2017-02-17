@@ -28,7 +28,7 @@ override_dh_auto_configure:
 	--datadir=/usr/share/ \
 	--with-environment-file=/etc/default/sssd \
 	--with-ldb-lib-dir=/usr/lib/$(DEB_HOST_MULTIARCH)/ldb/modules/ldb \
-	--with-krb5-plugin-path=/usr/lib/$(DEB_HOST_MULTIARCH)/krb5/plugins/krb5 \
+	--with-krb5-plugin-path=/usr/lib/$(DEB_HOST_MULTIARCH)/krb5/plugins/libkrb5 \
 	--enable-nsslibdir=/lib/$(DEB_HOST_MULTIARCH) \
 	--enable-pammoddir=/lib/$(DEB_HOST_MULTIARCH)/security \
 	--disable-static \
