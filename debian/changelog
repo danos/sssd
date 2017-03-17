@@ -1,5 +1,6 @@
-sssd (1.15.0-4) UNRELEASED; urgency=medium
+sssd (1.15.2-1) UNRELEASED; urgency=medium
 
+  * New upstream release.
   * control: Demote adcli to sssd-ad suggests.
   * rules, common.install: Fix sssd_krb5_locator_plugin install path.
     (LP: #1664566)
