@@ -289,6 +289,24 @@ int sss_ncache_check_user(struct sss_nc_ctx *ctx, struct sss_domain_info *dom,
     return sss_cache_check_ent(ctx, dom, name, sss_ncache_check_user_int);
 }
 
+int sss_ncache_check_upn(struct sss_nc_ctx *ctx, struct sss_domain_info *dom,
+                         const char *name)
+{
+    char *neg_cache_name = NULL;
+    errno_t ret;
+
+    neg_cache_name = talloc_asprintf(ctx, "@%s", name);
+    if (neg_cache_name == NULL) {
+        return ENOMEM;
+    }
+
+    ret = sss_cache_check_ent(ctx, dom, neg_cache_name,
+                              sss_ncache_check_user_int);
+    talloc_free(neg_cache_name);
+
+    return ret;
+}
+
 int sss_ncache_check_group(struct sss_nc_ctx *ctx, struct sss_domain_info *dom,
                            const char *name)
 {
@@ -540,6 +558,24 @@ int sss_ncache_set_user(struct sss_nc_ctx *ctx, bool permanent,
     return sss_ncache_set_ent(ctx, permanent, dom, name, sss_ncache_set_user_int);
 }
 
+int sss_ncache_set_upn(struct sss_nc_ctx *ctx, bool permanent,
+                       struct sss_domain_info *dom, const char *name)
+{
+    char *neg_cache_name = NULL;
+    errno_t ret;
+
+    neg_cache_name = talloc_asprintf(ctx, "@%s", name);
+    if (neg_cache_name == NULL) {
+        return ENOMEM;
+    }
+
+    ret = sss_ncache_set_ent(ctx, permanent, dom, neg_cache_name,
+                             sss_ncache_set_user_int);
+    talloc_free(neg_cache_name);
+
+    return ret;
+}
+
 int sss_ncache_set_group(struct sss_nc_ctx *ctx, bool permanent,
                          struct sss_domain_info *dom, const char *name)
 {
@@ -672,6 +708,62 @@ int sss_ncache_reset_permanent(struct sss_nc_ctx *ctx)
         return EIO;
 
     return EOK;
+}
+
+static int delete_prefix(struct tdb_context *tdb,
+                         TDB_DATA key, TDB_DATA data, void *state)
+{
+    const char *prefix = (const char *) state;
+
+    if (strncmp((char *)key.dptr, prefix, strlen(prefix) - 1) != 0) {
+        /* not interested in this key */
+        return 0;
+    }
+
+    return tdb_delete(tdb, key);
+}
+
+static int sss_ncache_reset_pfx(struct sss_nc_ctx *ctx,
+                                const char **prefixes)
+{
+    int ret;
+
+    if (prefixes == NULL) {
+        return EOK;
+    }
+
+    for (int i = 0; prefixes[i] != NULL; i++) {
+        ret = tdb_traverse(ctx->tdb,
+                           delete_prefix,
+                           discard_const(prefixes[i]));
+        if (ret < 0) {
+            return EIO;
+        }
+    }
+
+    return EOK;
+}
+
+int sss_ncache_reset_users(struct sss_nc_ctx *ctx)
+{
+    const char *prefixes[] = {
+        NC_USER_PREFIX,
+        NC_UID_PREFIX,
+        NULL,
+    };
+
+    return sss_ncache_reset_pfx(ctx, prefixes);
+}
+
+int sss_ncache_reset_groups(struct sss_nc_ctx *ctx)
+{
+    const char *prefixes[] = {
+        NC_GROUP_PREFIX,
+        NC_GID_PREFIX,
+        NULL,
+    };
+
+    return sss_ncache_reset_pfx(ctx, prefixes);
 }
 
 errno_t sss_ncache_prepopulate(struct sss_nc_ctx *ncache,

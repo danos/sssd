@@ -116,6 +116,7 @@ static int sysdb_delete_cache_entry(struct ldb_context *ldb,
             return EOK;
         }
         /* fall through */
+        SSS_ATTRIBUTE_FALLTHROUGH;
     default:
         DEBUG(SSSDBG_CRIT_FAILURE, "LDB Error: %s(%d)\nError Message: [%s]\n",
                   ldb_strerror(ret), ret, ldb_errstring(ldb));
@@ -537,6 +538,7 @@ int sysdb_search_user_by_sid_str(TALLOC_CTX *mem_ctx,
 
 int sysdb_search_user_by_upn_res(TALLOC_CTX *mem_ctx,
                                  struct sss_domain_info *domain,
+                                 bool domain_scope,
                                  const char *upn,
                                  const char **attrs,
                                  struct ldb_result **out_res)
@@ -554,7 +556,11 @@ int sysdb_search_user_by_upn_res(TALLOC_CTX *mem_ctx,
         goto done;
     }
 
-    base_dn = sysdb_base_dn(domain->sysdb, tmp_ctx);
+    if (domain_scope == true) {
+        base_dn = sysdb_user_base_dn(tmp_ctx, domain);
+    } else {
+        base_dn = sysdb_base_dn(domain->sysdb, tmp_ctx);
+    }
     if (base_dn == NULL) {
         ret = ENOMEM;
         goto done;
@@ -598,6 +604,7 @@ done:
 
 int sysdb_search_user_by_upn(TALLOC_CTX *mem_ctx,
                              struct sss_domain_info *domain,
+                             bool domain_scope,
                              const char *upn,
                              const char **attrs,
                              struct ldb_message **msg)
@@ -612,7 +619,7 @@ int sysdb_search_user_by_upn(TALLOC_CTX *mem_ctx,
         goto done;
     }
 
-    ret = sysdb_search_user_by_upn_res(tmp_ctx, domain, upn, attrs, &res);
+    ret = sysdb_search_user_by_upn_res(tmp_ctx, domain, domain_scope, upn, attrs, &res);
     if (ret == ENOENT) {
         DEBUG(SSSDBG_TRACE_FUNC, "No entry with upn [%s] found.\n", upn);
         goto done;
@@ -4479,6 +4486,7 @@ static errno_t sysdb_search_object_attr(TALLOC_CTX *mem_ctx,
                                         struct sss_domain_info *domain,
                                         const char *filter,
                                         const char **attrs,
+                                        bool expect_only_one_result,
                                         struct ldb_result **_res)
 {
     TALLOC_CTX *tmp_ctx;
@@ -4512,7 +4520,7 @@ static errno_t sysdb_search_object_attr(TALLOC_CTX *mem_ctx,
         goto done;
     }
 
-    if (res->count > 1) {
+    if (res->count > 1 && expect_only_one_result) {
         DEBUG(SSSDBG_CRIT_FAILURE,
               "Search with filter [%s] returned more than one object.\n",
               filter);
@@ -4548,6 +4556,7 @@ static errno_t sysdb_search_object_by_str_attr(TALLOC_CTX *mem_ctx,
                                                const char *filter_tmpl,
                                                const char *str,
                                                const char **attrs,
+                                               bool expect_only_one_result,
                                                struct ldb_result **_res)
 {
     char *filter;
@@ -4558,7 +4567,8 @@ static errno_t sysdb_search_object_by_str_attr(TALLOC_CTX *mem_ctx,
         return ENOMEM;
     }
 
-    ret = sysdb_search_object_attr(mem_ctx, domain, filter, attrs, _res);
+    ret = sysdb_search_object_attr(mem_ctx, domain, filter, attrs,
+                                   expect_only_one_result, _res);
 
     talloc_free(filter);
     return ret;
@@ -4578,7 +4588,7 @@ errno_t sysdb_search_object_by_id(TALLOC_CTX *mem_ctx,
         return ENOMEM;
     }
 
-    ret = sysdb_search_object_attr(mem_ctx, domain, filter, attrs, res);
+    ret = sysdb_search_object_attr(mem_ctx, domain, filter, attrs, true, res);
 
     talloc_free(filter);
     return ret;
@@ -4614,7 +4624,7 @@ errno_t sysdb_search_object_by_name(TALLOC_CTX *mem_ctx,
         goto done;
     }
 
-    ret = sysdb_search_object_attr(mem_ctx, domain, filter, attrs, res);
+    ret = sysdb_search_object_attr(mem_ctx, domain, filter, attrs, true, res);
 
 done:
     talloc_free(tmp_ctx);
@@ -4628,7 +4638,7 @@ errno_t sysdb_search_object_by_sid(TALLOC_CTX *mem_ctx,
                                    struct ldb_result **res)
 {
     return sysdb_search_object_by_str_attr(mem_ctx, domain, SYSDB_SID_FILTER,
-                                           sid_str, attrs, res);
+                                           sid_str, attrs, true, res);
 }
 
 errno_t sysdb_search_object_by_uuid(TALLOC_CTX *mem_ctx,
@@ -4638,7 +4648,7 @@ errno_t sysdb_search_object_by_uuid(TALLOC_CTX *mem_ctx,
                                     struct ldb_result **res)
 {
     return sysdb_search_object_by_str_attr(mem_ctx, domain, SYSDB_UUID_FILTER,
-                                           uuid_str, attrs, res);
+                                           uuid_str, attrs, true, res);
 }
 
 errno_t sysdb_search_object_by_cert(TALLOC_CTX *mem_ctx,
@@ -4659,7 +4669,7 @@ errno_t sysdb_search_object_by_cert(TALLOC_CTX *mem_ctx,
 
     ret = sysdb_search_object_by_str_attr(mem_ctx, domain,
                                           SYSDB_USER_CERT_FILTER,
-                                          user_filter, attrs, res);
+                                          user_filter, attrs, false, res);
     talloc_free(user_filter);
 
     return ret;
@@ -5003,5 +5013,70 @@ errno_t sysdb_mark_entry_as_expired_ldb_val(struct sss_domain_info *dom,
 
 done:
     talloc_free(tmp_ctx);
+    return ret;
+}
+
+/* User/group invalidation of cache by direct writing to persistent cache
+ * WARNING: This function can cause performance issue!!
+ * is_user = true --> user invalidation
+ * is_user = false --> group invalidation
+ */
+int sysdb_invalidate_cache_entry(struct sss_domain_info *domain,
+                                 const char *name,
+                                 bool is_user)
+{
+    TALLOC_CTX *tmp_ctx;
+    struct sysdb_ctx *sysdb = domain->sysdb;
+    struct ldb_dn *entry_dn = NULL;
+    struct sysdb_attrs *attrs = NULL;
+    errno_t ret;
+
+    tmp_ctx = talloc_new(NULL);
+    if (!tmp_ctx) {
+        return ENOMEM;
+    }
+
+    if (is_user == true) {
+        entry_dn = sysdb_user_dn(tmp_ctx, domain, name);
+    } else {
+        entry_dn = sysdb_group_dn(tmp_ctx, domain, name);
+    }
+
+    if (entry_dn == NULL) {
+        ret = ENOMEM;
+        goto done;
+    }
+
+    attrs = sysdb_new_attrs(tmp_ctx);
+    if (attrs == NULL) {
+        DEBUG(SSSDBG_MINOR_FAILURE, "Could not create sysdb attributes\n");
+        ret = ENOMEM;
+        goto done;
+    }
+
+    ret = sysdb_attrs_add_time_t(attrs, SYSDB_CACHE_EXPIRE, 1);
+    if (ret != EOK) {
+        DEBUG(SSSDBG_MINOR_FAILURE,
+              "Could not add expiration time to attributes\n");
+        goto done;
+    }
+
+    ret = sysdb_set_cache_entry_attr(sysdb->ldb, entry_dn,
+                                     attrs, SYSDB_MOD_REP);
+    if (ret != EOK) {
+        DEBUG(SSSDBG_MINOR_FAILURE,
+              "Cannot set attrs for %s, %d [%s]\n",
+              ldb_dn_get_linearized(entry_dn), ret, sss_strerror(ret));
+        goto done;
+    }
+
+    DEBUG(SSSDBG_FUNC_DATA,
+          "Cache entry [%s] has been invalidated.\n",
+          ldb_dn_get_linearized(entry_dn));
+
+    ret = EOK;
+
+done:
+    talloc_zfree(tmp_ctx);
     return ret;
 }

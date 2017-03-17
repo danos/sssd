@@ -190,6 +190,9 @@ endif
 if BUILD_PAC_RESPONDER
     sssdlibexec_PROGRAMS += sssd_pac
 endif
+if HAVE_SYSTEMD_UNIT
+sssdlibexec_PROGRAMS += sssd_check_socket_activated_responders
+endif
 
 if HAVE_CHECK
     non_interactive_check_based_tests = \
@@ -274,6 +277,7 @@ if HAVE_CMOCKA
         test_ipa_dn \
         simple-access-tests \
         krb5_common_test \
+        test_iobuf \
         $(NULL)
 
 if HAVE_LIBRESOLV
@@ -284,11 +288,16 @@ if BUILD_IFP
 non_interactive_cmocka_based_tests += ifp_tests
 endif   # BUILD_IFP
 
+if HAVE_INOTIFY
+non_interactive_cmocka_based_tests += test_inotify
+endif   # HAVE_INOTIFY
+
 if BUILD_SAMBA
 non_interactive_cmocka_based_tests += \
     ad_access_filter_tests \
     ad_gpo_tests \
     ad_common_tests \
+    test_sdap_initgr \
     test_ad_subdom \
     test_ipa_subdom_server \
     $(NULL)
@@ -334,13 +343,20 @@ sssdlib_LTLIBRARIES = \
     libsss_ldap.la \
     libsss_krb5.la \
     libsss_proxy.la \
-    libsss_simple.la
+    libsss_simple.la \
+    $(NULL)
 
 if BUILD_SAMBA
 sssdlib_LTLIBRARIES += \
     libsss_ipa.la \
     libsss_ad.la
 endif
+
+if HAVE_INOTIFY
+sssdlib_LTLIBRARIES += \
+    libsss_files.la \
+    $(NULL)
+endif # HAVE_INOTIFY
 
 ldblib_LTLIBRARIES = \
     memberof.la
@@ -473,7 +489,6 @@ AM_CPPFLAGS = \
     -DSSSDDATADIR=\"$(sssddatadir)\" \
     -DSSSD_LIBEXEC_PATH=\"$(sssdlibexecdir)\" \
     -DSSSD_CONF_DIR=\"$(sssdconfdir)\" \
-    -DSSSD_DEFAULT_CONF_DIR=\"$(sssddefaultconfdir)\" \
     -DSSS_NSS_MCACHE_DIR=\"$(mcpath)\" \
     -DSSS_NSS_SOCKET_NAME=\"$(pipepath)/nss\" \
     -DSSS_PAM_SOCKET_NAME=\"$(pipepath)/pam\" \
@@ -491,6 +506,7 @@ EXTRA_DIST =
 
 SSSD_CACHE_REQ_OBJ = \
 	src/responder/common/cache_req/cache_req.c \
+	src/responder/common/cache_req/cache_req_result.c \
 	src/responder/common/cache_req/cache_req_search.c \
 	src/responder/common/cache_req/cache_req_data.c \
 	src/responder/common/cache_req/plugins/cache_req_common.c \
@@ -513,7 +529,15 @@ SSSD_CACHE_REQ_OBJ = \
 	src/responder/common/cache_req/plugins/cache_req_svc_by_name.c \
 	src/responder/common/cache_req/plugins/cache_req_svc_by_port.c \
 	src/responder/common/cache_req/plugins/cache_req_netgroup_by_name.c \
+	src/responder/common/cache_req/plugins/cache_req_host_by_name.c \
 	$(NULL)
+
+SSSD_RESPONDER_IFACE_OBJ = \
+    src/responder/common/iface/responder_iface.c \
+    src/responder/common/iface/responder_domain.c \
+    src/responder/common/iface/responder_ncache.c \
+    src/responder/common/iface/responder_iface_generated.c \
+    $(NULL)
 
 SSSD_RESPONDER_OBJ = \
     src/responder/common/negcache_files.c \
@@ -521,6 +545,7 @@ SSSD_RESPONDER_OBJ = \
     src/responder/common/responder_cmd.c \
     src/responder/common/responder_common.c \
     src/responder/common/responder_dp.c \
+    src/responder/common/responder_dp_ssh.c \
     src/responder/common/responder_packet.c \
     src/responder/common/responder_get_domains.c \
     src/responder/common/responder_utils.c \
@@ -528,6 +553,7 @@ SSSD_RESPONDER_OBJ = \
     src/responder/common/data_provider/rdp_client.c \
     src/monitor/monitor_iface_generated.c \
     src/providers/data_provider_req.c \
+    $(SSSD_RESPONDER_IFACE_OBJ) \
     $(SSSD_CACHE_REQ_OBJ) \
     $(NULL)
 
@@ -632,12 +658,17 @@ dist_noinst_HEADERS = \
     src/util/util_safealign.h \
     src/util/util_sss_idmap.h \
     src/util/util_creds.h \
+    src/util/inotify.h \
+    src/util/sss_iobuf.h \
+    src/util/tev_curl.h \
     src/monitor/monitor.h \
     src/monitor/monitor_interfaces.h \
     src/monitor/monitor_iface_generated.h \
     src/responder/common/responder.h \
     src/responder/common/responder_packet.h \
     src/responder/common/responder_sbus.h \
+    src/responder/common/iface/responder_iface.h \
+    src/responder/common/iface/responder_iface_generated.h \
     src/responder/common/cache_req/cache_req.h \
     src/responder/common/cache_req/cache_req_plugin.h \
     src/responder/common/cache_req/cache_req_private.h \
@@ -654,7 +685,7 @@ dist_noinst_HEADERS = \
     src/responder/common/negcache.h \
     src/responder/sudo/sudosrv_private.h \
     src/responder/autofs/autofs_private.h \
-    src/responder/ssh/sshsrv_private.h \
+    src/responder/ssh/ssh_private.h \
     src/responder/ifp/ifp_iface_generated.h \
     src/responder/ifp/ifp_iface.h \
     src/responder/ifp/ifp_private.h \
@@ -754,6 +785,7 @@ dist_noinst_HEADERS = \
     src/providers/ad/ad_subdomains.h \
     src/providers/proxy/proxy.h \
     src/providers/proxy/proxy_iface_generated.h \
+    src/providers/files/files_private.h \
     src/tools/tools_util.h \
     src/tools/sss_sync_ops.h \
     src/resolv/async_resolv.h \
@@ -1219,7 +1251,9 @@ CODEGEN_XML = \
     $(srcdir)/src/providers/data_provider/dp_iface.xml \
     $(srcdir)/src/providers/proxy/proxy_iface.xml \
     $(srcdir)/src/responder/ifp/ifp_iface.xml \
-    $(srcdir)/src/responder/nss/nss_iface.xml
+    $(srcdir)/src/responder/nss/nss_iface.xml \
+    $(srcdir)/src/responder/common/iface/responder_iface.xml \
+    $(NULL)
 
 SBUS_CODEGEN = src/sbus/sbus_codegen
 
@@ -1252,8 +1286,7 @@ sssd_SOURCES = \
     src/confdb/confdb_setup.c \
     src/monitor/monitor_iface_generated.c \
     src/util/nscd.c \
-    src/tools/files.c \
-    src/tools/selinux.c \
+    src/util/inotify.c \
     $(NULL)
 sssd_LDADD = \
     $(SSSD_LIBS) \
@@ -1333,8 +1366,10 @@ endif
 if BUILD_SSH
 sssd_ssh_SOURCES = \
     src/responder/ssh/sshsrv.c \
-    src/responder/ssh/sshsrv_dp.c \
-    src/responder/ssh/sshsrv_cmd.c \
+    src/responder/ssh/ssh_cmd.c \
+    src/responder/ssh/ssh_known_hosts.c \
+    src/responder/ssh/ssh_protocol.c \
+    src/responder/ssh/ssh_reply.c \
     $(SSSD_RESPONDER_OBJ) \
     $(NULL)
 sssd_ssh_LDADD = \
@@ -1450,6 +1485,7 @@ sssd_be_SOURCES = \
     src/providers/data_provider/dp_iface_backend.c \
     src/providers/data_provider/dp_iface_failover.c \
     src/providers/data_provider/dp_client.c \
+    src/providers/data_provider/dp_resp_client.c \
     src/providers/data_provider/dp_iface_generated.c \
     src/providers/data_provider/dp_request.c \
     src/providers/data_provider/dp_request_reply.c \
@@ -1659,6 +1695,22 @@ sss_ssh_knownhostsproxy_LDADD = \
     $(CLIENT_LIBS) $(TALLOC_LIBS) $(POPT_LIBS)
 endif
 
+if HAVE_SYSTEMD_UNIT
+sssd_check_socket_activated_responders_SOURCES = \
+    src/tools/sssd_check_socket_activated_responders.c \
+    $(NULL)
+sssd_check_socket_activated_responders_CFLAGS = \
+    $(AM_CFLAGS) \
+    $(NULL)
+sssd_check_socket_activated_responders_LDADD = \
+    $(SSSD_INTERNAL_LTLIBS) \
+    $(LTLIBINTL) \
+    $(TALLOC_LIBS) \
+    $(POPT_LIBS) \
+    $(INI_CONFIG_LIBS) \
+    $(NULL)
+endif
+
 #################
 # Feature Tests #
 #################
@@ -1791,6 +1843,7 @@ krb5_utils_tests_SOURCES = \
     src/providers/krb5/krb5_common.c \
     src/providers/krb5/krb5_opts.c \
     src/util/sss_krb5.c \
+    src/util/sss_iobuf.c \
     src/providers/data_provider_fo.c \
     src/providers/data_provider_opts.c \
     src/providers/data_provider_callbacks.c \
@@ -1833,6 +1886,7 @@ if BUILD_SEMANAGE
     FILES_TESTS_LIBS += $(SEMANAGE_LIBS)
 endif
 
+if HAVE_INOTIFY
 files_tests_SOURCES = \
     src/tests/files-tests.c \
     src/util/check_and_open.c \
@@ -1846,6 +1900,7 @@ files_tests_LDADD = \
     $(FILES_TESTS_LIBS) \
     libsss_test_common.la \
     $(SSSD_INTERNAL_LTLIBS)
+endif   # HAVE_INOTIFY
 
 SSSD_RESOLV_TESTS_OBJ = \
     $(SSSD_RESOLV_OBJ)
@@ -2036,7 +2091,9 @@ responder_socket_access_tests_SOURCES = \
     src/responder/common/responder_packet.c \
     src/responder/common/responder_cmd.c \
     src/responder/common/data_provider/rdp_message.c \
-    src/responder/common/data_provider/rdp_client.c
+    src/responder/common/data_provider/rdp_client.c \
+    $(SSSD_RESPONDER_IFACE_OBJ) \
+    $(NULL)
 responder_socket_access_tests_CFLAGS = \
     $(AM_CFLAGS) \
     $(CHECK_CFLAGS)
@@ -2062,6 +2119,7 @@ krb5_child_test_SOURCES = \
     src/providers/krb5/krb5_common.c \
     src/providers/krb5/krb5_opts.c \
     src/util/sss_krb5.c \
+    src/util/sss_iobuf.c \
     src/providers/data_provider_fo.c \
     src/providers/data_provider_opts.c \
     src/providers/data_provider_callbacks.c \
@@ -2123,6 +2181,7 @@ TEST_MOCK_RESP_OBJ = \
      src/responder/common/data_provider/rdp_client.c \
      src/responder/common/responder_utils.c \
      $(SSSD_CACHE_REQ_OBJ) \
+     $(SSSD_RESPONDER_IFACE_OBJ) \
      $(NULL)
 
 TEST_MOCK_PROVIDER_OBJ = \
@@ -2158,6 +2217,7 @@ nss_srv_tests_CFLAGS = \
     $(AM_CFLAGS)
 nss_srv_tests_LDFLAGS = \
     -Wl,-wrap,sss_ncache_check_user \
+    -Wl,-wrap,sss_ncache_check_upn \
     -Wl,-wrap,sss_ncache_check_uid \
     -Wl,-wrap,sss_ncache_check_sid \
     -Wl,-wrap,sss_ncache_check_cert \
@@ -2703,6 +2763,7 @@ test_wbc_calls_LDFLAGS = \
     -Wl,-wrap,sss_nss_getnamebysid \
     $(NULL)
 test_wbc_calls_LDADD = \
+    $(CLIENT_LIBS) \
     $(CMOCKA_LIBS) \
     $(POPT_LIBS) \
     $(TALLOC_LIBS) \
@@ -2730,6 +2791,7 @@ test_copy_ccache_SOURCES = \
     src/tests/cmocka/test_copy_ccache.c \
     src/providers/krb5/krb5_ccache.c \
     src/util/sss_krb5.c \
+    src/util/sss_iobuf.c \
     $(NULL)
 test_copy_ccache_CFLAGS = \
     $(AM_CFLAGS) \
@@ -2748,6 +2810,7 @@ test_copy_keytab_SOURCES = \
     src/tests/cmocka/test_copy_keytab.c \
     src/providers/krb5/krb5_keytab.c \
     src/util/sss_krb5.c \
+    src/util/sss_iobuf.c \
     $(NULL)
 test_copy_keytab_CFLAGS = \
     $(AM_CFLAGS) \
@@ -2862,6 +2925,28 @@ test_fo_srv_LDADD = \
     $(DHASH_LIBS) \
     $(SSSD_INTERNAL_LTLIBS) \
     libsss_test_common.la \
+    $(NULL)
+
+test_sdap_initgr_SOURCES = \
+    src/tests/cmocka/common_mock_sdap.c \
+    src/tests/cmocka/common_mock_sysdb_objects.c \
+    src/tests/cmocka/test_sdap_initgr.c \
+    $(NULL)
+test_sdap_initgr_CFLAGS = \
+    $(AM_CFLAGS) \
+    $(NDR_NBT_CFLAGS) \
+    $(NULL)
+test_sdap_initgr_LDADD = \
+    $(CMOCKA_LIBS) \
+    $(POPT_LIBS) \
+    $(DHASH_LIBS) \
+    $(TALLOC_LIBS) \
+    $(TEVENT_LIBS) \
+    $(LDB_LIBS) \
+    $(SSSD_INTERNAL_LTLIBS) \
+    libsss_ldap_common.la \
+    libsss_test_common.la \
+    libdlopen_test_providers.la \
     $(NULL)
 
 test_ad_subdom_SOURCES = \
@@ -3088,6 +3173,19 @@ test_ipa_dn_LDADD = \
     libsss_test_common.la \
     $(NULL)
 
+test_iobuf_SOURCES = \
+    src/util/sss_iobuf.c \
+    src/tests/cmocka/test_iobuf.c \
+    $(NULL)
+test_iobuf_CFLAGS = \
+    $(AM_CFLAGS) \
+    $(NULL)
+test_iobuf_LDADD = \
+    $(CMOCKA_LIBS) \
+    $(SSSD_LIBS) \
+    $(NULL)
+
+
 EXTRA_simple_access_tests_DEPENDENCIES = \
     $(ldblib_LTLIBRARIES)
 simple_access_tests_SOURCES = \
@@ -3126,6 +3224,21 @@ krb5_common_test_LDADD = \
     libdlopen_test_providers.la \
     $(NULL)
 
+test_inotify_SOURCES = \
+    src/util/inotify.c \
+    src/tests/cmocka/test_inotify.c \
+    $(NULL)
+test_inotify_CFLAGS = \
+    $(AM_CFLAGS) \
+    $(NULL)
+test_inotify_LDADD = \
+    $(CMOCKA_LIBS) \
+    $(SSSD_LIBS) \
+    $(SSSD_INTERNAL_LTLIBS) \
+    $(LIBADD_DL) \
+    libsss_test_common.la \
+    $(NULL)
+
 endif # HAVE_CMOCKA
 
 noinst_PROGRAMS = pam_test_client
@@ -3134,6 +3247,9 @@ noinst_PROGRAMS += sss_sudo_cli
 endif
 if BUILD_AUTOFS
 noinst_PROGRAMS += autofs_test_client
+endif
+if BUILD_WITH_LIBCURL
+noinst_PROGRAMS += tcurl-test-tool
 endif
 
 pam_test_client_SOURCES = src/sss_client/pam_test_client.c
@@ -3146,6 +3262,23 @@ autofs_test_client_SOURCES = \
     src/sss_client/common.c
 autofs_test_client_CFLAGS = $(AM_CFLAGS)
 autofs_test_client_LDADD = -lpopt $(CLIENT_LIBS)
+endif
+
+if BUILD_WITH_LIBCURL
+tcurl_test_tool_SOURCES = \
+    src/tests/tcurl_test_tool.c \
+    src/util/tev_curl.c \
+    src/util/sss_iobuf.c \
+    $(NULL)
+tcurl_test_tool_CFLAGS = \
+    $(AM_CFLAGS) \
+    $(CURL_CFLAGS) \
+    $(NULL)
+tcurl_test_tool_LDADD = \
+    $(CURL_LIBS) \
+    $(SSSD_LIBS) \
+    $(SSSD_INTERNAL_LTLIBS) \
+    $(NULL)
 endif
 
 #####################
@@ -3167,6 +3300,7 @@ intgcheck-prepare:
 	    --with-ldb-lib-dir="$$prefix"/lib/ldb \
 	    --enable-intgcheck-reqs \
 	    --without-semanage \
+	    --enable-files-domain \
 	    $(INTGCHECK_CONFIGURE_FLAGS); \
 	$(MAKE) $(AM_MAKEFLAGS); \
 	: Force single-thread install to workaround concurrency issues; \
@@ -3404,6 +3538,7 @@ libsss_krb5_common_la_SOURCES = \
     src/providers/krb5/krb5_init_shared.c \
     src/providers/krb5/krb5_ccache.c \
     src/util/sss_krb5.c \
+    src/util/sss_iobuf.c \
     src/util/become_user.c \
     $(NULL)
 libsss_krb5_common_la_CFLAGS = \
@@ -3448,6 +3583,23 @@ libsss_proxy_la_LIBADD = \
 libsss_proxy_la_LDFLAGS = \
     -avoid-version \
     -module
+
+libsss_files_la_SOURCES = \
+    src/providers/files/files_init.c \
+    src/providers/files/files_id.c \
+    src/providers/files/files_ops.c \
+    src/util/inotify.c \
+    $(NULL)
+libsss_files_la_CFLAGS = \
+    $(AM_CFLAGS) \
+    $(NULL)
+libsss_files_la_LIBADD = \
+    $(PAM_LIBS) \
+    $(NULL)
+libsss_files_la_LDFLAGS = \
+    -avoid-version \
+    -module \
+    $(NULL)
 
 libsss_simple_la_SOURCES = \
     src/providers/simple/simple_access_check.c \
@@ -3616,6 +3768,7 @@ krb5_child_SOURCES = \
     src/providers/dp_pam_data_util.c \
     src/util/user_info_msg.c \
     src/util/sss_krb5.c \
+    src/util/sss_iobuf.c \
     src/util/find_uid.c \
     src/util/atomic_io.c \
     src/util/authtok.c \
@@ -3649,6 +3802,7 @@ ldap_child_SOURCES = \
     src/providers/ldap/ldap_child.c \
     src/providers/krb5/krb5_keytab.c \
     src/util/sss_krb5.c \
+    src/util/sss_iobuf.c \
     src/util/atomic_io.c \
     src/util/authtok.c \
     src/util/authtok-utils.c \

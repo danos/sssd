@@ -376,12 +376,18 @@ get_port_status(struct fo_server *server)
           "Port status of port %d for server '%s' is '%s'\n", server->port,
               SERVER_NAME(server), str_port_status(server->port_status));
 
+    if (server->port_status == PORT_NOT_WORKING) {
+        DEBUG(SSSDBG_MINOR_FAILURE, "SSSD is unable to complete the full "
+              "connection request, this internal status does not necessarily "
+              "indicate network port issues.\n");
+    }
+
     timeout = server->service->ctx->opts->retry_timeout;
     if (timeout != 0 && server->port_status == PORT_NOT_WORKING) {
         gettimeofday(&tv, NULL);
         if (STATUS_DIFF(server, tv) > timeout) {
             DEBUG(SSSDBG_CONF_SETTINGS,
-                  "Reseting the status of port %d for server '%s'\n",
+                  "Resetting the status of port %d for server '%s'\n",
                       server->port, SERVER_NAME(server));
             server->port_status = PORT_NEUTRAL;
             server->last_status_change.tv_sec = tv.tv_sec;
@@ -1145,6 +1151,7 @@ fo_resolve_service_server(struct tevent_req *req)
                                 state->server->common);
         fo_set_server_status(state->server, SERVER_RESOLVING_NAME);
         /* FALLTHROUGH */
+        SSS_ATTRIBUTE_FALLTHROUGH;
     case SERVER_RESOLVING_NAME:
         /* Name resolution is already under way. Just add ourselves into the
          * waiting queue so we get notified after the operation is finished. */
@@ -1284,6 +1291,7 @@ resolve_srv_send(TALLOC_CTX *mem_ctx, struct tevent_context *ev,
          * "server" might be invalid now if the SRV
          * query collapsed
          * */
+        SSS_ATTRIBUTE_FALLTHROUGH;
     case SRV_NEUTRAL: /* Request SRV lookup */
         if (server != NULL && server != state->meta) {
             /* A server created by expansion of meta server was marked as
@@ -1443,9 +1451,11 @@ resolve_srv_done(struct tevent_req *subreq)
         break;
     case ERR_SRV_NOT_FOUND:
         /* fall through */
+        SSS_ATTRIBUTE_FALLTHROUGH;
     case ERR_SRV_LOOKUP_ERROR:
         fo_set_port_status(state->meta, PORT_NOT_WORKING);
         /* fall through */
+        SSS_ATTRIBUTE_FALLTHROUGH;
     default:
         DEBUG(SSSDBG_OP_FAILURE, "Unable to resolve SRV [%d]: %s\n",
                                   ret, sss_strerror(ret));

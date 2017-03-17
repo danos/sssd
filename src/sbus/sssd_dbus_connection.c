@@ -27,9 +27,6 @@
 #include "sbus/sssd_dbus_private.h"
 #include "sbus/sssd_dbus_meta.h"
 
-/* Types */
-struct dbus_ctx_list;
-
 static int sbus_auto_reconnect(struct sbus_connection *conn);
 
 static void sbus_dispatch(struct tevent_context *ev,
@@ -166,22 +163,22 @@ int sbus_init_connection(TALLOC_CTX *ctx,
     conn->last_request_time = last_request_time;
     conn->client_destructor_data = client_destructor_data;
 
-    ret = sbus_opath_hash_init(conn, conn, &conn->managed_paths);
-    if (ret != EOK) {
+    conn->managed_paths = sbus_opath_hash_init(conn, conn);
+    if (conn->managed_paths == NULL) {
         DEBUG(SSSDBG_CRIT_FAILURE, "Cannot create object paths hash table\n");
         talloc_free(conn);
         return EIO;
     }
 
-    ret = sbus_nodes_hash_init(conn, conn, &conn->nodes_fns);
-    if (ret != EOK) {
+    conn->nodes_fns = sbus_nodes_hash_init(conn);
+    if (conn->nodes_fns == NULL) {
         DEBUG(SSSDBG_CRIT_FAILURE, "Cannot create node functions hash table\n");
         talloc_free(conn);
         return EIO;
     }
 
-    ret = sbus_incoming_signal_hash_init(conn, &conn->incoming_signals);
-    if (ret != EOK) {
+    conn->incoming_signals = sbus_incoming_signal_hash_init(conn);
+    if (conn->incoming_signals == NULL) {
         DEBUG(SSSDBG_CRIT_FAILURE, "Cannot create incoming singals "
               "hash table\n");
         talloc_free(conn);
@@ -499,12 +496,6 @@ void sbus_reconnect_init(struct sbus_connection *conn,
     conn->max_retries = max_retries;
     conn->reconnect_callback = callback;
     conn->reconnect_pvt = pvt;
-}
-
-bool sbus_conn_disconnecting(struct sbus_connection *conn)
-{
-    if (conn->disconnect == 1) return true;
-    return false;
 }
 
 int sss_dbus_conn_send(DBusConnection *dbus_conn,

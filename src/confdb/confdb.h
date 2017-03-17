@@ -40,7 +40,6 @@
 
 #define CONFDB_DEFAULT_CFG_FILE_VER 2
 #define CONFDB_FILE "config.ldb"
-#define SSSD_DEFAULT_CONFIG_FILE SSSD_DEFAULT_CONF_DIR"/sssd.conf"
 #define SSSD_CONFIG_FILE SSSD_CONF_DIR"/sssd.conf"
 #define CONFDB_DEFAULT_CONFIG_DIR SSSD_CONF_DIR"/conf.d"
 #define SSSD_MIN_ID 1
@@ -74,6 +73,7 @@
 #define CONFDB_MONITOR_USER_RUNAS "user"
 #define CONFDB_MONITOR_CERT_VERIFICATION "certificate_verification"
 #define CONFDB_MONITOR_DISABLE_NETLINK "disable_netlink"
+#define CONFDB_MONITOR_ENABLE_FILES_DOM "enable_files_domain"
 
 /* Both monitor and domains */
 #define CONFDB_NAME_REGEX   "re_expression"
@@ -88,6 +88,7 @@
 #define CONFDB_RESPONDER_LOCAL_NEG_TIMEOUT "local_negative_timeout"
 #define CONFDB_RESPONDER_IDLE_TIMEOUT "responder_idle_timeout"
 #define CONFDB_RESPONDER_IDLE_DEFAULT_TIMEOUT 300
+#define CONFDB_RESPONDER_CACHE_FIRST "cache_first"
 
 /* NSS */
 #define CONFDB_NSS_CONF_ENTRY "config/nss"
@@ -249,6 +250,10 @@ enum sss_domain_state {
      * return cached data
      */
     DOM_INACTIVE,
+    /** Domain is being updated. Responders should ignore cached data and
+     * always contact the DP
+     */
+    DOM_INCONSISTENT,
 };
 
 /**
@@ -267,6 +272,7 @@ struct sss_domain_info {
     bool ignore_group_members;
     uint32_t id_min;
     uint32_t id_max;
+    const char *pwfield;
 
     bool cache_credentials;
     uint32_t cache_credentials_min_ff_length;
@@ -368,6 +374,9 @@ int confdb_get_domain(struct confdb_ctx *cdb,
  */
 int confdb_get_domains(struct confdb_ctx *cdb,
                        struct sss_domain_info **domains);
+
+int confdb_ensure_files_domain(struct confdb_ctx *cdb,
+                               const char *implicit_files_dom_name);
 
 /**
  * Get a null-terminated linked-list of all domain names

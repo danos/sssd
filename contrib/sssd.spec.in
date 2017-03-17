@@ -118,7 +118,7 @@ Release: 0@PRERELEASE_VERSION@%{?dist}
 Group: Applications/System
 Summary: System Security Services Daemon
 License: GPLv3+
-URL: http://fedorahosted.org/sssd/
+URL: https://pagure.io/SSSD/sssd/
 Source0: %{name}-%{version}.tar.gz
 BuildRoot: %(mktemp -ud %{_tmppath}/%{name}-%{version}-%{release}-XXXXXX)
 
@@ -828,6 +828,9 @@ done
 %{_libexecdir}/%{servicename}/sssd_ssh
 %{_libexecdir}/%{servicename}/sssd_sudo
 %{_libexecdir}/%{servicename}/p11_child
+%if (0%{?use_systemd} == 1)
+%{_libexecdir}/%{servicename}/sssd_check_socket_activated_responders
+%endif
 
 %dir %{_libdir}/%{name}
 %{_libdir}/%{name}/libsss_simple.so
@@ -847,6 +850,10 @@ done
 %{_bindir}/sss_ssh_knownhostsproxy
 %{_sbindir}/sss_cache
 %{_libexecdir}/%{servicename}/sss_signal
+
+# The files provider is intentionally packaged in -common
+%{_libdir}/%{name}/libsss_files.so
+%{_mandir}/man5/sssd-files.5*
 
 %dir %{sssdstatedir}
 %dir %{_localstatedir}/cache/krb5rcache

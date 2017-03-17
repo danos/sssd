@@ -38,6 +38,7 @@
 #include "confdb/confdb.h"
 #include "sbus/sssd_dbus.h"
 #include "responder/common/responder.h"
+#include "responder/common/iface/responder_iface.h"
 #include "responder/common/responder_packet.h"
 #include "providers/data_provider.h"
 #include "monitor/monitor_interfaces.h"
@@ -666,6 +667,7 @@ static int sss_dp_init(struct resp_ctx *rctx,
 {
     struct be_conn *be_conn;
     int ret;
+    struct sbus_iface_map *resp_sbus_iface;
 
     be_conn = talloc_zero(rctx, struct be_conn);
     if (!be_conn) return ENOMEM;
@@ -693,6 +695,19 @@ static int sss_dp_init(struct resp_ctx *rctx,
         ret = sbus_conn_register_iface_map(be_conn->conn, sbus_iface, rctx);
         if (ret != EOK) {
             DEBUG(SSSDBG_FATAL_FAILURE, "Failed to register D-Bus interface.\n");
+            return ret;
+        }
+    }
+
+    resp_sbus_iface = responder_get_sbus_interface();
+    if (resp_sbus_iface != NULL) {
+        ret = sbus_conn_register_iface_map(be_conn->conn,
+                                           resp_sbus_iface,
+                                           rctx);
+        if (ret != EOK) {
+            DEBUG(SSSDBG_FATAL_FAILURE,
+                  "Cannot register generic responder iface at %s: %d\n",
+                  resp_sbus_iface->path, ret);
             return ret;
         }
     }
@@ -1080,44 +1095,21 @@ int sss_process_init(TALLOC_CTX *mem_ctx,
     }
 
     if (rctx->socket_activated || rctx->dbus_activated) {
-        ret = confdb_get_int(rctx->cdb, rctx->confdb_service_path,
-                             CONFDB_RESPONDER_IDLE_TIMEOUT,
-                             CONFDB_RESPONDER_IDLE_DEFAULT_TIMEOUT,
-                             &rctx->idle_timeout);
+        ret = responder_setup_idle_timeout_config(rctx);
         if (ret != EOK) {
-            DEBUG(SSSDBG_OP_FAILURE,
-                  "Cannot get the responder idle timeout [%d]: %s\n",
-                  ret, sss_strerror(ret));
             goto fail;
         }
+    }
 
-        /* Idle timeout set to 0 means that no timeout will be set up to
-         * the responder */
-        if (rctx->idle_timeout == 0) {
-            DEBUG(SSSDBG_TRACE_INTERNAL,
-                  "Responder idle timeout won't be set up as the "
-                  "responder_idle_timeout is set to 0");
-        } else {
-            /* Ensure that the responder timeout is at least sixty seconds */
-            if (rctx->idle_timeout < 60) {
-                DEBUG(SSSDBG_TRACE_INTERNAL,
-                      "responder_idle_timeout is set to a value lower than "
-                      "the minimum allowed (60s).\n"
-                      "The minimum allowed value will be used.");
-
-                rctx->idle_timeout = 60;
-            }
-
-            ret = setup_responder_idle_timer(rctx);
-            if (ret != EOK) {
-                DEBUG(SSSDBG_MINOR_FAILURE,
-                      "An error ocurrend when setting up the responder's idle "
-                      "timeout for the responder [%p]: %s [%d].\n"
-                      "The responder won't be automatically shutdown after %d "
-                      "seconds inactive. \n",
-                      rctx, sss_strerror(ret), ret, rctx->idle_timeout);
-            }
-        }
+    ret = confdb_get_bool(rctx->cdb, rctx->confdb_service_path,
+                          CONFDB_RESPONDER_CACHE_FIRST,
+                          false, &rctx->cache_first);
+    if (ret != EOK) {
+        DEBUG(SSSDBG_OP_FAILURE,
+              "Cannot get \"cache_first_option\".\n"
+              "Querying the caches first before querying the "
+              "Data Providers will not be enforced [%d]: %s.\n",
+              ret, sss_strerror(ret));
     }
 
     ret = confdb_get_int(rctx->cdb, rctx->confdb_service_path,
@@ -1409,4 +1401,55 @@ void responder_set_fd_limit(rlim_t fd_limit)
               "Could not determine fd limits. "
                "Proceeding with system values\n");
     }
+}
+
+errno_t responder_setup_idle_timeout_config(struct resp_ctx *rctx)
+{
+    errno_t ret;
+
+    ret = confdb_get_int(rctx->cdb, rctx->confdb_service_path,
+                         CONFDB_RESPONDER_IDLE_TIMEOUT,
+                         CONFDB_RESPONDER_IDLE_DEFAULT_TIMEOUT,
+                         &rctx->idle_timeout);
+    if (ret != EOK) {
+        DEBUG(SSSDBG_OP_FAILURE,
+              "Cannot get the responder idle timeout [%d]: %s\n",
+              ret, sss_strerror(ret));
+        goto fail;
+    }
+
+    /* Idle timeout set to 0 means that no timeout will be set up to
+     * the responder */
+    if (rctx->idle_timeout == 0) {
+        DEBUG(SSSDBG_TRACE_INTERNAL,
+              "Responder idle timeout won't be set up as the "
+              "responder_idle_timeout is set to 0");
+    } else {
+        /* Ensure that the responder timeout is at least sixty seconds */
+        if (rctx->idle_timeout < 60) {
+            DEBUG(SSSDBG_TRACE_INTERNAL,
+                  "responder_idle_timeout is set to a value lower than "
+                  "the minimum allowed (60s).\n"
+                  "The minimum allowed value will be used.");
+
+            rctx->idle_timeout = 60;
+        }
+
+        ret = setup_responder_idle_timer(rctx);
+        if (ret != EOK) {
+            DEBUG(SSSDBG_MINOR_FAILURE,
+                  "An error ocurrend when setting up the responder's idle "
+                  "timeout for the responder [%p]: %s [%d].\n"
+                  "The responder won't be automatically shutdown after %d "
+                  "seconds inactive. \n",
+                  rctx, sss_strerror(ret), ret,
+                  rctx->idle_timeout);
+        }
+    }
+
+    ret = EOK;
+
+fail:
+    return ret;
+
 }

@@ -33,6 +33,8 @@ uint32_t sss_ncache_get_timeout(struct sss_nc_ctx *ctx);
 /* check if the user is expired according to the passed in time to live */
 int sss_ncache_check_user(struct sss_nc_ctx *ctx, struct sss_domain_info *dom,
                           const char *name);
+int sss_ncache_check_upn(struct sss_nc_ctx *ctx, struct sss_domain_info *dom,
+                         const char *name);
 int sss_ncache_check_group(struct sss_nc_ctx *ctx, struct sss_domain_info *dom,
                            const char *name);
 int sss_ncache_check_netgr(struct sss_nc_ctx *ctx, struct sss_domain_info *dom,
@@ -59,6 +61,8 @@ int sss_ncache_check_service_port(struct sss_nc_ctx *ctx,
  * users and groups) */
 int sss_ncache_set_user(struct sss_nc_ctx *ctx, bool permanent,
                         struct sss_domain_info *dom, const char *name);
+int sss_ncache_set_upn(struct sss_nc_ctx *ctx, bool permanent,
+                       struct sss_domain_info *dom, const char *name);
 int sss_ncache_set_group(struct sss_nc_ctx *ctx, bool permanent,
                          struct sss_domain_info *dom, const char *name);
 int sss_ncache_set_netgr(struct sss_nc_ctx *ctx, bool permanent,
@@ -78,6 +82,8 @@ int sss_ncache_set_service_port(struct sss_nc_ctx *ctx, bool permanent,
                                 uint16_t port, const char *proto);
 
 int sss_ncache_reset_permanent(struct sss_nc_ctx *ctx);
+int sss_ncache_reset_users(struct sss_nc_ctx *ctx);
+int sss_ncache_reset_groups(struct sss_nc_ctx *ctx);
 
 struct resp_ctx;
 

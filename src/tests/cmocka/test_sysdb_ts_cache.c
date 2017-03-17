@@ -74,9 +74,6 @@ const char *domains[] = { TEST_DOM1_NAME,
 static int test_sysdb_ts_setup(void **state)
 {
     struct sysdb_ts_test_ctx *test_ctx;
-    struct sss_test_conf_param params[] = {
-        { NULL, NULL },             /* Sentinel */
-    };
 
     assert_true(leak_check_setup());
 
@@ -88,7 +85,7 @@ static int test_sysdb_ts_setup(void **state)
 
     test_ctx->tctx = create_multidom_test_ctx(test_ctx, TESTS_PATH,
                                               TEST_CONF_DB, domains,
-                                              TEST_ID_PROVIDER, params);
+                                              TEST_ID_PROVIDER, NULL);
     assert_non_null(test_ctx->tctx);
 
     check_leaks_push(test_ctx);
@@ -1306,14 +1303,14 @@ static void test_user_byupn(void **state)
                            TEST_NOW_2);
     assert_int_equal(ret, EOK);
 
-    ret = sysdb_getpwupn(test_ctx, test_ctx->tctx->dom, TEST_USER_UPN, &res);
+    ret = sysdb_getpwupn(test_ctx, test_ctx->tctx->dom, false, TEST_USER_UPN, &res);
     assert_int_equal(ret, EOK);
     assert_int_equal(res->count, 1);
     assert_ts_attrs_res(res, TEST_NOW_2 + TEST_CACHE_TIMEOUT, TEST_NOW_2);
     talloc_free(res);
 
     ret = sysdb_search_user_by_upn_res(test_ctx, test_ctx->tctx->dom,
-                                       TEST_USER_UPN, pw_fetch_attrs,
+                                       false, TEST_USER_UPN, pw_fetch_attrs,
                                        &res);
     assert_int_equal(ret, EOK);
     assert_int_equal(res->count, 1);
@@ -1321,7 +1318,7 @@ static void test_user_byupn(void **state)
     talloc_free(res);
 
     ret = sysdb_search_user_by_upn(test_ctx, test_ctx->tctx->dom,
-                                   TEST_USER_UPN, pw_fetch_attrs,
+                                   false, TEST_USER_UPN, pw_fetch_attrs,
                                    &msg);
     assert_int_equal(ret, EOK);
     assert_ts_attrs_msg(msg, TEST_NOW_2 + TEST_CACHE_TIMEOUT, TEST_NOW_2);

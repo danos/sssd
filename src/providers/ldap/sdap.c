@@ -137,7 +137,7 @@ static enum duplicate_t check_duplicate(struct sdap_attr_map *map,
 
     for (i = 0; i < num_entries; i++) {
         if (strcmp(map[i].sys_name, sysdb_attr) == 0) {
-            if (strcmp(map[i].name, ldap_attr) == 0) {
+            if (map[i].name != NULL && strcmp(map[i].name, ldap_attr) == 0) {
                 return ALREADY_IN_MAP;
             } else {
                 return CONFLICT_WITH_MAP;
@@ -162,9 +162,9 @@ int sdap_extend_map(TALLOC_CTX *memctx,
     char *sysdb_attr;
     errno_t ret;
 
+    *_map = src_map;
     if (extra_attrs == NULL) {
         DEBUG(SSSDBG_FUNC_DATA, "No extra attributes\n");
-        *_map = src_map;
         *_new_size = num_entries;
         return EOK;
     }
@@ -177,6 +177,7 @@ int sdap_extend_map(TALLOC_CTX *memctx,
     if (map == NULL) {
         return ENOMEM;
     }
+    *_map = map;
 
     for (i = 0; *extra_attrs != NULL; extra_attrs++) {
         ret = split_extra_attr(map, *extra_attrs, &sysdb_attr, &ldap_attr);
@@ -221,7 +222,6 @@ int sdap_extend_map(TALLOC_CTX *memctx,
     /* Sentinel */
     memset(&map[num_entries+nextra], 0, sizeof(struct sdap_attr_map));
 
-    *_map = map;
     *_new_size = num_entries + nextra;
     return EOK;
 }
@@ -1673,9 +1673,9 @@ char *sdap_make_oc_list(TALLOC_CTX *mem_ctx, struct sdap_attr_map *map)
     }
 }
 
-static bool sdap_object_in_domain(struct sdap_options *opts,
-                                  struct sysdb_attrs *obj,
-                                  struct sss_domain_info *dom)
+bool sdap_object_in_domain(struct sdap_options *opts,
+                           struct sysdb_attrs *obj,
+                           struct sss_domain_info *dom)
 {
     errno_t ret;
     const char *original_dn = NULL;
@@ -1691,7 +1691,8 @@ static bool sdap_object_in_domain(struct sdap_options *opts,
     sdmatch = sdap_domain_get_by_dn(opts, original_dn);
     if (sdmatch == NULL) {
         DEBUG(SSSDBG_FUNC_DATA,
-              "The group has no original DN, assuming our domain\n");
+              "The original DN of the group cannot "
+              "be related to any search base\n");
         return true;
     }
 

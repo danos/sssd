@@ -828,6 +828,7 @@ static int confdb_get_domain_internal(struct confdb_ctx *cdb,
     char *default_domain;
     bool fqnames_default = false;
     int memcache_timeout;
+    bool enum_default;
 
     tmp_ctx = talloc_new(mem_ctx);
     if (!tmp_ctx) return ENOMEM;
@@ -900,13 +901,6 @@ static int confdb_get_domain_internal(struct confdb_ctx *cdb,
         goto done;
     }
 
-    if (strcasecmp(domain->provider, "files") == 0) {
-        /* The files provider is not valid anymore */
-        DEBUG(SSSDBG_FATAL_FAILURE, "The \"files\" provider is invalid\n");
-        ret = EINVAL;
-        goto done;
-    }
-
     if (strcasecmp(domain->provider, "local") == 0) {
         /* If this is the local provider, we need to ensure that
          * no other provider was specified for other types, since
@@ -961,14 +955,24 @@ static int confdb_get_domain_internal(struct confdb_ctx *cdb,
                   "Interpreting as true\n", domain->name);
         domain->enumerate = true;
     } else { /* assume the new format */
+        enum_default = strcasecmp(domain->provider, "files") == 0 ? true : false;
+
         ret = get_entry_as_bool(res->msgs[0], &domain->enumerate,
-                                CONFDB_DOMAIN_ENUMERATE, 0);
+                                CONFDB_DOMAIN_ENUMERATE, enum_default);
         if(ret != EOK) {
             DEBUG(SSSDBG_FATAL_FAILURE,
                   "Invalid value for %s\n", CONFDB_DOMAIN_ENUMERATE);
             goto done;
         }
     }
+
+    if (strcasecmp(domain->provider, "files") == 0) {
+        /* The password field must be reported as 'x', else pam_unix won't
+         * authenticate this entry. See man pwconv(8) for more details.
+         */
+        domain->pwfield = "x";
+    }
+
     if (!domain->enumerate) {
         DEBUG(SSSDBG_TRACE_FUNC, "No enumeration for [%s]!\n", domain->name);
     }
@@ -1328,6 +1332,16 @@ static int confdb_get_domain_internal(struct confdb_ctx *cdb,
     }
 
     tmp = ldb_msg_find_attr_as_string(res->msgs[0],
+                                      CONFDB_NSS_PWFIELD, NULL);
+    if (tmp != NULL) {
+        domain->pwfield = talloc_strdup(domain, tmp);
+        if (!domain->pwfield) {
+            ret = ENOMEM;
+            goto done;
+        }
+    }
+
+    tmp = ldb_msg_find_attr_as_string(res->msgs[0],
                                       CONFDB_SUBDOMAIN_ENUMERATE,
                                       CONFDB_DEFAULT_SUBDOMAIN_ENUMERATE);
     if (tmp != NULL) {
@@ -1628,4 +1642,186 @@ int confdb_get_sub_sections(TALLOC_CTX *mem_ctx,
 done:
     talloc_free(tmp_ctx);
     return ret;
+}
+
+#ifdef ADD_FILES_DOMAIN
+static int confdb_has_files_domain(struct confdb_ctx *cdb)
+{
+    TALLOC_CTX *tmp_ctx = NULL;
+    struct ldb_dn *dn = NULL;
+    struct ldb_result *res = NULL;
+    static const char *attrs[] = { CONFDB_DOMAIN_ID_PROVIDER, NULL };
+    const char *id_provider = NULL;
+    int ret;
+    unsigned int i;
+
+    tmp_ctx = talloc_new(NULL);
+    if (tmp_ctx == NULL) {
+        return ENOMEM;
+    }
+
+    dn = ldb_dn_new(tmp_ctx, cdb->ldb, CONFDB_DOMAIN_BASEDN);
+    if (dn == NULL) {
+        ret = ENOMEM;
+        goto done;
+    }
+
+    ret = ldb_search(cdb->ldb, tmp_ctx, &res, dn, LDB_SCOPE_ONELEVEL,
+                     attrs, NULL);
+    if (ret != LDB_SUCCESS) {
+        ret = EIO;
+        goto done;
+    }
+
+    for (i = 0; i < res->count; i++) {
+        id_provider = ldb_msg_find_attr_as_string(res->msgs[i],
+                                                  CONFDB_DOMAIN_ID_PROVIDER,
+                                                  NULL);
+        if (id_provider == NULL) {
+            DEBUG(SSSDBG_CRIT_FAILURE,
+                  "The object [%s] doesn't have a id_provider\n",
+                  ldb_dn_get_linearized(res->msgs[i]->dn));
+            ret = EINVAL;
+            goto done;
+        }
+
+        if (strcasecmp(id_provider, "files") == 0) {
+            break;
+        }
+    }
+
+    ret = i < res->count ? EOK : ENOENT;
+done:
+    talloc_free(tmp_ctx);
+    return ret;
+}
+
+static int create_files_domain(struct confdb_ctx *cdb,
+                               const char *name)
+{
+    TALLOC_CTX *tmp_ctx = NULL;
+    errno_t ret;
+    char *cdb_path = NULL;
+    const char *val[2] = { NULL, NULL };
+
+    tmp_ctx = talloc_new(NULL);
+    if (tmp_ctx == NULL) {
+        DEBUG(SSSDBG_CRIT_FAILURE, "talloc_new() failed\n");
+        return ENOMEM;
+    }
+
+    cdb_path = talloc_asprintf(tmp_ctx, CONFDB_DOMAIN_PATH_TMPL, name);
+    if (cdb_path == NULL) {
+        ret = ENOMEM;
+        goto done;
+    }
+
+    val[0] = "files";
+    ret = confdb_add_param(cdb, true, cdb_path, "id_provider", val);
+    if (ret != EOK) {
+        DEBUG(SSSDBG_CRIT_FAILURE, "Unable to add id_provider [%d]: %s\n",
+              ret, sss_strerror(ret));
+        goto done;
+    }
+
+    ret = EOK;
+done:
+    talloc_free(tmp_ctx);
+    return ret;
+}
+
+static int activate_files_domain(struct confdb_ctx *cdb,
+                                 const char *name)
+{
+    errno_t ret;
+    TALLOC_CTX *tmp_ctx;
+    char *monitor_domlist;
+    const char *domlist[2] = { NULL, NULL };
+
+    tmp_ctx = talloc_new(NULL);
+    if (tmp_ctx == NULL) {
+        return ENOMEM;
+    }
+
+    ret = confdb_get_string(cdb, tmp_ctx,
+                            CONFDB_MONITOR_CONF_ENTRY,
+                            CONFDB_MONITOR_ACTIVE_DOMAINS,
+                            NULL,
+                            &monitor_domlist);
+    if (ret != EOK) {
+        DEBUG(SSSDBG_FATAL_FAILURE, "Fatal error retrieving domains list!\n");
+        goto done;
+    }
+
+    if (monitor_domlist != NULL) {
+        domlist[0] = talloc_asprintf(tmp_ctx, "%s,%s", name, monitor_domlist);
+        if (domlist[0] == NULL) {
+            ret = ENOMEM;
+            goto done;
+        }
+    } else {
+        domlist[0] = name;
+    }
+
+    ret = confdb_add_param(cdb, true,
+                           CONFDB_MONITOR_CONF_ENTRY,
+                           CONFDB_MONITOR_ACTIVE_DOMAINS,
+                           domlist);
+    if (ret != EOK) {
+        DEBUG(SSSDBG_CRIT_FAILURE,
+              "Cannot extend the domain list [%d]: %s\n",
+              ret, sss_strerror(ret));
+        return ret;
+    }
+
+    ret = EOK;
+done:
+    talloc_free(tmp_ctx);
+    return ret;
+}
+#endif /* ADD_FILES_DOMAIN */
+
+int confdb_ensure_files_domain(struct confdb_ctx *cdb,
+                               const char *implicit_files_dom_name)
+{
+#ifndef ADD_FILES_DOMAIN
+    return EOK;
+#else
+    errno_t ret;
+    bool enable_files;
+
+    ret = confdb_get_bool(cdb,
+                          CONFDB_MONITOR_CONF_ENTRY,
+                          CONFDB_MONITOR_ENABLE_FILES_DOM,
+                          true, &enable_files);
+    if (ret != EOK) {
+        DEBUG(SSSDBG_MINOR_FAILURE,
+              "Cannot get the value of %s assuming true\n",
+              CONFDB_MONITOR_ENABLE_FILES_DOM);
+        return ret;
+    }
+
+    if (enable_files == false) {
+        DEBUG(SSSDBG_CONF_SETTINGS, "The implicit files domain is disabled\n");
+        return EOK;
+    }
+
+    ret = confdb_has_files_domain(cdb);
+    if (ret == EOK) {
+        DEBUG(SSSDBG_CONF_SETTINGS, "The files domain is already enabled\n");
+        return EOK;
+    } else if (ret != ENOENT) {
+        DEBUG(SSSDBG_CRIT_FAILURE, "Error looking up the files domain\n");
+        return ret;
+    }
+
+    /* ENOENT, so let's add a files domain */
+    ret = create_files_domain(cdb, implicit_files_dom_name);
+    if (ret != EOK) {
+        DEBUG(SSSDBG_CRIT_FAILURE, "Cannot add an implicit files domain\n");
+        return ret;
+    }
+
+    return activate_files_domain(cdb, implicit_files_dom_name);
+#endif /* ADD_FILES_DOMAIN */
 }

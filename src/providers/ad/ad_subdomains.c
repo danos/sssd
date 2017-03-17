@@ -156,8 +156,11 @@ ad_subdom_ad_ctx_new(struct be_ctx *be_ctx,
     struct sdap_domain *sdom;
     errno_t ret;
     const char *realm;
+    const char *servers;
+    const char *backup_servers;
     const char *hostname;
     const char *keytab;
+    char *subdom_conf_path;
 
     realm = dp_opt_get_cstring(id_ctx->ad_options->basic, AD_KRB5_REALM);
     hostname = dp_opt_get_cstring(id_ctx->ad_options->basic, AD_HOSTNAME);
@@ -168,8 +171,18 @@ ad_subdom_ad_ctx_new(struct be_ctx *be_ctx,
         return EINVAL;
     }
 
-    ad_options = ad_create_2way_trust_options(id_ctx, realm, ad_domain,
+    subdom_conf_path = create_subdom_conf_path(id_ctx,
+                                               be_ctx->conf_path,
+                                               subdom->name);
+    if (subdom_conf_path == NULL) {
+        DEBUG(SSSDBG_CRIT_FAILURE, "subdom_conf_path failed\n");
+        return ENOMEM;
+    }
+
+    ad_options = ad_create_2way_trust_options(id_ctx, be_ctx->cdb,
+                                              subdom_conf_path, realm, subdom,
                                               hostname, keytab);
+    talloc_free(subdom_conf_path);
     if (ad_options == NULL) {
         DEBUG(SSSDBG_OP_FAILURE, "Cannot initialize AD options\n");
         talloc_free(ad_options);
@@ -190,7 +203,10 @@ ad_subdom_ad_ctx_new(struct be_ctx *be_ctx,
         return ENOMEM;
     }
 
-    ret = ad_failover_init(ad_options, be_ctx, NULL, NULL, realm,
+    servers = dp_opt_get_string(ad_options->basic, AD_SERVER);
+    backup_servers = dp_opt_get_string(ad_options->basic, AD_BACKUP_SERVER);
+
+    ret = ad_failover_init(ad_options, be_ctx, servers, backup_servers, realm,
                            service_name, gc_service_name,
                            subdom->name, &ad_options->service);
     if (ret != EOK) {
@@ -948,6 +964,7 @@ static void ad_get_root_domain_done(struct tevent_req *subreq);
 static struct tevent_req *
 ad_get_root_domain_send(TALLOC_CTX *mem_ctx,
                         struct tevent_context *ev,
+                        const char *domain,
                         const char *forest,
                         struct sdap_handle *sh,
                         struct ad_subdomains_ctx *sd_ctx)
@@ -968,7 +985,7 @@ ad_get_root_domain_send(TALLOC_CTX *mem_ctx,
         return NULL;
     }
 
-    if (forest != NULL && strcasecmp(sd_ctx->be_ctx->domain->name, forest) == 0) {
+    if (forest != NULL && strcasecmp(domain, forest) == 0) {
         state->root_id_ctx = sd_ctx->ad_id_ctx;
         state->root_domain_attrs = NULL;
         ret = EOK;
@@ -1230,6 +1247,7 @@ static void ad_subdomains_refresh_master_done(struct tevent_req *subreq)
     struct ad_subdomains_refresh_state *state;
     struct tevent_req *req;
     const char *realm;
+    const char *ad_domain;
     char *master_sid;
     char *flat_name;
     char *forest;
@@ -1277,7 +1295,14 @@ static void ad_subdomains_refresh_master_done(struct tevent_req *subreq)
         }
     }
 
-    subreq = ad_get_root_domain_send(state, state->ev, forest,
+    ad_domain = dp_opt_get_cstring(state->ad_options->basic, AD_DOMAIN);
+    if (ad_domain == NULL) {
+        DEBUG(SSSDBG_CONF_SETTINGS,
+             "Missing AD domain name, falling back to sssd domain name\n");
+        ad_domain = state->sd_ctx->be_ctx->domain->name;
+    }
+
+    subreq = ad_get_root_domain_send(state, state->ev, ad_domain, forest,
                                      sdap_id_op_handle(state->sdap_op),
                                      state->sd_ctx);
     if (subreq == NULL) {

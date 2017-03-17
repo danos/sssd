@@ -169,7 +169,6 @@ struct pam_data {
     struct sss_auth_token *newauthtok;
     uint32_t cli_pid;
     char *logon_name;
-    bool name_is_upn;
 
     int pam_status;
     int response_delay;
@@ -228,6 +227,11 @@ void dp_id_callback(DBusPendingCall *pending, void *ptr);
 int dp_get_sbus_address(TALLOC_CTX *mem_ctx,
                         char **address, const char *domain_name);
 
+
+/* Reserved filter name for request which waits until the files provider finishes mirroring
+ * the file content
+ */
+#define DP_REQ_OPT_FILES_INITGR     "files_initgr_request"
 
 /* Helpers */
 

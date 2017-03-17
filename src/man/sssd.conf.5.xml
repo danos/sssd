@@ -525,6 +525,23 @@
                             </para>
                         </listitem>
                     </varlistentry>
+                    <varlistentry>
+                        <term>enable_files_domain (boolean)</term>
+                        <listitem>
+                            <para>
+                                When this option is enabled, SSSD
+                                prepends an implicit domain with
+                                <quote>id_provider=files</quote> before
+                                any explicitly configured domains.
+                            </para>
+                            <para condition="no_enable_files_domain">
+                                Default: false
+                            </para>
+                            <para condition="enable_files_domain">
+                                Default: true
+                            </para>
+                        </listitem>
+                    </varlistentry>
                 </variablelist>
             </para>
         </refsect2>
@@ -642,6 +659,18 @@
                         </para>
                         <para>
                             Default: 300
+                        </para>
+                    </listitem>
+                </varlistentry>
+                <varlistentry>
+                    <term>cache_first</term>
+                    <listitem>
+                        <para>
+                            This option specifies whether the responder should
+                            query all caches before querying the Data Providers.
+                        </para>
+                        <para>
+                            Default: false
                         </para>
                     </listitem>
                 </varlistentry>
@@ -933,6 +962,23 @@ fallback_homedir = /home/%u
                         </para>
                         <para>
                             Default: not set, fallback to InfoPipe option
+                        </para>
+                    </listitem>
+                </varlistentry>
+                <varlistentry>
+                    <term>pwfield (string)</term>
+                    <listitem>
+                        <para>
+                            The value that NSS operations that return
+                            users or groups will return for the
+                            <quote>password</quote> field.
+                        </para>
+                        <para>
+                            This option can also be set per-domain.
+                        </para>
+                        <para>
+                            Default: <quote>*</quote> (remote domains)
+                            or <quote>x</quote> (the files domain)
                         </para>
                     </listitem>
                 </varlistentry>
@@ -2717,6 +2763,28 @@ subdomain_inherit = ldap_purge_cache_timeout
             </variablelist>
         </refsect2>
 
+    </refsect1>
+
+    <refsect1 id='trusted-domains'>
+        <title>TRUSTED DOMAIN SECTION</title>
+        <para>
+            Some options used in the domain section can also be used in the
+            trusted domain section, that is, in a section called
+            <quote>[domain/<replaceable>DOMAIN_NAME</replaceable>]/<replaceable>TRUSTED_DOMAIN_NAME</replaceable>]</quote>.
+            Currently supported options in the trusted domain section are:
+        </para>
+            <para>ldap_search_base,</para>
+            <para>ldap_user_search_base,</para>
+            <para>ldap_group_search_base,</para>
+            <para>ldap_netgroup_search_base,</para>
+            <para>ldap_service_search_base,</para>
+            <para>ad_server,</para>
+            <para>ad_backup_server,</para>
+            <para>ad_site.</para>
+        <para>
+            For more details about these options see their individual description
+            in the manual page.
+        </para>
     </refsect1>
 
     <refsect1 id='example'>

@@ -121,10 +121,9 @@ struct sbus_interface_list {
     struct sbus_interface *interface;
 };
 
-errno_t
+hash_table_t *
 sbus_opath_hash_init(TALLOC_CTX *mem_ctx,
-                     struct sbus_connection *conn,
-                     hash_table_t **_table);
+                     struct sbus_connection *conn);
 
 struct sbus_interface *
 sbus_opath_hash_lookup_iface(hash_table_t *table,
@@ -137,10 +136,8 @@ sbus_opath_hash_lookup_supported(TALLOC_CTX *mem_ctx,
                                  const char *object_path,
                                  struct sbus_interface_list **_list);
 
-errno_t
-sbus_nodes_hash_init(TALLOC_CTX *mem_ctx,
-                     struct sbus_connection *conn,
-                     hash_table_t **_table);
+hash_table_t *
+sbus_nodes_hash_init(TALLOC_CTX *mem_ctx);
 
 const char **
 sbus_nodes_hash_lookup(TALLOC_CTX *mem_ctx,
@@ -183,9 +180,8 @@ sbus_signal_handler(DBusConnection *conn,
                     DBusMessage *message,
                     void *handler_data);
 
-errno_t
-sbus_incoming_signal_hash_init(TALLOC_CTX *mem_ctx,
-                               hash_table_t **_table);
+hash_table_t *
+sbus_incoming_signal_hash_init(TALLOC_CTX *mem_ctx);
 
 void sbus_register_common_signals(struct sbus_connection *conn, void *pvt);
 

@@ -38,13 +38,10 @@ struct cache_req {
     struct sss_nc_ctx *ncache;
     int midpoint;
 
-    /* Data Provider request type resolved from @type.
-     * FIXME: This is currently needed for data provider calls. We should
-     * refactor responder_dp.c to get rid of this member. */
-    enum sss_dp_acct_type dp_type;
-
     /* Domain related informations. */
     struct sss_domain_info *domain;
+    bool cache_first;
+    bool bypass_cache;
 
     /* Debug information */
     uint32_t reqid;
@@ -81,6 +78,7 @@ struct cache_req_data {
     uint32_t id;
     const char *cert;
     const char *sid;
+    const char *alias;
     const char **attrs;
 
     struct {
@@ -88,12 +86,16 @@ struct cache_req_data {
         struct cache_req_cased_name protocol;
         uint16_t port;
     } svc;
+
+    bool bypass_cache;
 };
 
 struct tevent_req *
 cache_req_search_send(TALLOC_CTX *mem_ctx,
                       struct tevent_context *ev,
-                      struct cache_req *cr);
+                      struct cache_req *cr,
+                      bool bypass_cache,
+                      bool bypass_dp);
 
 errno_t cache_req_search_recv(TALLOC_CTX *mem_ctx,
                               struct tevent_req *req,
@@ -109,12 +111,31 @@ cache_req_steal_data_and_send(TALLOC_CTX *mem_ctx,
                               const char *domain,
                               struct cache_req_data *data);
 
+errno_t
+cache_req_add_result(TALLOC_CTX *mem_ctx,
+                     struct cache_req_result *new_result,
+                     struct cache_req_result ***_results,
+                     size_t *_num_results);
+
 struct cache_req_result *
 cache_req_create_result(TALLOC_CTX *mem_ctx,
                         struct sss_domain_info *domain,
                         struct ldb_result *ldb_result,
                         const char *lookup_name,
                         const char *well_known_domain);
+
+errno_t
+cache_req_create_and_add_result(TALLOC_CTX *mem_ctx,
+                                struct cache_req *cr,
+                                struct sss_domain_info *domain,
+                                struct ldb_result *ldb_result,
+                                const char *name,
+                                struct cache_req_result ***_results,
+                                size_t *_num_results);
+
+struct ldb_result *
+cache_req_create_ldb_result_from_msg(TALLOC_CTX *mem_ctx,
+                                     struct ldb_message *ldb_msg);
 
 struct cache_req_result *
 cache_req_create_result_from_msg(TALLOC_CTX *mem_ctx,
@@ -131,5 +152,9 @@ cache_req_well_known_sid_result(TALLOC_CTX *mem_ctx,
                                 const char *domname,
                                 const char *sid,
                                 const char *name);
+
+bool
+cache_req_common_dp_recv(struct tevent_req *subreq,
+                         struct cache_req *cr);
 
 #endif /* _CACHE_REQ_PRIVATE_H_ */

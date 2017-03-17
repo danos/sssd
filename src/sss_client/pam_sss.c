@@ -54,6 +54,7 @@
 #define FLAGS_IGNORE_AUTHINFO_UNAVAIL (1 << 4)
 #define FLAGS_USE_2FA (1 << 5)
 #define FLAGS_ALLOW_MISSING_NAME (1 << 6)
+#define FLAGS_PROMPT_ALWAYS (1 << 7)
 
 #define PWEXP_FLAG "pam_sss:password_expired_flag"
 #define FD_DESTRUCTOR "pam_sss:fd_destructor"
@@ -162,6 +163,12 @@ static void overwrite_and_free_pam_items(struct pam_items *pi)
 
     free(pi->token_name);
     pi->token_name = NULL;
+
+    free(pi->module_name);
+    pi->module_name = NULL;
+
+    free(pi->key_id);
+    pi->key_id = NULL;
 }
 
 static int null_strcmp(const char *s1, const char *s2) {
@@ -205,6 +212,10 @@ static int do_pam_conversation(pam_handle_t *pamh, const int msg_style,
 
     ret=pam_get_item(pamh, PAM_CONV, (const void **) &conv);
     if (ret != PAM_SUCCESS) return ret;
+    if (conv == NULL || conv->conv == NULL) {
+        logger(pamh, LOG_ERR, "No conversation function");
+        return PAM_SYSTEM_ERR;
+    }
 
     do {
         pam_msg = malloc(sizeof(struct pam_message));
@@ -689,7 +700,7 @@ static int user_info_account_expired(pam_handle_t *pamh, size_t buflen,
     ret = snprintf(user_msg, bufsize, "%s%s%.*s",
                    EXP_ACC_MSG,
                    msg_len > 0 ? SRV_MSG : "",
-                   msg_len,
+                   (int)msg_len,
                    msg_len > 0 ? (char *)(buf + 2 * sizeof(uint32_t)) : "" );
     if (ret < 0 || ret > bufsize) {
         D(("snprintf failed."));
@@ -744,7 +755,7 @@ static int user_info_chpass_error(pam_handle_t *pamh, size_t buflen,
     ret = snprintf(user_msg, bufsize, "%s%s%.*s",
                    _("Password change failed. "),
                    msg_len > 0 ? _("Server message: ") : "",
-                   msg_len,
+                   (int)msg_len,
                    msg_len > 0 ? (char *)(buf + 2 * sizeof(uint32_t)) : "" );
     if (ret < 0 || ret > bufsize) {
         D(("snprintf failed."));
@@ -865,6 +876,7 @@ static int eval_response(pam_handle_t *pamh, size_t buflen, uint8_t *buf,
                     break;
                 }
                 D(("domain name: [%s]", &buf[p]));
+                free(pi->domain_name);
                 pi->domain_name = strdup((char *) &buf[p]);
                 if (pi->domain_name == NULL) {
                     D(("strdup failed"));
@@ -933,6 +945,7 @@ static int eval_response(pam_handle_t *pamh, size_t buflen, uint8_t *buf,
                     break;
                 }
 
+                free(pi->otp_vendor);
                 pi->otp_vendor = strdup((char *) &buf[p]);
                 if (pi->otp_vendor == NULL) {
                     D(("strdup failed"));
@@ -946,6 +959,7 @@ static int eval_response(pam_handle_t *pamh, size_t buflen, uint8_t *buf,
                     pi->otp_vendor = NULL;
                     break;
                 }
+                free(pi->otp_token_id);
                 pi->otp_token_id = strdup((char *) &buf[p + offset]);
                 if (pi->otp_token_id == NULL) {
                     D(("strdup failed"));
@@ -959,6 +973,7 @@ static int eval_response(pam_handle_t *pamh, size_t buflen, uint8_t *buf,
                     pi->otp_token_id = NULL;
                     break;
                 }
+                free(pi->otp_challenge);
                 pi->otp_challenge = strdup((char *) &buf[p + offset]);
                 if (pi->otp_challenge == NULL) {
                     D(("strdup failed"));
@@ -972,6 +987,7 @@ static int eval_response(pam_handle_t *pamh, size_t buflen, uint8_t *buf,
                     break;
                 }
 
+                free(pi->cert_user);
                 pi->cert_user = strdup((char *) &buf[p]);
                 if (pi->cert_user == NULL) {
                     D(("strdup failed"));
@@ -1006,13 +1022,51 @@ static int eval_response(pam_handle_t *pamh, size_t buflen, uint8_t *buf,
                     pi->cert_user = NULL;
                     break;
                 }
+                free(pi->token_name);
                 pi->token_name = strdup((char *) &buf[p + offset]);
                 if (pi->token_name == NULL) {
                     D(("strdup failed"));
+                    free(pi->cert_user);
+                    pi->cert_user = NULL;
                     break;
                 }
-                D(("cert user: [%s] token name: [%s]", pi->cert_user,
-                                                       pi->token_name));
+
+                offset += strlen(pi->token_name) + 1;
+                if (offset >= len) {
+                    D(("Cert message size mismatch"));
+                    free(pi->cert_user);
+                    pi->cert_user = NULL;
+                    free(pi->token_name);
+                    pi->token_name = NULL;
+                    break;
+                }
+                free(pi->module_name);
+                pi->module_name = strdup((char *) &buf[p + offset]);
+                if (pi->module_name == NULL) {
+                    D(("strdup failed"));
+                    break;
+                }
+
+                offset += strlen(pi->module_name) + 1;
+                if (offset >= len) {
+                    D(("Cert message size mismatch"));
+                    free(pi->cert_user);
+                    pi->cert_user = NULL;
+                    free(pi->token_name);
+                    pi->token_name = NULL;
+                    free(pi->module_name);
+                    pi->module_name = NULL;
+                    break;
+                }
+                free(pi->key_id);
+                pi->key_id = strdup((char *) &buf[p + offset]);
+                if (pi->key_id == NULL) {
+                    D(("strdup failed"));
+                    break;
+                }
+                D(("cert user: [%s] token name: [%s] module: [%s] key id: [%s]",
+                    pi->cert_user, pi->token_name, pi->module_name,
+                    pi->key_id));
                 break;
             case SSS_PASSWORD_PROMPTING:
                 D(("Password prompting available."));
@@ -1110,6 +1164,8 @@ static int get_pam_items(pam_handle_t *pamh, uint32_t flags,
 
     pi->cert_user = NULL;
     pi->token_name = NULL;
+    pi->module_name = NULL;
+    pi->key_id = NULL;
 
     return PAM_SUCCESS;
 }
@@ -1304,6 +1360,10 @@ static int prompt_2fa(pam_handle_t *pamh, struct pam_items *pi,
     if (ret != PAM_SUCCESS) {
         return ret;
     }
+    if (conv == NULL || conv->conv == NULL) {
+        logger(pamh, LOG_ERR, "No conversation function");
+        return PAM_SYSTEM_ERR;
+    }
 
     m[0].msg_style = PAM_PROMPT_ECHO_OFF;
     m[0].msg = prompt_fa1;
@@ -1417,6 +1477,7 @@ static int prompt_sc_pin(pam_handle_t *pamh, struct pam_items *pi)
     char *answer = NULL;
     char *prompt;
     size_t size;
+    size_t needed_size;
 
     if (pi->token_name == NULL || *pi->token_name == '\0'
             || pi->cert_user == NULL || *pi->cert_user == '\0') {
@@ -1450,18 +1511,48 @@ static int prompt_sc_pin(pam_handle_t *pamh, struct pam_items *pi)
         pi->pam_authtok_type = SSS_AUTHTOK_TYPE_EMPTY;
         pi->pam_authtok_size=0;
     } else {
-        pi->pam_authtok = strdup(answer);
-        _pam_overwrite((void *)answer);
-        free(answer);
-        answer=NULL;
-        if (pi->pam_authtok == NULL) {
-            return PAM_BUF_ERR;
+
+        ret = sss_auth_pack_sc_blob(answer, 0, pi->token_name, 0,
+                                    pi->module_name, 0,
+                                    pi->key_id, 0,
+                                    NULL, 0, &needed_size);
+        if (ret != EAGAIN) {
+            D(("sss_auth_pack_sc_blob failed."));
+            ret = PAM_BUF_ERR;
+            goto done;
         }
+
+        pi->pam_authtok = malloc(needed_size);
+        if (pi->pam_authtok == NULL) {
+            D(("malloc failed."));
+            ret = PAM_BUF_ERR;
+            goto done;
+        }
+
+        ret = sss_auth_pack_sc_blob(answer, 0, pi->token_name, 0,
+                                    pi->module_name, 0,
+                                    pi->key_id, 0,
+                                    (uint8_t *) pi->pam_authtok, needed_size,
+                                    &needed_size);
+        if (ret != EOK) {
+            D(("sss_auth_pack_sc_blob failed."));
+            free((void *)pi->pam_authtok);
+            ret = PAM_BUF_ERR;
+            goto done;
+        }
+
         pi->pam_authtok_type = SSS_AUTHTOK_TYPE_SC_PIN;
-        pi->pam_authtok_size=strlen(pi->pam_authtok);
+        pi->pam_authtok_size = needed_size;
     }
 
-    return PAM_SUCCESS;
+    ret = PAM_SUCCESS;
+
+done:
+    _pam_overwrite((void *)answer);
+    free(answer);
+    answer=NULL;
+
+    return ret;
 }
 
 static int prompt_new_password(pam_handle_t *pamh, struct pam_items *pi)
@@ -1551,6 +1642,8 @@ static void eval_argv(pam_handle_t *pamh, int argc, const char **argv,
             *flags |= FLAGS_USE_2FA;
         } else if (strcmp(*argv, "allow_missing_name") == 0) {
             *flags |= FLAGS_ALLOW_MISSING_NAME;
+        } else if (strcmp(*argv, "prompt_always") == 0) {
+            *flags |= FLAGS_PROMPT_ALWAYS;
         } else {
             logger(pamh, LOG_WARNING, "unknown option: %s", *argv);
         }
@@ -1565,7 +1658,10 @@ static int get_authtok_for_authentication(pam_handle_t *pamh,
 {
     int ret;
 
-    if (flags & FLAGS_USE_FIRST_PASS) {
+    if ((flags & FLAGS_USE_FIRST_PASS)
+            || ( pi->pamstack_authtok != NULL
+                    && *(pi->pamstack_authtok) != '\0'
+                    && !(flags & FLAGS_PROMPT_ALWAYS))) {
         pi->pam_authtok_type = SSS_AUTHTOK_TYPE_PASSWORD;
         pi->pam_authtok = strdup(pi->pamstack_authtok);
         if (pi->pam_authtok == NULL) {
@@ -1798,10 +1894,12 @@ static int pam_sss(enum sss_cli_command task, pam_handle_t *pamh,
                 /*
                  * Only do preauth if
                  * - FLAGS_USE_FIRST_PASS is not set
-                 * - no password is on the stack
+                 * - no password is on the stack or FLAGS_PROMPT_ALWAYS is set
                  * - preauth indicator file exists.
                  */
-                if ( !(flags & FLAGS_USE_FIRST_PASS) && pi.pam_authtok == NULL
+                if ( !(flags & FLAGS_USE_FIRST_PASS)
+                        && (pi.pam_authtok == NULL
+                                || (flags & FLAGS_PROMPT_ALWAYS))
                         && access(PAM_PREAUTH_INDICATOR, F_OK) == 0) {
                     pam_status = send_and_receive(pamh, &pi, SSS_PAM_PREAUTH,
                                                   quiet_mode);

@@ -60,7 +60,6 @@ struct pam_auth_req {
     pam_dp_callback_t *callback;
 
     bool is_uid_trusted;
-    bool check_provider;
     void *data;
     bool use_cached_auth;
     /* whether cached authentication was tried and failed */
@@ -68,8 +67,12 @@ struct pam_auth_req {
 
     struct pam_auth_dp_req *dpreq_spy;
 
-    struct ldb_message *cert_user_obj;
+    struct ldb_message *user_obj;
+    struct ldb_result *cert_user_objs;
     char *token_name;
+    char *module_name;
+    char *key_id;
+    bool cert_auth_local;
 };
 
 struct sss_cmd_table *get_pam_cmds(void);
@@ -88,10 +91,12 @@ struct tevent_req *pam_check_cert_send(TALLOC_CTX *mem_ctx,
                                        const char *verify_opts,
                                        struct pam_data *pd);
 errno_t pam_check_cert_recv(struct tevent_req *req, TALLOC_CTX *mem_ctx,
-                            char **cert, char **token_name);
+                            char **cert, char **token_name, char **module_name,
+                            char **key_id);
 
 errno_t add_pam_cert_response(struct pam_data *pd, const char *user,
-                              const char *token_name);
+                              const char *token_name, const char *module_name,
+                              const char *key_id);
 
 bool may_do_cert_auth(struct pam_ctx *pctx, struct pam_data *pd);
 

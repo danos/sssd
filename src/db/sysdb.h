@@ -658,6 +658,7 @@ int sysdb_getpwuid(TALLOC_CTX *mem_ctx,
 
 int sysdb_getpwupn(TALLOC_CTX *mem_ctx,
                    struct sss_domain_info *domain,
+                   bool domain_scope,
                    const char *upn,
                    struct ldb_result **res);
 
@@ -832,12 +833,14 @@ int sysdb_search_user_by_sid_str(TALLOC_CTX *mem_ctx,
 
 int sysdb_search_user_by_upn_res(TALLOC_CTX *mem_ctx,
                                  struct sss_domain_info *domain,
+                                 bool domain_scope,
                                  const char *upn,
                                  const char **attrs,
                                  struct ldb_result **out_res);
 
 int sysdb_search_user_by_upn(TALLOC_CTX *mem_ctx,
                              struct sss_domain_info *domain,
+                             bool domain_scope,
                              const char *sid_str,
                              const char **attrs,
                              struct ldb_message **msg);
@@ -873,6 +876,15 @@ int sysdb_set_entry_attr(struct sysdb_ctx *sysdb,
                          struct ldb_dn *entry_dn,
                          struct sysdb_attrs *attrs,
                          int mod_op);
+
+/* User/group invalidation of cache by direct writing to persistent cache
+ * WARNING: This function can cause performance issue!!
+ * is_user = true --> user invalidation
+ * is_user = false --> group invalidation
+ */
+int sysdb_invalidate_cache_entry(struct sss_domain_info *domain,
+                                 const char *name,
+                                 bool is_user);
 
 /* Replace user attrs */
 int sysdb_set_user_attr(struct sss_domain_info *domain,
@@ -1309,10 +1321,4 @@ errno_t sysdb_handle_original_uuid(const char *orig_name,
                                    struct sysdb_attrs *dest_attrs,
                                    const char *dest_name);
 
-errno_t sysdb_try_to_find_expected_dn(struct sss_domain_info *dom,
-                                      const char *domain_component_name,
-                                      const char *ldap_search_base,
-                                      struct sysdb_attrs **usr_attrs,
-                                      size_t count,
-                                      struct sysdb_attrs **exp_usr);
 #endif /* __SYS_DB_H__ */

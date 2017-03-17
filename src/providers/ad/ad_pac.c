@@ -51,7 +51,7 @@ static errno_t find_user_entry(TALLOC_CTX *mem_ctx, struct sss_domain_info *dom,
     }
 
     if (ar->extra_value && strcmp(ar->extra_value, EXTRA_NAME_IS_UPN) == 0) {
-        ret = sysdb_search_user_by_upn(tmp_ctx, dom, ar->filter_value,
+        ret = sysdb_search_user_by_upn(tmp_ctx, dom, false, ar->filter_value,
                                        user_attrs, &msg);
     } else {
         switch (ar->filter_type) {
@@ -134,7 +134,7 @@ errno_t check_if_pac_is_available(TALLOC_CTX *mem_ctx,
     pac_expires = ldb_msg_find_attr_as_uint64(msg, SYSDB_PAC_BLOB_EXPIRE, 0);
     now = time(NULL);
     if (pac_expires < now) {
-        DEBUG(SSSDBG_TRACE_FUNC, "PAC avaiable but too old.\n");
+        DEBUG(SSSDBG_TRACE_FUNC, "PAC available but too old.\n");
         talloc_free(msg);
         return ENOENT;
     }

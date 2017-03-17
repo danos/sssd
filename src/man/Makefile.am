@@ -35,7 +35,12 @@ endif
 if HAVE_SYSTEMD_UNIT
 SYSTEMD_CONDS = ;have_systemd
 endif
-CONDS = with_false$(SUDO_CONDS)$(AUTOFS_CONDS)$(SSH_CONDS)$(PAC_RESPONDER_CONDS)$(IFP_CONDS)$(GPO_CONDS)$(SEC_CONDS)$(SYSTEMD_CONDS)
+if ADD_FILES_DOMAIN
+FILES_CONDS = ;enable_files_domain
+else
+FILES_CONDS = ;no_enable_files_domain
+endif
+CONDS = with_false$(SUDO_CONDS)$(AUTOFS_CONDS)$(SSH_CONDS)$(PAC_RESPONDER_CONDS)$(IFP_CONDS)$(GPO_CONDS)$(SEC_CONDS)$(SYSTEMD_CONDS)$(FILES_CONDS)
 
 
 #Special Rules:
@@ -82,6 +87,10 @@ endif
 
 if BUILD_NFS_IDMAP
 man_MANS += sss_rpcidmapd.5
+endif
+
+if HAVE_INOTIFY
+man_MANS += sssd-files.5
 endif
 
 SUFFIXES = .1.xml .1 .3.xml .3 .5.xml .5 .8.xml .8

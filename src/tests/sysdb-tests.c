@@ -1395,7 +1395,7 @@ START_TEST (test_sysdb_get_user_attr_subdomain)
     /* Create subdomain */
     subdomain = new_subdomain(test_ctx, test_ctx->domain,
                               "test.sub", "TEST.SUB", "test", "S-3",
-                              false, false, NULL, 0);
+                              false, false, NULL, NULL, 0);
     fail_if(subdomain == NULL, "Failed to create new subdomain.");
 
     ret = sss_names_init_from_args(test_ctx,
@@ -5621,6 +5621,9 @@ START_TEST(test_sysdb_search_user_by_cert)
     struct ldb_result *res;
     struct ldb_val val;
     struct test_data *data;
+    struct test_data *data2;
+    const char *name;
+    const char *name2;
 
     /* Setup */
     ret = setup_sysdb_tests(&test_ctx);
@@ -5656,6 +5659,36 @@ START_TEST(test_sysdb_search_user_by_cert)
                       data->username) == 0, "Unexpected object found, " \
                       "expected [%s], got [%s].", data->username,
                       ldb_msg_find_attr_as_string(res->msgs[0],SYSDB_NAME, ""));
+
+    /* Add a second user with the same certificate */
+    data2 = test_data_new_user(test_ctx, 2345671);
+    fail_if(data2 == NULL);
+
+    ret = sysdb_attrs_add_val(data2->attrs, SYSDB_USER_CERT, &val);
+    fail_unless(ret == EOK, "sysdb_attrs_add_val failed with [%d][%s].",
+                ret, strerror(ret));
+
+    ret = test_add_user(data2);
+    fail_unless(ret == EOK, "sysdb_add_user failed with [%d][%s].",
+                ret, strerror(ret));
+
+    ret = sysdb_search_user_by_cert(test_ctx, test_ctx->domain,
+                                    TEST_USER_CERT_DERB64, &res);
+    fail_unless(ret == EOK, "sysdb_search_user_by_cert failed with [%d][%s].",
+                ret, strerror(ret));
+    fail_unless(res->count == 2, "Unexpected number of results, "
+                                 "expected [%u], get [%u].", 2, res->count);
+    name = ldb_msg_find_attr_as_string(res->msgs[0], SYSDB_NAME, "");
+    fail_unless(name != NULL);
+    name2 = ldb_msg_find_attr_as_string(res->msgs[1], SYSDB_NAME, "");
+    fail_unless(name2 != NULL);
+    fail_unless(((strcmp(name, data->username) == 0
+                        && strcmp(name2, data2->username) == 0)
+                    || (strcmp(name, data2->username) == 0
+                        && strcmp(name2, data->username) == 0)),
+                "Unexpected names found, expected [%s,%s], got [%s,%s].",
+                data->username, data2->username, name, name2);
+
     talloc_free(test_ctx);
 }
 END_TEST
@@ -5702,7 +5735,7 @@ START_TEST(test_sysdb_subdomain_store_user)
 
     subdomain = new_subdomain(test_ctx, test_ctx->domain,
                               testdom[0], testdom[1], testdom[2], testdom[3],
-                              false, false, NULL, 0);
+                              false, false, NULL, NULL, 0);
     fail_unless(subdomain != NULL, "Failed to create new subdomin.");
     ret = sysdb_subdomain_store(test_ctx->sysdb,
                                 testdom[0], testdom[1], testdom[2], testdom[3],
@@ -5781,7 +5814,7 @@ START_TEST(test_sysdb_subdomain_user_ops)
 
     subdomain = new_subdomain(test_ctx, test_ctx->domain,
                               testdom[0], testdom[1], testdom[2], testdom[3],
-                              false, false, NULL, 0);
+                              false, false, NULL, NULL, 0);
     fail_unless(subdomain != NULL, "Failed to create new subdomin.");
     ret = sysdb_subdomain_store(test_ctx->sysdb,
                                 testdom[0], testdom[1], testdom[2], testdom[3],
@@ -5854,7 +5887,7 @@ START_TEST(test_sysdb_subdomain_group_ops)
 
     subdomain = new_subdomain(test_ctx, test_ctx->domain,
                               testdom[0], testdom[1], testdom[2], testdom[3],
-                              false, false, NULL, 0);
+                              false, false, NULL, NULL, 0);
     fail_unless(subdomain != NULL, "Failed to create new subdomin.");
     ret = sysdb_subdomain_store(test_ctx->sysdb,
                                 testdom[0], testdom[1], testdom[2], testdom[3],
@@ -6253,12 +6286,12 @@ START_TEST(test_upn_basic)
                            attrs, NULL, -1, 0);
     fail_unless(ret == EOK, "Could not store user.");
 
-    ret = sysdb_search_user_by_upn(test_ctx, test_ctx->domain,
+    ret = sysdb_search_user_by_upn(test_ctx, test_ctx->domain, false,
                                    "abc@def.ghi", NULL, &msg);
     fail_unless(ret == ENOENT,
                 "sysdb_search_user_by_upn failed with non-existing UPN.");
 
-    ret = sysdb_search_user_by_upn(test_ctx, test_ctx->domain,
+    ret = sysdb_search_user_by_upn(test_ctx, test_ctx->domain, false,
                                    UPN_PRINC, NULL, &msg);
     fail_unless(ret == EOK, "sysdb_search_user_by_upn failed.");
 
@@ -6290,7 +6323,7 @@ START_TEST(test_upn_basic_case)
         return;
     }
 
-    ret = sysdb_search_user_by_upn(test_ctx, test_ctx->domain,
+    ret = sysdb_search_user_by_upn(test_ctx, test_ctx->domain, false,
                                    UPN_PRINC_WRONG_CASE, NULL, &msg);
     fail_unless(ret == EOK, "sysdb_search_user_by_upn failed.");
 
@@ -6322,7 +6355,7 @@ START_TEST(test_upn_canon)
         return;
     }
 
-    ret = sysdb_search_user_by_upn(test_ctx, test_ctx->domain,
+    ret = sysdb_search_user_by_upn(test_ctx, test_ctx->domain, false,
                                    UPN_CANON_PRINC, NULL, &msg);
     fail_unless(ret == EOK, "sysdb_search_user_by_upn failed.");
 
@@ -6359,7 +6392,7 @@ START_TEST(test_upn_canon_case)
         return;
     }
 
-    ret = sysdb_search_user_by_upn(test_ctx, test_ctx->domain,
+    ret = sysdb_search_user_by_upn(test_ctx, test_ctx->domain, false,
                                    UPN_CANON_PRINC_WRONG_CASE, NULL, &msg);
     fail_unless(ret == EOK, "sysdb_search_user_by_upn failed.");
 
@@ -6410,12 +6443,12 @@ START_TEST(test_upn_dup)
                            attrs, NULL, -1, 0);
     fail_unless(ret == EOK, "Could not store user.");
 
-    ret = sysdb_search_user_by_upn(test_ctx, test_ctx->domain,
+    ret = sysdb_search_user_by_upn(test_ctx, test_ctx->domain, false,
                                    UPN_CANON_PRINC, NULL, &msg);
     fail_unless(ret == EINVAL,
                 "sysdb_search_user_by_upn failed for duplicated UPN.");
 
-    ret = sysdb_search_user_by_upn(test_ctx, test_ctx->domain,
+    ret = sysdb_search_user_by_upn(test_ctx, test_ctx->domain, false,
                                    UPN_PRINC, NULL, &msg);
     fail_unless(ret == EOK, "sysdb_search_user_by_upn failed.");
 
