@@ -4,6 +4,7 @@ sssd (1.15.2-1) UNRELEASED; urgency=medium
   * control: Demote adcli to sssd-ad suggests.
   * rules, common.install: Fix sssd_krb5_locator_plugin install path.
     (LP: #1664566)
+  * control, copyright, watch: Update upstream URLs.
 
  -- Timo Aaltonen <tjaalton@debian.org>  Thu, 09 Feb 2017 10:53:03 +0200
 

@@ -1,4 +1,4 @@
-#git=git://git.fedorahosted.org/sssd.git
+#git=git://pagure.io/SSSD/sssd.git
 version=3
 opts="uversionmangle=s/alpha/~alpha/;s/beta/~beta/,pgpsigurlmangle=s/$/.asc/" \
-https://fedorahosted.org/released/sssd/sssd-(.*)\.tar\.gz
+https://releases.pagure.org/SSSD/sssd/sssd-(.*)\.tar\.gz
