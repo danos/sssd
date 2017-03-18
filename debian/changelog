@@ -5,6 +5,7 @@ sssd (1.15.2-1) UNRELEASED; urgency=medium
   * rules, common.install: Fix sssd_krb5_locator_plugin install path.
     (LP: #1664566)
   * control, copyright, watch: Update upstream URLs.
+  * common.install: Add libsss_files and socket activation helper.
 
  -- Timo Aaltonen <tjaalton@debian.org>  Thu, 09 Feb 2017 10:53:03 +0200
 
