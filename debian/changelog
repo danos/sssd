@@ -1,4 +1,4 @@
-sssd (1.15.2-1) UNRELEASED; urgency=medium
+sssd (1.15.2-1) unstable; urgency=medium
 
   * New upstream release.
   * control: Demote adcli to sssd-ad suggests.
@@ -7,7 +7,7 @@ sssd (1.15.2-1) UNRELEASED; urgency=medium
   * control, copyright, watch: Update upstream URLs.
   * common.install: Add libsss_files and socket activation helper.
 
- -- Timo Aaltonen <tjaalton@debian.org>  Thu, 09 Feb 2017 10:53:03 +0200
+ -- Timo Aaltonen <tjaalton@debian.org>  Mon, 20 Mar 2017 15:17:19 +0200
 
 sssd (1.15.0-3) unstable; urgency=medium
 
