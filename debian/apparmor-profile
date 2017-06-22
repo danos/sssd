@@ -6,6 +6,7 @@
   #include <abstractions/nameservice>
   #include <abstractions/user-tmp>
 
+  capability chown,
   capability dac_override,
   capability dac_read_search,
   capability setgid,
@@ -45,6 +46,7 @@
   /var/tmp/host_* rw,
 
   /{,var/}run/sssd.pid rw,
+  /{,var/}run/systemd/notify w,
 
   # Site-specific additions and overrides. See local/README for details.
   #include <local/usr.sbin.sssd>
