@@ -21,6 +21,7 @@ Build-Depends:
  libc-ares-dev,
 # libcmocka-dev [amd64 armhf i386],
  libcollection-dev,
+ libcurl4-gnutls-dev,
  libdbus-1-dev,
  libdhash-dev,
  libglib2.0-dev,
@@ -59,6 +60,7 @@ Build-Depends:
  quilt,
  samba-dev (>= 2:4.1.13),
  systemd,
+ uuid-dev,
  xml-core,
  xsltproc
 X-Python-Version: >= 2.6
