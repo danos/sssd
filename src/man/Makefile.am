@@ -27,6 +27,9 @@ endif
 if BUILD_SECRETS
 SEC_CONDS = ;with_secrets
 endif
+if BUILD_SECRETS
+KCM_CONDS = ;with_kcm
+endif
 if GPO_DEFAULT_ENFORCING
 GPO_CONDS = ;gpo_default_enforcing
 else
@@ -40,7 +43,7 @@ FILES_CONDS = ;enable_files_domain
 else
 FILES_CONDS = ;no_enable_files_domain
 endif
-CONDS = with_false$(SUDO_CONDS)$(AUTOFS_CONDS)$(SSH_CONDS)$(PAC_RESPONDER_CONDS)$(IFP_CONDS)$(GPO_CONDS)$(SEC_CONDS)$(SYSTEMD_CONDS)$(FILES_CONDS)
+CONDS = with_false$(SUDO_CONDS)$(AUTOFS_CONDS)$(SSH_CONDS)$(PAC_RESPONDER_CONDS)$(IFP_CONDS)$(GPO_CONDS)$(SEC_CONDS)$(SYSTEMD_CONDS)$(FILES_CONDS)$(KCM_CONDS)
 
 
 #Special Rules:
@@ -59,7 +62,7 @@ man_MANS = \
     sss_useradd.8 sss_userdel.8 sss_usermod.8 \
     sss_groupadd.8 sss_groupdel.8 sss_groupmod.8 \
     sssd.8 sssd.conf.5 sssd-ldap.5 \
-    sssd-krb5.5 sssd-simple.5 \
+    sssd-krb5.5 sssd-simple.5 sss-certmap.5 \
     sssd_krb5_locator_plugin.8 sss_groupshow.8 \
     pam_sss.8 sss_obfuscate.8 sss_cache.8 sss_debuglevel.8 sss_seed.8 \
     sss_override.8 idmap_sss.8 sssctl.8 \
@@ -83,6 +86,10 @@ endif
 
 if BUILD_SECRETS
 man_MANS += sssd-secrets.5
+endif
+
+if BUILD_KCM
+man_MANS += sssd-kcm.8
 endif
 
 if BUILD_NFS_IDMAP

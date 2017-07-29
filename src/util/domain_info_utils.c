@@ -18,6 +18,7 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
+#include <ctype.h>
 #include <utime.h>
 
 #include "confdb/confdb.h"
@@ -844,6 +845,11 @@ void sss_domain_set_state(struct sss_domain_info *dom,
           "Domain %s is %s\n", dom->name, domain_state_str(dom));
 }
 
+bool sss_domain_is_forest_root(struct sss_domain_info *dom)
+{
+    return (dom->forest_root == dom);
+}
+
 bool is_email_from_domain(const char *email, struct sss_domain_info *dom)
 {
     const char *p;
@@ -869,4 +875,44 @@ bool is_email_from_domain(const char *email, struct sss_domain_info *dom)
                                                                      dom->name);
 
     return false;
+}
+
+char *subdomain_create_conf_path(TALLOC_CTX *mem_ctx,
+                                 struct sss_domain_info *subdomain)
+{
+    if (!IS_SUBDOMAIN(subdomain)) {
+        DEBUG(SSSDBG_OP_FAILURE,
+              "The domain \"%s\" is not a subdomain.\n",
+              subdomain->name);
+        return NULL;
+    }
+
+    return talloc_asprintf(mem_ctx, CONFDB_DOMAIN_PATH_TMPL "/%s",
+                           subdomain->parent->name,
+                           subdomain->name);
+}
+
+const char *sss_domain_type_str(struct sss_domain_info *dom)
+{
+    if (dom == NULL) {
+        return "BUG: Invalid domain";
+    }
+    switch (dom->type) {
+    case DOM_TYPE_POSIX:
+        return "POSIX";
+    case DOM_TYPE_APPLICATION:
+        return "Application";
+    }
+    return "Unknown";
+}
+
+void sss_domain_info_set_output_fqnames(struct sss_domain_info *domain,
+                                        bool output_fqnames)
+{
+    domain->output_fqnames = output_fqnames;
+}
+
+bool sss_domain_info_get_output_fqnames(struct sss_domain_info *domain)
+{
+    return domain->output_fqnames;
 }

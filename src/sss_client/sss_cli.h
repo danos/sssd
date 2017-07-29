@@ -260,6 +260,11 @@ SSS_NSS_GETNAMEBYCERT = 0x0116, /**< Takes the zero terminated string
                                      of a X509 certificate and returns the zero
                                      terminated fully qualified name of the
                                      related object. */
+SSS_NSS_GETLISTBYCERT = 0x0117, /**< Takes the zero terminated string
+                                     of the base64 encoded DER representation
+                                     of a X509 certificate and returns a list
+                                     of zero terminated fully qualified names
+                                     of the related objects. */
 };
 
 /**
@@ -422,7 +427,13 @@ enum response_type {
                           * @param Three zero terminated strings, if one of the
                           * strings is missing the message will contain only
                           * an empty string (\0) for that component. */
-    SSS_PAM_CERT_INFO,
+    SSS_PAM_CERT_INFO,   /**< A message indicating that Smartcard/certificate
+                          * based authentication is available and contains
+                          * details about the found Smartcard.
+                          * @param user name, zero terminated
+                          * @param token name, zero terminated
+                          * @param PKCS#11 module name, zero terminated
+                          * @param key id, zero terminated */
     SSS_OTP,             /**< Indicates that the autotok was a OTP, so don't
                           * cache it. There is no message.
                           * @param None. */
@@ -437,6 +448,9 @@ enum response_type {
                               * be used together with other prompting options
                               * to determine the type of prompting.
                               * @param None. */
+    SSS_PAM_CERT_INFO_WITH_HINT, /**< Same as SSS_PAM_CERT_INFO but user name
+                                  * might be missing and should be prompted
+                                  * for. */
 };
 
 /**

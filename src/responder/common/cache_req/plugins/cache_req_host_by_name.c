@@ -41,6 +41,7 @@ cache_req_host_by_name_lookup(TALLOC_CTX *mem_ctx,
                               struct sss_domain_info *domain,
                               struct ldb_result **_result)
 {
+#ifdef BUILD_SSH
     struct ldb_result *result;
     struct ldb_message *msg;
     errno_t ret;
@@ -59,6 +60,9 @@ cache_req_host_by_name_lookup(TALLOC_CTX *mem_ctx,
     *_result = result;
 
     return EOK;
+#else
+    return ERR_INTERNAL;
+#endif /* BUILD_SSH */
 }
 
 struct tevent_req *
@@ -92,6 +96,7 @@ const struct cache_req_plugin cache_req_host_by_name = {
     .global_ncache_add_fn = NULL,
     .ncache_check_fn = NULL,
     .ncache_add_fn = NULL,
+    .ncache_filter_fn = NULL,
     .lookup_fn = cache_req_host_by_name_lookup,
     .dp_send_fn = cache_req_host_by_name_dp_send,
     .dp_recv_fn = cache_req_common_dp_recv
@@ -117,5 +122,7 @@ cache_req_host_by_name_send(TALLOC_CTX *mem_ctx,
     }
 
     return cache_req_steal_data_and_send(mem_ctx, ev, rctx, ncache,
-                                         cache_refresh_percent, domain, data);
+                                         cache_refresh_percent,
+                                         CACHE_REQ_POSIX_DOM, domain,
+                                         data);
 }

@@ -66,6 +66,7 @@ option_strings = {
     'override_space': _('All spaces in group or user names will be replaced with this character'),
     'disable_netlink' : _('Tune sssd to honor or ignore netlink state changes'),
     'enable_files_domain' : _('Enable or disable the implicit files domain'),
+    'domain_resolution_order': _('A specific order of the domains to be looked up'),
 
     # [nss]
     'enum_cache_timeout' : _('Enumeration cache timeout length (seconds)'),
@@ -101,6 +102,7 @@ option_strings = {
     'pam_cert_auth' : _('Allow certificate based/Smartcard authentication.'),
     'pam_cert_db_path' : _('Path to certificate databse with PKCS#11 modules.'),
     'p11_child_timeout' : _('How many seconds will pam_sss wait for p11_child to finish'),
+    'pam_app_services' : _('Which PAM services are permitted to contact application domains'),
 
     # [sudo]
     'sudo_timed' : _('Whether to evaluate the time-based attributes in sudo rules'),
@@ -135,6 +137,12 @@ option_strings = {
     'forward_headers': _('The list of the headers to forward to the Custodia server together with the request'),
     'username': _('The username to use when authenticating to a Custodia server using basic_auth'),
     'password': _('The password to use when authenticating to a Custodia server using basic_auth'),
+    'verify_peer': _('If true peer\'s certificate is verified if proxy_url uses https protocol'),
+    'verify_host': _('If false peer\'s certificate may contain different hostname then proxy_url when https protocol is used'),
+    'capath': _('Path to directory where certificate authority certificates are stored'),
+    'cacert': _('Path to file containing server\'s CA certificate'),
+    'cert': _('Path to file containing client\'s certificate'),
+    'key': _('Path to file containing client\'s private key'),
 
     # [provider]
     'id_provider' : _('Identity provider'),
@@ -147,6 +155,7 @@ option_strings = {
     'selinux_provider' : _('SELinux provider'),
 
     # [domain]
+    'domain_type' : _('Whether the domain is usable by the OS or by applications'),
     'min_id' : _('Minimum user ID'),
     'max_id' : _('Maximum user ID'),
     'enumerate' : _('Enable enumerating all users/groups'),
@@ -179,6 +188,7 @@ option_strings = {
     'subdomain_enumerate' : _('Control enumeration of trusted domains'),
     'subdomain_refresh_interval' : _('How often should subdomains list be refreshed'),
     'subdomain_inherit' : _('List of options that should be inherited into a subdomain'),
+    'subdomain_homedir' : _('Default subdomain homedir value'),
     'cached_auth_timeout' : _('How long can cached credentials be used for cached authentication'),
     'full_name_format' : _('Printf-compatible format for displaying fully-qualified names'),
     're_expression' : _('Regex to parse username and domain'),
@@ -202,7 +212,7 @@ option_strings = {
     'ipa_views_search_base': _("Search base for view containers"),
     'ipa_view_class': _("Objectclass for view containers"),
     'ipa_view_name': _("Attribute with the name of the view"),
-    'ipa_overide_object_class': _("Objectclass for override objects"),
+    'ipa_override_object_class': _("Objectclass for override objects"),
     'ipa_anchor_uuid': _("Attribute with the reference to the original object"),
     'ipa_user_override_object_class': _("Objectclass for user override objects"),
     'ipa_group_override_object_class': _("Objectclass for group override objects"),
@@ -483,7 +493,7 @@ class SSSDConfigSchema(SSSDChangeConf):
             self.readfp(fd)
             fd.close()
             # Read in the provider files
-            for file in filter(lambda f: re.search('^sssd-.*\.conf$', f),
+            for file in filter(lambda f: re.search(r'^sssd-.*\.conf$', f),
                                          os.listdir(schemaplugindir)):
                 fd = open(schemaplugindir+ "/" + file)
                 self.readfp(fd)
@@ -908,9 +918,11 @@ class SSSDService(SSSDConfigObject):
         if type(value) != option_schema[0]:
             # If it's possible to convert it, do so
             try:
-                if option_schema[0] == bool and \
-                type(value) == str:
+                if option_schema[0] == bool and type(value) == str:
                     value = self.schema.bool_lookup[value.lower()]
+                elif option_schema[0] == int and type(value) == str:
+                    # Make sure we handle any reasonable base
+                    value = int(value, 0)
                 else:
                     value = option_schema[0](value)
             except ValueError:
@@ -1782,6 +1794,8 @@ class SSSDConfig(SSSDChangeConf):
         for option,value in service.get_all_options().items():
             if (type(value) == list):
                 value = ', '.join(value)
+            if option == "debug_level":
+                value = self._get_debug_level_val(value)
             addkw.append( { 'type'  : 'option',
                             'name'  : option,
                             'value' : str(value) } )
@@ -2126,6 +2140,8 @@ class SSSDConfig(SSSDChangeConf):
         for option,value in domain.get_all_options().items():
             if (type(value) == list):
                 value = ', '.join(value)
+            if option == "debug_level":
+                value = self._get_debug_level_val(value)
             self.set(sectionname, option, str(value))
 
         if domain.active:

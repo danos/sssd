@@ -37,25 +37,33 @@ char * ifp_users_build_path_from_msg(TALLOC_CTX *mem_ctx,
                                      struct sss_domain_info *domain,
                                      struct ldb_message *msg)
 {
-    const char *uid;
+    const char *key = NULL;
 
-    uid = ldb_msg_find_attr_as_string(msg, SYSDB_UIDNUM, NULL);
+    switch (domain->type) {
+    case DOM_TYPE_APPLICATION:
+        key = ldb_msg_find_attr_as_string(msg, SYSDB_NAME, NULL);
+        break;
+    case DOM_TYPE_POSIX:
+        key = ldb_msg_find_attr_as_string(msg, SYSDB_UIDNUM, NULL);
+        break;
+    }
 
-    if (uid == NULL) {
+
+    if (key == NULL) {
         return NULL;
     }
 
-    return sbus_opath_compose(mem_ctx, IFP_PATH_USERS, domain->name, uid);
+    return sbus_opath_compose(mem_ctx, IFP_PATH_USERS, domain->name, key);
 }
 
-static errno_t ifp_users_decompose_path(struct sss_domain_info *domains,
+static errno_t ifp_users_decompose_path(TALLOC_CTX *mem_ctx,
+                                        struct sss_domain_info *domains,
                                         const char *path,
                                         struct sss_domain_info **_domain,
-                                        uid_t *_uid)
+                                        char **_key)
 {
     char **parts = NULL;
     struct sss_domain_info *domain;
-    uid_t uid;
     errno_t ret;
 
     ret = sbus_opath_decompose_exact(NULL, path, IFP_PATH_USERS, 2, &parts);
@@ -69,14 +77,8 @@ static errno_t ifp_users_decompose_path(struct sss_domain_info *domains,
         goto done;
     }
 
-    uid = strtouint32(parts[1], NULL, 10);
-    ret = errno;
-    if (ret != EOK) {
-        goto done;
-    }
-
     *_domain = domain;
-    *_uid = uid;
+    *_key = talloc_steal(mem_ctx, parts[1]);
 
 done:
     talloc_free(parts);
@@ -99,7 +101,9 @@ int ifp_users_find_by_name(struct sbus_request *sbus_req,
     }
 
     req = cache_req_user_by_name_send(sbus_req, ctx->rctx->ev, ctx->rctx,
-                                      ctx->rctx->ncache, 0, NULL, name);
+                                      ctx->rctx->ncache, 0,
+                                      CACHE_REQ_ANY_DOM,
+                                      NULL, name);
     if (req == NULL) {
         return ENOMEM;
     }
@@ -253,7 +257,9 @@ int ifp_users_find_by_cert(struct sbus_request *sbus_req, void *data,
     }
 
     req = cache_req_user_by_cert_send(sbus_req, ctx->rctx->ev, ctx->rctx,
-                                      ctx->rctx->ncache, 0, NULL, derb64);
+                                      ctx->rctx->ncache, 0,
+                                      CACHE_REQ_ANY_DOM, NULL,
+                                      derb64);
     if (req == NULL) {
         return ENOMEM;
     }
@@ -367,6 +373,7 @@ static int ifp_users_list_by_cert_step(struct ifp_list_ctx *list_ctx)
                                       list_ctx->ctx->rctx,
                                       list_ctx->ctx->rctx->ncache,
                                       0,
+                                      CACHE_REQ_ANY_DOM,
                                       list_ctx->dom->name,
                                       list_ctx->filter);
     if (req == NULL) {
@@ -532,7 +539,9 @@ int ifp_users_find_by_name_and_cert(struct sbus_request *sbus_req, void *data,
 
     if (name_and_cert_ctx->name != NULL) {
         req = cache_req_user_by_name_send(sbus_req, ctx->rctx->ev, ctx->rctx,
-                                          ctx->rctx->ncache, 0, NULL,
+                                          ctx->rctx->ncache, 0,
+                                          CACHE_REQ_ANY_DOM,
+                                          NULL,
                                           name_and_cert_ctx->name);
         if (req == NULL) {
             return ENOMEM;
@@ -614,6 +623,7 @@ static int ifp_users_find_by_name_and_cert_step(
                                       list_ctx->ctx->rctx,
                                       list_ctx->ctx->rctx->ncache,
                                       0,
+                                      CACHE_REQ_ANY_DOM,
                                       list_ctx->dom->name,
                                       list_ctx->filter);
     if (req == NULL) {
@@ -774,6 +784,7 @@ static int ifp_users_list_by_name_step(struct ifp_list_ctx *list_ctx)
     req = cache_req_user_by_filter_send(list_ctx,
                                         list_ctx->ctx->rctx->ev,
                                         list_ctx->ctx->rctx,
+                                        CACHE_REQ_ANY_DOM,
                                         list_ctx->dom->name,
                                         list_ctx->filter);
     if (req == NULL) {
@@ -790,7 +801,7 @@ static void ifp_users_list_by_name_done(struct tevent_req *req)
     DBusError *error;
     struct ifp_list_ctx *list_ctx;
     struct sbus_request *sbus_req;
-    struct cache_req_result *result;
+    struct cache_req_result *result = NULL;
     errno_t ret;
 
     list_ctx = tevent_req_callback_data(req, struct ifp_list_ctx);
@@ -805,12 +816,14 @@ static void ifp_users_list_by_name_done(struct tevent_req *req)
         return;
     }
 
-    ret = ifp_users_list_copy(list_ctx, result->ldb_result);
-    if (ret != EOK) {
-        error = sbus_error_new(sbus_req, SBUS_ERROR_INTERNAL,
-                               "Failed to copy domain result");
-        sbus_request_fail_and_finish(sbus_req, error);
-        return;
+    if (ret == EOK) {
+        ret = ifp_users_list_copy(list_ctx, result->ldb_result);
+        if (ret != EOK) {
+            error = sbus_error_new(sbus_req, SBUS_ERROR_INTERNAL,
+                                "Failed to copy domain result");
+            sbus_request_fail_and_finish(sbus_req, error);
+            return;
+        }
     }
 
     list_ctx->dom = get_next_domain(list_ctx->dom, SSS_GND_DESCEND);
@@ -858,6 +871,7 @@ int ifp_users_list_by_domain_and_name(struct sbus_request *sbus_req,
     }
 
     req = cache_req_user_by_filter_send(list_ctx, ctx->rctx->ev, ctx->rctx,
+                                        CACHE_REQ_ANY_DOM,
                                         domain, filter);
     if (req == NULL) {
         return ENOMEM;
@@ -920,19 +934,69 @@ done:
 }
 
 static errno_t
+ifp_users_get_from_cache(struct sbus_request *sbus_req,
+                         struct sss_domain_info *domain,
+                         const char *key,
+                         struct ldb_message **_user)
+{
+    struct ldb_result *user_res;
+    errno_t ret;
+    uid_t uid;
+
+    switch (domain->type) {
+    case DOM_TYPE_POSIX:
+        uid = strtouint32(key, NULL, 10);
+        ret = errno;
+        if (ret != EOK) {
+            DEBUG(SSSDBG_CRIT_FAILURE, "Invalid UID value\n");
+            return ret;
+        }
+
+        ret = sysdb_getpwuid_with_views(sbus_req, domain, uid, &user_res);
+        if (ret == EOK && user_res->count == 0) {
+            *_user = NULL;
+            return ENOENT;
+        } else if (ret != EOK) {
+            DEBUG(SSSDBG_CRIT_FAILURE, "Unable to lookup user %u@%s [%d]: %s\n",
+                  uid, domain->name, ret, sss_strerror(ret));
+            return ret;
+        }
+        break;
+    case DOM_TYPE_APPLICATION:
+        ret = sysdb_getpwnam_with_views(sbus_req, domain, key, &user_res);
+        if (ret == EOK && user_res->count == 0) {
+            *_user = NULL;
+            return ENOENT;
+        } else if (ret != EOK) {
+            DEBUG(SSSDBG_CRIT_FAILURE, "Unable to lookup user %s@%s [%d]: %s\n",
+                  key, domain->name, ret, sss_strerror(ret));
+            return ret;
+        }
+        break;
+    }
+
+    if (user_res->count > 1) {
+        DEBUG(SSSDBG_CRIT_FAILURE, "More users matched by the single key\n");
+        return EIO;
+    }
+
+    *_user = user_res->msgs[0];
+    return EOK;
+}
+
+static errno_t
 ifp_users_user_get(struct sbus_request *sbus_req,
                    struct ifp_ctx *ifp_ctx,
-                   uid_t *_uid,
                    struct sss_domain_info **_domain,
                    struct ldb_message **_user)
 {
     struct sss_domain_info *domain;
-    struct ldb_result *res;
-    uid_t uid;
+    char *key;
     errno_t ret;
 
-    ret = ifp_users_decompose_path(ifp_ctx->rctx->domains, sbus_req->path,
-                                   &domain, &uid);
+    ret = ifp_users_decompose_path(sbus_req,
+                                   ifp_ctx->rctx->domains, sbus_req->path,
+                                   &domain, &key);
     if (ret != EOK) {
         DEBUG(SSSDBG_CRIT_FAILURE, "Unable to decompose object path"
               "[%s] [%d]: %s\n", sbus_req->path, ret, sss_strerror(ret));
@@ -940,28 +1004,15 @@ ifp_users_user_get(struct sbus_request *sbus_req,
     }
 
     if (_user != NULL) {
-        ret = sysdb_getpwuid_with_views(sbus_req, domain, uid, &res);
-        if (ret == EOK && res->count == 0) {
-            *_user = NULL;
-            ret = ENOENT;
-        }
-
-        if (ret != EOK) {
-            DEBUG(SSSDBG_CRIT_FAILURE, "Unable to lookup user %u@%s [%d]: %s\n",
-                  uid, domain->name, ret, sss_strerror(ret));
-        } else {
-            *_user = res->msgs[0];
-        }
+        ret = ifp_users_get_from_cache(sbus_req, domain, key, _user);
     }
 
     if (ret == EOK || ret == ENOENT) {
-        if (_uid != NULL) {
-            *_uid = uid;
-        }
-
         if (_domain != NULL) {
             *_domain = domain;
         }
+    } else if (ret != EOK) {
+        DEBUG(SSSDBG_OP_FAILURE, "Unable to retrieve user from cache\n");
     }
 
     return ret;
@@ -990,7 +1041,7 @@ static void ifp_users_get_as_string(struct sbus_request *sbus_req,
         return;
     }
 
-    ret = ifp_users_user_get(sbus_req, ifp_ctx, NULL, &domain, &msg);
+    ret = ifp_users_user_get(sbus_req, ifp_ctx, &domain, &msg);
     if (ret != EOK) {
         return;
     }
@@ -1024,7 +1075,7 @@ static void ifp_users_get_name(struct sbus_request *sbus_req,
         return;
     }
 
-    ret = ifp_users_user_get(sbus_req, ifp_ctx, NULL, &domain, &msg);
+    ret = ifp_users_user_get(sbus_req, ifp_ctx, &domain, &msg);
     if (ret != EOK) {
         return;
     }
@@ -1062,7 +1113,7 @@ static void ifp_users_get_as_uint32(struct sbus_request *sbus_req,
         return;
     }
 
-    ret = ifp_users_user_get(sbus_req, ifp_ctx, NULL, &domain, &msg);
+    ret = ifp_users_user_get(sbus_req, ifp_ctx, &domain, &msg);
     if (ret != EOK) {
         return;
     }
@@ -1090,7 +1141,7 @@ int ifp_users_user_update_groups_list(struct sbus_request *sbus_req,
         return ERR_INTERNAL;
     }
 
-    ret = ifp_users_user_get(sbus_req, data, NULL, &domain, &user);
+    ret = ifp_users_user_get(sbus_req, data, &domain, &user);
     if (ret != EOK) {
         return ret;
     }
@@ -1102,7 +1153,8 @@ int ifp_users_user_update_groups_list(struct sbus_request *sbus_req,
     }
 
     req = cache_req_initgr_by_name_send(sbus_req, ctx->rctx->ev, ctx->rctx,
-                                        ctx->rctx->ncache, 0, domain->name,
+                                        ctx->rctx->ncache, 0,
+                                        CACHE_REQ_ANY_DOM, domain->name,
                                         username);
     if (req == NULL) {
         return ENOMEM;
@@ -1224,7 +1276,7 @@ void ifp_users_user_get_groups(struct sbus_request *sbus_req,
         return;
     }
 
-    ret = ifp_users_user_get(sbus_req, ifp_ctx, NULL, &domain, &user);
+    ret = ifp_users_user_get(sbus_req, ifp_ctx, &domain, &user);
     if (ret != EOK) {
         return;
     }
@@ -1257,7 +1309,7 @@ void ifp_users_user_get_groups(struct sbus_request *sbus_req,
     for (i = 0; i < res->count; i++) {
         gid = sss_view_ldb_msg_find_attr_as_uint64(domain, res->msgs[i],
                                                    SYSDB_GIDNUM, 0);
-        if (gid == 0) {
+        if (gid == 0 && domain->type == DOM_TYPE_POSIX) {
             continue;
         }
 
@@ -1276,17 +1328,64 @@ void ifp_users_user_get_groups(struct sbus_request *sbus_req,
     *_size = num_groups;
 }
 
+void ifp_users_user_get_domain(struct sbus_request *sbus_req,
+                               void *data,
+                               const char **_out)
+{
+    const char *domainname;
+
+    *_out = NULL;
+    ifp_users_user_get_domainname(sbus_req, data, &domainname);
+
+    if (domainname == NULL) {
+        return;
+    }
+
+    *_out = sbus_opath_compose(sbus_req, IFP_PATH_DOMAINS,
+                               domainname);
+}
+
+void ifp_users_user_get_domainname(struct sbus_request *sbus_req,
+                                   void *data,
+                                   const char **_out)
+{
+    struct ifp_ctx *ifp_ctx;
+    struct sss_domain_info *domain;
+    errno_t ret;
+
+    *_out = NULL;
+
+    ifp_ctx = talloc_get_type(data, struct ifp_ctx);
+    if (ifp_ctx == NULL) {
+        DEBUG(SSSDBG_CRIT_FAILURE, "Invalid pointer!\n");
+        return;
+    }
+
+    if (!ifp_is_user_attr_allowed(ifp_ctx, "domainname")) {
+        DEBUG(SSSDBG_TRACE_ALL, "Attribute domainname is not allowed\n");
+        return;
+    }
+
+    ret = ifp_users_user_get(sbus_req, ifp_ctx, &domain, NULL);
+    if (ret != EOK) {
+        return;
+    }
+
+    *_out = domain->name;
+}
+
 void ifp_users_user_get_extra_attributes(struct sbus_request *sbus_req,
                                          void *data,
                                          hash_table_t **_out)
 {
     struct ifp_ctx *ifp_ctx;
     struct sss_domain_info *domain;
+    struct ldb_message *base_user;
+    const char *name;
     struct ldb_message **user;
     struct ldb_message_element *el;
     struct ldb_dn *basedn;
     size_t count;
-    uid_t uid;
     const char *filter;
     const char **extra;
     hash_table_t *table;
@@ -1311,7 +1410,7 @@ void ifp_users_user_get_extra_attributes(struct sbus_request *sbus_req,
         return;
     }
 
-    ret = ifp_users_user_get(sbus_req, data, &uid, &domain, NULL);
+    ret = ifp_users_user_get(sbus_req, data, &domain, &base_user);
     if (ret != EOK) {
         return;
     }
@@ -1322,9 +1421,15 @@ void ifp_users_user_get_extra_attributes(struct sbus_request *sbus_req,
         return;
     }
 
-    filter = talloc_asprintf(sbus_req, "(&(%s=%s)(%s=%u))",
+    name = ldb_msg_find_attr_as_string(base_user, SYSDB_NAME, NULL);
+    if (name == NULL) {
+        DEBUG(SSSDBG_CRIT_FAILURE, "A user with no name\n");
+        return;
+    }
+
+    filter = talloc_asprintf(sbus_req, "(&(%s=%s)(%s=%s))",
                              SYSDB_OBJECTCLASS, SYSDB_USER_CLASS,
-                             SYSDB_UIDNUM, uid);
+                             SYSDB_NAME, name);
     if (filter == NULL) {
         DEBUG(SSSDBG_CRIT_FAILURE, "talloc_asprintf() failed\n");
         return;
@@ -1340,7 +1445,7 @@ void ifp_users_user_get_extra_attributes(struct sbus_request *sbus_req,
     }
 
     if (count == 0) {
-        DEBUG(SSSDBG_TRACE_FUNC, "User %u not found!\n", uid);
+        DEBUG(SSSDBG_TRACE_FUNC, "User %s not found!\n", name);
         return;
     } else if (count > 1) {
         DEBUG(SSSDBG_CRIT_FAILURE, "More than one entry found!\n");
@@ -1410,7 +1515,7 @@ int ifp_cache_object_store_user(struct sbus_request *sbus_req,
     struct ldb_message *user;
     errno_t ret;
 
-    ret = ifp_users_user_get(sbus_req, data, NULL, &domain, &user);
+    ret = ifp_users_user_get(sbus_req, data, &domain, &user);
     if (ret != EOK) {
         error = sbus_error_new(sbus_req, DBUS_ERROR_FAILED, "Failed to fetch "
                                "user [%d]: %s\n", ret, sss_strerror(ret));
@@ -1429,7 +1534,7 @@ int ifp_cache_object_remove_user(struct sbus_request *sbus_req,
     struct ldb_message *user;
     errno_t ret;
 
-    ret = ifp_users_user_get(sbus_req, data, NULL, &domain, &user);
+    ret = ifp_users_user_get(sbus_req, data, &domain, &user);
     if (ret != EOK) {
         error = sbus_error_new(sbus_req, DBUS_ERROR_FAILED, "Failed to fetch "
                                "user [%d]: %s\n", ret, sss_strerror(ret));

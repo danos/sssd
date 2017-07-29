@@ -122,7 +122,7 @@ done:
     return ret;
 }
 
-static errno_t get_public_domains(TALLOC_CTX *mem_ctx, struct pam_ctx *pctx)
+static errno_t get_public_domains(struct pam_ctx *pctx)
 {
     char *domains_str = NULL;
     errno_t ret;
@@ -137,7 +137,7 @@ static errno_t get_public_domains(TALLOC_CTX *mem_ctx, struct pam_ctx *pctx)
 
     if (strcmp(domains_str, ALL_DOMAIMS_ARE_PUBLIC) == 0) { /* all */
         /* copy all domains */
-        ret = get_dom_names(mem_ctx,
+        ret = get_dom_names(pctx,
                             pctx->rctx->domains,
                             &pctx->public_domains,
                             &pctx->public_domains_count);
@@ -149,7 +149,7 @@ static errno_t get_public_domains(TALLOC_CTX *mem_ctx, struct pam_ctx *pctx)
         pctx->public_domains = NULL;
         pctx->public_domains_count = 0;
     } else {
-        ret = split_on_separator(mem_ctx, domains_str, ',', true, false,
+        ret = split_on_separator(pctx, domains_str, ',', true, false,
                                  &pctx->public_domains,
                                  &pctx->public_domains_count);
         if (ret != EOK) {
@@ -164,6 +164,32 @@ static errno_t get_public_domains(TALLOC_CTX *mem_ctx, struct pam_ctx *pctx)
 done:
     talloc_free(domains_str);
     return ret;
+}
+
+static errno_t get_app_services(struct pam_ctx *pctx)
+{
+    errno_t ret;
+
+    ret = confdb_get_string_as_list(pctx->rctx->cdb, pctx,
+                                    CONFDB_PAM_CONF_ENTRY,
+                                    CONFDB_PAM_APP_SERVICES,
+                                    &pctx->app_services);
+    if (ret == ENOENT) {
+        pctx->app_services = talloc_zero_array(pctx, char *, 1);
+        if (pctx->app_services == NULL) {
+            return ENOMEM;
+        }
+        /* Allocating an empty array makes it easier for the consumer
+         * to iterate over it
+         */
+    } else if (ret != EOK) {
+        DEBUG(SSSDBG_CRIT_FAILURE,
+              "Cannot read "CONFDB_PAM_APP_SERVICES" [%d]: %s\n",
+              ret, sss_strerror(ret));
+        return ret;
+    }
+
+    return EOK;
 }
 
 static int pam_process_init(TALLOC_CTX *mem_ctx,
@@ -212,9 +238,16 @@ static int pam_process_init(TALLOC_CTX *mem_ctx,
         goto done;
     }
 
-    ret = get_public_domains(pctx, pctx);
+    ret = get_public_domains(pctx);
     if (ret != EOK) {
         DEBUG(SSSDBG_FATAL_FAILURE, "get_public_domains failed: %d:[%s].\n",
+              ret, sss_strerror(ret));
+        goto done;
+    }
+
+    ret = get_app_services(pctx);
+    if (ret != EOK) {
+        DEBUG(SSSDBG_FATAL_FAILURE, "get_app_services failed: %d:[%s].\n",
               ret, sss_strerror(ret));
         goto done;
     }

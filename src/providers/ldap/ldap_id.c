@@ -56,10 +56,12 @@ struct users_get_state {
     char *filter;
     const char **attrs;
     bool use_id_mapping;
+    bool non_posix;
 
     int dp_error;
     int sdap_ret;
     bool noexist_delete;
+    struct sysdb_attrs *extra_attrs;
 };
 
 static int users_get_retry(struct tevent_req *req);
@@ -99,6 +101,7 @@ struct tevent_req *users_get_send(TALLOC_CTX *memctx,
     state->conn = conn;
     state->dp_error = DP_ERR_FATAL;
     state->noexist_delete = noexist_delete;
+    state->extra_attrs = NULL;
 
     state->op = sdap_id_op_create(state, state->conn->conn_cache);
     if (!state->op) {
@@ -111,6 +114,10 @@ struct tevent_req *users_get_send(TALLOC_CTX *memctx,
     state->sysdb = sdom->dom->sysdb;
     state->filter_value = filter_value;
     state->filter_type = filter_type;
+
+    if (state->domain->type == DOM_TYPE_APPLICATION) {
+        state->non_posix = true;
+    }
 
     state->use_id_mapping = sdap_idmap_domain_has_algorithmic_mapping(
                                                           ctx->opts->idmap_ctx,
@@ -245,12 +252,50 @@ struct tevent_req *users_get_send(TALLOC_CTX *memctx,
         }
 
         ret = sss_cert_derb64_to_ldap_filter(state, filter_value, attr_name,
+                                             ctx->opts->certmap_ctx,
+                                             state->domain,
                                              &user_filter);
         if (ret != EOK) {
             DEBUG(SSSDBG_OP_FAILURE,
                   "sss_cert_derb64_to_ldap_filter failed.\n");
+
+            /* Typically sss_cert_derb64_to_ldap_filter() will fail if there
+             * is no mapping rule matching the current certificate. But this
+             * just means that no matching user can be found so we can finish
+             * the request with this result. Even if
+             * sss_cert_derb64_to_ldap_filter() would fail for other reason
+             * there is no need to return an error which might cause the
+             * domain go offline. */
+
+            if (noexist_delete) {
+                ret = sysdb_remove_cert(state->domain, filter_value);
+                if (ret != EOK) {
+                    DEBUG(SSSDBG_OP_FAILURE,
+                          "Ignoring error while removing user certificate "
+                          "[%d]: %s\n", ret, sss_strerror(ret));
+                }
+            }
+
+            ret = EOK;
+            state->sdap_ret = ENOENT;
+            state->dp_error = DP_ERR_OK;
             goto done;
         }
+
+        state->extra_attrs = sysdb_new_attrs(state);
+        if (state->extra_attrs == NULL) {
+            DEBUG(SSSDBG_OP_FAILURE, "sysdb_new_attrs failed.\n");
+            ret = ENOMEM;
+            goto done;
+        }
+
+        ret = sysdb_attrs_add_base64_blob(state->extra_attrs,
+                                          SYSDB_USER_MAPPED_CERT, filter_value);
+        if (ret != EOK) {
+            DEBUG(SSSDBG_OP_FAILURE, "sysdb_attrs_add_base64_blob failed.\n");
+            goto done;
+        }
+
         break;
     default:
         ret = EINVAL;
@@ -273,7 +318,13 @@ struct tevent_req *users_get_send(TALLOC_CTX *memctx,
         }
     }
 
-    if (state->use_id_mapping || filter_type == BE_FILTER_SECID) {
+    if (state->non_posix) {
+        state->filter = talloc_asprintf(state,
+                                        "(&%s(objectclass=%s)(%s=*))",
+                                        user_filter,
+                                        ctx->opts->user_map[SDAP_OC_USER].name,
+                                        ctx->opts->user_map[SDAP_AT_USER_NAME].name);
+    } else if (state->use_id_mapping || filter_type == BE_FILTER_SECID) {
         /* When mapping IDs or looking for SIDs, we don't want to limit
          * ourselves to users with a UID value. But there must be a SID to map
          * from.
@@ -285,7 +336,8 @@ struct tevent_req *users_get_send(TALLOC_CTX *memctx,
                                         ctx->opts->user_map[SDAP_AT_USER_NAME].name,
                                         ctx->opts->user_map[SDAP_AT_USER_OBJECTSID].name);
     } else {
-        /* When not ID-mapping, make sure there is a non-NULL UID */
+        /* When not ID-mapping or looking up POSIX users,
+         * make sure there is a non-NULL UID */
         state->filter = talloc_asprintf(state,
                                         "(&%s(objectclass=%s)(%s=*)(&(%s=*)(!(%s=0))))",
                                         user_filter,
@@ -361,6 +413,7 @@ static void users_get_connect_done(struct tevent_req *subreq)
      * have no idea about POSIX attributes support, run a one-time check
      */
     if (state->use_id_mapping == false &&
+            state->non_posix == false &&
             state->ctx->opts->schema_type == SDAP_SCHEMA_AD &&
             state->ctx->srv_opts &&
             state->ctx->srv_opts->posix_checked == false) {
@@ -442,7 +495,7 @@ static void users_get_search(struct tevent_req *req)
                                  state->attrs, state->filter,
                                  dp_opt_get_int(state->ctx->opts->basic,
                                                 SDAP_SEARCH_TIMEOUT),
-                                 lookup_type);
+                                 lookup_type, state->extra_attrs);
     if (!subreq) {
         tevent_req_error(req, ENOMEM);
         return;
@@ -507,7 +560,7 @@ static void users_get_done(struct tevent_req *subreq)
             ret = sdap_fallback_local_user(state, state->shortname, uid, &usr_attrs);
             if (ret == EOK) {
                 ret = sdap_save_user(state, state->ctx->opts, state->domain,
-                                     usr_attrs[0], NULL, 0);
+                                     usr_attrs[0], NULL, NULL, 0);
             }
         }
     }
@@ -631,6 +684,7 @@ struct groups_get_state {
     char *filter;
     const char **attrs;
     bool use_id_mapping;
+    bool non_posix;
 
     int dp_error;
     int sdap_ret;
@@ -689,6 +743,10 @@ struct tevent_req *groups_get_send(TALLOC_CTX *memctx,
     state->sysdb = sdom->dom->sysdb;
     state->filter_value = filter_value;
     state->filter_type = filter_type;
+
+    if (state->domain->type == DOM_TYPE_APPLICATION) {
+        state->non_posix = true;
+    }
 
     state->use_id_mapping = sdap_idmap_domain_has_algorithmic_mapping(
                                                           ctx->opts->idmap_ctx,
@@ -808,9 +866,11 @@ struct tevent_req *groups_get_send(TALLOC_CTX *memctx,
         goto done;
     }
 
-    if (state->use_id_mapping || filter_type == BE_FILTER_SECID) {
-        /* When mapping IDs or looking for SIDs, we don't want to limit
-         * ourselves to groups with a GID value
+    if (state->non_posix
+            || state->use_id_mapping
+            || filter_type == BE_FILTER_SECID) {
+        /* When mapping IDs or looking for SIDs, or when in a non-POSIX domain,
+         * we don't want to limit ourselves to groups with a GID value
          */
 
         state->filter = talloc_asprintf(state,
@@ -1104,6 +1164,7 @@ struct groups_by_user_state {
     int filter_type;
     const char *extra_value;
     const char **attrs;
+    bool non_posix;
 
     int dp_error;
     int sdap_ret;
@@ -1184,6 +1245,10 @@ static struct tevent_req *groups_by_user_send(TALLOC_CTX *memctx,
     state->extra_value = extra_value;
     state->domain = sdom->dom;
     state->sysdb = sdom->dom->sysdb;
+
+    if (state->domain->type == DOM_TYPE_APPLICATION) {
+        state->non_posix = true;
+    }
 
     ret = build_attrs_from_map(state, ctx->opts->group_map, SDAP_OPTS_GROUP,
                                NULL, &state->attrs, NULL);

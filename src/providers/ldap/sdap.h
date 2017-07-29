@@ -25,6 +25,7 @@
 #include "providers/backend.h"
 #include <ldap.h>
 #include "util/sss_ldap.h"
+#include "lib/certmap/sss_certmap.h"
 
 struct sdap_msg {
     struct sdap_msg *next;
@@ -478,6 +479,9 @@ struct sdap_options {
 
     bool support_matching_rule;
     enum dc_functional_level dc_functional_level;
+
+    /* Certificate mapping support */
+    struct sss_certmap_ctx *certmap_ctx;
 };
 
 struct sdap_server_opts {
@@ -640,5 +644,8 @@ size_t sdap_steal_objects_in_dom(struct sdap_options *opts,
 bool sdap_object_in_domain(struct sdap_options *opts,
                            struct sysdb_attrs *obj,
                            struct sss_domain_info *dom);
+
+void sdap_domain_copy_search_bases(struct sdap_domain *to,
+                                   struct sdap_domain *from);
 
 #endif /* _SDAP_H_ */

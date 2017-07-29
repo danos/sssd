@@ -25,20 +25,12 @@
 #include <stdio.h>
 #include <stdint.h>
 #include <stdbool.h>
-#include <unistd.h>
-#include <fcntl.h>
-#include <string.h>
-#include <strings.h>
-#include <ctype.h>
-#include <errno.h>
 #include <libintl.h>
-#include <limits.h>
 #include <locale.h>
 #include <time.h>
 #include <pcre.h>
 #include <sys/types.h>
 #include <sys/stat.h>
-#include <arpa/inet.h>
 #include <netinet/in.h>
 
 #include <talloc.h>
@@ -192,7 +184,6 @@ void server_loop(struct main_context *main_ctx);
 void orderly_shutdown(int status);
 
 /* from signal.c */
-#include <signal.h>
 void BlockSignals(bool block, int signum);
 void (*CatchSignal(int signum,void (*handler)(int )))(int);
 
@@ -303,6 +294,15 @@ char *sss_output_name(TALLOC_CTX *mem_ctx,
                       const char *fqname,
                       bool case_sensitive,
                       const char replace_space);
+
+int sss_output_fqname(TALLOC_CTX *mem_ctx,
+                      struct sss_domain_info *domain,
+                      const char *name,
+                      char override_space,
+                      char **_output_name);
+
+const char *sss_get_name_from_msg(struct sss_domain_info *domain,
+                                  struct ldb_message *msg);
 
 /* from backup-file.c */
 int backup_file(const char *src, int dbglvl);
@@ -539,6 +539,8 @@ enum sss_domain_state sss_domain_get_state(struct sss_domain_info *dom);
 void sss_domain_set_state(struct sss_domain_info *dom,
                           enum sss_domain_state state);
 bool is_email_from_domain(const char *email, struct sss_domain_info *dom);
+bool sss_domain_is_forest_root(struct sss_domain_info *dom);
+const char *sss_domain_type_str(struct sss_domain_info *dom);
 
 struct sss_domain_info*
 sss_get_domain_by_sid_ldap_fallback(struct sss_domain_info *domain,
@@ -551,11 +553,19 @@ find_domain_by_object_name(struct sss_domain_info *domain,
 bool subdomain_enumerates(struct sss_domain_info *parent,
                           const char *sd_name);
 
+char *subdomain_create_conf_path(TALLOC_CTX *mem_ctx,
+                                 struct sss_domain_info *subdomain);
+
 errno_t sssd_domain_init(TALLOC_CTX *mem_ctx,
                          struct confdb_ctx *cdb,
                          const char *domain_name,
                          const char *db_path,
                          struct sss_domain_info **_domain);
+
+void sss_domain_info_set_output_fqnames(struct sss_domain_info *domain,
+                                        bool output_fqname);
+
+bool sss_domain_info_get_output_fqnames(struct sss_domain_info *domain);
 
 #define IS_SUBDOMAIN(dom) ((dom)->parent != NULL)
 
@@ -597,6 +607,11 @@ errno_t name_to_well_known_sid(const char *dom, const char *name,
                                const char **sid);
 
 /* from string_utils.c */
+char *sss_replace_char(TALLOC_CTX *mem_ctx,
+                       const char *in,
+                       const char match,
+                       const char sub);
+
 char * sss_replace_space(TALLOC_CTX *mem_ctx,
                          const char *orig_name,
                          const char replace_char);

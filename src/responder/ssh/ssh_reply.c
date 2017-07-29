@@ -32,6 +32,11 @@
 #include "responder/common/cache_req/cache_req.h"
 #include "responder/ssh/ssh_private.h"
 
+/* Locally used flag for libldb's ldb_message_element structure to indicate
+ * binary data. Since the related data is only used in memory it is safe. If
+ * should be used with care if libldb's I/O operations are involved. */
+#define SSS_EL_FLAG_BIN_DATA (1<<4)
+
 static errno_t get_valid_certs_keys(TALLOC_CTX *mem_ctx,
                                     struct ssh_ctx *ssh_ctx,
                                     struct ldb_message_element *el_cert,
@@ -148,7 +153,7 @@ static errno_t decode_and_add_base64_data(struct sss_packet *packet,
     }
 
     for (d = 0; d < el->num_values; d++) {
-        if (skip_base64_decode) {
+        if (skip_base64_decode || (el->flags & SSS_EL_FLAG_BIN_DATA)) {
             key = el->values[d].data;
             key_len = el->values[d].length;
         } else  {
@@ -199,7 +204,7 @@ ssh_get_output_keys(TALLOC_CTX *mem_ctx,
     uint32_t i = 0;
     errno_t ret;
 
-    elements = talloc_zero_array(mem_ctx, struct ldb_message_element *, 5);
+    elements = talloc_zero_array(mem_ctx, struct ldb_message_element *, 6);
     if (elements == NULL) {
         return ENOMEM;
     }
@@ -233,8 +238,27 @@ ssh_get_output_keys(TALLOC_CTX *mem_ctx,
         }
 
         if (elements[i] != NULL) {
+            elements[i]->flags |= SSS_EL_FLAG_BIN_DATA;
             num_keys += elements[i]->num_values;
             i++;
+        }
+    }
+
+    if (DOM_HAS_VIEWS(domain)) {
+        user_cert = ldb_msg_find_element(msg, OVERRIDE_PREFIX SYSDB_USER_CERT);
+        if (user_cert != NULL) {
+            ret = get_valid_certs_keys(elements, ssh_ctx, user_cert,
+                                       &elements[i]);
+            if (ret != EOK) {
+                DEBUG(SSSDBG_OP_FAILURE, "get_valid_certs_keys failed.\n");
+                goto done;
+            }
+
+            if (elements[i] != NULL) {
+                elements[i]->flags |= SSS_EL_FLAG_BIN_DATA;
+                num_keys += elements[i]->num_values;
+                i++;
+            }
         }
     }
 

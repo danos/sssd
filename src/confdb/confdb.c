@@ -813,6 +813,50 @@ done:
     return ret;
 }
 
+static int confdb_get_domain_section(TALLOC_CTX *mem_ctx,
+                                     struct confdb_ctx *cdb,
+                                     const char *section,
+                                     const char *name,
+                                     struct ldb_result **_res)
+{
+    TALLOC_CTX *tmp_ctx;
+    int ret;
+    struct ldb_result *res;
+    struct ldb_dn *dn;
+
+    tmp_ctx = talloc_new(NULL);
+    if (tmp_ctx == NULL) {
+        return ENOMEM;
+    }
+
+    dn = ldb_dn_new_fmt(tmp_ctx, cdb->ldb, "cn=%s,%s", name, section);
+    if (dn == NULL) {
+        ret = ENOMEM;
+        goto done;
+    }
+
+    ret = ldb_search(cdb->ldb, tmp_ctx, &res, dn,
+                     LDB_SCOPE_BASE, NULL, NULL);
+    if (ret != LDB_SUCCESS) {
+        ret = sysdb_error_to_errno(ret);
+        goto done;
+    }
+
+    if (res->count == 0) {
+        ret = ENOENT;
+        goto done;
+    } else if (res->count > 1) {
+        ret = E2BIG;
+        goto done;
+    }
+
+    *_res = talloc_steal(mem_ctx, res);
+    ret = EOK;
+done:
+    talloc_free(tmp_ctx);
+    return ret;
+}
+
 static int confdb_get_domain_internal(struct confdb_ctx *cdb,
                                       TALLOC_CTX *mem_ctx,
                                       const char *name,
@@ -821,7 +865,6 @@ static int confdb_get_domain_internal(struct confdb_ctx *cdb,
     struct sss_domain_info *domain;
     struct ldb_result *res;
     TALLOC_CTX *tmp_ctx;
-    struct ldb_dn *dn;
     const char *tmp;
     int ret, val;
     uint32_t entry_cache_timeout;
@@ -833,23 +876,15 @@ static int confdb_get_domain_internal(struct confdb_ctx *cdb,
     tmp_ctx = talloc_new(mem_ctx);
     if (!tmp_ctx) return ENOMEM;
 
-    dn = ldb_dn_new_fmt(tmp_ctx, cdb->ldb,
-                        "cn=%s,%s", name, CONFDB_DOMAIN_BASEDN);
-    if (!dn) {
-        ret = ENOMEM;
-        goto done;
-    }
-
-    ret = ldb_search(cdb->ldb, tmp_ctx, &res, dn,
-                     LDB_SCOPE_BASE, NULL, NULL);
-    if (ret != LDB_SUCCESS) {
-        ret = EIO;
-        goto done;
-    }
-
-    if (res->count != 1) {
+    ret = confdb_get_domain_section(tmp_ctx, cdb, CONFDB_DOMAIN_BASEDN,
+                                    name, &res);
+    if (ret == ENOENT) {
         DEBUG(SSSDBG_FATAL_FAILURE, "Unknown domain [%s]\n", name);
-        ret = ENOENT;
+        goto done;
+    } else if (ret != EOK) {
+        DEBUG(SSSDBG_FATAL_FAILURE,
+              "Error %d: %s while retrieving %s\n",
+              ret, sss_strerror(ret), name);
         goto done;
     }
 
@@ -1367,6 +1402,22 @@ static int confdb_get_domain_internal(struct confdb_ctx *cdb,
         }
     }
 
+    domain->type = DOM_TYPE_POSIX;
+    tmp = ldb_msg_find_attr_as_string(res->msgs[0],
+                                      CONFDB_DOMAIN_TYPE,
+                                      CONFDB_DOMAIN_TYPE_POSIX);
+    if (tmp != NULL) {
+        if (strcasecmp(tmp, CONFDB_DOMAIN_TYPE_POSIX) == 0) {
+            domain->type = DOM_TYPE_POSIX;
+        } else if (strcasecmp(tmp, CONFDB_DOMAIN_TYPE_APP) == 0) {
+            domain->type = DOM_TYPE_APPLICATION;
+        } else {
+            DEBUG(SSSDBG_FATAL_FAILURE,
+                  "Invalid value %s for [%s]\n", tmp, CONFDB_DOMAIN_TYPE);
+            goto done;
+        }
+    }
+
     ret = get_entry_as_uint32(res->msgs[0], &domain->subdomain_refresh_interval,
                               CONFDB_DOMAIN_SUBDOMAIN_REFRESH, 14400);
     if (ret != EOK || domain->subdomain_refresh_interval == 0) {
@@ -1444,7 +1495,7 @@ int confdb_get_domains(struct confdb_ctx *cdb,
         if (ret) {
             DEBUG(SSSDBG_FATAL_FAILURE,
                   "Error (%d [%s]) retrieving domain [%s], skipping!\n",
-                      ret, sss_strerror(ret), domlist[i]);
+                  ret, sss_strerror(ret), domlist[i]);
             continue;
         }
 
@@ -1644,7 +1695,6 @@ done:
     return ret;
 }
 
-#ifdef ADD_FILES_DOMAIN
 static int confdb_has_files_domain(struct confdb_ctx *cdb)
 {
     TALLOC_CTX *tmp_ctx = NULL;
@@ -1779,25 +1829,27 @@ done:
     talloc_free(tmp_ctx);
     return ret;
 }
-#endif /* ADD_FILES_DOMAIN */
 
 int confdb_ensure_files_domain(struct confdb_ctx *cdb,
                                const char *implicit_files_dom_name)
 {
-#ifndef ADD_FILES_DOMAIN
-    return EOK;
+#ifdef ADD_FILES_DOMAIN
+    const bool default_enable_files = true;
 #else
+    const bool default_enable_files = false;
+#endif
     errno_t ret;
     bool enable_files;
 
     ret = confdb_get_bool(cdb,
                           CONFDB_MONITOR_CONF_ENTRY,
                           CONFDB_MONITOR_ENABLE_FILES_DOM,
-                          true, &enable_files);
+                          default_enable_files, &enable_files);
     if (ret != EOK) {
         DEBUG(SSSDBG_MINOR_FAILURE,
-              "Cannot get the value of %s assuming true\n",
-              CONFDB_MONITOR_ENABLE_FILES_DOM);
+              "Cannot get the value of %s assuming %s\n",
+              CONFDB_MONITOR_ENABLE_FILES_DOM,
+              default_enable_files ? "true" : "false");
         return ret;
     }
 
@@ -1823,5 +1875,241 @@ int confdb_ensure_files_domain(struct confdb_ctx *cdb,
     }
 
     return activate_files_domain(cdb, implicit_files_dom_name);
-#endif /* ADD_FILES_DOMAIN */
+}
+
+static int confdb_get_parent_domain(TALLOC_CTX *mem_ctx,
+                                    const char *name,
+                                    struct confdb_ctx *cdb,
+                                    struct ldb_result *app_dom,
+                                    struct ldb_result **_parent_dom)
+{
+    const char *inherit_from;
+
+    inherit_from = ldb_msg_find_attr_as_string(app_dom->msgs[0],
+                                               CONFDB_DOMAIN_INHERIT_FROM, NULL);
+    if (inherit_from == NULL) {
+        DEBUG(SSSDBG_CONF_SETTINGS,
+              "%s does not inherit from any POSIX domain\n", name);
+        *_parent_dom = NULL;
+        return EOK;
+    }
+
+    return confdb_get_domain_section(mem_ctx, cdb,
+                                     CONFDB_DOMAIN_BASEDN, inherit_from,
+                                     _parent_dom);
+}
+
+static int confdb_add_app_domain(TALLOC_CTX *mem_ctx,
+                                 struct confdb_ctx *cdb,
+                                 const char *name)
+{
+    char *cdb_path = NULL;
+    const char *val[2] = { NULL, NULL };
+    int ret;
+
+    cdb_path = talloc_asprintf(mem_ctx, CONFDB_DOMAIN_PATH_TMPL, name);
+    if (cdb_path == NULL) {
+        return ENOMEM;
+    }
+
+    val[0] = CONFDB_DOMAIN_TYPE_APP;
+    ret = confdb_add_param(cdb, true, cdb_path, CONFDB_DOMAIN_TYPE, val);
+    if (ret != EOK) {
+        DEBUG(SSSDBG_CRIT_FAILURE, "Unable to add id_provider [%d]: %s\n",
+              ret, sss_strerror(ret));
+        return ret;
+    }
+
+    return EOK;
+}
+
+static int confdb_merge_parent_domain(const char *name,
+                                      struct confdb_ctx *cdb,
+                                      struct ldb_result *app_section)
+{
+    int ret;
+    int ldb_flag;
+    struct ldb_result *parent_domain = NULL;
+    struct ldb_message *replace_msg = NULL;
+    struct ldb_message *app_msg = NULL;
+    struct ldb_dn *domain_dn;
+    struct ldb_message_element *el = NULL;
+    TALLOC_CTX *tmp_ctx = NULL;
+
+    tmp_ctx = talloc_new(NULL);
+    if (tmp_ctx == NULL) {
+        DEBUG(SSSDBG_CRIT_FAILURE, "talloc_new() failed\n");
+        return ENOMEM;
+    }
+
+    domain_dn = ldb_dn_new_fmt(tmp_ctx,
+                               cdb->ldb,
+                               "%s=%s,%s",
+                               CONFDB_DOMAIN_ATTR,
+                               name,
+                               CONFDB_DOMAIN_BASEDN);
+    if (domain_dn == NULL) {
+        ret = ENOMEM;
+        goto done;
+    }
+
+    /* Copy the parent domain parameters */
+    ret = confdb_get_parent_domain(tmp_ctx, name, cdb,
+                                   app_section, &parent_domain);
+    if (ret != EOK) {
+        DEBUG(SSSDBG_OP_FAILURE,
+              "Cannot retrieve the parent domain [%d]: %s\n",
+              ret, sss_strerror(ret));
+        goto done;
+    }
+
+    if (parent_domain != NULL) {
+        replace_msg = ldb_msg_copy(tmp_ctx, parent_domain->msgs[0]);
+        if (replace_msg == NULL) {
+            ret = ENOMEM;
+            goto done;
+        }
+        replace_msg->dn = domain_dn;
+
+        for (unsigned i = 0; i < replace_msg->num_elements; i++) {
+            replace_msg->elements[i].flags = LDB_FLAG_MOD_ADD;
+        }
+
+        el = ldb_msg_find_element(replace_msg, "cn");
+        if (el != NULL) {
+            /* Don't add second cn */
+            ldb_msg_remove_element(replace_msg, el);
+        }
+
+        ret = ldb_modify(cdb->ldb, replace_msg);
+        if (ret != LDB_SUCCESS) {
+            ret = sysdb_error_to_errno(ret);
+            DEBUG(SSSDBG_OP_FAILURE,
+                "Inheriting options from parent domain failed [%d]: %s\n",
+                ret, sss_strerror(ret));
+            goto done;
+        }
+    }
+
+    /* Finally, add any app-domain specific overrides */
+    app_msg = ldb_msg_new(tmp_ctx);
+    if (app_msg == NULL) {
+        ret = ENOMEM;
+        goto done;
+    }
+    app_msg->dn = domain_dn;
+
+    for (unsigned i = 0; i < app_section->msgs[0]->num_elements; i++) {
+        struct ldb_message_element *app_el = &app_section->msgs[0]->elements[i];
+
+        /* These elements will be skipped when replacing attributes in
+         * a domain to avoid EEXIST errors
+         */
+        if (strcasecmp(app_el->name, "cn") == 0) {
+            continue;
+        }
+
+        if (replace_msg != NULL) {
+            el = ldb_msg_find_element(replace_msg,
+                                      app_section->msgs[0]->elements[i].name);
+            if (el == NULL) {
+                /* Adding an element */
+                ldb_flag = LDB_FLAG_MOD_ADD;
+            } else {
+                /* Overriding an element */
+                ldb_flag = LDB_FLAG_MOD_REPLACE;
+            }
+        } else {
+            /* If there was no domain to inherit from, just add all */
+            ldb_flag = LDB_FLAG_MOD_ADD;
+        }
+
+        ret = ldb_msg_add(app_msg,
+                          &app_section->msgs[0]->elements[i],
+                          ldb_flag);
+        if (ret != LDB_SUCCESS) {
+            continue;
+        }
+    }
+
+    /* We use permissive modification here because adding cn or
+     * distinguishedName from the app_section to the application
+     * message would throw EEXIST
+     */
+    ret = sss_ldb_modify_permissive(cdb->ldb, app_msg);
+    if (ret != LDB_SUCCESS) {
+        ret = sysdb_error_to_errno(ret);
+        DEBUG(SSSDBG_OP_FAILURE,
+              "Adding app-specific options failed [%d]: %s\n",
+              ret, sss_strerror(ret));
+        goto done;
+    }
+
+    DEBUG(SSSDBG_TRACE_LIBS, "Added a domain section for %s\n", name);
+    ret = EOK;
+done:
+    talloc_free(tmp_ctx);
+    return ret;
+}
+
+int confdb_expand_app_domains(struct confdb_ctx *cdb)
+{
+    int ret;
+    char **domlist;
+    TALLOC_CTX *tmp_ctx;
+    struct ldb_result *app_domain = NULL;
+
+    tmp_ctx = talloc_new(NULL);
+    if (tmp_ctx == NULL) {
+        return ENOMEM;
+    }
+
+    ret = confdb_get_string_as_list(cdb, tmp_ctx,
+                                    CONFDB_MONITOR_CONF_ENTRY,
+                                    CONFDB_MONITOR_ACTIVE_DOMAINS,
+                                    &domlist);
+    if (ret == ENOENT) {
+        DEBUG(SSSDBG_FATAL_FAILURE, "No domains configured, fatal error!\n");
+        goto done;
+    } else if (ret != EOK ) {
+        DEBUG(SSSDBG_FATAL_FAILURE, "Fatal error retrieving domains list!\n");
+        goto done;
+    }
+
+    for (int i = 0; domlist[i]; i++) {
+        ret = confdb_get_domain_section(tmp_ctx, cdb,
+                                        CONFDB_APP_DOMAIN_BASEDN, domlist[i],
+                                        &app_domain);
+        if (ret == ENOENT) {
+            DEBUG(SSSDBG_TRACE_INTERNAL,
+                  "%s is not an app domain\n", domlist[i]);
+            continue;
+        } else if (ret != EOK) {
+            DEBUG(SSSDBG_FATAL_FAILURE,
+                  "Error %d: %s while retrieving %s\n",
+                  ret, sss_strerror(ret), domlist[i]);
+            goto done;
+        }
+
+        ret = confdb_add_app_domain(tmp_ctx, cdb, domlist[i]);
+        if (ret != EOK) {
+            DEBUG(SSSDBG_OP_FAILURE,
+                  "Cannot add the app domain section [%d]: %s\n",
+                  ret, sss_strerror(ret));
+            goto done;
+        }
+
+        ret = confdb_merge_parent_domain(domlist[i], cdb, app_domain);
+        if (ret != EOK) {
+            DEBUG(SSSDBG_OP_FAILURE,
+                  "Cannot add options into the app domain section [%d]: %s\n",
+                  ret, sss_strerror(ret));
+            goto done;
+        }
+    }
+
+    ret = EOK;
+done:
+    talloc_free(tmp_ctx);
+    return ret;
 }

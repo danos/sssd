@@ -25,6 +25,8 @@
 #include <sys/types.h>
 #include <unistd.h>
 #include <sys/stat.h>
+#include <fcntl.h>
+#include <ctype.h>
 #include <popt.h>
 
 #include <security/pam_modules.h>
@@ -41,6 +43,10 @@
 #include "sss_cli.h"
 
 #define SSSD_KRB5_CHANGEPW_PRINCIPAL "kadmin/changepw"
+
+#define IS_SC_AUTHTOK(tok) ( \
+    sss_authtok_get_type((tok)) == SSS_AUTHTOK_TYPE_SC_PIN \
+        || sss_authtok_get_type((tok)) == SSS_AUTHTOK_TYPE_SC_KEYPAD)
 
 enum k5c_fast_opt {
     K5C_FAST_NEVER,
@@ -60,6 +66,7 @@ struct cli_opts {
 struct krb5_req {
     krb5_context ctx;
     krb5_principal princ;
+    krb5_principal princ_orig;
     char* name;
     krb5_creds *creds;
     bool otp;
@@ -76,6 +83,7 @@ struct krb5_req {
     char *ccname;
     char *keytab;
     bool validate;
+    bool posix_domain;
     bool send_pac;
     bool use_enterprise_princ;
     char *fast_ccname;
@@ -97,6 +105,16 @@ struct krb5_req {
 
 static krb5_context krb5_error_ctx;
 #define KRB5_CHILD_DEBUG(level, error) KRB5_DEBUG(level, krb5_error_ctx, error)
+
+static errno_t k5c_become_user(uid_t uid, gid_t gid, bool is_posix)
+{
+    if (is_posix == false) {
+        DEBUG(SSSDBG_TRACE_FUNC,
+              "Will not drop privileges for a non-POSIX user\n");
+        return EOK;
+    }
+    return become_user(uid, gid);
+}
 
 static krb5_error_code set_lifetime_options(struct cli_opts *cli_opts,
                                             krb5_get_init_creds_opt *options)
@@ -1525,16 +1543,32 @@ static krb5_error_code get_and_save_tgt(struct krb5_req *kr,
         if (kerr != 0) {
             KRB5_CHILD_DEBUG(SSSDBG_CRIT_FAILURE, kerr);
 
+            /* Special case for IPA password migration */
+            if (kr->pd->cmd == SSS_PAM_AUTHENTICATE
+                    && kerr == KRB5_PREAUTH_FAILED
+                    && kr->pkinit_prompting == false
+                    && kr->password_prompting == false
+                    && kr->otp == false
+                    && sss_authtok_get_type(kr->pd->authtok)
+                            == SSS_AUTHTOK_TYPE_PASSWORD) {
+                return ERR_CREDS_INVALID;
+            }
+
             /* If during authentication either the MIT Kerberos pkinit
              * pre-auth module is missing or no Smartcard is inserted and only
              * pkinit is available KRB5_PREAUTH_FAILED is returned.
              * ERR_NO_AUTH_METHOD_AVAILABLE is used to indicate to the
-             * frontend that local authentication might be tried. */
+             * frontend that local authentication might be tried.
+             * Same is true if Smartcard credentials are given but only other
+             * authentication methods are available. */
             if (kr->pd->cmd == SSS_PAM_AUTHENTICATE
                     && kerr == KRB5_PREAUTH_FAILED
-                    && kr->password_prompting == false
-                    && kr->otp == false
-                    && kr->pkinit_prompting == false) {
+                    && kr->pkinit_prompting == false
+                    && (( kr->password_prompting == false
+                              && kr->otp == false)
+                            || ((kr->otp == true
+                                    || kr->password_prompting == true)
+                              && IS_SC_AUTHTOK(kr->pd->authtok))) ) {
                 return ERR_NO_AUTH_METHOD_AVAILABLE;
             }
             return kerr;
@@ -1550,6 +1584,15 @@ static krb5_error_code get_and_save_tgt(struct krb5_req *kr,
 
     } else {
         DEBUG(SSSDBG_CONF_SETTINGS, "TGT validation is disabled.\n");
+    }
+
+    /* In a non-POSIX environment, we only care about the return code from
+     * krb5_child, so let's not even attempt to create the ccache
+     */
+    if (kr->posix_domain == false) {
+        DEBUG(SSSDBG_TRACE_LIBS,
+              "Finished authentication in a non-POSIX domain\n");
+        goto done;
     }
 
     /* If kr->ccname is cache collection (DIR:/...), we want to work
@@ -1935,7 +1978,7 @@ static errno_t tgt_req_child(struct krb5_req *kr)
     }
 
     set_changepw_options(kr->options);
-    kerr = krb5_get_init_creds_password(kr->ctx, kr->creds, kr->princ,
+    kerr = krb5_get_init_creds_password(kr->ctx, kr->creds, kr->princ_orig,
                                         password_or_responder(password),
                                         sss_krb5_prompter, kr, 0,
                                         SSSD_KRB5_CHANGEPW_PRINCIPAL,
@@ -2065,6 +2108,14 @@ done:
         krb5_cc_close(kr->ctx, ccache);
     }
 
+    if (kerr == KRB5KRB_AP_ERR_TKT_EXPIRED) {
+        DEBUG(SSSDBG_TRACE_LIBS,
+              "Attempted to renew an expired TGT, changing the error code "
+              "to expired creds internally\n");
+        /* map_krb5_error() won't touch the sssd-internal code */
+        kerr = ERR_CREDS_EXPIRED;
+    }
+
     return map_krb5_error(kerr);
 }
 
@@ -2137,6 +2188,7 @@ static errno_t unpack_buffer(uint8_t *buf, size_t size,
     size_t p = 0;
     uint32_t len;
     uint32_t validate;
+    uint32_t posix_domain;
     uint32_t send_pac;
     uint32_t use_enterprise_princ;
     struct pam_data *pd;
@@ -2158,6 +2210,8 @@ static errno_t unpack_buffer(uint8_t *buf, size_t size,
     SAFEALIGN_COPY_UINT32_CHECK(&kr->gid, buf + p, size, &p);
     SAFEALIGN_COPY_UINT32_CHECK(&validate, buf + p, size, &p);
     kr->validate = (validate == 0) ? false : true;
+    SAFEALIGN_COPY_UINT32_CHECK(&posix_domain, buf + p, size, &p);
+    kr->posix_domain = (posix_domain == 0) ? false : true;
     SAFEALIGN_COPY_UINT32_CHECK(offline, buf + p, size, &p);
     SAFEALIGN_COPY_UINT32_CHECK(&send_pac, buf + p, size, &p);
     kr->send_pac = (send_pac == 0) ? false : true;
@@ -2260,6 +2314,8 @@ static int krb5_cleanup(struct krb5_req *kr)
         sss_krb5_free_unparsed_name(kr->ctx, kr->name);
     if (kr->princ != NULL)
         krb5_free_principal(kr->ctx, kr->princ);
+    if (kr->princ_orig != NULL)
+        krb5_free_principal(kr->ctx, kr->princ_orig);
     if (kr->ctx != NULL)
         krb5_free_context(kr->ctx);
 
@@ -2322,6 +2378,7 @@ static krb5_error_code check_fast_ccache(TALLOC_CTX *mem_ctx,
                                          krb5_context ctx,
                                          uid_t fast_uid,
                                          gid_t fast_gid,
+                                         bool posix_domain,
                                          struct cli_opts *cli_opts,
                                          const char *primary,
                                          const char *realm,
@@ -2411,7 +2468,7 @@ static krb5_error_code check_fast_ccache(TALLOC_CTX *mem_ctx,
                 /* Try to carry on */
             }
 
-            kerr = become_user(fast_uid, fast_gid);
+            kerr = k5c_become_user(fast_uid, fast_gid, posix_domain);
             if (kerr != 0) {
                 DEBUG(SSSDBG_CRIT_FAILURE, "become_user failed: %d\n", kerr);
                 exit(1);
@@ -2563,7 +2620,7 @@ static int k5c_setup_fast(struct krb5_req *kr, bool demand)
     }
 
     kerr = check_fast_ccache(kr, kr->ctx, kr->fast_uid, kr->fast_gid,
-                             kr->cli_opts,
+                             kr->posix_domain, kr->cli_opts,
                              fast_principal, fast_principal_realm,
                              kr->keytab, &kr->fast_ccname);
     if (kerr != 0) {
@@ -2764,7 +2821,7 @@ static int k5c_setup(struct krb5_req *kr, uint32_t offline)
          * the user who is logging in. The same applies to the offline case
          * the user who is logging in. The same applies to the offline case.
          */
-        kerr = become_user(kr->uid, kr->gid);
+        kerr = k5c_become_user(kr->uid, kr->gid, kr->posix_domain);
         if (kerr != 0) {
             DEBUG(SSSDBG_CRIT_FAILURE, "become_user failed.\n");
             return kerr;
@@ -2798,6 +2855,12 @@ static int k5c_setup(struct krb5_req *kr, uint32_t offline)
 
     parse_flags = kr->use_enterprise_princ ? KRB5_PRINCIPAL_PARSE_ENTERPRISE : 0;
     kerr = sss_krb5_parse_name_flags(kr->ctx, kr->upn, parse_flags, &kr->princ);
+    if (kerr != 0) {
+        KRB5_CHILD_DEBUG(SSSDBG_CRIT_FAILURE, kerr);
+        return kerr;
+    }
+
+    kerr = krb5_parse_name(kr->ctx, kr->upn, &kr->princ_orig);
     if (kerr != 0) {
         KRB5_CHILD_DEBUG(SSSDBG_CRIT_FAILURE, kerr);
         return kerr;
@@ -3066,7 +3129,7 @@ int main(int argc, const char *argv[])
     if ((sss_authtok_get_type(kr->pd->authtok) != SSS_AUTHTOK_TYPE_SC_PIN
             && sss_authtok_get_type(kr->pd->authtok)
                                         != SSS_AUTHTOK_TYPE_SC_KEYPAD)) {
-        kerr = become_user(kr->uid, kr->gid);
+        kerr = k5c_become_user(kr->uid, kr->gid, kr->posix_domain);
         if (kerr != 0) {
             DEBUG(SSSDBG_CRIT_FAILURE, "become_user failed.\n");
             ret = EFAULT;

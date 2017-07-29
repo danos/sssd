@@ -25,6 +25,7 @@
 #include "config.h"
 #include "responder/common/responder.h"
 #include "responder/secrets/secsrv.h"
+#include "util/sss_iobuf.h"
 #include <http_parser.h>
 
 struct sec_kvp {
@@ -101,7 +102,15 @@ int sec_get_provider(struct sec_ctx *sctx, const char *name,
                      struct provider_handle **out_handle);
 int sec_add_provider(struct sec_ctx *sctx, struct provider_handle *handle);
 
-#define SEC_BASEPATH "/secrets/"
+#define SEC_BASEPATH            "/secrets/"
+#define SEC_KCM_BASEPATH        "/kcm/"
+
+/* The KCM responder must "impersonate" the owner of the credentials.
+ * Only a trusted UID can do that -- root by default, but unit
+ * tests might choose otherwise */
+#ifndef KCM_PEER_UID
+#define KCM_PEER_UID            0
+#endif /* KCM_PEER_UID */
 
 /* providers.c */
 int sec_req_routing(TALLOC_CTX *mem_ctx, struct sec_req_ctx *secreq,
@@ -121,6 +130,10 @@ int sec_http_reply_with_headers(TALLOC_CTX *mem_ctx, struct sec_data *reply,
                                 int status_code, const char *reason,
                                 struct sec_kvp *headers, int num_headers,
                                 struct sec_data *body);
+errno_t sec_http_reply_iobuf(TALLOC_CTX *mem_ctx,
+                             struct sec_data *reply,
+                             int response_code,
+                             struct sss_iobuf *response);
 enum sec_http_status_codes sec_errno_to_http_status(errno_t err);
 
 int sec_json_to_simple_secret(TALLOC_CTX *mem_ctx,

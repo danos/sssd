@@ -87,6 +87,7 @@ sudolibdir = @sudolibpath@
 polkitdir = @polkitdir@
 pamconfdir = $(sysconfdir)/pam.d
 systemtap_tapdir = @tapset_dir@
+sssdkcmdatadir = $(datadir)/sssd-kcm
 
 if HAVE_SYSTEMD_UNIT
 ifp_exec_cmd = $(sssdlibexecdir)/sssd_ifp --uid 0 --gid 0 --debug-to-files --dbus-activated
@@ -186,6 +187,11 @@ endif
 if BUILD_SECRETS
 sssdlibexec_PROGRAMS += sssd_secrets
 endif
+if BUILD_KCM
+sssdlibexec_PROGRAMS += sssd_kcm
+dist_sssdkcmdata_DATA = contrib/kcm_default_ccache
+endif
+
 
 if BUILD_PAC_RESPONDER
     sssdlibexec_PROGRAMS += sssd_pac
@@ -246,6 +252,7 @@ if HAVE_CMOCKA
         dp_opt_tests \
         responder-get-domains-tests \
         sbus-internal-tests \
+        config_check-tests \
         sss_sifp-tests \
         test_search_bases \
         test_ldap_auth \
@@ -254,8 +261,10 @@ if HAVE_CMOCKA
         test_sysdb_ts_cache \
         test_sysdb_views \
         test_sysdb_subdomains \
+        test_sysdb_certmap \
         test_sysdb_sudo \
         test_sysdb_utils \
+        test_sysdb_domain_resolution_order \
         test_wbc_calls \
         test_be_ptask \
         test_copy_ccache \
@@ -280,6 +289,10 @@ if HAVE_CMOCKA
         test_iobuf \
         $(NULL)
 
+if HAVE_NSS
+non_interactive_cmocka_based_tests +=  sss_certmap_test
+endif #HAVE_NSS
+
 if HAVE_LIBRESOLV
 non_interactive_cmocka_based_tests += test_resolv_fake
 endif   # HAVE_LIBRESOLV
@@ -291,6 +304,13 @@ endif   # BUILD_IFP
 if HAVE_INOTIFY
 non_interactive_cmocka_based_tests += test_inotify
 endif   # HAVE_INOTIFY
+
+if BUILD_KCM
+non_interactive_cmocka_based_tests += \
+	test_kcm_json \
+	test_kcm_queue \
+        $(NULL)
+endif   # BUILD_KCM
 
 if BUILD_SAMBA
 non_interactive_cmocka_based_tests += \
@@ -509,6 +529,7 @@ SSSD_CACHE_REQ_OBJ = \
 	src/responder/common/cache_req/cache_req_result.c \
 	src/responder/common/cache_req/cache_req_search.c \
 	src/responder/common/cache_req/cache_req_data.c \
+	src/responder/common/cache_req/cache_req_domain.c \
 	src/responder/common/cache_req/plugins/cache_req_common.c \
 	src/responder/common/cache_req/plugins/cache_req_enum_users.c \
 	src/responder/common/cache_req/plugins/cache_req_enum_groups.c \
@@ -670,6 +691,7 @@ dist_noinst_HEADERS = \
     src/responder/common/iface/responder_iface.h \
     src/responder/common/iface/responder_iface_generated.h \
     src/responder/common/cache_req/cache_req.h \
+    src/responder/common/cache_req/cache_req_domain.h \
     src/responder/common/cache_req/cache_req_plugin.h \
     src/responder/common/cache_req/cache_req_private.h \
     src/responder/common/data_provider/rdp.h \
@@ -698,6 +720,12 @@ dist_noinst_HEADERS = \
     src/responder/secrets/secsrv_private.h \
     src/responder/secrets/secsrv_local.h \
     src/responder/secrets/secsrv_proxy.h \
+    src/responder/kcm/kcm.h \
+    src/responder/kcm/kcmsrv_pvt.h \
+    src/responder/kcm/kcmsrv_ccache.h \
+    src/responder/kcm/kcmsrv_ccache_pvt.h \
+    src/responder/kcm/kcmsrv_ccache_be.h \
+    src/responder/kcm/kcmsrv_ops.h \
     src/sbus/sbus_client.h \
     src/sbus/sssd_dbus.h \
     src/sbus/sssd_dbus_meta.h \
@@ -712,6 +740,7 @@ dist_noinst_HEADERS = \
     src/db/sysdb_private.h \
     src/db/sysdb_services.h \
     src/db/sysdb_ssh.h \
+    src/db/sysdb_domain_resolution_order.h \
     src/confdb/confdb.h \
     src/confdb/confdb_private.h \
     src/confdb/confdb_setup.h \
@@ -948,6 +977,7 @@ libsss_cert_la_LIBADD = \
     $(TALLOC_LIBS) \
     libsss_crypt.la \
     libsss_debug.la \
+    libsss_certmap.la \
     $(NULL)
 libsss_cert_la_LDFLAGS = \
     -avoid-version \
@@ -969,6 +999,8 @@ libsss_util_la_SOURCES = \
     src/db/sysdb_ranges.c \
     src/db/sysdb_idmap.c \
     src/db/sysdb_gpo.c \
+    src/db/sysdb_certmap.c \
+    src/db/sysdb_domain_resolution_order.c \
     src/monitor/monitor_sbus.c \
     src/providers/dp_auth_util.c \
     src/providers/dp_pam_data_util.c \
@@ -987,6 +1019,7 @@ libsss_util_la_SOURCES = \
     src/sbus/sssd_dbus_common_signals.c \
     src/sbus/sssd_dbus_utils.c \
     src/util/util.c \
+    src/util/util_ext.c \
     src/util/memory.c \
     src/util/safe-format-string.c \
     src/util/server.c \
@@ -1073,6 +1106,7 @@ SSSD_INTERNAL_LTLIBS = \
 lib_LTLIBRARIES = libipa_hbac.la \
                   libsss_idmap.la \
                   libsss_nss_idmap.la \
+                  libsss_certmap.la \
                   $(NULL)
 
 pkgconfig_DATA += src/lib/ipa_hbac/ipa_hbac.pc
@@ -1105,7 +1139,7 @@ libsss_idmap_la_SOURCES = \
     src/util/murmurhash3.c
 libsss_idmap_la_LDFLAGS = \
     -Wl,--version-script,$(srcdir)/src/lib/idmap/sss_idmap.exports \
-    -version-info 5:0:5
+    -version-info 5:1:5
 
 dist_noinst_DATA += src/lib/idmap/sss_idmap.exports
 
@@ -1119,7 +1153,7 @@ libsss_nss_idmap_la_LIBADD = \
     $(CLIENT_LIBS)
 libsss_nss_idmap_la_LDFLAGS = \
     -Wl,--version-script,$(srcdir)/src/sss_client/idmap/sss_nss_idmap.exports \
-    -version-info 2:0:2
+    -version-info 3:0:3
 
 dist_noinst_DATA += src/sss_client/idmap/sss_nss_idmap.exports
 
@@ -1127,6 +1161,7 @@ include_HEADERS = \
     src/lib/ipa_hbac/ipa_hbac.h \
     src/lib/idmap/sss_idmap.h \
     src/sss_client/idmap/sss_nss_idmap.h \
+    src/lib/certmap/sss_certmap.h \
     $(NULL)
 
 if BUILD_LIBWBCLIENT
@@ -1153,6 +1188,7 @@ libwbclient_la_SOURCES = \
     src/sss_client/libwbclient/wbc_ctx_sssd.c \
     $(NULL)
 libwbclient_la_LIBADD = \
+    $(LIBADD_DL) \
     libsss_nss_idmap.la \
     $(CLIENT_LIBS) \
     $(NULL)
@@ -1187,7 +1223,7 @@ libsss_simpleifp_la_LIBADD = \
     $(DHASH_LIBS)
 libsss_simpleifp_la_LDFLAGS = \
     -Wl,--version-script,$(srcdir)/src/lib/sifp/sss_simpleifp.exports \
-    -version-info 1:0:1
+    -version-info 1:1:1
 
 dist_noinst_DATA += src/lib/sifp/sss_simpleifp.exports
 
@@ -1452,6 +1488,8 @@ sssd_secrets_SOURCES = \
     src/responder/secrets/local.c \
     src/responder/secrets/proxy.c \
     src/util/sss_sockets.c \
+    src/util/sss_iobuf.c \
+    src/util/tev_curl.c \
     $(SSSD_RESPONDER_OBJ) \
     $(SSSD_RESOLV_OBJ) \
     $(NULL)
@@ -1462,6 +1500,41 @@ sssd_secrets_LDADD = \
     $(SSSD_LIBS) \
     $(SYSTEMD_DAEMON_LIBS) \
     $(CARES_LIBS) \
+    $(SSSD_INTERNAL_LTLIBS) \
+    $(CURL_LIBS) \
+    $(NULL)
+endif
+
+if BUILD_KCM
+sssd_kcm_SOURCES = \
+    src/responder/kcm/kcm.c \
+    src/responder/kcm/kcmsrv_cmd.c \
+    src/responder/kcm/kcmsrv_ccache.c \
+    src/responder/kcm/kcmsrv_ccache_mem.c \
+    src/responder/kcm/kcmsrv_ccache_json.c \
+    src/responder/kcm/kcmsrv_ccache_secrets.c \
+    src/responder/kcm/kcmsrv_ops.c \
+    src/responder/kcm/kcmsrv_op_queue.c \
+    src/util/sss_sockets.c \
+    src/util/sss_krb5.c \
+    src/util/sss_iobuf.c \
+    src/util/tev_curl.c \
+    $(SSSD_RESPONDER_OBJ) \
+    $(NULL)
+sssd_kcm_CFLAGS = \
+    $(AM_CFLAGS) \
+    $(KRB5_CFLAGS) \
+    $(UUID_CFLAGS) \
+    $(CURL_CFLAGS) \
+    $(JANSSON_CFLAGS) \
+    $(NULL)
+sssd_kcm_LDADD = \
+    $(KRB5_LIBS) \
+    $(CURL_LIBS) \
+    $(JANSSON_LIBS) \
+    $(SSSD_LIBS) \
+    $(UUID_LIBS) \
+    $(SYSTEMD_DAEMON_LIBS) \
     $(SSSD_INTERNAL_LTLIBS) \
     $(NULL)
 endif
@@ -1653,11 +1726,15 @@ sssctl_SOURCES = \
     src/tools/sssctl/sssctl_domains.c \
     src/tools/sssctl/sssctl_sifp.c \
     src/tools/sssctl/sssctl_config.c \
+    src/tools/sssctl/sssctl_user_checks.c \
     $(SSSD_TOOLS_OBJ) \
     $(NULL)
 sssctl_LDADD = \
     $(TOOLS_LIBS) \
     $(SSSD_INTERNAL_LTLIBS) \
+    $(PAM_LIBS) \
+    $(PAM_MISC_LIBS) \
+    $(LIBADD_DL) \
     libsss_simpleifp.la \
     $(NULL)
 sssctl_CFLAGS = \
@@ -1710,6 +1787,50 @@ sssd_check_socket_activated_responders_LDADD = \
     $(INI_CONFIG_LIBS) \
     $(NULL)
 endif
+
+pkgconfig_DATA += src/lib/certmap/sss_certmap.pc
+libsss_certmap_la_DEPENDENCIES = src/lib/certmap/sss_certmap.exports
+libsss_certmap_la_SOURCES = \
+    src/lib/certmap/sss_certmap.c \
+    src/lib/certmap/sss_certmap_attr_names.c \
+    src/lib/certmap/sss_certmap_krb5_match.c \
+    src/lib/certmap/sss_certmap_ldap_mapping.c \
+    src/util/util_ext.c \
+    src/util/cert/cert_common.c \
+    $(NULL)
+libsss_certmap_la_CFLAGS = \
+    $(AM_CFLAGS) \
+    $(TALLOC_CFLAGS) \
+    $(NULL)
+libsss_certmap_la_LIBADD = \
+    $(TALLOC_LIBS) \
+    $(NULL)
+libsss_certmap_la_LDFLAGS = \
+    -Wl,--version-script,$(srcdir)/src/lib/certmap/sss_certmap.exports \
+    -version-info 0:0:0
+
+if HAVE_NSS
+libsss_certmap_la_SOURCES += \
+    src/lib/certmap/sss_cert_content_nss.c \
+    src/util/crypto/nss/nss_base64.c \
+    src/util/cert/nss/cert.c \
+    src/util/crypto/nss/nss_util.c \
+    $(NULL)
+libsss_certmap_la_CFLAGS += $(NSS_CFLAGS)
+libsss_certmap_la_LIBADD += $(NSS_LIBS)
+else
+libsss_certmap_la_SOURCES += \
+    src/lib/certmap/sss_cert_content_crypto.c \
+    src/util/crypto/libcrypto/crypto_base64.c \
+    src/util/cert/libcrypto/cert.c \
+    $(NULL)
+
+libsss_certmap_la_CFLAGS += $(CRYPTO_CFLAGS)
+libsss_certmap_la_LIBADD += $(CRYPTO_LIBS)
+endif
+
+dist_noinst_DATA += src/lib/certmap/sss_certmap.exports
+dist_noinst_HEADERS += src/lib/certmap/sss_certmap_int.h
 
 #################
 # Feature Tests #
@@ -2090,6 +2211,7 @@ responder_socket_access_tests_SOURCES = \
     src/responder/common/responder_common.c \
     src/responder/common/responder_packet.c \
     src/responder/common/responder_cmd.c \
+    src/responder/common/cache_req/cache_req_domain.c \
     src/responder/common/data_provider/rdp_message.c \
     src/responder/common/data_provider/rdp_client.c \
     $(SSSD_RESPONDER_IFACE_OBJ) \
@@ -2237,6 +2359,9 @@ nss_srv_tests_LDADD = \
 EXTRA_pam_srv_tests_DEPENDENCIES = \
     $(ldblib_LTLIBRARIES) \
     $(NULL)
+if HAVE_NSS
+EXTRA_pam_srv_tests_DEPENDENCIES += p11_child
+endif
 pam_srv_tests_SOURCES = \
     $(TEST_MOCK_RESP_OBJ) \
     src/tests/cmocka/test_pam_srv.c \
@@ -2307,6 +2432,21 @@ sbus_internal_tests_LDADD = \
     libsss_debug.la \
     libsss_test_common.la
 
+config_check_tests_SOURCES = \
+    src/tests/cmocka/test_config_check.c \
+    $(NULL)
+config_check_tests_CFLAGS = \
+    $(AM_CFLAGS) \
+    $(NULL)
+config_check_tests_LDADD = \
+    $(CMOCKA_LIBS) \
+    $(POPT_LIBS) \
+    $(INI_CONFIG_LIBS) \
+    $(TALLOC_LIBS) \
+    $(SSSD_INTERNAL_LTLIBS) \
+    libsss_test_common.la \
+    $(NULL)
+
 test_find_uid_SOURCES = \
     src/tests/cmocka/test_find_uid.c \
     src/util/find_uid.c \
@@ -2355,19 +2495,23 @@ test_authtok_SOURCES = \
     src/tests/cmocka/test_authtok.c \
     src/util/authtok.c \
     src/util/authtok-utils.c \
-    src/util/util.c
+    src/util/util.c \
+    src/util/util_ext.c \
+    $(NULL)
 test_authtok_CFLAGS = \
     $(AM_CFLAGS) \
     $(TALLOC_CFLAGS) \
     $(POPT_CFLAGS) \
-    $(DHASH_CFLAGS)
+    $(DHASH_CFLAGS) \
+    $(NULL)
 test_authtok_LDADD = \
     $(TALLOC_LIBS) \
     $(CMOCKA_LIBS) \
     $(DHASH_LIBS) \
     $(POPT_LIBS) \
     libsss_test_common.la \
-    libsss_debug.la
+    libsss_debug.la \
+    $(NULL)
 
 sss_nss_idmap_tests_SOURCES = \
     src/tests/cmocka/sss_nss_idmap-tests.c
@@ -2460,9 +2604,11 @@ test_ipa_idmap_LDADD = \
 
 test_utils_SOURCES = \
     src/tests/cmocka/test_utils.c \
-    src/tests/cmocka/test_sss_ssh.c \
     src/tests/cmocka/test_string_utils.c \
     $(NULL)
+if BUILD_SSH
+test_utils_SOURCES += src/tests/cmocka/test_sss_ssh.c
+endif
 test_utils_CFLAGS = \
     $(AM_CFLAGS)
 test_utils_LDADD = \
@@ -2718,6 +2864,21 @@ test_sysdb_subdomains_LDADD = \
     libsss_test_common.la \
     $(NULL)
 
+test_sysdb_certmap_SOURCES = \
+    src/tests/cmocka/test_sysdb_certmap.c \
+    $(NULL)
+test_sysdb_certmap_CFLAGS = \
+    $(AM_CFLAGS) \
+    $(NULL)
+test_sysdb_certmap_LDADD = \
+    $(CMOCKA_LIBS) \
+    $(LDB_LIBS) \
+    $(POPT_LIBS) \
+    $(TALLOC_LIBS) \
+    $(SSSD_INTERNAL_LTLIBS) \
+    libsss_test_common.la \
+    $(NULL)
+
 test_sysdb_sudo_SOURCES = \
     src/tests/cmocka/test_sysdb_sudo.c \
     $(NULL)
@@ -2740,6 +2901,21 @@ test_sysdb_utils_CFLAGS = \
     $(AM_CFLAGS) \
     $(NULL)
 test_sysdb_utils_LDADD = \
+    $(CMOCKA_LIBS) \
+    $(LDB_LIBS) \
+    $(POPT_LIBS) \
+    $(TALLOC_LIBS) \
+    $(SSSD_INTERNAL_LTLIBS) \
+    libsss_test_common.la \
+    $(NULL)
+
+test_sysdb_domain_resolution_order_SOURCES = \
+    src/tests/cmocka/test_sysdb_domain_resolution_order.c \
+    $(NULL)
+test_sysdb_domain_resolution_order_CFLAGS = \
+    $(AM_CFLAGS) \
+    $(NULL)
+test_sysdb_domain_resolution_order_LDADD = \
     $(CMOCKA_LIBS) \
     $(LDB_LIBS) \
     $(POPT_LIBS) \
@@ -2839,6 +3015,7 @@ test_child_common_SOURCES = \
     src/util/atomic_io.c \
     src/util/util_errors.c \
     src/util/util.c \
+    src/util/util_ext.c \
     $(NULL)
 test_child_common_CFLAGS = \
     $(AM_CFLAGS) \
@@ -3239,9 +3416,67 @@ test_inotify_LDADD = \
     libsss_test_common.la \
     $(NULL)
 
+if HAVE_NSS
+sss_certmap_test_SOURCES = \
+    src/tests/cmocka/test_certmap.c \
+    src/lib/certmap/sss_certmap_attr_names.c \
+    $(NULL)
+sss_certmap_test_CFLAGS = \
+    $(AM_CFLAGS) \
+    $(NSS_CFLAGS) \
+    $(NULL)
+sss_certmap_test_LDADD = \
+    $(CMOCKA_LIBS) \
+    $(POPT_LIBS) \
+    $(TALLOC_LIBS) \
+    $(NSS_LIBS) \
+    $(SSSD_INTERNAL_LTLIBS) \
+    libsss_test_common.la \
+    libsss_certmap.la \
+    $(NULL)
+endif
+
+if BUILD_KCM
+test_kcm_json_SOURCES = \
+    src/tests/cmocka/test_kcm_json_marshalling.c \
+    src/responder/kcm/kcmsrv_ccache_json.c \
+    src/responder/kcm/kcmsrv_ccache.c \
+    src/util/sss_krb5.c \
+    src/util/sss_iobuf.c \
+    $(NULL)
+test_kcm_json_CFLAGS = \
+    $(AM_CFLAGS) \
+    $(UUID_CFLAGS) \
+    $(NULL)
+test_kcm_json_LDADD = \
+    $(JANSSON_LIBS) \
+    $(UUID_LIBS) \
+    $(KRB5_LIBS) \
+    $(CMOCKA_LIBS) \
+    $(SSSD_LIBS) \
+    $(SSSD_INTERNAL_LTLIBS) \
+    libsss_test_common.la \
+    $(NULL)
+
+test_kcm_queue_SOURCES = \
+    src/tests/cmocka/test_kcm_queue.c \
+    src/responder/kcm/kcmsrv_op_queue.c \
+    $(NULL)
+test_kcm_queue_CFLAGS = \
+    $(AM_CFLAGS) \
+    $(NULL)
+test_kcm_queue_LDADD = \
+    $(CMOCKA_LIBS) \
+    $(SSSD_LIBS) \
+    $(SSSD_INTERNAL_LTLIBS) \
+    libsss_test_common.la \
+    $(NULL)
+
+endif # BUILD_KCM
+
 endif # HAVE_CMOCKA
 
-noinst_PROGRAMS = pam_test_client
+noinst_PROGRAMS =
 if BUILD_SUDO
 noinst_PROGRAMS += sss_sudo_cli
 endif
@@ -3251,9 +3486,6 @@ endif
 if BUILD_WITH_LIBCURL
 noinst_PROGRAMS += tcurl-test-tool
 endif
-
-pam_test_client_SOURCES = src/sss_client/pam_test_client.c
-pam_test_client_LDADD = $(PAM_LIBS) $(PAM_MISC_LIBS)
 
 if BUILD_AUTOFS
 autofs_test_client_SOURCES = \
@@ -3300,9 +3532,9 @@ intgcheck-prepare:
 	    --with-ldb-lib-dir="$$prefix"/lib/ldb \
 	    --enable-intgcheck-reqs \
 	    --without-semanage \
-	    --enable-files-domain \
-	    $(INTGCHECK_CONFIGURE_FLAGS); \
-	$(MAKE) $(AM_MAKEFLAGS); \
+	    $(INTGCHECK_CONFIGURE_FLAGS) \
+	    CFLAGS="$$CFLAGS -DKCM_PEER_UID=$$(id -u)"; \
+	$(MAKE) $(AM_MAKEFLAGS) ; \
 	: Force single-thread install to workaround concurrency issues; \
 	$(MAKE) $(AM_MAKEFLAGS) -j1 install; \
 	: Remove .la files from LDB module directory to avoid loader warnings; \
@@ -3774,6 +4006,7 @@ krb5_child_SOURCES = \
     src/util/authtok.c \
     src/util/authtok-utils.c \
     src/util/util.c \
+    src/util/util_ext.c \
     src/util/signal.c \
     src/util/strtonum.c \
     src/util/become_user.c \
@@ -3807,6 +4040,7 @@ ldap_child_SOURCES = \
     src/util/authtok.c \
     src/util/authtok-utils.c \
     src/util/util.c \
+    src/util/util_ext.c \
     src/util/signal.c \
     src/util/become_user.c \
     $(NULL)
@@ -3827,6 +4061,8 @@ selinux_child_SOURCES = \
     src/util/sss_semanage.c \
     src/util/atomic_io.c \
     src/util/util.c \
+    src/util/util_ext.c \
+    src/util/util_errors.c
     $(NULL)
 selinux_child_CFLAGS = \
     $(AM_CFLAGS) \
@@ -3845,6 +4081,7 @@ gpo_child_SOURCES = \
     src/providers/ad/ad_gpo_child.c \
     src/util/atomic_io.c \
     src/util/util.c \
+    src/util/util_ext.c \
     src/util/signal.c
 gpo_child_CFLAGS = \
     $(AM_CFLAGS) \
@@ -3876,6 +4113,7 @@ p11_child_SOURCES = \
     src/p11_child/p11_child_nss.c \
     src/util/atomic_io.c \
     src/util/util.c \
+    src/util/util_ext.c \
     $(NULL)
 p11_child_CFLAGS = \
     $(AM_CFLAGS) \
@@ -3893,16 +4131,21 @@ p11_child_LDADD = \
 
 memberof_la_SOURCES = \
     src/ldb_modules/memberof.c \
-    src/util/util.c
+    src/util/util.c \
+    src/util/util_ext.c \
+    $(NULL)
 memberof_la_CFLAGS = \
-    $(AM_CFLAGS)
+    $(AM_CFLAGS) \
+    $(NULL)
 memberof_la_LIBADD = \
     libsss_debug.la \
     $(LDB_LIBS) \
-    $(DHASH_LIBS)
+    $(DHASH_LIBS) \
+    $(NULL)
 memberof_la_LDFLAGS = \
     -avoid-version \
-    -module
+    -module \
+    $(NULL)
 
 if BUILD_KRB5_LOCATOR_PLUGIN
 sssd_krb5_locator_plugin_la_SOURCES = \
@@ -4157,6 +4400,12 @@ if BUILD_SUDO
         src/sysv/systemd/sssd-sudo.service \
         $(NULL)
 endif
+if BUILD_KCM
+    systemdunit_DATA += \
+        src/sysv/systemd/sssd-kcm.socket \
+        src/sysv/systemd/sssd-kcm.service \
+        $(NULL)
+endif
 if WITH_JOURNALD
     systemdconf_DATA += \
         src/sysv/systemd/journal.conf
@@ -4248,6 +4497,12 @@ EXTRA_DIST += \
     src/sysv/systemd/sssd-sudo.service.in \
     $(NULL)
 endif
+if BUILD_KCM
+EXTRA_DIST += \
+    src/sysv/systemd/sssd-kcm.socket.in \
+    src/sysv/systemd/sssd-kcm.service.in \
+    $(NULL)
+endif
 
 src/sysv/systemd/sssd.service: src/sysv/systemd/sssd.service.in Makefile
 	@$(MKDIR_P) src/sysv/systemd/
@@ -4331,6 +4586,16 @@ src/sysv/systemd/sssd-sudo.service: src/sysv/systemd/sssd-sudo.service.in Makefi
 	$(replace_script)
 endif
 
+if BUILD_KCM
+src/sysv/systemd/sssd-kcm.socket: src/sysv/systemd/sssd-kcm.socket.in Makefile
+	@$(MKDIR_P) src/sysv/systemd/
+	$(replace_script)
+
+src/sysv/systemd/sssd-kcm.service: src/sysv/systemd/sssd-kcm.service.in Makefile
+	@$(MKDIR_P) src/sysv/systemd/
+	$(replace_script)
+endif
+
 SSSD_USER_DIRS = \
     $(DESTDIR)$(dbpath) \
     $(DESTDIR)$(keytabdir) \
@@ -4388,6 +4653,7 @@ docs:
 	$(DOXYGEN) src/lib/ipa_hbac/ipa_hbac.doxy
 	$(DOXYGEN) src/lib/idmap/sss_idmap.doxy
 	$(DOXYGEN) src/sss_client/idmap/sss_nss_idmap.doxy
+	$(DOXYGEN) src/lib/certmap/sss_certmap.doxy
 if BUILD_IFP
 	$(DOXYGEN) src/lib/sifp/sss_simpleifp.doxy
 endif
@@ -4493,6 +4759,9 @@ install-data-hook:
 if BUILD_SAMBA
 	mv $(DESTDIR)/$(winbindplugindir)/winbind_idmap_sss.so $(DESTDIR)/$(winbindplugindir)/sss.so
 endif
+if BUILD_KCM
+	$(MKDIR_P) $(DESTDIR)/$(sssdkcmdatadir)
+endif
 
 uninstall-hook:
 	if [ -f $(abs_builddir)/src/config/.files2 ]; then \
@@ -4567,6 +4836,8 @@ endif
 	rm -f $(builddir)/src/sysv/systemd/sssd-sudo.service
 	rm -f $(builddir)/src/sysv/systemd/sssd-secrets.socket
 	rm -f $(builddir)/src/sysv/systemd/sssd-secrets.service
+	rm -f $(builddir)/src/sysv/systemd/sssd-kcm.socket
+	rm -f $(builddir)/src/sysv/systemd/sssd-kcm.service
 	rm -f $(builddir)/src/sysv/systemd/journal.conf
 
 CLEANFILES += *.X */*.X */*/*.X

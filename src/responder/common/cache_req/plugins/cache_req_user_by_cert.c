@@ -94,6 +94,7 @@ const struct cache_req_plugin cache_req_user_by_cert = {
     .global_ncache_add_fn = cache_req_user_by_cert_global_ncache_add,
     .ncache_check_fn = cache_req_user_by_cert_ncache_check,
     .ncache_add_fn = NULL,
+    .ncache_filter_fn = NULL,
     .lookup_fn = cache_req_user_by_cert_lookup,
     .dp_send_fn = cache_req_user_by_cert_dp_send,
     .dp_recv_fn = cache_req_common_dp_recv
@@ -105,6 +106,7 @@ cache_req_user_by_cert_send(TALLOC_CTX *mem_ctx,
                             struct resp_ctx *rctx,
                             struct sss_nc_ctx *ncache,
                             int cache_refresh_percent,
+                            enum cache_req_dom_type req_dom_type,
                             const char *domain,
                             const char *pem_cert)
 {
@@ -117,5 +119,6 @@ cache_req_user_by_cert_send(TALLOC_CTX *mem_ctx,
 
     return cache_req_steal_data_and_send(mem_ctx, ev, rctx, ncache,
                                          cache_refresh_percent,
-                                         domain, data);
+                                         req_dom_type, domain,
+                                         data);
 }

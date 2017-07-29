@@ -55,6 +55,14 @@ cache_req_enum_users_dp_send(TALLOC_CTX *mem_ctx,
                                    SSS_DP_USER, NULL, 0, NULL);
 }
 
+static errno_t
+cache_req_enum_users_ncache_filter(struct sss_nc_ctx *ncache,
+                                   struct sss_domain_info *domain,
+                                   const char *name)
+{
+    return sss_ncache_check_user(ncache, domain, name);
+}
+
 const struct cache_req_plugin cache_req_enum_users = {
     .name = "Enumerate users",
     .attr_expiration = SYSDB_CACHE_EXPIRE,
@@ -75,6 +83,7 @@ const struct cache_req_plugin cache_req_enum_users = {
     .global_ncache_add_fn = NULL,
     .ncache_check_fn = NULL,
     .ncache_add_fn = NULL,
+    .ncache_filter_fn = cache_req_enum_users_ncache_filter,
     .lookup_fn = cache_req_enum_users_lookup,
     .dp_send_fn = cache_req_enum_users_dp_send,
     .dp_recv_fn = cache_req_common_dp_recv
@@ -96,5 +105,7 @@ cache_req_enum_users_send(TALLOC_CTX *mem_ctx,
     }
 
     return cache_req_steal_data_and_send(mem_ctx, ev, rctx, ncache,
-                                         cache_refresh_percent, domain, data);
+                                         cache_refresh_percent,
+                                         CACHE_REQ_POSIX_DOM, domain,
+                                         data);
 }

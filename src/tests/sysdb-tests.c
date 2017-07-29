@@ -23,6 +23,7 @@
 #include <check.h>
 #include <talloc.h>
 #include <tevent.h>
+#include <ctype.h>
 #include <popt.h>
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -1395,7 +1396,7 @@ START_TEST (test_sysdb_get_user_attr_subdomain)
     /* Create subdomain */
     subdomain = new_subdomain(test_ctx, test_ctx->domain,
                               "test.sub", "TEST.SUB", "test", "S-3",
-                              false, false, NULL, NULL, 0);
+                              false, false, NULL, NULL, 0, NULL);
     fail_if(subdomain == NULL, "Failed to create new subdomain.");
 
     ret = sss_names_init_from_args(test_ctx,
@@ -1423,6 +1424,59 @@ START_TEST (test_sysdb_get_user_attr_subdomain)
 
     attrval = ldb_msg_find_attr_as_string(res->msgs[0], SYSDB_SHELL, 0);
     fail_if(strcmp(attrval, "/bin/bash") != 0, "Got bad attribute value.");
+
+    talloc_free(test_ctx);
+}
+END_TEST
+
+START_TEST (test_sysdb_add_nonposix_user)
+{
+    struct sysdb_test_ctx *test_ctx;
+    const char *get_attrs[] = { SYSDB_GIDNUM,
+                                SYSDB_UIDNUM,
+                                SYSDB_POSIX,
+                                NULL };
+    struct ldb_result *res;
+    const char *attrval;
+    const char *username = "test_sysdb_add_nonposix_user";
+    const char *fq_name;
+    struct sysdb_attrs *user_attrs;
+    int ret;
+    uint64_t id;
+
+    /* Setup */
+    ret = setup_sysdb_tests(&test_ctx);
+    fail_if(ret != EOK, "Could not set up the test");
+
+    /* Create user */
+    fq_name = sss_create_internal_fqname(test_ctx, username, test_ctx->domain->name);
+    fail_if(fq_name == NULL, "Failed to create fq name.");
+
+    user_attrs = sysdb_new_attrs(test_ctx);
+    fail_if(user_attrs == NULL);
+
+    ret = sysdb_attrs_add_bool(user_attrs, SYSDB_POSIX, false);
+    fail_if(ret != EOK, "Could not add attribute");
+
+    ret = sysdb_add_user(test_ctx->domain, fq_name, 0, 0, "Gecos",
+                         "/home/userhome", "/bin/bash", NULL, user_attrs, 0, 0);
+    fail_if(ret != EOK, "sysdb_add_user failed.");
+
+    /* Test */
+    ret = sysdb_get_user_attr(test_ctx, test_ctx->domain, fq_name,
+                              get_attrs, &res);
+    fail_if(ret != EOK, "Could not get user attributes.");
+    fail_if(res->count != 1, "Invalid number of entries, expected 1, got %d",
+            res->count);
+
+    attrval = ldb_msg_find_attr_as_string(res->msgs[0], SYSDB_POSIX, NULL);
+    fail_if(strcasecmp(attrval, "false") != 0, "Got bad attribute value.");
+
+    id = ldb_msg_find_attr_as_uint64(res->msgs[0], SYSDB_UIDNUM, 123);
+    fail_unless(id == 0, "Wrong UID value");
+
+    id = ldb_msg_find_attr_as_uint64(res->msgs[0], SYSDB_GIDNUM, 123);
+    fail_unless(id == 0, "Wrong GID value");
 
     talloc_free(test_ctx);
 }
@@ -4997,6 +5051,92 @@ START_TEST(test_sysdb_attrs_add_string_safe)
 }
 END_TEST
 
+START_TEST(test_sysdb_attrs_copy)
+{
+    int ret;
+    struct sysdb_attrs *src;
+    struct sysdb_attrs *dst;
+    TALLOC_CTX *tmp_ctx;
+    const char *val;
+    const char **array;
+
+    ret = sysdb_attrs_copy(NULL, NULL);
+    fail_unless(ret == EINVAL, "Wrong return code");
+
+    tmp_ctx = talloc_new(NULL);
+    fail_unless(tmp_ctx != NULL, "talloc_new failed");
+
+    src = sysdb_new_attrs(tmp_ctx);
+    fail_unless(src != NULL, "sysdb_new_attrs failed");
+
+    ret = sysdb_attrs_copy(src, NULL);
+    fail_unless(ret == EINVAL, "Wrong return code");
+
+    dst = sysdb_new_attrs(tmp_ctx);
+    fail_unless(dst != NULL, "sysdb_new_attrs failed");
+
+    ret = sysdb_attrs_copy(NULL, dst);
+    fail_unless(ret == EINVAL, "Wrong return code");
+
+    ret = sysdb_attrs_copy(src, dst);
+    fail_unless(ret == EOK, "sysdb_attrs_copy failed");
+    fail_unless(dst->num == 0, "Wrong number of elements");
+
+    ret = sysdb_attrs_add_string(src, TEST_ATTR_NAME, TEST_ATTR_VALUE);
+    fail_unless(ret == EOK, "sysdb_attrs_add_val failed.");
+
+    ret = sysdb_attrs_copy(src, dst);
+    fail_unless(ret == EOK, "sysdb_attrs_copy failed");
+    fail_unless(dst->num == 1, "Wrong number of elements");
+    ret = sysdb_attrs_get_string(dst, TEST_ATTR_NAME, &val);
+    fail_unless(ret == EOK, "sysdb_attrs_get_string failed.\n");
+    fail_unless(strcmp(val, TEST_ATTR_VALUE) == 0, "Wrong attribute value.");
+
+    /* Make sure the same entry is not copied twice */
+    ret = sysdb_attrs_copy(src, dst);
+    fail_unless(ret == EOK, "sysdb_attrs_copy failed");
+    fail_unless(dst->num == 1, "Wrong number of elements");
+    ret = sysdb_attrs_get_string(dst, TEST_ATTR_NAME, &val);
+    fail_unless(ret == EOK, "sysdb_attrs_get_string failed.\n");
+    fail_unless(strcmp(val, TEST_ATTR_VALUE) == 0, "Wrong attribute value.");
+
+    /* Add new value to existing attribute */
+    ret = sysdb_attrs_add_string(src, TEST_ATTR_NAME, TEST_ATTR_VALUE"_2nd");
+    fail_unless(ret == EOK, "sysdb_attrs_add_val failed.");
+
+    ret = sysdb_attrs_copy(src, dst);
+    fail_unless(ret == EOK, "sysdb_attrs_copy failed");
+    fail_unless(dst->num == 1, "Wrong number of elements");
+    ret = sysdb_attrs_get_string_array(dst, TEST_ATTR_NAME, tmp_ctx, &array);
+    fail_unless(ret == EOK, "sysdb_attrs_get_string_array failed.\n");
+    fail_unless(strcmp(array[0], TEST_ATTR_VALUE) == 0,
+                       "Wrong attribute value.");
+    fail_unless(strcmp(array[1], TEST_ATTR_VALUE"_2nd") == 0,
+                       "Wrong attribute value.");
+    fail_unless(array[2] == NULL, "Wrong number of values.");
+
+    /* Add new attribute */
+    ret = sysdb_attrs_add_string(src, TEST_ATTR_NAME"_2nd", TEST_ATTR_VALUE);
+    fail_unless(ret == EOK, "sysdb_attrs_add_val failed.");
+
+    ret = sysdb_attrs_copy(src, dst);
+    fail_unless(ret == EOK, "sysdb_attrs_copy failed");
+    fail_unless(dst->num == 2, "Wrong number of elements");
+    ret = sysdb_attrs_get_string_array(dst, TEST_ATTR_NAME, tmp_ctx, &array);
+    fail_unless(ret == EOK, "sysdb_attrs_get_string_array failed.\n");
+    fail_unless(strcmp(array[0], TEST_ATTR_VALUE) == 0,
+                       "Wrong attribute value.");
+    fail_unless(strcmp(array[1], TEST_ATTR_VALUE"_2nd") == 0,
+                       "Wrong attribute value.");
+    fail_unless(array[2] == NULL, "Wrong number of values.");
+    ret = sysdb_attrs_get_string(dst, TEST_ATTR_NAME"_2nd", &val);
+    fail_unless(ret == EOK, "sysdb_attrs_get_string failed.\n");
+    fail_unless(strcmp(val, TEST_ATTR_VALUE) == 0, "Wrong attribute value.");
+
+    talloc_free(tmp_ctx);
+}
+END_TEST
+
 START_TEST (test_sysdb_search_return_ENOENT)
 {
     struct sysdb_test_ctx *test_ctx;
@@ -5635,7 +5775,7 @@ START_TEST(test_sysdb_search_user_by_cert)
     val.data = sss_base64_decode(test_ctx, TEST_USER_CERT_DERB64, &val.length);
     fail_unless(val.data != NULL, "sss_base64_decode failed.");
 
-    ret = sysdb_attrs_add_val(data->attrs, SYSDB_USER_CERT, &val);
+    ret = sysdb_attrs_add_val(data->attrs, SYSDB_USER_MAPPED_CERT, &val);
     fail_unless(ret == EOK, "sysdb_attrs_add_val failed with [%d][%s].",
                 ret, strerror(ret));
 
@@ -5664,7 +5804,7 @@ START_TEST(test_sysdb_search_user_by_cert)
     data2 = test_data_new_user(test_ctx, 2345671);
     fail_if(data2 == NULL);
 
-    ret = sysdb_attrs_add_val(data2->attrs, SYSDB_USER_CERT, &val);
+    ret = sysdb_attrs_add_val(data2->attrs, SYSDB_USER_MAPPED_CERT, &val);
     fail_unless(ret == EOK, "sysdb_attrs_add_val failed with [%d][%s].",
                 ret, strerror(ret));
 
@@ -5735,14 +5875,14 @@ START_TEST(test_sysdb_subdomain_store_user)
 
     subdomain = new_subdomain(test_ctx, test_ctx->domain,
                               testdom[0], testdom[1], testdom[2], testdom[3],
-                              false, false, NULL, NULL, 0);
+                              false, false, NULL, NULL, 0, NULL);
     fail_unless(subdomain != NULL, "Failed to create new subdomin.");
     ret = sysdb_subdomain_store(test_ctx->sysdb,
                                 testdom[0], testdom[1], testdom[2], testdom[3],
                                 false, false, NULL, 0, NULL);
     fail_if(ret != EOK, "Could not set up the test (test subdom)");
 
-    ret = sysdb_update_subdomains(test_ctx->domain);
+    ret = sysdb_update_subdomains(test_ctx->domain, NULL);
     fail_unless(ret == EOK, "sysdb_update_subdomains failed with [%d][%s]",
                             ret, strerror(ret));
 
@@ -5814,14 +5954,14 @@ START_TEST(test_sysdb_subdomain_user_ops)
 
     subdomain = new_subdomain(test_ctx, test_ctx->domain,
                               testdom[0], testdom[1], testdom[2], testdom[3],
-                              false, false, NULL, NULL, 0);
+                              false, false, NULL, NULL, 0, NULL);
     fail_unless(subdomain != NULL, "Failed to create new subdomin.");
     ret = sysdb_subdomain_store(test_ctx->sysdb,
                                 testdom[0], testdom[1], testdom[2], testdom[3],
                                 false, false, NULL, 0, NULL);
     fail_if(ret != EOK, "Could not set up the test (test subdom)");
 
-    ret = sysdb_update_subdomains(test_ctx->domain);
+    ret = sysdb_update_subdomains(test_ctx->domain, NULL);
     fail_unless(ret == EOK, "sysdb_update_subdomains failed with [%d][%s]",
                             ret, strerror(ret));
 
@@ -5887,14 +6027,14 @@ START_TEST(test_sysdb_subdomain_group_ops)
 
     subdomain = new_subdomain(test_ctx, test_ctx->domain,
                               testdom[0], testdom[1], testdom[2], testdom[3],
-                              false, false, NULL, NULL, 0);
+                              false, false, NULL, NULL, 0, NULL);
     fail_unless(subdomain != NULL, "Failed to create new subdomin.");
     ret = sysdb_subdomain_store(test_ctx->sysdb,
                                 testdom[0], testdom[1], testdom[2], testdom[3],
                                 false, false, NULL, 0, NULL);
     fail_if(ret != EOK, "Could not set up the test (test subdom)");
 
-    ret = sysdb_update_subdomains(test_ctx->domain);
+    ret = sysdb_update_subdomains(test_ctx->domain, NULL);
     fail_unless(ret == EOK, "sysdb_update_subdomains failed with [%d][%s]",
                             ret, strerror(ret));
 
@@ -6958,6 +7098,9 @@ Suite *create_sysdb_suite(void)
     /* Test GetUserAttr with subdomain user */
     tcase_add_test(tc_sysdb, test_sysdb_get_user_attr_subdomain);
 
+    /* Test adding a non-POSIX user */
+    tcase_add_test(tc_sysdb, test_sysdb_add_nonposix_user);
+
 /* ===== NETGROUP TESTS ===== */
 
     /* Create a new netgroup */
@@ -6995,6 +7138,7 @@ Suite *create_sysdb_suite(void)
     tcase_add_test(tc_sysdb, test_sysdb_attrs_add_val);
     tcase_add_test(tc_sysdb, test_sysdb_attrs_add_val_safe);
     tcase_add_test(tc_sysdb, test_sysdb_attrs_add_string_safe);
+    tcase_add_test(tc_sysdb, test_sysdb_attrs_copy);
 
 /* ===== Test search return empty result ===== */
     tcase_add_test(tc_sysdb, test_sysdb_search_return_ENOENT);

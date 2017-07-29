@@ -126,7 +126,8 @@ get_next_domain_recv(TALLOC_CTX *mem_ctx,
 }
 
 /* ====== Iterate over all domains, searching for their subdomains  ======= */
-static errno_t process_subdomains(struct sss_domain_info *dom);
+static errno_t process_subdomains(struct sss_domain_info *dom,
+                                  struct confdb_ctx *confdb);
 static void set_time_of_last_request(struct resp_ctx *rctx);
 static errno_t check_last_request(struct resp_ctx *rctx, const char *hint);
 
@@ -191,6 +192,13 @@ struct tevent_req *sss_dp_get_domains_send(TALLOC_CTX *mem_ctx,
 
     if (state->dom == NULL) {
         /* All domains were local */
+        ret = sss_resp_populate_cr_domains(state->rctx);
+        if (ret != EOK) {
+            DEBUG(SSSDBG_CRIT_FAILURE,
+                  "sss_resp_populate_cr_domains() failed [%d]: [%s]\n",
+                  ret, sss_strerror(ret));
+            goto immediately;
+        }
         ret = EOK;
         goto immediately;
     }
@@ -216,6 +224,26 @@ immediately:
     return req;
 }
 
+static void sss_resp_update_certmaps(struct resp_ctx *rctx)
+{
+    int ret;
+    struct certmap_info **certmaps;
+    bool user_name_hint;
+    struct sss_domain_info *dom;
+
+    for (dom = rctx->domains; dom != NULL; dom = dom->next) {
+        ret = sysdb_get_certmap(dom, dom->sysdb, &certmaps, &user_name_hint);
+        if (ret == EOK) {
+            dom->user_name_hint = user_name_hint;
+            talloc_free(dom->certmaps);
+            dom->certmaps = certmaps;
+        } else {
+            DEBUG(SSSDBG_OP_FAILURE,
+                  "sysdb_get_certmap failed for domain [%s].\n", dom->name);
+        }
+    }
+}
+
 static void
 sss_dp_get_domains_process(struct tevent_req *subreq)
 {
@@ -234,7 +262,7 @@ sss_dp_get_domains_process(struct tevent_req *subreq)
         goto fail;
     }
 
-    ret = process_subdomains(state->dom);
+    ret = process_subdomains(state->dom, state->rctx->cdb);
     if (ret != EOK) {
         DEBUG(SSSDBG_OP_FAILURE, "process_subdomains failed, "
                                   "trying next domain.\n");
@@ -252,6 +280,16 @@ sss_dp_get_domains_process(struct tevent_req *subreq)
     if (state->dom == NULL) {
         /* All domains were local */
         set_time_of_last_request(state->rctx);
+        ret = sss_resp_populate_cr_domains(state->rctx);
+        if (ret != EOK) {
+            DEBUG(SSSDBG_CRIT_FAILURE,
+                  "sss_resp_populate_cr_domains() failed [%d]: [%s]\n",
+                  ret, sss_strerror(ret));
+            goto fail;
+        }
+
+        sss_resp_update_certmaps(state->rctx);
+
         tevent_req_done(req);
         return;
     }
@@ -270,7 +308,7 @@ fail:
 }
 
 static errno_t
-process_subdomains(struct sss_domain_info *domain)
+process_subdomains(struct sss_domain_info *domain, struct confdb_ctx *confdb)
 {
     int ret;
 
@@ -288,7 +326,7 @@ process_subdomains(struct sss_domain_info *domain)
     /* Retrieve all subdomains of this domain from sysdb
      * and create their struct sss_domain_info representations
      */
-    ret = sysdb_update_subdomains(domain);
+    ret = sysdb_update_subdomains(domain, confdb);
     if (ret != EOK) {
         DEBUG(SSSDBG_FUNC_DATA, "sysdb_update_subdomains failed.\n");
         goto done;
@@ -387,6 +425,14 @@ static void get_domains_at_startup_done(struct tevent_req *req)
                                                     state->optional_ncache);
         if (ret != EOK) {
             DEBUG(SSSDBG_MINOR_FAILURE, "sss_dp_get_domains request failed.\n");
+        }
+    }
+
+    if (!NEED_CHECK_PROVIDER(state->rctx->domains->provider)) {
+        ret = sysdb_master_domain_update(state->rctx->domains);
+        if (ret != EOK) {
+            DEBUG(SSSDBG_OP_FAILURE, "sysdb_master_domain_update failed, "
+                                     "ignored.\n");
         }
     }
 

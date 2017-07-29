@@ -99,10 +99,6 @@ struct ad_options {
     struct be_nsupdate_ctx *dyndns_ctx;
 };
 
-char *create_subdom_conf_path(TALLOC_CTX *mem_ctx,
-                              const char *conf_path,
-                              const char *subdom_name);
-
 errno_t
 ad_get_common_options(TALLOC_CTX *mem_ctx,
                       struct confdb_ctx *cdb,
@@ -134,7 +130,8 @@ struct ad_options *ad_create_1way_trust_options(TALLOC_CTX *mem_ctx,
                                                 const char *keytab,
                                                 const char *sasl_authid);
 
-errno_t ad_set_search_bases(struct sdap_options *id_opts);
+errno_t ad_set_search_bases(struct sdap_options *id_opts,
+                            struct sdap_domain *sdap);
 
 errno_t
 ad_failover_init(TALLOC_CTX *mem_ctx, struct be_ctx *ctx,

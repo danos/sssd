@@ -39,6 +39,7 @@
 #define SYSDB_NETGROUP_CONTAINER "cn=Netgroups"
 #define SYSDB_RANGE_CONTAINER "cn=ranges"
 #define SYSDB_VIEW_CONTAINER "cn=views"
+#define SYSDB_CERTMAP_CONTAINER "cn=certmap"
 #define SYSDB_TMPL_USER_BASE SYSDB_USERS_CONTAINER","SYSDB_DOM_BASE
 #define SYSDB_TMPL_GROUP_BASE SYSDB_GROUPS_CONTAINER","SYSDB_DOM_BASE
 #define SYSDB_TMPL_CUSTOM_BASE SYSDB_CUSTOM_CONTAINER","SYSDB_DOM_BASE
@@ -46,6 +47,7 @@
 #define SYSDB_TMPL_RANGE_BASE SYSDB_RANGE_CONTAINER","SYSDB_BASE
 #define SYSDB_TMPL_VIEW_BASE SYSDB_VIEW_CONTAINER","SYSDB_BASE
 #define SYSDB_TMPL_VIEW_SEARCH_BASE "cn=%s,"SYSDB_TMPL_VIEW_BASE
+#define SYSDB_TMPL_CERTMAP_BASE SYSDB_CERTMAP_CONTAINER","SYSDB_BASE
 
 #define SYSDB_SUBDOMAIN_CLASS "subdomain"
 #define SYSDB_USER_CLASS "user"
@@ -58,6 +60,7 @@
 #define SYSDB_ID_RANGE_CLASS "idRange"
 #define SYSDB_DOMAIN_ID_RANGE_CLASS "domainIDRange"
 #define SYSDB_TRUSTED_AD_DOMAIN_RANGE_CLASS "TrustedADDomainRange"
+#define SYSDB_CERTMAP_CLASS "certificateMappingRule"
 
 #define SYSDB_DN "dn"
 #define SYSDB_NAME "name"
@@ -139,6 +142,7 @@
 
 #define SYSDB_AUTH_TYPE "authType"
 #define SYSDB_USER_CERT "userCertificate"
+#define SYSDB_USER_MAPPED_CERT "userMappedCertificate"
 #define SYSDB_USER_EMAIL "mail"
 
 #define SYSDB_SUBDOMAIN_REALM "realmName"
@@ -157,6 +161,12 @@
 #define SYSDB_DOMAIN_ID "domainID"
 #define SYSDB_ID_RANGE_TYPE "idRangeType"
 
+#define SYSDB_CERTMAP_PRIORITY "priority"
+#define SYSDB_CERTMAP_MATCHING_RULE "matchingRule"
+#define SYSDB_CERTMAP_MAPPING_RULE "mappingRule"
+#define SYSDB_CERTMAP_DOMAINS "domains"
+#define SYSDB_CERTMAP_USER_NAME_HINT "userNameHint"
+
 #define ORIGINALAD_PREFIX "originalAD"
 #define OVERRIDE_PREFIX "override"
 #define SYSDB_DEFAULT_OVERRIDE_NAME "defaultOverrideName"
@@ -174,6 +184,8 @@
 #define SYSDB_OVERRIDE_GROUP_CLASS "groupOverride"
 #define SYSDB_OVERRIDE_DN "overrideDN"
 #define SYSDB_OVERRIDE_OBJECT_DN "overrideObjectDN"
+#define SYSDB_USE_DOMAIN_RESOLUTION_ORDER "useDomainResolutionOrder"
+#define SYSDB_DOMAIN_RESOLUTION_ORDER "domainResolutionOrder"
 
 #define SYSDB_NEXTID_FILTER "("SYSDB_NEXTID"=*)"
 
@@ -263,6 +275,7 @@
 #define SYSDB_TMPL_CUSTOM SYSDB_NAME"=%s,cn=%s,"SYSDB_TMPL_CUSTOM_BASE
 #define SYSDB_TMPL_RANGE SYSDB_NAME"=%s,"SYSDB_TMPL_RANGE_BASE
 #define SYSDB_TMPL_OVERRIDE SYSDB_OVERRIDE_ANCHOR_UUID"=%s,"SYSDB_TMPL_VIEW_SEARCH_BASE
+#define SYSDB_TMPL_CERTMAP SYSDB_NAME"=%s,"SYSDB_TMPL_CERTMAP_BASE
 
 #define SYSDB_MOD_ADD LDB_FLAG_MOD_ADD
 #define SYSDB_MOD_DEL LDB_FLAG_MOD_DELETE
@@ -319,6 +332,15 @@ struct range_info {
     char *range_type;
 };
 
+struct certmap_info {
+    char *name;
+    uint32_t priority;
+    char *match_rule;
+    char *map_rule;
+    const char **domains;
+};
+
+
 /* These attributes are stored in the timestamp cache */
 extern const char *sysdb_ts_cache_attrs[];
 
@@ -352,6 +374,7 @@ int sysdb_attrs_add_lc_name_alias_safe(struct sysdb_attrs *attrs,
 int sysdb_attrs_copy_values(struct sysdb_attrs *src,
                             struct sysdb_attrs *dst,
                             const char *name);
+errno_t sysdb_attrs_copy(struct sysdb_attrs *src, struct sysdb_attrs *dst);
 int sysdb_attrs_get_el(struct sysdb_attrs *attrs, const char *name,
                        struct ldb_message_element **el);
 int sysdb_attrs_get_el_ext(struct sysdb_attrs *attrs, const char *name,
@@ -466,6 +489,17 @@ int sysdb_transaction_cancel(struct sysdb_ctx *sysdb);
 /* functions related to subdomains */
 errno_t sysdb_domain_create(struct sysdb_ctx *sysdb, const char *domain_name);
 
+errno_t sysdb_domain_get_domain_resolution_order(
+                                        TALLOC_CTX *mem_ctx,
+                                        struct sysdb_ctx *sysdb,
+                                        const char *domain_name,
+                                        const char **_domain_resolution_order);
+
+errno_t sysdb_domain_update_domain_resolution_order(
+                                        struct sysdb_ctx *sysdb,
+                                        const char *domain_name,
+                                        const char *domain_resolution_order);
+
 errno_t sysdb_subdomain_store(struct sysdb_ctx *sysdb,
                               const char *name, const char *realm,
                               const char *flat_name, const char *domain_id,
@@ -473,7 +507,8 @@ errno_t sysdb_subdomain_store(struct sysdb_ctx *sysdb,
                               uint32_t trust_direction,
                               struct ldb_message_element *upn_suffixes);
 
-errno_t sysdb_update_subdomains(struct sss_domain_info *domain);
+errno_t sysdb_update_subdomains(struct sss_domain_info *domain,
+                                struct confdb_ctx *confdb);
 
 errno_t sysdb_master_domain_update(struct sss_domain_info *domain);
 
@@ -497,6 +532,15 @@ errno_t sysdb_update_view_name(struct sysdb_ctx *sysdb, const char *view_name);
 
 errno_t sysdb_get_view_name(TALLOC_CTX *mem_ctx, struct sysdb_ctx *sysdb,
                             char **view_name);
+
+errno_t sysdb_update_view_domain_resolution_order(
+                                        struct sysdb_ctx *sysdb,
+                                        const char *domain_resolution_order);
+
+errno_t sysdb_get_view_domain_resolution_order(
+                                        TALLOC_CTX *mem_ctx,
+                                        struct sysdb_ctx *sysdb,
+                                        const char **_domain_resolution_order);
 
 static inline bool is_default_view(const char *view_name)
 {
@@ -616,6 +660,14 @@ uint64_t sss_view_ldb_msg_find_attr_as_uint64(struct sss_domain_info *dom,
                                               const struct ldb_message *msg,
                                               const char *attr_name,
                                               uint64_t default_value);
+
+errno_t sysdb_update_certmap(struct sysdb_ctx *sysdb,
+                             struct certmap_info **certmaps,
+                             bool user_name_hint);
+
+errno_t sysdb_get_certmap(TALLOC_CTX *mem_ctx, struct sysdb_ctx *sysdb,
+                          struct certmap_info ***certmaps,
+                          bool *user_name_hint);
 
 /* Sysdb initialization.
  * call this function *only* once to initialize the database and get
@@ -1090,6 +1142,13 @@ int sysdb_search_users(TALLOC_CTX *mem_ctx,
                        size_t *msgs_count,
                        struct ldb_message ***msgs);
 
+int sysdb_search_users_by_timestamp(TALLOC_CTX *mem_ctx,
+                                    struct sss_domain_info *domain,
+                                    const char *sub_filter,
+                                    const char **attrs,
+                                    size_t *_msgs_count,
+                                    struct ldb_message ***_msgs);
+
 int sysdb_delete_user(struct sss_domain_info *domain,
                       const char *name, uid_t uid);
 
@@ -1099,6 +1158,13 @@ int sysdb_search_groups(TALLOC_CTX *mem_ctx,
                         const char **attrs,
                         size_t *msgs_count,
                         struct ldb_message ***msgs);
+
+int sysdb_search_groups_by_timestamp(TALLOC_CTX *mem_ctx,
+                                     struct sss_domain_info *domain,
+                                     const char *sub_filter,
+                                     const char **attrs,
+                                     size_t *_msgs_count,
+                                     struct ldb_message ***_msgs);
 
 int sysdb_delete_group(struct sss_domain_info *domain,
                        const char *name, gid_t gid);
@@ -1244,6 +1310,9 @@ errno_t sysdb_search_user_by_cert(TALLOC_CTX *mem_ctx,
 
 errno_t sysdb_remove_cert(struct sss_domain_info *domain,
                           const char *cert);
+
+errno_t sysdb_remove_mapped_data(struct sss_domain_info *domain,
+                                 struct sysdb_attrs *mapped_attr);
 
 /* === Functions related to GPOs === */
 

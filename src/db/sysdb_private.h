@@ -191,7 +191,8 @@ struct sss_domain_info *new_subdomain(TALLOC_CTX *mem_ctx,
                                       bool enumerate,
                                       const char *forest,
                                       const char **upn_suffixes,
-                                      uint32_t trust_direction);
+                                      uint32_t trust_direction,
+                                      struct confdb_ctx *confdb);
 
 /* Helper functions to deal with the timestamp cache should not be used
  * outside the sysdb itself. The timestamp cache should be completely
@@ -258,6 +259,13 @@ int sysdb_search_ts_groups(TALLOC_CTX *mem_ctx,
                            const char *sub_filter,
                            const char **attrs,
                            struct ldb_result *res);
+
+errno_t sysdb_search_ts_matches(TALLOC_CTX *mem_ctx,
+                                struct sysdb_ctx *sysdb,
+                                const char *attrs[],
+                                struct ldb_result *ts_res,
+                                const char *filter,
+                                struct ldb_result **_res);
 
 /* Compares the modifyTimestamp attribute between old_entry and
  * new_entry. Returns true if they differ (or either entry is missing

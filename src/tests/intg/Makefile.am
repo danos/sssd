@@ -26,6 +26,9 @@ dist_noinst_DATA = \
     files_ops.py \
     test_files_ops.py \
     test_files_provider.py \
+    kdc.py \
+    krb5utils.py \
+    test_kcm.py \
     $(NULL)
 
 config.py: config.py.m4
@@ -73,6 +76,7 @@ intgcheck-installed: config.py passwd group
 	PATH="$(abs_builddir):$(abs_srcdir):$$PATH" \
 	PYTHONPATH="$(abs_builddir):$(abs_srcdir)" \
 	LDB_MODULES_PATH="$(DESTDIR)$(ldblibdir)" \
+	NON_WRAPPED_UID=$$(id -u) \
 	LD_PRELOAD="$$nss_wrapper $$uid_wrapper" \
 	NSS_WRAPPER_PASSWD="$(abs_builddir)/passwd" \
 	NSS_WRAPPER_GROUP="$(abs_builddir)/group" \

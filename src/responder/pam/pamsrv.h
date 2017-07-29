@@ -26,6 +26,7 @@
 #include "util/util.h"
 #include "sbus/sssd_dbus.h"
 #include "responder/common/responder.h"
+#include "responder/common/cache_req/cache_req.h"
 
 struct pam_auth_req;
 
@@ -42,6 +43,9 @@ struct pam_ctx {
     char **public_domains;
     int public_domains_count;
 
+    /* What services are permitted to access application domains */
+    char **app_services;
+
     bool cert_auth;
     int p11_child_debug_fd;
     char *nss_db;
@@ -54,6 +58,7 @@ struct pam_auth_dp_req {
 struct pam_auth_req {
     struct cli_ctx *cctx;
     struct sss_domain_info *domain;
+    enum cache_req_dom_type req_dom_type;
 
     struct pam_data *pd;
 
@@ -96,7 +101,7 @@ errno_t pam_check_cert_recv(struct tevent_req *req, TALLOC_CTX *mem_ctx,
 
 errno_t add_pam_cert_response(struct pam_data *pd, const char *user,
                               const char *token_name, const char *module_name,
-                              const char *key_id);
+                              const char *key_id, enum response_type type);
 
 bool may_do_cert_auth(struct pam_ctx *pctx, struct pam_data *pd);
 

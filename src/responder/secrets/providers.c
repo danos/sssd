@@ -22,7 +22,16 @@
 #include "responder/secrets/secsrv_private.h"
 #include "responder/secrets/secsrv_local.h"
 #include "responder/secrets/secsrv_proxy.h"
+#include "util/sss_iobuf.h"
 #include <jansson.h>
+
+typedef int (*url_mapper_fn)(struct sec_req_ctx *secreq,
+                             char **mapped_path);
+
+struct url_pfx_router {
+    const char *prefix;
+    url_mapper_fn mapper_fn;
+};
 
 static int sec_map_url_to_user_path(struct sec_req_ctx *secreq,
                                     char **mapped_path)
@@ -42,9 +51,42 @@ static int sec_map_url_to_user_path(struct sec_req_ctx *secreq,
         return ENOMEM;
     }
 
-    DEBUG(SSSDBG_TRACE_LIBS, "User-specific path is [%s]\n", *mapped_path);
+    DEBUG(SSSDBG_TRACE_LIBS,
+          "User-specific secrets path is [%s]\n", *mapped_path);
     return EOK;
 }
+
+static int kcm_map_url_to_path(struct sec_req_ctx *secreq,
+                               char **mapped_path)
+{
+    uid_t c_euid;
+
+    c_euid = client_euid(secreq->cctx->creds);
+    if (c_euid != KCM_PEER_UID) {
+        DEBUG(SSSDBG_CRIT_FAILURE,
+              "UID %"SPRIuid" is not allowed to access "
+              "the "SEC_KCM_BASEPATH" hive\n",
+              c_euid);
+        return EPERM;
+    }
+
+    *mapped_path = talloc_strdup(secreq, secreq->parsed_url.path );
+    if (!*mapped_path) {
+        DEBUG(SSSDBG_CRIT_FAILURE,
+              "Failed to map request to user specific url\n");
+        return ENOMEM;
+    }
+
+    DEBUG(SSSDBG_TRACE_LIBS,
+          "User-specific KCM path is [%s]\n", *mapped_path);
+    return EOK;
+}
+
+static struct url_pfx_router secrets_url_mapping[] = {
+    { SEC_BASEPATH, sec_map_url_to_user_path },
+    { SEC_KCM_BASEPATH, kcm_map_url_to_path },
+    { NULL, NULL },
+};
 
 int sec_req_routing(TALLOC_CTX *mem_ctx, struct sec_req_ctx *secreq,
                     struct provider_handle **handle)
@@ -55,21 +97,35 @@ int sec_req_routing(TALLOC_CTX *mem_ctx, struct sec_req_ctx *secreq,
     char *provider;
     int num_sections;
     int ret;
+    url_mapper_fn mapper_fn = NULL;
 
     sctx = talloc_get_type(secreq->cctx->rctx->pvt_ctx, struct sec_ctx);
 
-    /* patch must start with /secrets/ for now */
-    ret = strncasecmp(secreq->parsed_url.path,
-                      SEC_BASEPATH, sizeof(SEC_BASEPATH) - 1);
-    if (ret != 0) {
+    for (int i = 0; secrets_url_mapping[i].prefix != NULL; i++) {
+        if (strncasecmp(secreq->parsed_url.path,
+                        secrets_url_mapping[i].prefix,
+                        strlen(secrets_url_mapping[i].prefix)) == 0) {
+            DEBUG(SSSDBG_TRACE_LIBS,
+                  "Mapping prefix %s\n", secrets_url_mapping[i].prefix);
+            mapper_fn = secrets_url_mapping[i].mapper_fn;
+            break;
+        }
+    }
+
+    if (mapper_fn == NULL) {
         DEBUG(SSSDBG_CRIT_FAILURE,
-              "Path [%s] does not start with "SEC_BASEPATH"\n",
+              "Path [%s] does not start with any allowed prefix\n",
               secreq->parsed_url.path);
         return EPERM;
     }
 
-    ret = sec_map_url_to_user_path(secreq, &secreq->mapped_path);
-    if (ret) return ret;
+    ret = mapper_fn(secreq, &secreq->mapped_path);
+    if (ret != EOK) {
+        DEBUG(SSSDBG_CRIT_FAILURE,
+              "Failed to map the user path [%d]: %s\n",
+              ret, sss_strerror(ret));
+        return ret;
+    }
 
     /* source default provider */
     ret = confdb_get_string(secreq->cctx->rctx->cdb, mem_ctx,
@@ -327,6 +383,89 @@ int sec_http_reply_with_headers(TALLOC_CTX *mem_ctx, struct sec_data *reply,
 
         memcpy(&reply->data[reply->length], body->data, body->length);
         reply->length += body->length;
+    }
+
+    return EOK;
+}
+
+static errno_t
+sec_http_iobuf_split(struct sss_iobuf *response,
+                     const char **headers,
+                     const char **body)
+{
+    const char *data = (const char *)sss_iobuf_get_data(response);
+    char *delim;
+
+    /* The last header ends with \r\n and then comes \r\n again as a separator
+     * of body from headers. We can use this to find this point. */
+    delim = strstr(data, "\r\n\r\n");
+    if (delim == NULL) {
+        return EINVAL;
+    }
+
+    /* Skip to the body delimiter. */
+    delim = delim + sizeof("\r\n") - 1;
+
+    /* Replace \r\n with zeros turning data into:
+     * from HEADER\r\nBODY into HEADER\0\0BODY format. */
+    delim[0] = '\0';
+    delim[1] = '\0';
+
+    /* Split the buffer. */
+    *headers = data;
+    *body = delim + 2;
+
+    return 0;
+}
+
+static const char *
+sec_http_iobuf_add_content_length(TALLOC_CTX *mem_ctx,
+                                  const char *headers,
+                                  size_t body_len)
+{
+    /* If Content-Length is already present we do nothing. */
+    if (strstr(headers, "Content-Length:") != NULL) {
+        return headers;
+    }
+
+    return talloc_asprintf(mem_ctx, "%sContent-Length: %zu\r\n",
+                           headers, body_len);
+}
+
+errno_t sec_http_reply_iobuf(TALLOC_CTX *mem_ctx,
+                             struct sec_data *reply,
+                             int response_code,
+                             struct sss_iobuf *response)
+{
+    const char *headers;
+    const char *body;
+    size_t body_len;
+    errno_t ret;
+
+    DEBUG(SSSDBG_TRACE_LIBS, "HTTP reply %d\n", response_code);
+
+    ret = sec_http_iobuf_split(response, &headers, &body);
+    if (ret != EOK) {
+        DEBUG(SSSDBG_OP_FAILURE,
+              "Unexpected HTTP reply, returning what we got from server\n");
+        reply->data = (char *)sss_iobuf_get_data(response);
+        reply->length = sss_iobuf_get_len(response);
+
+        return EOK;
+    }
+
+    /* Add Content-Length header if not present so client does not await
+     * not-existing incoming data. */
+    body_len = strlen(body);
+    headers = sec_http_iobuf_add_content_length(mem_ctx, headers, body_len);
+    if (headers == NULL) {
+        return ENOMEM;
+    }
+
+    reply->length = strlen(headers) + sizeof("\r\n") - 1 + body_len;
+    reply->data = talloc_asprintf(mem_ctx, "%s\r\n%s", headers, body);
+    if (reply->data == NULL) {
+        return ENOMEM;
     }
 
     return EOK;

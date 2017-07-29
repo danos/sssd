@@ -74,6 +74,7 @@
 #define CONFDB_MONITOR_CERT_VERIFICATION "certificate_verification"
 #define CONFDB_MONITOR_DISABLE_NETLINK "disable_netlink"
 #define CONFDB_MONITOR_ENABLE_FILES_DOM "enable_files_domain"
+#define CONFDB_MONITOR_DOMAIN_RESOLUTION_ORDER "domain_resolution_order"
 
 /* Both monitor and domains */
 #define CONFDB_NAME_REGEX   "re_expression"
@@ -128,6 +129,7 @@
 #define CONFDB_PAM_CERT_AUTH "pam_cert_auth"
 #define CONFDB_PAM_CERT_DB_PATH "pam_cert_db_path"
 #define CONFDB_PAM_P11_CHILD_TIMEOUT "p11_child_timeout"
+#define CONFDB_PAM_APP_SERVICES "pam_app_services"
 
 /* SUDO */
 #define CONFDB_SUDO_CONF_ENTRY "config/sudo"
@@ -163,6 +165,7 @@
 /* Domains */
 #define CONFDB_DOMAIN_PATH_TMPL "config/domain/%s"
 #define CONFDB_DOMAIN_BASEDN "cn=domain,cn=config"
+#define CONFDB_APP_DOMAIN_BASEDN "cn=application,cn=config"
 #define CONFDB_DOMAIN_ID_PROVIDER "id_provider"
 #define CONFDB_DOMAIN_AUTH_PROVIDER "auth_provider"
 #define CONFDB_DOMAIN_ACCESS_PROVIDER "access_provider"
@@ -208,6 +211,10 @@
 #define CONFDB_DOMAIN_OFFLINE_TIMEOUT "offline_timeout"
 #define CONFDB_DOMAIN_SUBDOMAIN_INHERIT "subdomain_inherit"
 #define CONFDB_DOMAIN_CACHED_AUTH_TIMEOUT "cached_auth_timeout"
+#define CONFDB_DOMAIN_TYPE "domain_type"
+#define CONFDB_DOMAIN_TYPE_POSIX "posix"
+#define CONFDB_DOMAIN_TYPE_APP "application"
+#define CONFDB_DOMAIN_INHERIT_FROM "inherit_from"
 
 /* Local Provider */
 #define CONFDB_LOCAL_DEFAULT_SHELL   "default_shell"
@@ -231,6 +238,10 @@
 #define CONFDB_SEC_MAX_SECRETS "max_secrets"
 #define CONFDB_SEC_MAX_PAYLOAD_SIZE "max_payload_size"
 
+/* KCM Service */
+#define CONFDB_KCM_CONF_ENTRY "config/kcm"
+#define CONFDB_KCM_SOCKET "socket_path"
+#define CONFDB_KCM_DB "ccache_storage" /* Undocumented on purpose */
 
 struct confdb_ctx;
 struct config_file_ctx;
@@ -256,11 +267,23 @@ enum sss_domain_state {
     DOM_INCONSISTENT,
 };
 
+/** Whether the domain only supports looking up POSIX entries */
+enum sss_domain_type {
+    /** This is the default domain type. It resolves only entries
+     * with the full POSIX set of attributes
+     */
+    DOM_TYPE_POSIX,
+    /** In this mode, entries are typically resolved only by name */
+    DOM_TYPE_APPLICATION,
+};
+
 /**
  * Data structure storing all of the basic features
  * of a domain.
  */
 struct sss_domain_info {
+    enum sss_domain_type type;
+
     char *name;
     char *conn_name;
     char *provider;
@@ -328,6 +351,13 @@ struct sss_domain_info {
     char *forest;
     struct sss_domain_info *forest_root;
     const char **upn_suffixes;
+
+    struct certmap_info **certmaps;
+    bool user_name_hint;
+
+    /* Do not use the _output_fqnames property directly in new code, but rather
+     * use sss_domain_info_{get,set}_output_fqnames(). */
+    bool output_fqnames;
 };
 
 /**
@@ -377,6 +407,8 @@ int confdb_get_domains(struct confdb_ctx *cdb,
 
 int confdb_ensure_files_domain(struct confdb_ctx *cdb,
                                const char *implicit_files_dom_name);
+
+int confdb_expand_app_domains(struct confdb_ctx *cdb);
 
 /**
  * Get a null-terminated linked-list of all domain names

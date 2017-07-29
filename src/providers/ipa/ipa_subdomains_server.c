@@ -176,9 +176,7 @@ static struct ad_options *ipa_ad_options_new(struct be_ctx *be_ctx,
     forest_realm = subdom->forest_root->realm;
     forest = subdom->forest_root->forest;
 
-    subdom_conf_path = create_subdom_conf_path(id_ctx,
-                                               be_ctx->conf_path,
-                                               subdom->name);
+    subdom_conf_path = subdomain_create_conf_path(id_ctx, subdom);
     if (subdom_conf_path == NULL) {
         DEBUG(SSSDBG_CRIT_FAILURE, "subdom_conf_path failed\n");
         return NULL;
@@ -334,7 +332,7 @@ ipa_ad_ctx_new(struct be_ctx *be_ctx,
         return EFAULT;
     }
 
-    ret = ad_set_search_bases(ad_options->id);
+    ret = ad_set_search_bases(ad_options->id, sdom);
     if (ret != EOK) {
         DEBUG(SSSDBG_OP_FAILURE, "Cannot initialize AD search bases\n");
         talloc_free(ad_options);
@@ -361,6 +359,10 @@ ipa_ad_ctx_new(struct be_ctx *be_ctx,
     /* Set up the ID mapping object */
     ad_id_ctx->sdap_id_ctx->opts->idmap_ctx =
         id_ctx->sdap_id_ctx->opts->idmap_ctx;
+
+    /* Set up the certificate mapping context */
+    ad_id_ctx->sdap_id_ctx->opts->certmap_ctx =
+        id_ctx->sdap_id_ctx->opts->certmap_ctx;
 
     *_ad_id_ctx = ad_id_ctx;
     return EOK;
@@ -868,6 +870,7 @@ static errno_t ipa_server_create_trusts_step(struct tevent_req *req)
 {
     struct tevent_req *subreq = NULL;
     struct ipa_ad_server_ctx *trust_iter;
+    struct ipa_ad_server_ctx *trust_i;
     struct ipa_server_create_trusts_state *state = NULL;
 
     state = tevent_req_data(req, struct ipa_server_create_trusts_state);
@@ -895,6 +898,35 @@ static errno_t ipa_server_create_trusts_step(struct tevent_req *req)
             }
             tevent_req_set_callback(subreq, ipa_server_create_trusts_done, req);
             return EAGAIN;
+        }
+    }
+
+    /* Refresh all sdap_dom lists in all ipa_ad_server_ctx contexts */
+    DLIST_FOR_EACH(trust_iter, state->id_ctx->server_mode->trusts) {
+        struct sdap_domain *sdom_a;
+
+        sdom_a = sdap_domain_get(trust_iter->ad_id_ctx->sdap_id_ctx->opts,
+                                 trust_iter->dom);
+        if (sdom_a == NULL) {
+            continue;
+        }
+
+        DLIST_FOR_EACH(trust_i, state->id_ctx->server_mode->trusts) {
+            struct sdap_domain *sdom_b;
+
+            if (strcmp(trust_iter->dom->name, trust_i->dom->name) == 0) {
+                continue;
+            }
+
+            sdom_b = sdap_domain_get(trust_i->ad_id_ctx->sdap_id_ctx->opts,
+                                     sdom_a->dom);
+            if (sdom_b == NULL) {
+                continue;
+            }
+
+            /* Replace basedn and search bases from sdom_b with values
+             * from sdom_a */
+            sdap_domain_copy_search_bases(sdom_b, sdom_a);
         }
     }
 

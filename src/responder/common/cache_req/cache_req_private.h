@@ -42,6 +42,8 @@ struct cache_req {
     struct sss_domain_info *domain;
     bool cache_first;
     bool bypass_cache;
+    /* Only contact domains with this type */
+    enum cache_req_dom_type req_dom_type;
 
     /* Debug information */
     uint32_t reqid;
@@ -108,6 +110,7 @@ cache_req_steal_data_and_send(TALLOC_CTX *mem_ctx,
                               struct resp_ctx *rctx,
                               struct sss_nc_ctx *ncache,
                               int cache_refresh_percent,
+                              enum cache_req_dom_type req_dom_type,
                               const char *domain,
                               struct cache_req_data *data);
 
@@ -132,6 +135,11 @@ cache_req_create_and_add_result(TALLOC_CTX *mem_ctx,
                                 const char *name,
                                 struct cache_req_result ***_results,
                                 size_t *_num_results);
+
+struct ldb_result *
+cache_req_create_ldb_result_from_msg_list(TALLOC_CTX *mem_ctx,
+                                          struct ldb_message **ldb_msgs,
+                                          size_t ldb_msg_count);
 
 struct ldb_result *
 cache_req_create_ldb_result_from_msg(TALLOC_CTX *mem_ctx,

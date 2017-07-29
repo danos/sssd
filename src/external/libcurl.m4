@@ -1,17 +1,9 @@
-AC_ARG_ENABLE([curl],
-              [AS_HELP_STRING([--disable-curl-support],
-                              [do not build with libcurl support])],
-              [enable_libcurl=$enableval],
-              [enable_libcurl=yes])
-
-found_libcurl="no"
-AS_IF([test x$enable_libcurl = xyes],
-      [PKG_CHECK_MODULES([CURL],
-                         [libcurl],
-                         [found_libcurl=yes],
-                         [AC_MSG_WARN([
-The libcurl development library was not found. Some features will be disabled.])
-      ])])
+PKG_CHECK_MODULES([CURL], [libcurl], [found_libcurl=yes],
+              [AC_MSG_ERROR([The libcurl development library was not found.
+You must have the header file curl/curl.h installed to build sssd
+with secrets and KCM responder. If you want to build sssd without these
+responders then specify --without-secrets --without-kcm when running configure.
+])])
 
 AS_IF([test x"$found_libcurl" = xyes],
     CFLAGS="$CFLAGS $CURL_CFLAGS"
@@ -32,7 +24,5 @@ AS_IF([test x"$found_libcurl" = xyes],
 AC_SUBST(CURL_LIBS)
 AC_SUBST(CURL_CFLAGS)
 
-AM_CONDITIONAL([BUILD_WITH_LIBCURL],
-               [test x"$have_curlopt_unix_sockpath" = xyes])
 AM_COND_IF([BUILD_WITH_LIBCURL],
            [AC_DEFINE_UNQUOTED(HAVE_LIBCURL, 1, [Build with libcurl support])])

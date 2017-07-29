@@ -123,7 +123,7 @@ const struct cache_req_plugin cache_req_group_by_filter = {
     .allow_missing_fqn = false,
     .allow_switch_to_upn = false,
     .upn_equivalent = CACHE_REQ_SENTINEL,
-    .get_next_domain_flags = 0,
+    .get_next_domain_flags = SSS_GND_DESCEND,
 
     .is_well_known_fn = NULL,
     .prepare_domain_data_fn = cache_req_group_by_filter_prepare_domain_data,
@@ -131,6 +131,7 @@ const struct cache_req_plugin cache_req_group_by_filter = {
     .global_ncache_add_fn = NULL,
     .ncache_check_fn = NULL,
     .ncache_add_fn = NULL,
+    .ncache_filter_fn = NULL,
     .lookup_fn = cache_req_group_by_filter_lookup,
     .dp_send_fn = cache_req_group_by_filter_dp_send,
     .dp_recv_fn = cache_req_common_dp_recv
@@ -140,6 +141,7 @@ struct tevent_req *
 cache_req_group_by_filter_send(TALLOC_CTX *mem_ctx,
                                struct tevent_context *ev,
                                struct resp_ctx *rctx,
+                               enum cache_req_dom_type req_dom_type,
                                const char *domain,
                                const char *filter)
 {
@@ -151,5 +153,7 @@ cache_req_group_by_filter_send(TALLOC_CTX *mem_ctx,
     }
 
     return cache_req_steal_data_and_send(mem_ctx, ev, rctx, NULL,
-                                         0, domain, data);
+                                         0,
+                                         req_dom_type, domain,
+                                         data);
 }

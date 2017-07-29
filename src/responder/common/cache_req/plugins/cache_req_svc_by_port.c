@@ -117,7 +117,7 @@ const struct cache_req_plugin cache_req_svc_by_port = {
     .allow_missing_fqn = false,
     .allow_switch_to_upn = false,
     .upn_equivalent = CACHE_REQ_SENTINEL,
-    .get_next_domain_flags = 0,
+    .get_next_domain_flags = SSS_GND_DESCEND,
 
     .is_well_known_fn = NULL,
     .prepare_domain_data_fn = cache_req_svc_by_port_prepare_domain_data,
@@ -125,6 +125,7 @@ const struct cache_req_plugin cache_req_svc_by_port = {
     .global_ncache_add_fn = NULL,
     .ncache_check_fn = cache_req_svc_by_port_ncache_check,
     .ncache_add_fn = cache_req_svc_by_port_ncache_add,
+    .ncache_filter_fn = NULL,
     .lookup_fn = cache_req_svc_by_port_lookup,
     .dp_send_fn = cache_req_svc_by_port_dp_send,
     .dp_recv_fn = cache_req_common_dp_recv
@@ -149,5 +150,7 @@ cache_req_svc_by_port_send(TALLOC_CTX *mem_ctx,
     }
 
     return cache_req_steal_data_and_send(mem_ctx, ev, rctx, ncache,
-                                         cache_refresh_percent, domain, data);
+                                         cache_refresh_percent,
+                                         CACHE_REQ_POSIX_DOM, domain,
+                                         data);
 }

@@ -374,6 +374,58 @@ enum sysdb_obj_type {
     SYSDB_GROUP
 };
 
+static errno_t cleanup_dn_filter(TALLOC_CTX *mem_ctx,
+                                struct ldb_result *ts_res,
+                                const char *object_class,
+                                const char *filter,
+                                char **_dn_filter)
+{
+    TALLOC_CTX *tmp_ctx;
+    char *dn_filter;
+    errno_t ret;
+
+    if (ts_res->count == 0) {
+        *_dn_filter = NULL;
+        return EOK;
+    }
+
+    tmp_ctx = talloc_new(NULL);
+    if (tmp_ctx == NULL) {
+        return ENOMEM;
+    }
+
+    dn_filter = talloc_asprintf(tmp_ctx, "(&(%s)%s(|", object_class, filter);
+    if (dn_filter == NULL) {
+        ret = ENOMEM;
+        goto done;
+    }
+
+    for (size_t i = 0; i < ts_res->count; i++) {
+        dn_filter = talloc_asprintf_append(
+                                    dn_filter,
+                                    "(%s=%s)",
+                                    SYSDB_DN,
+                                    ldb_dn_get_linearized(ts_res->msgs[i]->dn));
+        if (dn_filter == NULL) {
+            ret = ENOMEM;
+            goto done;
+        }
+    }
+
+    dn_filter = talloc_asprintf_append(dn_filter, "))");
+    if (dn_filter == NULL) {
+        ret = ENOMEM;
+        goto done;
+    }
+
+    *_dn_filter = talloc_steal(mem_ctx, dn_filter);
+    ret = EOK;
+
+done:
+    talloc_zfree(tmp_ctx);
+    return ret;
+}
+
 static int sysdb_search_by_name(TALLOC_CTX *mem_ctx,
                                 struct sss_domain_info *domain,
                                 const char *name,
@@ -1422,6 +1474,12 @@ int sysdb_get_new_id(struct sss_domain_info *domain,
         return ENOMEM;
     }
 
+    if (strcasecmp(domain->provider, "local") != 0) {
+        DEBUG(SSSDBG_CRIT_FAILURE,
+              "Generating new ID is only supported in the local domain!\n");
+        return ENOTSUP;
+    }
+
     base_dn = sysdb_domain_dn(tmp_ctx, domain);
     if (!base_dn) {
         talloc_zfree(tmp_ctx);
@@ -1855,6 +1913,7 @@ int sysdb_add_user(struct sss_domain_info *domain,
     struct sysdb_attrs *id_attrs;
     uint32_t id;
     int ret;
+    bool posix;
 
     if (domain->mpg) {
         if (gid != 0) {
@@ -1926,7 +1985,28 @@ int sysdb_add_user(struct sss_domain_info *domain,
         /* Not fatal */
     }
 
-    if (uid == 0) {
+    if (!attrs) {
+        attrs = sysdb_new_attrs(tmp_ctx);
+        if (!attrs) {
+            ret = ENOMEM;
+            goto done;
+        }
+    }
+
+    ret = sysdb_attrs_get_bool(attrs, SYSDB_POSIX, &posix);
+    if (ret == ENOENT) {
+        posix = true;
+        ret = sysdb_attrs_add_bool(attrs, SYSDB_POSIX, true);
+        if (ret) {
+            DEBUG(SSSDBG_TRACE_LIBS, "Failed to add posix attribute.\n");
+            goto done;
+        }
+    } else if (ret != EOK) {
+        DEBUG(SSSDBG_TRACE_LIBS, "Failed to get posix attribute.\n");
+        goto done;
+    }
+
+    if (uid == 0 && posix == true) {
         ret = sysdb_get_new_id(domain, &id);
         if (ret) goto done;
 
@@ -1946,14 +2026,6 @@ int sysdb_add_user(struct sss_domain_info *domain,
         ret = sysdb_set_user_attr(domain, name, id_attrs, SYSDB_MOD_REP);
         /* continue on success, to commit additional attrs */
         if (ret) goto done;
-    }
-
-    if (!attrs) {
-        attrs = sysdb_new_attrs(tmp_ctx);
-        if (!attrs) {
-            ret = ENOMEM;
-            goto done;
-        }
     }
 
     if (!now) {
@@ -3483,6 +3555,69 @@ int sysdb_search_users(TALLOC_CTX *mem_ctx,
                                          attrs);
 }
 
+int sysdb_search_users_by_timestamp(TALLOC_CTX *mem_ctx,
+                                    struct sss_domain_info *domain,
+                                    const char *sub_filter,
+                                    const char **attrs,
+                                    size_t *_msgs_count,
+                                    struct ldb_message ***_msgs)
+{
+    TALLOC_CTX *tmp_ctx;
+    struct ldb_result *res;
+    struct ldb_result ts_res;
+    struct ldb_message **msgs;
+    size_t msgs_count;
+    char *dn_filter = NULL;
+    errno_t ret;
+
+    tmp_ctx = talloc_new(NULL);
+    if (tmp_ctx == NULL) {
+        return ENOMEM;
+    }
+
+    ret = sysdb_search_ts_users(tmp_ctx, domain, sub_filter, NULL, &ts_res);
+    if (ret == ERR_NO_TS) {
+        ret = sysdb_cache_search_users(tmp_ctx, domain, domain->sysdb->ldb,
+                                       sub_filter, attrs, &msgs_count, &msgs);
+        if (ret != EOK) {
+            goto done;
+        }
+
+       ret = sysdb_merge_msg_list_ts_attrs(domain->sysdb, msgs_count, msgs, attrs);
+       if (ret != EOK) {
+           goto done;
+       }
+
+       goto immediately;
+    } else if (ret != EOK) {
+        goto done;
+    }
+
+    ret = cleanup_dn_filter(tmp_ctx, &ts_res, SYSDB_UC, sub_filter, &dn_filter);
+    if (ret != EOK) {
+        goto done;
+    }
+
+    ret = sysdb_search_ts_matches(tmp_ctx, domain->sysdb, attrs,
+                                  &ts_res, dn_filter, &res);
+    if (ret != EOK) {
+        goto done;
+    }
+
+    msgs_count = res->count;
+    msgs = res->msgs;
+
+immediately:
+    *_msgs_count = msgs_count;
+    *_msgs = talloc_steal(mem_ctx, msgs);
+
+    ret = EOK;
+
+done:
+    talloc_free(tmp_ctx);
+    return ret;
+}
+
 int sysdb_search_ts_users(TALLOC_CTX *mem_ctx,
                           struct sss_domain_info *domain,
                           const char *sub_filter,
@@ -3500,7 +3635,7 @@ int sysdb_search_ts_users(TALLOC_CTX *mem_ctx,
     ZERO_STRUCT(*res);
 
     if (domain->sysdb->ldb_ts == NULL) {
-        return ENOENT;
+        return ERR_NO_TS;
     }
 
     ret = sysdb_cache_search_users(mem_ctx, domain, domain->sysdb->ldb_ts,
@@ -3700,6 +3835,69 @@ int sysdb_search_groups(TALLOC_CTX *mem_ctx,
                                          attrs);
 }
 
+int sysdb_search_groups_by_timestamp(TALLOC_CTX *mem_ctx,
+                                     struct sss_domain_info *domain,
+                                     const char *sub_filter,
+                                     const char **attrs,
+                                     size_t *_msgs_count,
+                                     struct ldb_message ***_msgs)
+{
+    TALLOC_CTX *tmp_ctx;
+    struct ldb_result *res;
+    struct ldb_result ts_res;
+    struct ldb_message **msgs;
+    size_t msgs_count;
+    char *dn_filter = NULL;
+    errno_t ret;
+
+    tmp_ctx = talloc_new(NULL);
+    if (tmp_ctx == NULL) {
+        return ENOMEM;
+    }
+
+    ret = sysdb_search_ts_groups(tmp_ctx, domain, sub_filter, NULL, &ts_res);
+    if (ret == ERR_NO_TS) {
+        ret = sysdb_cache_search_groups(tmp_ctx, domain, domain->sysdb->ldb,
+                                        sub_filter, attrs, &msgs_count, &msgs);
+        if (ret != EOK) {
+            goto done;
+        }
+
+       ret = sysdb_merge_msg_list_ts_attrs(domain->sysdb, msgs_count, msgs, attrs);
+       if (ret != EOK) {
+           goto done;
+       }
+
+       goto immediately;
+    } else if (ret != EOK) {
+        goto done;
+    }
+
+    ret = cleanup_dn_filter(tmp_ctx, &ts_res, SYSDB_GC, sub_filter, &dn_filter);
+    if (ret != EOK) {
+        goto done;
+    }
+
+    ret = sysdb_search_ts_matches(tmp_ctx, domain->sysdb, attrs,
+                                  &ts_res, dn_filter, &res);
+    if (ret != EOK) {
+        goto done;
+    }
+
+    msgs_count = res->count;
+    msgs = res->msgs;
+
+immediately:
+    *_msgs_count = msgs_count;
+    *_msgs = talloc_steal(mem_ctx, msgs);
+
+    ret = EOK;
+
+done:
+    talloc_free(tmp_ctx);
+    return ret;
+}
+
 int sysdb_search_ts_groups(TALLOC_CTX *mem_ctx,
                            struct sss_domain_info *domain,
                            const char *sub_filter,
@@ -3717,7 +3915,7 @@ int sysdb_search_ts_groups(TALLOC_CTX *mem_ctx,
     ZERO_STRUCT(*res);
 
     if (domain->sysdb->ldb_ts == NULL) {
-        return ENOENT;
+        return ERR_NO_TS;
     }
 
     ret = sysdb_cache_search_groups(mem_ctx, domain, domain->sysdb->ldb_ts,
@@ -4660,8 +4858,8 @@ errno_t sysdb_search_object_by_cert(TALLOC_CTX *mem_ctx,
     int ret;
     char *user_filter;
 
-    ret = sss_cert_derb64_to_ldap_filter(mem_ctx, cert, SYSDB_USER_CERT,
-                                         &user_filter);
+    ret = sss_cert_derb64_to_ldap_filter(mem_ctx, cert, SYSDB_USER_MAPPED_CERT,
+                                         NULL, NULL, &user_filter);
     if (ret != EOK) {
         DEBUG(SSSDBG_OP_FAILURE, "sss_cert_derb64_to_ldap_filter failed.\n");
         return ret;
@@ -4685,10 +4883,71 @@ errno_t sysdb_search_user_by_cert(TALLOC_CTX *mem_ctx,
     return sysdb_search_object_by_cert(mem_ctx, domain, cert, user_attrs, res);
 }
 
+errno_t sysdb_remove_mapped_data(struct sss_domain_info *domain,
+                                 struct sysdb_attrs *mapped_attr)
+{
+    int ret;
+    char *val;
+    char *filter;
+    const char *attrs[] = {SYSDB_NAME, NULL};
+    struct ldb_result *res = NULL;
+    size_t c;
+    bool all_ok = true;
+
+    if (mapped_attr->num != 1 || mapped_attr->a[0].num_values != 1) {
+        DEBUG(SSSDBG_OP_FAILURE, "Unsupported number of attributes.\n");
+        return EINVAL;
+    }
+
+    ret = bin_to_ldap_filter_value(NULL, mapped_attr->a[0].values[0].data,
+                                   mapped_attr->a[0].values[0].length, &val);
+    if (ret != EOK) {
+        DEBUG(SSSDBG_OP_FAILURE, "bin_to_ldap_filter_value failed.\n");
+        return ret;
+    }
+
+    filter = talloc_asprintf(NULL, "(&("SYSDB_UC")(%s=%s))",
+                             mapped_attr->a[0].name, val);
+    talloc_free(val);
+    if (filter == NULL) {
+        DEBUG(SSSDBG_OP_FAILURE, "talloc_asprintf failed.\n");
+        return ENOMEM;
+    }
+
+    ret = sysdb_search_object_attr(NULL, domain, filter, attrs, false, &res);
+    talloc_free(filter);
+    if (ret == ENOENT || res == NULL) {
+        DEBUG(SSSDBG_TRACE_ALL, "Mapped data not found.\n");
+        talloc_free(res);
+        return EOK;
+    } else if (ret != EOK) {
+        talloc_free(res);
+        DEBUG(SSSDBG_OP_FAILURE, "sysdb_search_object_attr failed.\n");
+        return ret;
+    }
+
+    for (c = 0; c < res->count; c++) {
+        DEBUG(SSSDBG_TRACE_ALL, "Removing mapped data from [%s].\n",
+                                ldb_dn_get_linearized(res->msgs[c]->dn));
+        /* The timestamp cache is skipped on purpose here. */
+        ret = sysdb_set_cache_entry_attr(domain->sysdb->ldb, res->msgs[c]->dn,
+                                         mapped_attr, SYSDB_MOD_DEL);
+        if (ret != EOK) {
+            all_ok = false;
+            DEBUG(SSSDBG_OP_FAILURE,
+                  "Failed to remove mapped data from [%s], skipping.\n",
+                  ldb_dn_get_linearized(res->msgs[c]->dn));
+        }
+    }
+    talloc_free(res);
+
+    return (all_ok ? EOK : EIO);
+}
+
 errno_t sysdb_remove_cert(struct sss_domain_info *domain,
                           const char *cert)
 {
-    struct ldb_message_element el = { 0, SYSDB_USER_CERT, 0, NULL };
+    struct ldb_message_element el = { 0, SYSDB_USER_MAPPED_CERT, 0, NULL };
     struct sysdb_attrs del_attrs = { 1, &el };
     const char *attrs[] = {SYSDB_NAME, NULL};
     struct ldb_result *res = NULL;
@@ -4984,6 +5243,15 @@ errno_t sysdb_mark_entry_as_expired_ldb_dn(struct sss_domain_info *dom,
         goto done;
     }
 
+    if (dom->sysdb->ldb_ts != NULL) {
+        ret = ldb_modify(dom->sysdb->ldb_ts, msg);
+        if (ret != LDB_SUCCESS) {
+            DEBUG(SSSDBG_MINOR_FAILURE,
+                  "Could not mark an entry as expired in the timestamp cache\n");
+            /* non-fatal */
+        }
+    }
+
     ret = EOK;
 
 done:
@@ -5068,6 +5336,17 @@ int sysdb_invalidate_cache_entry(struct sss_domain_info *domain,
               "Cannot set attrs for %s, %d [%s]\n",
               ldb_dn_get_linearized(entry_dn), ret, sss_strerror(ret));
         goto done;
+    }
+
+    if (sysdb->ldb_ts != NULL) {
+        ret = sysdb_set_cache_entry_attr(sysdb->ldb_ts, entry_dn,
+                                         attrs, SYSDB_MOD_REP);
+        if (ret != EOK) {
+            DEBUG(SSSDBG_MINOR_FAILURE,
+                  "Cannot set attrs in the timestamp cache for %s, %d [%s]\n",
+                  ldb_dn_get_linearized(entry_dn), ret, sss_strerror(ret));
+            /* non-fatal */
+        }
     }
 
     DEBUG(SSSDBG_FUNC_DATA,

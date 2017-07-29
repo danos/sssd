@@ -37,6 +37,7 @@
 #include "sbus/sssd_dbus.h"
 #include "responder/common/negcache.h"
 #include "sss_client/sss_cli.h"
+#include "responder/common/cache_req/cache_req_domain.h"
 
 extern hash_table_t *dp_requests;
 
@@ -56,6 +57,10 @@ extern hash_table_t *dp_requests;
     (provider != NULL && \
      (strcmp(provider, "local") != 0 && \
       strcmp(provider, "files") != 0))
+
+#define NEED_CHECK_AUTH_PROVIDER(provider) \
+    (provider != NULL && \
+      strcmp(provider, "local") != 0)
 
 /* needed until nsssrv.h is updated */
 struct cli_request {
@@ -112,6 +117,9 @@ struct resp_ctx {
     struct sss_domain_info *domains;
     int domains_timeout;
     int client_idle_timeout;
+
+    struct cache_req_domain *cr_domains;
+    const char *domain_resolution_order;
 
     time_t last_request_time;
     int idle_timeout;
@@ -386,5 +394,42 @@ char *sss_resp_create_fqname(TALLOC_CTX *mem_ctx,
                              struct sss_domain_info *dom,
                              bool name_is_upn,
                              const char *orig_name);
+
+errno_t sss_resp_populate_cr_domains(struct resp_ctx *rctx);
+
+/**
+ * Helper functions to format output names
+ */
+
+/* Format orig_name into a sized_string in output format as prescribed
+ * by the name_dom domain
+ */
+int sized_output_name(TALLOC_CTX *mem_ctx,
+                      struct resp_ctx *rctx,
+                      const char *orig_name,
+                      struct sss_domain_info *name_dom,
+                      struct sized_string **_name);
+
+/* Format orig_name into a sized_string in output format as prescribed
+ * by the domain read from the fully qualified name.
+ */
+int sized_domain_name(TALLOC_CTX *mem_ctx,
+                      struct resp_ctx *rctx,
+                      const char *member_name,
+                      struct sized_string **_name);
+
+/* Given a ldb_result structure that contains a result of sysdb_initgroups
+ * where some groups might be just 'stubs' that don't have a name, but only
+ * a SID and a GID, resolve those incomplete groups into full group objects
+ */
+struct tevent_req *resp_resolve_group_names_send(TALLOC_CTX *mem_ctx,
+                                                 struct tevent_context *ev,
+                                                 struct resp_ctx *rctx,
+                                                 struct sss_domain_info *dom,
+                                                 struct ldb_result *initgr_res);
+
+int resp_resolve_group_names_recv(TALLOC_CTX *mem_ctx,
+                                  struct tevent_req *req,
+                                  struct ldb_result **_initgr_named_res);
 
 #endif /* __SSS_RESPONDER_H__ */

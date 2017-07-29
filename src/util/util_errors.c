@@ -40,6 +40,7 @@ struct err_string error_to_str[] = {
     { "Credentials are expired, old ccache was removed" }, /* ERR_CREDS_EXPIRED_CCACHE */
     { "Failure setting user credentials"}, /* ERR_CREDS_INVALID */
     { "No cached credentials available" }, /* ERR_NO_CACHED_CREDS */
+    { "No matching credentials found" }, /* ERR_NO_MATCHING_CREDS */
     { "Cached credentials are expired" }, /* ERR_CACHED_CREDS_EXPIRED */
     { "Authentication Denied" }, /* ERR_AUTH_DENIED */
     { "Authentication Failed" }, /* ERR_AUTH_FAILED */
@@ -61,7 +62,6 @@ struct err_string error_to_str[] = {
     { "Cannot parse input" }, /* ERR_INPUT_PARSE */
     { "Entry not found" }, /* ERR_NOT_FOUND */
     { "Domain not found" }, /* ERR_DOMAIN_NOT_FOUND */
-    { "Missing configuration file" }, /* ERR_MISSING_CONF */
     { "Malformed search filter" }, /* ERR_INVALID_FILTER, */
     { "No POSIX attributes detected" }, /* ERR_NO_POSIX */
     { "Extra attribute is a duplicate" }, /* ERR_DUP_EXTRA_ATTR */
@@ -74,6 +74,7 @@ struct err_string error_to_str[] = {
     { "Cannot connect to system bus" }, /* ERR_NO_SYSBUS */
     { "LDAP search returned a referral" }, /* ERR_REFERRAL */
     { "Error setting SELinux user context" }, /* ERR_SELINUX_CONTEXT */
+    { "SELinux is not managed by libsemanage" }, /* ERR_SELINUX_NOT_MANAGED */
     { "Username format not allowed by re_expression" }, /* ERR_REGEX_NOMATCH */
     { "Time specification not supported" }, /* ERR_TIMESPEC_NOT_SUPPORTED */
     { "Invalid SSSD configuration detected" }, /* ERR_INVALID_CONFIG */
@@ -104,6 +105,16 @@ struct err_string error_to_str[] = {
     { "The secret payload size is too large" }, /* ERR_SEC_PAYLOAD_SIZE_IS_TOO_LARGE */
     { "No authentication methode available" }, /* ERR_NO_AUTH_METHOD_AVAILABLE */
     { "Smartcard authentication not supported" }, /* ERR_SC_AUTH_NOT_SUPPORTED */
+    { "Malformed input KCM packet" }, /* ERR_KCM_MALFORMED_IN_PKT */
+    { "KCM operation not implemented" }, /* ERR_KCM_OP_NOT_IMPLEMENTED */
+    { "End of credential cache reached" }, /* ERR_KCM_CC_END */
+    { "Credential cache name not allowed" }, /* ERR_KCM_WRONG_CCNAME_FORMAT */
+    { "Cannot encode a JSON object to string" }, /* ERR_JSON_ENCODING */
+    { "Cannot decode a JSON object from string" }, /* ERR_JSON_DECODING */
+    { "Invalid certificate provided" }, /* ERR_INVALID_CERT */
+    { "Unable to initialize SSL" }, /* ERR_SSL_FAILURE */
+    { "Unable to verify peer" }, /* ERR_UNABLE_TO_VERIFY_PEER */
+    { "Unable to resolve host" }, /* ERR_UNABLE_TO_RESOLVE_HOST */
     { "ERR_LAST" } /* ERR_LAST */
 };
 

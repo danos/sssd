@@ -49,30 +49,31 @@
 
 #define TEST_TOKEN_NAME "SSSD Test Token"
 #define TEST_MODULE_NAME "NSS-Internal"
-#define TEST_KEY_ID "6822EDDD231DAB8DBCD83721BE16A13DD0E31C08"
+#define TEST_KEY_ID "A5EF7DEE625CA5996C8D1BA7D036708161FD49E7"
 #define TEST_TOKEN_CERT \
-"MIIECTCCAvGgAwIBAgIBCDANBgkqhkiG9w0BAQsFADA0MRIwEAYDVQQKDAlJUEEu" \
-"REVWRUwxHjAcBgNVBAMMFUNlcnRpZmljYXRlIEF1dGhvcml0eTAeFw0xNTA2MjMx" \
-"NjMyMDdaFw0xNzA2MjMxNjMyMDdaMDIxEjAQBgNVBAoMCUlQQS5ERVZFTDEcMBoG" \
+"MIIECTCCAvGgAwIBAgIBCTANBgkqhkiG9w0BAQsFADA0MRIwEAYDVQQKDAlJUEEu" \
+"REVWRUwxHjAcBgNVBAMMFUNlcnRpZmljYXRlIEF1dGhvcml0eTAeFw0xNjA1MjMx" \
+"NDE0MTVaFw0xODA1MjQxNDE0MTVaMDIxEjAQBgNVBAoMCUlQQS5ERVZFTDEcMBoG" \
 "A1UEAwwTaXBhLWRldmVsLmlwYS5kZXZlbDCCASIwDQYJKoZIhvcNAQEBBQADggEP" \
-"ADCCAQoCggEBALXUq56VlY+Z0aWLLpFAjFfbElPBXGQsbZb85J3cGyPjaMHC9wS+" \
-"wjB6Ve4HmQyPLx8hbINdDmbawMHYQvTScLYfsqLtj0Lqw20sUUmedk+Es5Oh9VHo" \
-"nd8MavYx25Du2u+T0iSgNIDikXguiwCmtAj8VC49ebbgITcjJGzMmiiuJkV3o93Y" \
-"vvYF0VjLGDQbQWOy7IxzYJeNVJnZWKo67CHdok6qOrm9rxQt81rzwV/mGLbCMUbr" \
-"+N4M8URtd7EmzaYZQmNm//s2owFrCYMxpLiURPj+URZVuB72504/Ix7X0HCbA/AV" \
-"26J27fPY5nc8DMwfhUDCbTqPH/JEjd3mvY8CAwEAAaOCASYwggEiMB8GA1UdIwQY" \
-"MBaAFJOq+KAQmPEnNp8Wok23eGTdE7aDMDsGCCsGAQUFBwEBBC8wLTArBggrBgEF" \
+"ADCCAQoCggEBALHvOzZy/3llvoAYxrtOpux0gDVvSuSRpTGOW/bjpgdTowvXoOb5" \
+"G9Cy/9S6be7ZJ9D95lc/J9W8tX+ShKN8Q4b74l4WjmILQJ4dUsJ/BXfvoMPR8tw/" \
+"G47dGbLZanMXdWGBSTuXhoiogZWib2DhSwrX2DbEH5L3OWooeAVU5ZWOw55/HD7O" \
+"Q/7Of7H3tf4bvxNTFkxh39KQMG28wjPZSv+SZWNHMB+rj2yZgyeHBMkoPOPesAEi" \
+"7KKHxw1MHSv2xBI1AiV+aMdKfYUMy0Rq3PrRU4274i3eaBX4Q9GnDi36K/7bHjbt" \
+"LW0YTIW/L5/cH/BO88BREjxS3bEXAQqlKOcCAwEAAaOCASYwggEiMB8GA1UdIwQY" \
+"MBaAFPci/0Km5D/L5z7YqwEc7E1/GwgcMDsGCCsGAQUFBwEBBC8wLTArBggrBgEF" \
 "BQcwAYYfaHR0cDovL2lwYS1jYS5pcGEuZGV2ZWwvY2Evb2NzcDAOBgNVHQ8BAf8E" \
 "BAMCBPAwHQYDVR0lBBYwFAYIKwYBBQUHAwEGCCsGAQUFBwMCMHQGA1UdHwRtMGsw" \
 "aaAxoC+GLWh0dHA6Ly9pcGEtY2EuaXBhLmRldmVsL2lwYS9jcmwvTWFzdGVyQ1JM" \
 "LmJpbqI0pDIwMDEOMAwGA1UECgwFaXBhY2ExHjAcBgNVBAMMFUNlcnRpZmljYXRl" \
-"IEF1dGhvcml0eTAdBgNVHQ4EFgQUFaDNd5a53QGpaw5m63hnwXicMQ8wDQYJKoZI" \
-"hvcNAQELBQADggEBADH7Nj00qqGhGJeXJQAsepqSskz/wooqXh8vgVyb8SS4N0/c" \
-"0aQtVmY81xamlXE12ZFpwDX43d+EufBkwCUKFX/+8JFDd2doAyeJxv1xM22kKRpc" \
-"AqITPgMsa9ToGMWxjbVpc/X/5YfZixWPF0/eZUTotBj9oaR039UrhGfyN7OguF/G" \
-"rzmxtB5y4ZrMpcD/Oe90mkd9HY7sA/fB8OWOUgeRfQoh97HNS0UiDWsPtfxmjQG5" \
-"zotpoBIZmdH+ipYsu58HohHVlM9Wi5H4QmiiXl+Soldkq7eXYlafcmT7wv8+cKwz" \
-"Nz0Tm3+eYpFqRo3skr6QzXi525Jkg3r6r+kkhxU=" \
+"IEF1dGhvcml0eTAdBgNVHQ4EFgQUIJuWIts3m3uEYqJ9pUL0y7utTiEwDQYJKoZI" \
+"hvcNAQELBQADggEBAB0GyqGxtZ99fsXA1+fHfAwKOwznT7Hh8hN9efEMBJICVud+" \
+"ivUBOH6JpSTWgNLuBhrpebV/b/DSjhn+ayuvoPWng3hjwMbSEIe0euzCEdwVcokt" \
+"bwNMMSeTxSg6wbJnEyZqQEIr2h/TR9dRNxE+RbQXyamW0fUxSVT16iueL0hMwszT" \
+"jCfI/UZv3tDMHbh6D4811A0HO8daW7ufMGb/M+kDxYigJiL2gllMZ+6xba1RRgzF" \
+"8Z+9gqZhCa7FEKJOPNR9RVtJs0qUUutMZrp1zpyx0GTmXQBA7LbgPxy8L68uymEQ" \
+"XyQBwOYRORlnfGyu+Yc9c3E0Wx8Tlznz0lqPR9g="
+
 
 static char CACHED_AUTH_TIMEOUT_STR[] = "4";
 static const int CACHED_AUTH_TIMEOUT = 4;
@@ -185,6 +186,15 @@ struct pam_ctx *mock_pctx(TALLOC_CTX *mem_ctx)
 
     ret = sss_hash_create(pctx, 10, &pctx->id_table);
     assert_int_equal(ret, EOK);
+
+    /* Two NULLs so that tests can just assign a const to the first slot
+     * should they need it. The code iterates until first NULL anyway
+     */
+    pctx->app_services = talloc_zero_array(pctx, char *, 2);
+    if (pctx->app_services == NULL) {
+        talloc_free(pctx);
+        return NULL;
+    }
 
     return pctx;
 }
@@ -495,8 +505,12 @@ int __wrap_pam_dp_send_req(struct pam_auth_req *preq, int timeout)
     return EOK;
 }
 
-static void mock_input_pam(TALLOC_CTX *mem_ctx, const char *name,
-                           const char *pwd, const char *fa2)
+static void mock_input_pam_ex(TALLOC_CTX *mem_ctx,
+                              const char *name,
+                              const char *pwd,
+                              const char *fa2,
+                              const char *svc,
+                              bool contact_dp)
 {
     size_t buf_size;
     uint8_t *m_buf;
@@ -505,6 +519,8 @@ static void mock_input_pam(TALLOC_CTX *mem_ctx, const char *name,
     int ret;
     size_t needed_size;
     uint8_t *authtok;
+    char *s_name;
+    char *dom;
 
     if (name != NULL) {
         pi.pam_user = name;
@@ -536,7 +552,10 @@ static void mock_input_pam(TALLOC_CTX *mem_ctx, const char *name,
         }
     }
 
-    pi.pam_service = "pam_test_service";
+    if (svc == NULL) {
+        svc = "pam_test_service";
+    }
+    pi.pam_service = svc;
     pi.pam_service_size = strlen(pi.pam_service) + 1;
     pi.pam_tty = "/dev/tty";
     pi.pam_tty_size = strlen(pi.pam_tty) + 1;
@@ -558,8 +577,24 @@ static void mock_input_pam(TALLOC_CTX *mem_ctx, const char *name,
     will_return(__wrap_sss_packet_get_body, buf);
     will_return(__wrap_sss_packet_get_body, buf_size);
 
-    mock_parse_inp(name, NULL, EOK);
-    mock_account_recv_simple();
+    if (strrchr(name, '@') == NULL) {
+        mock_parse_inp(name, NULL, EOK);
+    } else {
+        ret = sss_parse_internal_fqname(mem_ctx, name, &s_name, &dom);
+        mock_parse_inp(s_name, dom, EOK);
+    }
+
+    if (contact_dp) {
+        mock_account_recv_simple();
+    }
+}
+
+static void mock_input_pam(TALLOC_CTX *mem_ctx,
+                           const char *name,
+                           const char *pwd,
+                           const char *fa2)
+{
+    return mock_input_pam_ex(mem_ctx, name, pwd, fa2, NULL, true);
 }
 
 static void mock_input_pam_cert(TALLOC_CTX *mem_ctx, const char *name,
@@ -713,7 +748,8 @@ static int test_pam_cert_check_gdm_smartcard(uint32_t status, uint8_t *body,
     return EOK;
 }
 
-static int test_pam_cert_check(uint32_t status, uint8_t *body, size_t blen)
+static int test_pam_cert_check_ex(uint32_t status, uint8_t *body, size_t blen,
+                                  enum response_type type, const char *name)
 {
     size_t rp = 0;
     uint32_t val;
@@ -724,30 +760,34 @@ static int test_pam_cert_check(uint32_t status, uint8_t *body, size_t blen)
     assert_int_equal(val, pam_test_ctx->exp_pam_status);
 
     SAFEALIGN_COPY_UINT32(&val, body + rp, &rp);
-    assert_int_equal(val, 2);
+    if (name == NULL || *name == '\0') {
+        assert_int_equal(val, 1);
+    } else {
+        assert_int_equal(val, 2);
+
+        SAFEALIGN_COPY_UINT32(&val, body + rp, &rp);
+        assert_int_equal(val, SSS_PAM_DOMAIN_NAME);
+
+        SAFEALIGN_COPY_UINT32(&val, body + rp, &rp);
+        assert_int_equal(val, 9);
+
+        assert_int_equal(*(body + rp + val - 1), 0);
+        assert_string_equal(body + rp, TEST_DOM_NAME);
+        rp += val;
+    }
 
     SAFEALIGN_COPY_UINT32(&val, body + rp, &rp);
-    assert_int_equal(val, SSS_PAM_DOMAIN_NAME);
+    assert_int_equal(val, type);
 
     SAFEALIGN_COPY_UINT32(&val, body + rp, &rp);
-    assert_int_equal(val, 9);
-
-    assert_int_equal(*(body + rp + val - 1), 0);
-    assert_string_equal(body + rp, TEST_DOM_NAME);
-    rp += val;
-
-    SAFEALIGN_COPY_UINT32(&val, body + rp, &rp);
-    assert_int_equal(val, SSS_PAM_CERT_INFO);
-
-    SAFEALIGN_COPY_UINT32(&val, body + rp, &rp);
-    assert_int_equal(val, (sizeof("pamuser@"TEST_DOM_NAME)
+    assert_int_equal(val, (strlen(name) + 1
                                 + sizeof(TEST_TOKEN_NAME)
                                 + sizeof(TEST_MODULE_NAME)
                                 + sizeof(TEST_KEY_ID)));
 
-    assert_int_equal(*(body + rp + sizeof("pamuser@"TEST_DOM_NAME) - 1), 0);
-    assert_string_equal(body + rp, "pamuser@"TEST_DOM_NAME);
-    rp += sizeof("pamuser@"TEST_DOM_NAME);
+    assert_int_equal(*(body + rp + strlen(name)), 0);
+    assert_string_equal(body + rp, name);
+    rp += strlen(name) + 1;
 
     assert_int_equal(*(body + rp + sizeof(TEST_TOKEN_NAME) - 1), 0);
     assert_string_equal(body + rp, TEST_TOKEN_NAME);
@@ -764,6 +804,27 @@ static int test_pam_cert_check(uint32_t status, uint8_t *body, size_t blen)
     assert_int_equal(rp, blen);
 
     return EOK;
+}
+
+static int test_pam_cert_check(uint32_t status, uint8_t *body, size_t blen)
+{
+    return test_pam_cert_check_ex(status, body, blen,
+                                  SSS_PAM_CERT_INFO, "pamuser@"TEST_DOM_NAME);
+}
+
+static int test_pam_cert_check_with_hint(uint32_t status, uint8_t *body,
+                                         size_t blen)
+{
+    return test_pam_cert_check_ex(status, body, blen,
+                                  SSS_PAM_CERT_INFO_WITH_HINT,
+                                  "pamuser@"TEST_DOM_NAME);
+}
+
+static int test_pam_cert_check_with_hint_no_user(uint32_t status, uint8_t *body,
+                                                 size_t blen)
+{
+    return test_pam_cert_check_ex(status, body, blen,
+                                  SSS_PAM_CERT_INFO_WITH_HINT, "");
 }
 
 static int test_pam_offline_chauthtok_check(uint32_t status,
@@ -1556,6 +1617,71 @@ void test_pam_preauth_no_logon_name(void **state)
     assert_int_equal(ret, EOK);
 }
 
+void test_pam_auth_no_upn_logon_name(void **state)
+{
+    int ret;
+
+    ret = sysdb_cache_password(pam_test_ctx->tctx->dom,
+                               pam_test_ctx->pam_user_fqdn,
+                               "12345");
+    assert_int_equal(ret, EOK);
+
+    mock_input_pam_ex(pam_test_ctx, "upn@"TEST_DOM_NAME, "12345", NULL, NULL,
+                      true);
+    mock_account_recv_simple();
+
+    will_return(__wrap_sss_packet_get_cmd, SSS_PAM_AUTHENTICATE);
+    will_return(__wrap_sss_packet_get_body, WRAP_CALL_REAL);
+
+    pam_test_ctx->exp_pam_status = PAM_USER_UNKNOWN;
+    set_cmd_cb(test_pam_simple_check);
+    ret = sss_cmd_execute(pam_test_ctx->cctx, SSS_PAM_AUTHENTICATE,
+                          pam_test_ctx->pam_cmds);
+    assert_int_equal(ret, EOK);
+
+    /* Wait until the test finishes with EOK */
+    ret = test_ev_loop(pam_test_ctx->tctx);
+    assert_int_equal(ret, EOK);
+}
+
+void test_pam_auth_upn_logon_name(void **state)
+{
+    int ret;
+    struct sysdb_attrs *attrs;
+
+    ret = sysdb_cache_password(pam_test_ctx->tctx->dom,
+                               pam_test_ctx->pam_user_fqdn,
+                               "12345");
+    assert_int_equal(ret, EOK);
+    attrs = sysdb_new_attrs(pam_test_ctx);
+    assert_non_null(attrs);
+    ret = sysdb_attrs_add_string(attrs, SYSDB_UPN, "upn@"TEST_DOM_NAME);
+    assert_int_equal(ret, EOK);
+
+    ret = sysdb_set_user_attr(pam_test_ctx->tctx->dom,
+                              pam_test_ctx->pam_user_fqdn,
+                              attrs,
+                              LDB_FLAG_MOD_ADD);
+    assert_int_equal(ret, EOK);
+
+    mock_input_pam_ex(pam_test_ctx, "upn@"TEST_DOM_NAME, "12345", NULL, NULL,
+                      true);
+    mock_account_recv_simple();
+
+    will_return(__wrap_sss_packet_get_cmd, SSS_PAM_AUTHENTICATE);
+    will_return(__wrap_sss_packet_get_body, WRAP_CALL_REAL);
+
+    set_cmd_cb(test_pam_successful_offline_auth_check);
+    ret = sss_cmd_execute(pam_test_ctx->cctx, SSS_PAM_AUTHENTICATE,
+                          pam_test_ctx->pam_cmds);
+    assert_int_equal(ret, EOK);
+
+    /* Wait until the test finishes with EOK */
+    ret = test_ev_loop(pam_test_ctx->tctx);
+    assert_int_equal(ret, EOK);
+}
+
+
 static void set_cert_auth_param(struct pam_ctx *pctx, const char *dbpath)
 {
     pam_test_ctx->pctx->cert_auth = true;
@@ -1598,7 +1724,7 @@ static int test_lookup_by_cert_cb(void *pvt)
         der = sss_base64_decode(pam_test_ctx, pvt, &der_size);
         assert_non_null(der);
 
-        ret = sysdb_attrs_add_mem(attrs, SYSDB_USER_CERT, der, der_size);
+        ret = sysdb_attrs_add_mem(attrs, SYSDB_USER_MAPPED_CERT, der, der_size);
         talloc_free(der);
         assert_int_equal(ret, EOK);
 
@@ -1630,7 +1756,7 @@ static int test_lookup_by_cert_double_cb(void *pvt)
         der = sss_base64_decode(pam_test_ctx, pvt, &der_size);
         assert_non_null(der);
 
-        ret = sysdb_attrs_add_mem(attrs, SYSDB_USER_CERT, der, der_size);
+        ret = sysdb_attrs_add_mem(attrs, SYSDB_USER_MAPPED_CERT, der, der_size);
         talloc_free(der);
         assert_int_equal(ret, EOK);
 
@@ -1658,7 +1784,7 @@ static int test_lookup_by_cert_wrong_user_cb(void *pvt)
         der = sss_base64_decode(pam_test_ctx, pvt, &der_size);
         assert_non_null(der);
 
-        ret = sysdb_attrs_add_mem(attrs, SYSDB_USER_CERT, der, der_size);
+        ret = sysdb_attrs_add_mem(attrs, SYSDB_USER_MAPPED_CERT, der, der_size);
         talloc_free(der);
         assert_int_equal(ret, EOK);
 
@@ -1774,15 +1900,46 @@ void test_pam_preauth_cert_no_logon_name(void **state)
      * Since there is a matching user the upcoming lookup by name will find
      * the user entry. But since we force the lookup by name to go to the
      * backend to make sure the group-membership data is up to date the
-     * backend response has to be mocked twice and the second argument of
-     * mock_input_pam_cert cannot be NULL but must match the user name. */
-    mock_input_pam_cert(pam_test_ctx, "pamuser", NULL, NULL,
+     * backend response has to be mocked twice.
+     * Additionally sss_parse_inp_recv() must be mocked because the cache
+     * request will be done with the username found by the certificate
+     * lookup. */
+    mock_input_pam_cert(pam_test_ctx, NULL, NULL, NULL,
                         test_lookup_by_cert_cb, TEST_TOKEN_CERT, false);
+    mock_account_recv_simple();
+    mock_parse_inp("pamuser", NULL, EOK);
 
     will_return(__wrap_sss_packet_get_cmd, SSS_PAM_PREAUTH);
     will_return(__wrap_sss_packet_get_body, WRAP_CALL_REAL);
 
     set_cmd_cb(test_pam_cert_check);
+    ret = sss_cmd_execute(pam_test_ctx->cctx, SSS_PAM_PREAUTH,
+                          pam_test_ctx->pam_cmds);
+    assert_int_equal(ret, EOK);
+
+    /* Wait until the test finishes with EOK */
+    ret = test_ev_loop(pam_test_ctx->tctx);
+    assert_int_equal(ret, EOK);
+}
+
+void test_pam_preauth_cert_no_logon_name_with_hint(void **state)
+{
+    int ret;
+
+    set_cert_auth_param(pam_test_ctx->pctx, NSS_DB);
+    pam_test_ctx->rctx->domains->user_name_hint = true;
+
+    /* If no logon name is given the user is looked by certificate first.
+     * Since user name hint is enabled we do not have to search the user
+     * during pre-auth and there is no need for an extra mocked response as in
+     * test_pam_preauth_cert_no_logon_name. */
+    mock_input_pam_cert(pam_test_ctx, NULL, NULL, NULL,
+                        test_lookup_by_cert_cb, TEST_TOKEN_CERT, false);
+
+    will_return(__wrap_sss_packet_get_cmd, SSS_PAM_PREAUTH);
+    will_return(__wrap_sss_packet_get_body, WRAP_CALL_REAL);
+
+    set_cmd_cb(test_pam_cert_check_with_hint);
     ret = sss_cmd_execute(pam_test_ctx->cctx, SSS_PAM_PREAUTH,
                           pam_test_ctx->pam_cmds);
     assert_int_equal(ret, EOK);
@@ -1805,6 +1962,29 @@ void test_pam_preauth_cert_no_logon_name_double_cert(void **state)
     will_return(__wrap_sss_packet_get_body, WRAP_CALL_REAL);
 
     set_cmd_cb(test_pam_creds_insufficient_check);
+    ret = sss_cmd_execute(pam_test_ctx->cctx, SSS_PAM_PREAUTH,
+                          pam_test_ctx->pam_cmds);
+    assert_int_equal(ret, EOK);
+
+    /* Wait until the test finishes with EOK */
+    ret = test_ev_loop(pam_test_ctx->tctx);
+    assert_int_equal(ret, EOK);
+}
+
+void test_pam_preauth_cert_no_logon_name_double_cert_with_hint(void **state)
+{
+    int ret;
+
+    set_cert_auth_param(pam_test_ctx->pctx, NSS_DB);
+    pam_test_ctx->rctx->domains->user_name_hint = true;
+
+    mock_input_pam_cert(pam_test_ctx, NULL, NULL, NULL,
+                        test_lookup_by_cert_double_cb, TEST_TOKEN_CERT, false);
+
+    will_return(__wrap_sss_packet_get_cmd, SSS_PAM_PREAUTH);
+    will_return(__wrap_sss_packet_get_body, WRAP_CALL_REAL);
+
+    set_cmd_cb(test_pam_cert_check_with_hint_no_user);
     ret = sss_cmd_execute(pam_test_ctx->cctx, SSS_PAM_PREAUTH,
                           pam_test_ctx->pam_cmds);
     assert_int_equal(ret, EOK);
@@ -2097,6 +2277,127 @@ void test_filter_response(void **state)
     talloc_free(pd);
 }
 
+static int pam_test_setup_appsvc_posix_dom(void **state)
+{
+    int ret;
+
+    ret = pam_test_setup(state);
+    if (ret != EOK) {
+        return ret;
+    }
+
+    /* This config option is only read on startup, which is not executed
+     * in test, so we can't just pass in a param
+     */
+    pam_test_ctx->pctx->app_services[0] = discard_const("app_svc");
+    return 0;
+}
+
+void test_appsvc_posix_dom(void **state)
+{
+    int ret;
+
+    /* The domain is POSIX, the request will skip over it */
+    mock_input_pam_ex(pam_test_ctx, "pamuser", NULL, NULL, "app_svc", false);
+    pam_test_ctx->exp_pam_status = PAM_USER_UNKNOWN;
+
+    will_return(__wrap_sss_packet_get_cmd, SSS_PAM_AUTHENTICATE);
+    will_return(__wrap_sss_packet_get_body, WRAP_CALL_REAL);
+
+    set_cmd_cb(test_pam_user_unknown_check);
+    ret = sss_cmd_execute(pam_test_ctx->cctx, SSS_PAM_AUTHENTICATE,
+                          pam_test_ctx->pam_cmds);
+    assert_int_equal(ret, EOK);
+
+    ret = test_ev_loop(pam_test_ctx->tctx);
+    assert_int_equal(ret, EOK);
+}
+
+void test_not_appsvc_posix_dom(void **state)
+{
+    int ret;
+
+    /* A different service than the app one can authenticate against a POSIX domain */
+    mock_input_pam_ex(pam_test_ctx, "pamuser", NULL, NULL, "not_app_svc", true);
+
+    will_return(__wrap_sss_packet_get_cmd, SSS_PAM_AUTHENTICATE);
+    will_return(__wrap_sss_packet_get_body, WRAP_CALL_REAL);
+
+    set_cmd_cb(test_pam_simple_check);
+    ret = sss_cmd_execute(pam_test_ctx->cctx, SSS_PAM_AUTHENTICATE,
+                          pam_test_ctx->pam_cmds);
+    assert_int_equal(ret, EOK);
+
+    /* Wait until the test finishes with EOK */
+    ret = test_ev_loop(pam_test_ctx->tctx);
+    assert_int_equal(ret, EOK);
+}
+
+static int pam_test_setup_appsvc_app_dom(void **state)
+{
+    struct sss_test_conf_param dom_params[] = {
+        { "domain_type", "application" },
+        { NULL, NULL },             /* Sentinel */
+    };
+    struct sss_test_conf_param pam_params[] = {
+        { NULL, NULL },             /* Sentinel */
+    };
+    struct sss_test_conf_param monitor_params[] = {
+        { NULL, NULL },             /* Sentinel */
+    };
+
+
+    test_pam_setup(dom_params, pam_params, monitor_params, state);
+    pam_test_setup_common();
+
+    /* This config option is only read on startup, which is not executed
+     * in test, so we can't just pass in a param
+     */
+    pam_test_ctx->pctx->app_services[0] = discard_const("app_svc");
+    return 0;
+}
+
+void test_appsvc_app_dom(void **state)
+{
+    int ret;
+
+    /* The domain is POSIX, the request will skip over it */
+    mock_input_pam_ex(pam_test_ctx, "pamuser", NULL, NULL, "app_svc", true);
+
+    will_return(__wrap_sss_packet_get_cmd, SSS_PAM_AUTHENTICATE);
+    will_return(__wrap_sss_packet_get_body, WRAP_CALL_REAL);
+
+    set_cmd_cb(test_pam_simple_check);
+    ret = sss_cmd_execute(pam_test_ctx->cctx, SSS_PAM_AUTHENTICATE,
+                          pam_test_ctx->pam_cmds);
+    assert_int_equal(ret, EOK);
+
+    /* Wait until the test finishes with EOK */
+    ret = test_ev_loop(pam_test_ctx->tctx);
+    assert_int_equal(ret, EOK);
+}
+
+void test_not_appsvc_app_dom(void **state)
+{
+    int ret;
+
+    /* A different service than the app one can authenticate against a POSIX domain */
+    mock_input_pam_ex(pam_test_ctx, "pamuser", NULL, NULL, "not_app_svc", false);
+
+    pam_test_ctx->exp_pam_status = PAM_USER_UNKNOWN;
+
+    will_return(__wrap_sss_packet_get_cmd, SSS_PAM_AUTHENTICATE);
+    will_return(__wrap_sss_packet_get_body, WRAP_CALL_REAL);
+
+    set_cmd_cb(test_pam_user_unknown_check);
+    ret = sss_cmd_execute(pam_test_ctx->cctx, SSS_PAM_AUTHENTICATE,
+                          pam_test_ctx->pam_cmds);
+    assert_int_equal(ret, EOK);
+
+    ret = test_ev_loop(pam_test_ctx->tctx);
+    assert_int_equal(ret, EOK);
+}
+
 int main(int argc, const char *argv[])
 {
     int rv;
@@ -2165,6 +2466,10 @@ int main(int argc, const char *argv[])
                                         pam_test_setup, pam_test_teardown),
         cmocka_unit_test_setup_teardown(test_pam_preauth_no_logon_name,
                                         pam_test_setup, pam_test_teardown),
+        cmocka_unit_test_setup_teardown(test_pam_auth_no_upn_logon_name,
+                                        pam_test_setup, pam_test_teardown),
+        cmocka_unit_test_setup_teardown(test_pam_auth_upn_logon_name,
+                                        pam_test_setup, pam_test_teardown),
         cmocka_unit_test_setup_teardown(test_pam_cached_auth_success,
                                         pam_cached_test_setup,
                                         pam_test_teardown),
@@ -2198,8 +2503,14 @@ int main(int argc, const char *argv[])
         cmocka_unit_test_setup_teardown(test_pam_preauth_cert_no_logon_name,
                                         pam_test_setup, pam_test_teardown),
         cmocka_unit_test_setup_teardown(
+                                  test_pam_preauth_cert_no_logon_name_with_hint,
+                                  pam_test_setup, pam_test_teardown),
+        cmocka_unit_test_setup_teardown(
                                 test_pam_preauth_cert_no_logon_name_double_cert,
                                 pam_test_setup, pam_test_teardown),
+        cmocka_unit_test_setup_teardown(
+                      test_pam_preauth_cert_no_logon_name_double_cert_with_hint,
+                      pam_test_setup, pam_test_teardown),
         cmocka_unit_test_setup_teardown(test_pam_preauth_no_cert_no_logon_name,
                                         pam_test_setup, pam_test_teardown),
         cmocka_unit_test_setup_teardown(
@@ -2216,6 +2527,18 @@ int main(int argc, const char *argv[])
 
         cmocka_unit_test_setup_teardown(test_filter_response,
                                         pam_test_setup, pam_test_teardown),
+        cmocka_unit_test_setup_teardown(test_appsvc_posix_dom,
+                                        pam_test_setup_appsvc_posix_dom,
+                                        pam_test_teardown),
+        cmocka_unit_test_setup_teardown(test_not_appsvc_posix_dom,
+                                        pam_test_setup_appsvc_posix_dom,
+                                        pam_test_teardown),
+        cmocka_unit_test_setup_teardown(test_appsvc_app_dom,
+                                        pam_test_setup_appsvc_app_dom,
+                                        pam_test_teardown),
+        cmocka_unit_test_setup_teardown(test_not_appsvc_app_dom,
+                                        pam_test_setup_appsvc_posix_dom,
+                                        pam_test_teardown),
     };
 
     /* Set debug level to invalid value so we can deside if -d 0 was used. */

@@ -161,7 +161,9 @@
                         <para>
                             Timeout in seconds between heartbeats for this
                             service. This is used to ensure that the process
-                            is alive and capable of answering requests.
+                            is alive and capable of answering requests. Note
+                            that after three missed heartbeats the process
+                            will terminate itself.
                         </para>
                         <para>
                             Default: 10
@@ -246,7 +248,7 @@
                                 information. SSSD can use more domains
                                 at the same time, but at least one
                                 must be configured or SSSD won't start.
-                                This parameter described the list of domains
+                                This parameter describes the list of domains
                                 in the order you want them to be queried.
                                 A domain name should only consist of alphanumeric
                                 ASCII characters, dashes, dots and underscores.
@@ -264,7 +266,7 @@
                             <para>
                                 Each domain can have an individual regular
                                 expression configured. For some ID providers
-                                there are also default regular expressions.  See
+                                there are also default regular expressions. See
                                 DOMAIN SECTIONS for more info on these regular
                                 expressions.
                             </para>
@@ -490,7 +492,7 @@
                                         <para>The nickname of the cert to trust
                                         (expected) to sign the OCSP responses.
                                         The certificate with the given nickname
-                                        must be availble in the systems NSS
+                                        must be available in the systems NSS
                                         database.</para>
                                         <para>This option must be used together
                                         with ocsp_default_responder.</para>
@@ -539,6 +541,26 @@
                             </para>
                             <para condition="enable_files_domain">
                                 Default: true
+                            </para>
+                        </listitem>
+                    </varlistentry>
+                    <varlistentry>
+                        <term>domain_resolution_order</term>
+                        <listitem>
+                            <para>
+                                Comma separated list of domains and subdomains
+                                representing the lookup order that will be
+                                followed.
+                                The list doesn't have to include all possible
+                                domains as the missing domains will be looked
+                                up based on the order they're presented in the
+                                <quote>domains</quote> configuration option.
+                                The subdomains which are not listed as part of
+                                <quote>lookup_order</quote> will be looked up
+                                in a random order for each parent domain.
+                            </para>
+                            <para>
+                                Default: Not set
                             </para>
                         </listitem>
                     </varlistentry>
@@ -601,7 +623,9 @@
                             a client of an SSSD process can hold onto a file
                             descriptor without communicating on it. This value
                             is limited in order to avoid resource exhaustion
-                            on the system.
+                            on the system. The timeout can't be shorter than
+                            10 seconds. If a lower value is configured, it
+                            will be adjusted to 10 seconds.
                         </para>
                         <para>
                             Default: 60
@@ -1233,7 +1257,7 @@ fallback_homedir = /home/%u
                         </para>
                         <para>
                             Note: Please be aware that message is only
-                            printed for the SSH service unless pam_verbostiy
+                            printed for the SSH service unless pam_verbosity
                             is set to 3 (show all messages and debug
                             information).
                         </para>
@@ -1302,6 +1326,18 @@ pam_account_locked_message = Account locked, please contact help desk.
                         </para>
                         <para>
                             Default: 10
+                        </para>
+                    </listitem>
+                </varlistentry>
+                <varlistentry>
+                    <term>pam_app_services (string)</term>
+                    <listitem>
+                        <para>
+                            Which PAM services are permitted to contact
+                            domains of type <quote>application</quote>
+                        </para>
+                        <para>
+                            Default: Not set
                         </para>
                     </listitem>
                 </varlistentry>
@@ -1424,13 +1460,13 @@ pam_account_locked_message = Account locked, please contact help desk.
                 authentication to the PAC responder. The sub-domain provider
                 collects domain SID and ID ranges of the domain the client is
                 joined to and of remote trusted domains from the local domain
-                controller.  If the PAC is decoded and evaluated some of the
+                controller. If the PAC is decoded and evaluated some of the
                 following operations are done:
                 <itemizedlist>
                     <listitem><para>If the remote user does not exist in the
-                    cache, it is created. The uid is determined with the help
-                    of the SID, trusted domains will have UPGs and the gid
-                    will have the same value as the uid. The home directory is
+                    cache, it is created. The UID is determined with the help
+                    of the SID, trusted domains will have UPGs and the GID
+                    will have the same value as the UID. The home directory is
                     set based on the subdomain_homedir parameter. The shell will
                     be empty by default, i.e. the system defaults are used, but
                     can be overwritten with the default_shell parameter.</para>
@@ -1491,6 +1527,43 @@ pam_account_locked_message = Account locked, please contact help desk.
             configuration section, that is, in a section called
             <quote>[domain/<replaceable>NAME</replaceable>]</quote>
             <variablelist>
+                <varlistentry>
+                    <term>domain_type (string)</term>
+                    <listitem>
+                        <para>
+                            Specifies whether the domain is meant to be used
+                            by POSIX-aware clients such as the Name Service Switch
+                            or by applications that do not need POSIX data to be
+                            present or generated. Only objects from POSIX domains
+                            are available to the operating system interfaces and
+                            utilities.
+                        </para>
+                        <para>
+                            Allowed values for this option are <quote>posix</quote>
+                            and <quote>application</quote>.
+                        </para>
+                        <para>
+                            POSIX domains are reachable by all services. Application
+                            domains are only reachable from the InfoPipe responder (see
+                            <citerefentry>
+                                <refentrytitle>sssd-ifp</refentrytitle>
+                                <manvolnum>5</manvolnum>
+                            </citerefentry>) and the PAM responder.
+                        </para>
+                        <para>
+                            NOTE: The application domains are currently well tested with
+                            <quote>id_provider=ldap</quote> only.
+                        </para>
+                        <para>
+                            For an easy way to configure a non-POSIX domains, please
+                            see the <quote>Application domains</quote> section.
+                        </para>
+                        <para>
+                            Default: posix
+                        </para>
+                    </listitem>
+                </varlistentry>
+
                 <varlistentry>
                     <term>min_id,max_id (integer)</term>
                     <listitem>
@@ -2041,7 +2114,7 @@ pam_account_locked_message = Account locked, please contact help desk.
                         </para>
                         <para>
                             <quote>ldap</quote> to change a password stored
-                            in a LDAP server.  See
+                            in a LDAP server. See
                             <citerefentry>
                                 <refentrytitle>sssd-ldap</refentrytitle>
                                 <manvolnum>5</manvolnum>
@@ -2639,6 +2712,79 @@ subdomain_inherit = ldap_purge_cache_timeout
             </variablelist>
         </para>
 
+        <refsect2 id='app_domains'>
+            <title>Application domains</title>
+            <para>
+                SSSD, with its D-Bus interface (see
+                <citerefentry>
+                    <refentrytitle>sssd-ifp</refentrytitle>
+                    <manvolnum>5</manvolnum>
+                </citerefentry>) is appealing to applications
+                as a gateway to an LDAP directory where users and groups
+                are stored. However, contrary to the traditional SSSD
+                deployment where all users and groups either have POSIX
+                attributes or those attributes can be inferred from the
+                Windows SIDs, in many cases the users and groups in the
+                application support scenario have no POSIX attributes.
+                Instead of setting a
+                <quote>[domain/<replaceable>NAME</replaceable>]</quote>
+                section, the administrator can set up an
+                <quote>[application/<replaceable>NAME</replaceable>]</quote>
+                section that internally represents a domain with type
+                <quote>application</quote> optionally inherits settings
+                from a tradition SSSD domain.
+            </para>
+            <para>
+                Please note that the application domain must still be
+                explicitly enabled in the <quote>domains</quote> parameter
+                so that the lookup order between the application domain
+                and its POSIX sibling domain is set correctly.
+            </para>
+            <variablelist>
+                <title>Application domain parameters</title>
+                <varlistentry>
+                    <term>inherit_from (string)</term>
+                    <listitem>
+                        <para>
+                            The SSSD POSIX-type domain the application
+                            domain inherits all settings from. The
+                            application domain can moreover add its own
+                            settings to the application settings that augment
+                            or override the <quote>sibling</quote>
+                            domain settings.
+                        </para>
+                        <para>
+                            Default: Not set
+                        </para>
+                    </listitem>
+                </varlistentry>
+            </variablelist>
+            <para>
+                The following example illustrates the use of an application
+                domain. In this setup, the POSIX domain is connected to an LDAP
+                server and is used by the OS through the NSS responder. In addition,
+                the application domains also requests the telephoneNumber attribute,
+                stores it as the phone attribute in the cache and makes the phone
+                attribute reachable through the D-Bus interface.
+            </para>
+<programlisting>
+[sssd]
+domains = appdom, posixdom
+
+[ifp]
+user_attributes = +phone
+
+[domain/posixdom]
+id_provider = ldap
+ldap_uri = ldap://ldap.example.com
+ldap_search_base = dc=example,dc=com
+
+[application/appdom]
+inherit_from = posixdom
+ldap_user_extra_attrs = phone:telephoneNumber
+</programlisting>
+        </refsect2>
+
         <refsect2 id='local_domain'>
             <title>The local domain section</title>
             <para>
@@ -2770,7 +2916,7 @@ subdomain_inherit = ldap_purge_cache_timeout
         <para>
             Some options used in the domain section can also be used in the
             trusted domain section, that is, in a section called
-            <quote>[domain/<replaceable>DOMAIN_NAME</replaceable>]/<replaceable>TRUSTED_DOMAIN_NAME</replaceable>]</quote>.
+            <quote>[domain/<replaceable>DOMAIN_NAME</replaceable>/<replaceable>TRUSTED_DOMAIN_NAME</replaceable>]</quote>.
             Currently supported options in the trusted domain section are:
         </para>
             <para>ldap_search_base,</para>
@@ -2780,7 +2926,8 @@ subdomain_inherit = ldap_purge_cache_timeout
             <para>ldap_service_search_base,</para>
             <para>ad_server,</para>
             <para>ad_backup_server,</para>
-            <para>ad_site.</para>
+            <para>ad_site,</para>
+            <para>use_fully_qualified_names</para>
         <para>
             For more details about these options see their individual description
             in the manual page.

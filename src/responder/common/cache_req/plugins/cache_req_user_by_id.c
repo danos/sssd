@@ -43,6 +43,14 @@ cache_req_user_by_id_ncache_check(struct sss_nc_ctx *ncache,
 }
 
 static errno_t
+cache_req_user_by_id_ncache_filter(struct sss_nc_ctx *ncache,
+                                   struct sss_domain_info *domain,
+                                   const char *name)
+{
+    return sss_ncache_check_user(ncache, domain, name);
+}
+
+static errno_t
 cache_req_user_by_id_global_ncache_add(struct sss_nc_ctx *ncache,
                                        struct cache_req_data *data)
 {
@@ -144,6 +152,7 @@ const struct cache_req_plugin cache_req_user_by_id = {
     .global_ncache_add_fn = cache_req_user_by_id_global_ncache_add,
     .ncache_check_fn = cache_req_user_by_id_ncache_check,
     .ncache_add_fn = NULL,
+    .ncache_filter_fn = cache_req_user_by_id_ncache_filter,
     .lookup_fn = cache_req_user_by_id_lookup,
     .dp_send_fn = cache_req_user_by_id_dp_send,
     .dp_recv_fn = cache_req_common_dp_recv
@@ -166,5 +175,7 @@ cache_req_user_by_id_send(TALLOC_CTX *mem_ctx,
     }
 
     return cache_req_steal_data_and_send(mem_ctx, ev, rctx, ncache,
-                                         cache_refresh_percent, domain, data);
+                                         cache_refresh_percent,
+                                         CACHE_REQ_POSIX_DOM, domain,
+                                         data);
 }

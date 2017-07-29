@@ -186,7 +186,7 @@ const struct cache_req_plugin cache_req_group_by_name = {
     .allow_missing_fqn = false,
     .allow_switch_to_upn = false,
     .upn_equivalent = CACHE_REQ_SENTINEL,
-    .get_next_domain_flags = 0,
+    .get_next_domain_flags = SSS_GND_DESCEND,
 
     .is_well_known_fn = NULL,
     .prepare_domain_data_fn = cache_req_group_by_name_prepare_domain_data,
@@ -194,6 +194,7 @@ const struct cache_req_plugin cache_req_group_by_name = {
     .global_ncache_add_fn = NULL,
     .ncache_check_fn = cache_req_group_by_name_ncache_check,
     .ncache_add_fn = cache_req_group_by_name_ncache_add,
+    .ncache_filter_fn = NULL,
     .lookup_fn = cache_req_group_by_name_lookup,
     .dp_send_fn = cache_req_group_by_name_dp_send,
     .dp_recv_fn = cache_req_common_dp_recv
@@ -205,6 +206,7 @@ cache_req_group_by_name_send(TALLOC_CTX *mem_ctx,
                              struct resp_ctx *rctx,
                              struct sss_nc_ctx *ncache,
                              int cache_refresh_percent,
+                             enum cache_req_dom_type req_dom_type,
                              const char *domain,
                              const char *name)
 {
@@ -216,5 +218,7 @@ cache_req_group_by_name_send(TALLOC_CTX *mem_ctx,
     }
 
     return cache_req_steal_data_and_send(mem_ctx, ev, rctx, ncache,
-                                         cache_refresh_percent, domain, data);
+                                         cache_refresh_percent,
+                                         req_dom_type, domain,
+                                         data);
 }
