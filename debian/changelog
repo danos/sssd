@@ -7,6 +7,8 @@ sssd (1.15.3-1) UNRELEASED; urgency=medium
   * Add sssd-kcm.
   * rules: Migrate to dh_missing.
   * control: Bump policy to 4.0.0, no changes.
+  * compat, control, rules: Bump debhelper compat to 10, drop --parallel
+    as it's the default now.
 
  -- Timo Aaltonen <tjaalton@debian.org>  Thu, 22 Jun 2017 09:15:34 +0300
 

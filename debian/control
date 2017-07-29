@@ -7,7 +7,7 @@ Build-Depends:
  autopoint,
 # check,
  cifs-utils,
- debhelper (>= 9),
+ debhelper (>= 10),
  dh-apparmor,
  dh-autoreconf,
  dh-python,

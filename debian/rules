@@ -1,7 +1,6 @@
 #!/usr/bin/make -f
 %:
 	dh $@ --with quilt,autoreconf,python2,python3,systemd \
-		--parallel \
 		--builddirectory=build
 
 DPKG_EXPORT_BUILDFLAGS = 1
