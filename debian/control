@@ -163,6 +163,16 @@ Description: System Security Services Daemon -- IPA back end
  Provides the IPA back end that the SSSD can utilize to fetch identity data
  from and authenticate against an IPA server.
 
+Package: sssd-kcm
+Architecture: any
+Depends:
+ sssd-common (= ${binary:Version}),
+ ${misc:Depends},
+ ${shlibs:Depends}
+Description: System Security Services Daemon -- Kerberos KCM server implementation
+ Provides an implementation of a Kerberos KCM server. Use this package if
+ you want to use the KCM: Kerberos credentials cache.
+
 Package: sssd-krb5
 Architecture: any
 Depends:

@@ -4,6 +4,7 @@ sssd (1.15.3-1) UNRELEASED; urgency=medium
   * apparmor-profile: Add chown capability, allow to notify systemd.
   * control: Add libcurl4-gnutls-dev and uuid-dev to build depends.
   * Add libsss-certmap{0,-dev} packages.
+  * Add sssd-kcm.
 
  -- Timo Aaltonen <tjaalton@debian.org>  Thu, 22 Jun 2017 09:15:34 +0300
 
