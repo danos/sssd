@@ -65,7 +65,7 @@ Build-Depends:
  xsltproc
 X-Python-Version: >= 2.6
 X-Python3-Version: >= 3.3
-Standards-Version: 3.9.6
+Standards-Version: 4.0.0
 Vcs-Git: git://anonscm.debian.org/pkg-sssd/sssd.git
 Vcs-Browser: http://anonscm.debian.org/cgit/pkg-sssd/sssd.git
 Homepage: https://pagure.io/SSSD/sssd/
