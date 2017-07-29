@@ -1,7 +1,7 @@
 sssd (1.15.3-1) UNRELEASED; urgency=medium
 
   * New upstream release.
-  * apparmor-profile: Add chown capability, allow to notify systemd.
+  * apparmor-profile: Add chown capability, allow one to notify systemd.
   * control: Add libcurl4-gnutls-dev and uuid-dev to build depends.
   * Add libsss-certmap{0,-dev} packages.
   * Add sssd-kcm.
