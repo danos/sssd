@@ -282,7 +282,7 @@ Package: libipa-hbac-dev
 Section: libdevel
 Architecture: any
 Depends: libipa-hbac0 (= ${binary:Version}), ${misc:Depends}
-Description: FreeIPA HBAC Evaluator library
+Description: FreeIPA HBAC Evaluator library -- development files
  Utility library to validate FreeIPA HBAC rules for authorization requests.
  .
  This package contains header files and symlinks to develop programs which will

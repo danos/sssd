@@ -1,3 +1,9 @@
+sssd (1.15.3-2) UNRELEASED; urgency=medium
+
+  * control: Fix libipa-hbac-dev short description.
+
+ -- Timo Aaltonen <tjaalton@debian.org>  Sat, 29 Jul 2017 12:16:36 +0300
+
 sssd (1.15.3-1) unstable; urgency=medium
 
   * New upstream release.
