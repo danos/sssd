@@ -1,5 +1,6 @@
-sssd (1.15.2-2) UNRELEASED; urgency=medium
+sssd (1.15.3-1) UNRELEASED; urgency=medium
 
+  * New upstream release.
   * apparmor-profile: Add chown capability, allow to notify systemd.
 
  -- Timo Aaltonen <tjaalton@debian.org>  Thu, 22 Jun 2017 09:15:34 +0300
