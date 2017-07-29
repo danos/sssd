@@ -1,4 +1,4 @@
-sssd (1.15.3-1) UNRELEASED; urgency=medium
+sssd (1.15.3-1) unstable; urgency=medium
 
   * New upstream release.
   * apparmor-profile: Add chown capability, allow one to notify systemd.
@@ -10,7 +10,7 @@ sssd (1.15.3-1) UNRELEASED; urgency=medium
   * compat, control, rules: Bump debhelper compat to 10, drop --parallel
     as it's the default now.
 
- -- Timo Aaltonen <tjaalton@debian.org>  Thu, 22 Jun 2017 09:15:34 +0300
+ -- Timo Aaltonen <tjaalton@debian.org>  Sat, 29 Jul 2017 11:50:41 +0300
 
 sssd (1.15.2-1) unstable; urgency=medium
 
