@@ -126,9 +126,8 @@ EOF
 if [ "$kerberosserver" ] ; then
     cat <<EOF
 
-krb5_kdcip = $kerberosserver
+krb5_server = $kerberosserver
 krb5_realm = $kerberosrealm
-krb5_changepw_principle = kadmin/changepw
 krb5_auth_timeout = 15
 EOF
 fi
