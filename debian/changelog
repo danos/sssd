@@ -1,7 +1,7 @@
 sssd (1.15.3-2) UNRELEASED; urgency=medium
 
   * control: Fix libipa-hbac-dev short description.
-  * generate-config: Update the config template.
+  * generate-config: Update the config template. (Closes: #872787)
   * sysdb-sanitize-search-filter-input.diff: Fix CVE-2017-12173.
     (Closes: #877885)
 
