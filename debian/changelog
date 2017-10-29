@@ -1,3 +1,9 @@
+sssd (1.15.3-3) unstable; urgency=medium
+
+  * Rebuild against new libldb. (Closes: #880013)
+
+ -- Timo Aaltonen <tjaalton@debian.org>  Sun, 29 Oct 2017 09:13:42 +0200
+
 sssd (1.15.3-2) unstable; urgency=medium
 
   * control: Fix libipa-hbac-dev short description.
