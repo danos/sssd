@@ -49,6 +49,7 @@ usr/share/man/man1/sss_ssh_knownhostsproxy.1*
 usr/share/man/man5/sss_rpcidmapd.5*
 usr/share/man/man5/sssd-files.5*
 usr/share/man/man5/sssd-secrets.5*
+usr/share/man/man5/sssd-session-recording.5*
 usr/share/man/man5/sssd-simple.5*
 usr/share/man/man5/sssd-sudo.5*
 usr/share/man/man5/sssd.conf.5*
