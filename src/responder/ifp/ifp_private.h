@@ -48,9 +48,7 @@ errno_t ifp_register_sbus_interface(struct sbus_connection *conn,
 
 void ifp_register_nodes(struct ifp_ctx *ctx, struct sbus_connection *conn);
 
-/* This is a throwaway method to ease the review of the patch.
- * It will be removed later */
-int ifp_ping(struct sbus_request *dbus_req, void *data);
+int ifp_ping(struct sbus_request *dbus_req, void *data, const char *ping);
 
 int ifp_user_get_attr(struct sbus_request *dbus_req, void *data);
 
@@ -103,8 +101,9 @@ struct ifp_list_ctx *ifp_list_ctx_new(struct sbus_request *sbus_req,
                                       const char *filter,
                                       uint32_t limit);
 
-size_t ifp_list_ctx_remaining_capacity(struct ifp_list_ctx *list_ctx,
-                                       size_t entries);
+errno_t ifp_list_ctx_remaining_capacity(struct ifp_list_ctx *list_ctx,
+                                        size_t entries,
+                                        size_t *_capacity);
 
 errno_t ifp_ldb_el_output_name(struct resp_ctx *rctx,
                                struct ldb_message *msg,

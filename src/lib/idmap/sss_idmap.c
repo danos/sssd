@@ -29,7 +29,7 @@
 
 #include "lib/idmap/sss_idmap.h"
 #include "lib/idmap/sss_idmap_private.h"
-#include "util/murmurhash3.h"
+#include "shared/murmurhash3.h"
 
 #define SID_FMT "%s-%d"
 #define SID_STR_MAX_LEN 1024
@@ -426,6 +426,16 @@ enum idmap_error_code sss_idmap_calculate_range(struct sss_idmap_ctx *ctx,
          * explicitly.
          */
         new_slice = *slice_num;
+        min = (rangesize * new_slice) + idmap_lower;
+        max = min + rangesize - 1;
+        for (dom = ctx->idmap_domain_info; dom != NULL; dom = dom->next) {
+                if (check_dom_overlap(&dom->range_params,min, max)) {
+                    /* This range overlaps one already registered
+                     * Fail, because the slice was manually configured
+                     */
+                    return IDMAP_COLLISION;
+                }
+        }
     } else {
         /* If slice is -1, we're being asked to pick a new slice */
 

@@ -39,9 +39,10 @@
 #include <dhash.h>
 
 #include "confdb/confdb.h"
+#include "shared/io.h"
+#include "shared/safealign.h"
 #include "util/atomic_io.h"
 #include "util/util_errors.h"
-#include "util/util_safealign.h"
 #include "util/sss_format.h"
 #include "util/debug.h"
 
@@ -581,7 +582,8 @@ errno_t sss_get_domain_mappings_content(TALLOC_CTX *mem_ctx,
 
 errno_t sss_write_domain_mappings(struct sss_domain_info *domain);
 
-errno_t sss_write_krb5_conf_snippet(const char *path, bool canonicalize);
+errno_t sss_write_krb5_conf_snippet(const char *path, bool canonicalize,
+                                    bool udp_limit);
 
 errno_t get_dom_names(TALLOC_CTX *mem_ctx,
                       struct sss_domain_info *start_dom,
@@ -591,7 +593,6 @@ errno_t get_dom_names(TALLOC_CTX *mem_ctx,
 /* from util_lock.c */
 errno_t sss_br_lock_file(int fd, size_t start, size_t len,
                          int num_tries, useconds_t wait);
-#include "io.h"
 
 #ifdef HAVE_PAC_RESPONDER
 #define BUILD_WITH_PAC_RESPONDER true
@@ -649,8 +650,6 @@ errno_t restore_creds(struct sss_creds *saved_creds);
 int set_seuser(const char *login_name, const char *seuser_name,
                const char *mlsrange);
 int del_seuser(const char *login_name);
-int get_seuser(TALLOC_CTX *mem_ctx, const char *login_name,
-               char **_seuser, char **_mls_range);
 
 /* convert time from generalized form to unix time */
 errno_t sss_utc_to_time_t(const char *str, const char *format, time_t *unix_time);
@@ -679,5 +678,29 @@ int sss_unique_filename(TALLOC_CTX *owner, char *path_tmpl);
 /* from util_watchdog.c */
 int setup_watchdog(struct tevent_context *ev, int interval);
 void teardown_watchdog(void);
+
+/* from files.c */
+int sss_remove_tree(const char *root);
+int sss_remove_subtree(const char *root);
+
+int sss_copy_tree(const char *src_root,
+                  const char *dst_root,
+                  mode_t mode_root,
+                  uid_t uid, gid_t gid);
+
+int sss_copy_file_secure(const char *src,
+                         const char *dest,
+                         mode_t mode,
+                         uid_t uid, gid_t gid,
+                         bool force);
+
+int sss_create_dir(const char *parent_dir_path,
+                   const char *dir_name,
+                   mode_t mode,
+                   uid_t uid, gid_t gid);
+
+/* from selinux.c */
+int selinux_file_context(const char *dst_name);
+int reset_selinux_file_context(void);
 
 #endif /* __SSSD_UTIL_H__ */

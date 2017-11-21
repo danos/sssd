@@ -371,7 +371,9 @@ class SSSDConfigTestSSSDService(unittest.TestCase):
             'override_space',
             'disable_netlink',
             'enable_files_domain',
-            'domain_resolution_order']
+            'domain_resolution_order',
+            'try_inotify',
+        ]
 
         self.assertTrue(type(options) == dict,
                         "Options should be a dictionary")
@@ -567,7 +569,6 @@ class SSSDConfigTestSSSDDomain(unittest.TestCase):
             'max_id',
             'timeout',
             'offline_timeout',
-            'try_inotify',
             'command',
             'enumerate',
             'cache_credentials',
@@ -616,6 +617,7 @@ class SSSDConfigTestSSSDDomain(unittest.TestCase):
             'hostid_provider',
             'subdomains_provider',
             'selinux_provider',
+            'session_provider',
             'realmd_tags',
             'subdomain_refresh_interval',
             'subdomain_inherit',
@@ -937,7 +939,6 @@ class SSSDConfigTestSSSDDomain(unittest.TestCase):
             'max_id',
             'timeout',
             'offline_timeout',
-            'try_inotify',
             'command',
             'enumerate',
             'cache_credentials',
@@ -986,6 +987,7 @@ class SSSDConfigTestSSSDDomain(unittest.TestCase):
             'hostid_provider',
             'subdomains_provider',
             'selinux_provider',
+            'session_provider',
             'realmd_tags',
             'subdomain_refresh_interval',
             'subdomain_inherit',
@@ -1381,6 +1383,7 @@ class SSSDConfigTestSSSDConfig(unittest.TestCase):
             'id_provider',
             'auth_provider',
             'access_provider',
+            'session_provider',
             'default_shell',
             'fallback_homedir',
             'cache_credentials',
@@ -1417,7 +1420,8 @@ class SSSDConfigTestSSSDConfig(unittest.TestCase):
             'ssh',
             'pac',
             'ifp',
-            'secrets']
+            'secrets',
+            'session_recording']
         for section in control_list:
             self.assertTrue(sssdconfig.has_section(section),
                             "Section [%s] missing" %
@@ -1511,7 +1515,8 @@ class SSSDConfigTestSSSDConfig(unittest.TestCase):
             'ssh',
             'pac',
             'ifp',
-            'secrets']
+            'secrets',
+            'session_recording']
         service_list = sssdconfig.list_services()
         for service in control_list:
             self.assertTrue(service in service_list,

@@ -65,7 +65,6 @@
 #include <talloc.h>
 
 #include "util/util.h"
-#include "tools/tools_util.h"
 
 struct copy_ctx {
     const char *src_orig;
@@ -140,7 +139,7 @@ static int remove_tree_with_ctx(TALLOC_CTX *mem_ctx,
                                 dev_t parent_dev,
                                 bool keep_root_dir);
 
-int remove_tree(const char *root)
+int sss_remove_tree(const char *root)
 {
     TALLOC_CTX *tmp_ctx = NULL;
     int ret;
@@ -155,7 +154,7 @@ int remove_tree(const char *root)
     return ret;
 }
 
-int remove_subtree(const char *root)
+int sss_remove_subtree(const char *root)
 {
     TALLOC_CTX *tmp_ctx = NULL;
     int ret;
@@ -489,11 +488,11 @@ done:
 }
 
 int
-copy_file_secure(const char *src,
-                 const char *dest,
-                 mode_t mode,
-                 uid_t uid, gid_t gid,
-                 bool force)
+sss_copy_file_secure(const char *src,
+                     const char *dest,
+                     mode_t mode,
+                     uid_t uid, gid_t gid,
+                     bool force)
 {
     int ifd = -1;
     int ofd = -1;
@@ -761,8 +760,10 @@ done:
  * For several reasons, including the fact that we copy even special files
  * (pipes, etc) from the skeleton directory, the skeldir needs to be trusted
  */
-int copy_tree(const char *src_root, const char *dst_root,
-              mode_t mode_root, uid_t uid, gid_t gid)
+int sss_copy_tree(const char *src_root,
+                  const char *dst_root,
+                  mode_t mode_root,
+                  uid_t uid, gid_t gid)
 {
     int ret = EOK;
     struct copy_ctx *cctx = NULL;
@@ -807,3 +808,79 @@ fail:
     return ret;
 }
 
+int sss_create_dir(const char *parent_dir_path,
+                   const char *dir_name,
+                   mode_t mode,
+                   uid_t uid, gid_t gid)
+{
+    TALLOC_CTX *tmp_ctx;
+    char *dir_path;
+    int ret = EOK;
+    int parent_dir_fd = -1;
+    int dir_fd = -1;
+
+    tmp_ctx = talloc_new(NULL);
+    if (tmp_ctx == NULL) {
+        return ENOMEM;
+    }
+
+    parent_dir_fd = sss_open_cloexec(parent_dir_path, O_RDONLY | O_DIRECTORY,
+                                     &ret);
+    if (parent_dir_fd == -1) {
+        DEBUG(SSSDBG_TRACE_FUNC,
+              "Cannot open() directory '%s' [%d]: %s\n",
+              parent_dir_path, ret, sss_strerror(ret));
+        goto fail;
+    }
+
+    dir_path = talloc_asprintf(tmp_ctx, "%s/%s", parent_dir_path, dir_name);
+    if (dir_path == NULL) {
+        ret = ENOMEM;
+        goto fail;
+    }
+
+    errno = 0;
+    ret = mkdirat(parent_dir_fd, dir_name, mode);
+    if (ret == -1) {
+        if (errno == EEXIST) {
+            ret = EOK;
+            DEBUG(SSSDBG_TRACE_FUNC,
+                  "Directory '%s' already created!\n", dir_path);
+        } else {
+            ret = errno;
+            DEBUG(SSSDBG_CRIT_FAILURE,
+                  "Error reading '%s': %s\n", parent_dir_path, strerror(ret));
+            goto fail;
+        }
+    }
+
+    dir_fd = sss_open_cloexec(dir_path, O_RDONLY | O_DIRECTORY, &ret);
+    if (dir_fd == -1) {
+        DEBUG(SSSDBG_TRACE_FUNC,
+              "Cannot open() directory '%s' [%d]: %s\n",
+              dir_path, ret, sss_strerror(ret));
+        goto fail;
+    }
+
+    errno = 0;
+    ret = fchown(dir_fd, uid, gid);
+    if (ret == -1) {
+        ret = errno;
+        DEBUG(SSSDBG_CRIT_FAILURE,
+              "Failed to own the newly created directory '%s' [%d]: %s\n",
+              dir_path, ret, sss_strerror(ret));
+        goto fail;
+    }
+
+    ret = EOK;
+
+fail:
+    if (parent_dir_fd != -1) {
+        close(parent_dir_fd);
+    }
+    if (dir_fd != -1) {
+        close(dir_fd);
+    }
+    talloc_free(tmp_ctx);
+    return ret;
+}

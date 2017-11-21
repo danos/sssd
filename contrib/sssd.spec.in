@@ -2,8 +2,8 @@
 # Set --with sssd_user or bcond_without to run SSSD as non-root user(sssd).
 %bcond_with sssd_user
 
-%global rhel6_minor %(%{__grep} -o "6.[0-9]*" /etc/redhat-release |%{__sed} -s 's/6.//')
-%global rhel7_minor %(%{__grep} -o "7.[0-9]*" /etc/redhat-release |%{__sed} -s 's/7.//')
+%global rhel6_minor %(%{__grep} -o "6\\.[0-9]*" /etc/redhat-release |%{__sed} -s 's/6.//')
+%global rhel7_minor %(%{__grep} -o "7\\.[0-9]*" /etc/redhat-release |%{__sed} -s 's/7.//')
 
 %if 0%{?rhel} && 0%{?rhel} <= 6
 %{!?__python2: %global __python2 /usr/bin/python2}
@@ -97,7 +97,7 @@
     %global with_cifs_utils_plugin_option --disable-cifs-idmap-plugin
 %endif
 
-%if (0%{?fedora})
+%if (0%{?fedora} || 0%{?rhel} > 7)
     %global with_python3 1
 %else
     %global with_python3_option --without-python3-bindings
@@ -108,7 +108,7 @@
     %global enable_systemtap_opt --enable-systemtap
 %endif
 
-%if (0%{?fedora} || 0%{?epel} >= 7)
+%if (0%{?fedora} || (0%{?rhel} >= 7 && 0%{rhel7_minor} >= 4))
     %global with_secrets 1
 %else
     %global with_secret_responder --without-secrets
@@ -156,6 +156,7 @@ Requires: python2-sssdconfig = %{version}-%{release}
 %global pubconfpath %{sssdstatedir}/pubconf
 %global gpocachepath %{sssdstatedir}/gpo_cache
 %global secdbpath %{sssdstatedir}/secrets
+%global deskprofilepath %{sssdstatedir}/deskprofile
 
 ### Build Dependencies ###
 
@@ -958,6 +959,7 @@ done
 %if (0%{?with_secrets} == 1)
 %attr(700,root,root) %dir %{secdbpath}
 %endif
+%attr(755,sssd,sssd) %dir %{deskprofilepath}
 %ghost %attr(0644,sssd,sssd) %verify(not md5 size mtime) %{mcpath}/passwd
 %ghost %attr(0644,sssd,sssd) %verify(not md5 size mtime) %{mcpath}/group
 %ghost %attr(0644,sssd,sssd) %verify(not md5 size mtime) %{mcpath}/initgroups
@@ -979,6 +981,7 @@ done
 %config(noreplace) %{_sysconfdir}/rwtab.d/sssd
 %dir %{_datadir}/sssd
 %{_sysconfdir}/pam.d/sssd-shadowutils
+%dir %{_libdir}/%{name}/conf
 %{_libdir}/%{name}/conf/sssd.conf
 
 %{_datadir}/sssd/cfg_rules.ini
@@ -990,6 +993,7 @@ done
 %{_mandir}/man5/sssd-files.5*
 %{_mandir}/man5/sssd-simple.5*
 %{_mandir}/man5/sssd-sudo.5*
+%{_mandir}/man5/sssd-session-recording.5*
 %if (0%{?with_secrets} == 1)
 %{_mandir}/man5/sssd-secrets.5*
 %endif
@@ -999,10 +1003,12 @@ done
 %dir %{_datadir}/sssd/systemtap
 %{_datadir}/sssd/systemtap/id_perf.stp
 %{_datadir}/sssd/systemtap/nested_group_perf.stp
+%{_datadir}/sssd/systemtap/dp_request.stp
 %dir %{_datadir}/systemtap
 %dir %{_datadir}/systemtap/tapset
 %{_datadir}/systemtap/tapset/sssd.stp
 %{_datadir}/systemtap/tapset/sssd_functions.stp
+%{_mandir}/man5/sssd-systemtap.5*
 %endif
 
 %if (0%{?install_pcscd_polkit_rule} == 1)
@@ -1262,7 +1268,7 @@ done
 %{_libdir}/pkgconfig/sss_certmap.pc
 
 %if (0%{?with_kcm} == 1)
-%files kcm
+%files kcm -f sssd_kcm.lang
 %{_libexecdir}/%{servicename}/sssd_kcm
 %dir %{_datadir}/sssd-kcm
 %{_datadir}/sssd-kcm/kcm_default_ccache

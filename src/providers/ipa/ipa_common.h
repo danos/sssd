@@ -56,6 +56,9 @@ enum ipa_basic_opt {
     IPA_SERVER_MODE,
     IPA_VIEWS_SEARCH_BASE,
     IPA_KRB5_CONFD_PATH,
+    IPA_DESKPROFILE_SEARCH_BASE,
+    IPA_DESKPROFILE_REFRESH,
+    IPA_DESKPROFILE_REQUEST_INTERVAL,
 
     IPA_OPTS_BASIC /* opts counter */
 };
@@ -218,6 +221,7 @@ struct ipa_options {
     struct sdap_search_base **master_domain_search_bases;
     struct sdap_search_base **ranges_search_bases;
     struct sdap_search_base **views_search_bases;
+    struct sdap_search_base **deskprofile_search_bases;
     struct ipa_service *service;
 
     /* id provider */
@@ -292,4 +296,10 @@ errno_t ipa_idmap_init(TALLOC_CTX *mem_ctx,
 
 
 struct krb5_ctx *ipa_init_get_krb5_auth_ctx(void *data);
+
+errno_t ipa_get_host_attrs(struct dp_option *ipa_options,
+                           size_t host_count,
+                           struct sysdb_attrs **hosts,
+                           struct sysdb_attrs **_ipa_host);
+
 #endif /* _IPA_COMMON_H_ */

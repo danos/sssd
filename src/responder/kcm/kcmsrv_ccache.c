@@ -45,7 +45,7 @@ errno_t kcm_cc_new(TALLOC_CTX *mem_ctx,
                    krb5_principal princ,
                    struct kcm_ccache **_cc)
 {
-    struct kcm_ccache *cc;
+    struct kcm_ccache *cc = NULL;
     krb5_error_code kret;
     errno_t ret;
 
@@ -57,13 +57,13 @@ errno_t kcm_cc_new(TALLOC_CTX *mem_ctx,
     ret = kcm_check_name(name, owner);
     if (ret != EOK) {
         DEBUG(SSSDBG_CRIT_FAILURE, "Name %s is malformed\n", name);
-        return ret;
+        goto done;
     }
 
     cc->name = talloc_strdup(cc, name);
     if (cc->name == NULL) {
-        talloc_free(cc);
-        return ENOMEM;
+        ret = ENOMEM;
+        goto done;
     }
 
     uuid_generate(cc->uuid);
@@ -74,8 +74,8 @@ errno_t kcm_cc_new(TALLOC_CTX *mem_ctx,
         DEBUG(SSSDBG_OP_FAILURE,
               "krb5_copy_principal failed: [%d][%s]\n", kret, err_msg);
         sss_krb5_free_error_message(k5c, err_msg);
-        talloc_free(cc);
-        return ERR_INTERNAL;
+        ret = ERR_INTERNAL;
+        goto done;
     }
 
     cc->owner.uid = cli_creds_get_uid(owner);
@@ -84,7 +84,12 @@ errno_t kcm_cc_new(TALLOC_CTX *mem_ctx,
 
     talloc_set_destructor(cc, kcm_cc_destructor);
     *_cc = cc;
-    return EOK;
+    ret = EOK;
+done:
+    if (ret != EOK) {
+        talloc_free(cc);
+    }
+    return ret;
 }
 
 const char *kcm_cc_get_name(struct kcm_ccache *cc)
@@ -297,7 +302,7 @@ struct tevent_req *kcm_ccdb_nextid_send(TALLOC_CTX *mem_ctx,
         goto immediate;
     }
 
-    subreq = state->db->ops->nextid_send(mem_ctx, ev, state->db, client);
+    subreq = state->db->ops->nextid_send(state, ev, state->db, client);
     if (subreq == NULL) {
         ret = ENOMEM;
         goto immediate;
@@ -385,7 +390,7 @@ struct tevent_req *kcm_ccdb_list_send(TALLOC_CTX *mem_ctx,
         goto immediate;
     }
 
-    subreq = state->db->ops->list_send(mem_ctx,
+    subreq = state->db->ops->list_send(state,
                                        ev,
                                        state->db,
                                        client);
@@ -462,7 +467,7 @@ struct tevent_req *kcm_ccdb_get_default_send(TALLOC_CTX *mem_ctx,
         goto immediate;
     }
 
-    subreq = db->ops->get_default_send(mem_ctx, ev, db, client);
+    subreq = db->ops->get_default_send(state, ev, db, client);
     if (subreq == NULL) {
         ret = ENOMEM;
         goto immediate;
@@ -1029,7 +1034,7 @@ struct tevent_req *kcm_ccdb_create_cc_send(TALLOC_CTX *mem_ctx,
         goto immediate;
     }
 
-    subreq = state->db->ops->create_send(mem_ctx,
+    subreq = state->db->ops->create_send(state,
                                          ev,
                                          state->db,
                                          client,
@@ -1124,7 +1129,7 @@ struct tevent_req *kcm_ccdb_mod_cc_send(TALLOC_CTX *mem_ctx,
         goto immediate;
     }
 
-    subreq = state->db->ops->mod_send(mem_ctx,
+    subreq = state->db->ops->mod_send(state,
                                       ev,
                                       state->db,
                                       client,
@@ -1199,7 +1204,7 @@ struct tevent_req *kcm_ccdb_store_cred_blob_send(TALLOC_CTX *mem_ctx,
         goto immediate;
     }
 
-    subreq = state->db->ops->store_cred_send(mem_ctx,
+    subreq = state->db->ops->store_cred_send(state,
                                              ev,
                                              state->db,
                                              client,
@@ -1286,6 +1291,10 @@ struct tevent_req *kcm_ccdb_delete_cc_send(TALLOC_CTX *mem_ctx,
                                          state->db,
                                          state->client,
                                          state->uuid);
+    if (subreq == NULL) {
+        ret = ENOMEM;
+        goto immediate;
+    }
     tevent_req_set_callback(subreq, kcm_ccdb_delete_done, req);
 
     return req;

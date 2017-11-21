@@ -249,7 +249,7 @@ static errno_t be_check_online_request(struct be_ctx *be_ctx)
 static void be_check_online_done(struct tevent_req *req)
 {
     struct be_ctx *be_ctx;
-    struct dp_reply_std reply;
+    struct dp_reply_std *reply;
     errno_t ret;
 
     be_ctx = tevent_req_callback_data(req, struct be_ctx);
@@ -260,11 +260,19 @@ static void be_check_online_done(struct tevent_req *req)
         goto done;
     }
 
-    switch (reply.dp_error) {
+    switch (reply->dp_error) {
     case DP_ERR_OK:
+        if (be_ctx->last_dp_state != DP_ERR_OK) {
+            be_ctx->last_dp_state = DP_ERR_OK;
+            sss_log(SSS_LOG_INFO, "Backend is online\n");
+        }
         DEBUG(SSSDBG_TRACE_FUNC, "Backend is online\n");
         break;
     case DP_ERR_OFFLINE:
+        if (be_ctx->last_dp_state != DP_ERR_OFFLINE) {
+            be_ctx->last_dp_state = DP_ERR_OFFLINE;
+            sss_log(SSS_LOG_INFO, "Backend is offline\n");
+        }
         DEBUG(SSSDBG_TRACE_FUNC, "Backend is offline\n");
         break;
     default:
@@ -275,7 +283,7 @@ static void be_check_online_done(struct tevent_req *req)
 
     be_ctx->check_online_ref_count--;
 
-    if (reply.dp_error != DP_ERR_OK && be_ctx->check_online_ref_count > 0) {
+    if (reply->dp_error != DP_ERR_OK && be_ctx->check_online_ref_count > 0) {
         ret = be_check_online_request(be_ctx);
         if (ret != EOK) {
             DEBUG(SSSDBG_CRIT_FAILURE, "Unable to create check online req.\n");
@@ -286,8 +294,8 @@ static void be_check_online_done(struct tevent_req *req)
 
 done:
     be_ctx->check_online_ref_count = 0;
-    if (reply.dp_error != DP_ERR_OFFLINE) {
-        if (reply.dp_error != DP_ERR_OK) {
+    if (reply->dp_error != DP_ERR_OFFLINE) {
+        if (reply->dp_error != DP_ERR_OK) {
             reset_fo(be_ctx);
         }
         be_reset_offline(be_ctx);
@@ -377,6 +385,7 @@ errno_t be_process_init(TALLOC_CTX *mem_ctx,
     uint32_t refresh_interval;
     struct tevent_signal *tes;
     struct be_ctx *be_ctx;
+    char *str = NULL;
     errno_t ret;
 
     be_ctx = talloc_zero(mem_ctx, struct be_ctx);
@@ -396,6 +405,7 @@ errno_t be_process_init(TALLOC_CTX *mem_ctx,
         ret = ENOMEM;
         goto done;
     }
+    be_ctx->last_dp_state = -1;
 
     ret = be_init_failover(be_ctx);
     if (ret != EOK) {
@@ -406,6 +416,12 @@ errno_t be_process_init(TALLOC_CTX *mem_ctx,
     ret = sssd_domain_init(be_ctx, cdb, be_domain, DB_PATH, &be_ctx->domain);
     if (ret != EOK) {
         DEBUG(SSSDBG_FATAL_FAILURE, "Unable to initialize domain\n");
+        goto done;
+    }
+
+    ret = sysdb_master_domain_update(be_ctx->domain);
+    if (ret != EOK) {
+        DEBUG(SSSDBG_FATAL_FAILURE, "Unable to update master domain information!\n");
         goto done;
     }
 
@@ -425,6 +441,36 @@ errno_t be_process_init(TALLOC_CTX *mem_ctx,
     if (ret != EOK) {
         DEBUG(SSSDBG_FATAL_FAILURE, "Unable to setup fully qualified name "
               "format for %s\n", be_ctx->domain->name);
+        goto done;
+    }
+
+    /* Read the global override_space option, for output name formatting */
+    ret = confdb_get_string(cdb, be_ctx, CONFDB_MONITOR_CONF_ENTRY,
+                            CONFDB_MONITOR_OVERRIDE_SPACE, NULL,
+                            &str);
+    if (ret != EOK) {
+        DEBUG(SSSDBG_OP_FAILURE,
+              "Cannnot get the space substitution character [%d]: %s\n",
+               ret, strerror(ret));
+        goto done;
+    }
+
+    if (str != NULL) {
+        if (strlen(str) > 1) {
+            DEBUG(SSSDBG_MINOR_FAILURE, "Option %s is longer than 1 character "
+                  "only the first character %c will be used\n",
+                  CONFDB_MONITOR_OVERRIDE_SPACE, str[0]);
+        }
+
+        be_ctx->override_space = str[0];
+    }
+
+    /* Read session_recording section */
+    ret = session_recording_conf_load(be_ctx, cdb, &be_ctx->sr_conf);
+    if (ret != EOK) {
+        DEBUG(SSSDBG_FATAL_FAILURE,
+              "Failed loading session recording configuration: %s\n",
+              strerror(ret));
         goto done;
     }
 

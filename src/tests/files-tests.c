@@ -32,7 +32,6 @@
 #include <popt.h>
 
 #include "config.h"
-#include "tools/tools_util.h"
 #include "util/util.h"
 #include "tests/common.h"
 
@@ -144,7 +143,7 @@ START_TEST(test_remove_tree)
     fail_if(ret == -1, "Cannot chdir\n");
 
     /* and finally wipe it out.. */
-    ret = remove_tree(dir_path);
+    ret = sss_remove_tree(dir_path);
     fail_unless(ret == EOK, "remove_tree failed\n");
 
     /* check if really gone */
@@ -193,7 +192,7 @@ START_TEST(test_remove_subtree)
     fail_if(ret == -1, "Cannot chdir\n");
 
     /* and finally wipe it out.. */
-    ret = remove_subtree(dir_path);
+    ret = sss_remove_subtree(dir_path);
     fail_unless(ret == EOK, "remove_subtree failed\n");
 
     /* check if really gone */
@@ -240,7 +239,7 @@ START_TEST(test_simple_copy)
     /* and finally copy.. */
     DEBUG(SSSDBG_FUNC_DATA,
           "Will copy from '%s' to '%s'\n", dir_path, dst_path);
-    ret = copy_tree(dir_path, dst_path, 0700, uid, gid);
+    ret = sss_copy_tree(dir_path, dst_path, 0700, uid, gid);
     fail_unless(ret == EOK, "copy_tree failed\n");
 
     /* check if really copied */
@@ -284,7 +283,7 @@ START_TEST(test_copy_file)
     /* Copy this file to a new file */
     DEBUG(SSSDBG_FUNC_DATA,
           "Will copy from 'foo' to 'bar'\n");
-    ret = copy_file_secure(foo_path, bar_path, 0700, uid, gid, 0);
+    ret = sss_copy_file_secure(foo_path, bar_path, 0700, uid, gid, 0);
     fail_unless(ret == EOK, "copy_file_secure failed\n");
 
     /* check if really copied */
@@ -326,7 +325,7 @@ START_TEST(test_copy_symlink)
     /* and finally copy.. */
     DEBUG(SSSDBG_FUNC_DATA,
           "Will copy from '%s' to '%s'\n", dir_path, dst_path);
-    ret = copy_tree(dir_path, dst_path, 0700, uid, gid);
+    ret = sss_copy_tree(dir_path, dst_path, 0700, uid, gid);
     fail_unless(ret == EOK, "copy_tree failed\n");
 
     /* check if really copied */
@@ -365,7 +364,7 @@ START_TEST(test_copy_node)
     /* and finally copy.. */
     DEBUG(SSSDBG_FUNC_DATA,
           "Will copy from '%s' to '%s'\n", dir_path, dst_path);
-    ret = copy_tree(dir_path, dst_path, 0700, uid, gid);
+    ret = sss_copy_tree(dir_path, dst_path, 0700, uid, gid);
     fail_unless(ret == EOK, "copy_tree failed\n");
 
     /* check if really copied and without special files */
@@ -376,6 +375,42 @@ START_TEST(test_copy_node)
     ret = access(tmp, F_OK);
     fail_unless(ret == -1, "special file %s exists, it shouldn't\n", tmp);
     talloc_free(tmp);
+}
+END_TEST
+
+START_TEST(test_create_dir)
+{
+    int ret;
+    char origpath[PATH_MAX+1];
+    char *new_dir;
+    struct stat info;
+
+    errno = 0;
+
+    fail_unless(getcwd(origpath, PATH_MAX) == origpath, "Cannot getcwd\n");
+    fail_unless(errno == 0, "Cannot getcwd\n");
+
+    /* create a dir */
+    ret = sss_create_dir(dir_path, "testdir", S_IRUSR | S_IXUSR, uid, gid);
+    fail_unless(ret == EOK, "cannot create dir: %s", strerror(ret));
+
+    new_dir = talloc_asprintf(NULL, "%s/testdir", dir_path);
+    ret = stat(new_dir, &info);
+    fail_unless(ret == EOK, "failed to stat '%s'\n", new_dir);
+
+    /* check the dir has been created */
+    fail_unless(S_ISDIR(info.st_mode) != 0, "'%s' is not a dir.\n", new_dir);
+
+    /* check the permissions are okay */
+    fail_unless((info.st_mode & S_IRUSR) != 0, "Read permission is not set\n");
+    fail_unless((info.st_mode & S_IWUSR) == 0, "Write permission is set\n");
+    fail_unless((info.st_mode & S_IXUSR) != 0, "Exec permission is not set\n");
+
+    /* check the owner is okay */
+    fail_unless(info.st_uid == uid, "Dir created with the wrong uid\n");
+    fail_unless(info.st_gid == gid, "Dir created with the wrong gid\n");
+
+    talloc_free(new_dir);
 }
 END_TEST
 
@@ -394,6 +429,7 @@ static Suite *files_suite(void)
     tcase_add_test(tc_files, test_copy_file);
     tcase_add_test(tc_files, test_copy_symlink);
     tcase_add_test(tc_files, test_copy_node);
+    tcase_add_test(tc_files, test_create_dir);
     suite_add_tcase(s, tc_files);
 
     return s;

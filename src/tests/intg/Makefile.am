@@ -1,4 +1,5 @@
 dist_noinst_DATA = \
+    __init__.py \
     config.py.m4 \
     util.py \
     sssd_nss.py \
@@ -18,6 +19,7 @@ dist_noinst_DATA = \
     test_enumeration.py \
     test_ldap.py \
     test_memory_cache.py \
+    test_session_recording.py \
     test_ts_cache.py \
     test_netgroup.py \
     secrets.py \
@@ -29,6 +31,10 @@ dist_noinst_DATA = \
     kdc.py \
     krb5utils.py \
     test_kcm.py \
+    test_pac_responder.py \
+    data/ad_data.ldif \
+    data/ad_schema.ldif \
+    test_pysss_nss_idmap.py \
     $(NULL)
 
 config.py: config.py.m4
@@ -42,6 +48,11 @@ config.py: config.py.m4
 	   -D "libexecpath=\`$(libexecdir)'" \
 	   -D "runstatedir=\`$(runstatedir)'" \
 	   -D "abs_builddir=\`$(abs_builddir)'" \
+	   -D "session_recording_shell=\`$(session_recording_shell)'" \
+	   -D "py2execdir=\`$(py2execdir)'" \
+	   -D "py3execdir=\`$(py3execdir)'" \
+	   -D "python2dir=\`$(python2dir)'" \
+	   -D "python3dir=\`$(python3dir)'" \
 	   $< > $@
 
 root:
@@ -71,6 +82,7 @@ intgcheck-installed: config.py passwd group
 	cd "$(abs_srcdir)"; \
 	nss_wrapper=$$(pkg-config --libs nss_wrapper); \
 	uid_wrapper=$$(pkg-config --libs uid_wrapper); \
+	unset HOME; \
 	PATH="$$(dirname -- $(SLAPD)):$$PATH" \
 	PATH="$(DESTDIR)$(sbindir):$(DESTDIR)$(bindir):$$PATH" \
 	PATH="$(abs_builddir):$(abs_srcdir):$$PATH" \

@@ -48,6 +48,9 @@ struct dp_option ipa_basic_opts[] = {
     { "ipa_server_mode", DP_OPT_BOOL, BOOL_FALSE, BOOL_FALSE },
     { "ipa_views_search_base", DP_OPT_STRING, NULL_STRING, NULL_STRING },
     { "krb5_confd_path", DP_OPT_STRING, { KRB5_MAPPING_DIR }, NULL_STRING },
+    { "ipa_deskprofile_search_base", DP_OPT_STRING, NULL_STRING, NULL_STRING },
+    { "ipa_deskprofile_refresh", DP_OPT_NUMBER, { .number = 5 }, NULL_NUMBER },
+    { "ipa_deskprofile_request_interval", DP_OPT_NUMBER, { .number = 60 }, NULL_NUMBER },
     DP_OPTION_TERMINATOR
 };
 
@@ -198,6 +201,7 @@ struct sdap_attr_map ipa_user_map[] = {
     { "ldap_user_ad_user_account_control", "userAccountControl", SYSDB_AD_USER_ACCOUNT_CONTROL, NULL},
     { "ldap_ns_account_lock", "nsAccountLock", SYSDB_NS_ACCOUNT_LOCK, NULL},
     { "ldap_user_authorized_host", "host", SYSDB_AUTHORIZED_HOST, NULL },
+    { "ldap_user_authorized_rhost", NULL, SYSDB_AUTHORIZED_RHOST, NULL },
     { "ldap_user_nds_login_disabled", "loginDisabled", SYSDB_NDS_LOGIN_DISABLED, NULL },
     { "ldap_user_nds_login_expiration_time", "loginExpirationTime", SYSDB_NDS_LOGIN_EXPIRATION_TIME, NULL },
     { "ldap_user_nds_login_allowed_time_map", "loginAllowedTimeMap", SYSDB_NDS_LOGIN_ALLOWED_TIME_MAP, NULL },

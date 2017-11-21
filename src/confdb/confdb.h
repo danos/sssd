@@ -139,6 +139,8 @@
 #define CONFDB_DEFAULT_SUDO_TIMED false
 #define CONFDB_SUDO_INVERSE_ORDER "sudo_inverse_order"
 #define CONFDB_DEFAULT_SUDO_INVERSE_ORDER false
+#define CONFDB_SUDO_THRESHOLD "sudo_threshold"
+#define CONFDB_DEFAULT_SUDO_THRESHOLD 50
 
 /* autofs */
 #define CONFDB_AUTOFS_CONF_ENTRY "config/autofs"
@@ -162,6 +164,12 @@
 #define CONFDB_IFP_USER_ATTR_LIST "user_attributes"
 #define CONFDB_IFP_WILDCARD_LIMIT "wildcard_limit"
 
+/* Session Recording */
+#define CONFDB_SESSION_RECORDING_CONF_ENTRY "config/session_recording"
+#define CONFDB_SESSION_RECORDING_SCOPE "scope"
+#define CONFDB_SESSION_RECORDING_USERS "users"
+#define CONFDB_SESSION_RECORDING_GROUPS "groups"
+
 /* Domains */
 #define CONFDB_DOMAIN_PATH_TMPL "config/domain/%s"
 #define CONFDB_DOMAIN_BASEDN "cn=domain,cn=config"
@@ -175,6 +183,7 @@
 #define CONFDB_DOMAIN_SELINUX_PROVIDER "selinux_provider"
 #define CONFDB_DOMAIN_HOSTID_PROVIDER "hostid_provider"
 #define CONFDB_DOMAIN_SUBDOMAINS_PROVIDER "subdomains_provider"
+#define CONFDB_DOMAIN_SESSION_PROVIDER "session_provider"
 #define CONFDB_DOMAIN_COMMAND "command"
 #define CONFDB_DOMAIN_TIMEOUT "timeout"
 #define CONFDB_DOMAIN_ATTR "cn"
@@ -198,6 +207,7 @@
 #define CONFDB_DOMAIN_DEFAULT_SUBDOMAIN_HOMEDIR "/home/%d/%u"
 #define CONFDB_DOMAIN_IGNORE_GROUP_MEMBERS "ignore_group_members"
 #define CONFDB_DOMAIN_SUBDOMAIN_REFRESH "subdomain_refresh_interval"
+#define CONFDB_DOMAIN_SUBDOMAIN_REFRESH_DEFAULT_VALUE 14400
 
 #define CONFDB_DOMAIN_USER_CACHE_TIMEOUT "entry_cache_user_timeout"
 #define CONFDB_DOMAIN_GROUP_CACHE_TIMEOUT "entry_cache_group_timeout"
@@ -236,6 +246,7 @@
 #define CONFDB_SEC_CONF_ENTRY "config/secrets"
 #define CONFDB_SEC_CONTAINERS_NEST_LEVEL "containers_nest_level"
 #define CONFDB_SEC_MAX_SECRETS "max_secrets"
+#define CONFDB_SEC_MAX_UID_SECRETS "max_uid_secrets"
 #define CONFDB_SEC_MAX_PAYLOAD_SIZE "max_payload_size"
 
 /* KCM Service */

@@ -88,6 +88,7 @@ polkitdir = @polkitdir@
 pamconfdir = $(sysconfdir)/pam.d
 systemtap_tapdir = @tapset_dir@
 sssdkcmdatadir = $(datadir)/sssd-kcm
+deskprofilepath = $(sss_statedir)/deskprofile
 
 if HAVE_SYSTEMD_UNIT
 ifp_exec_cmd = $(sssdlibexecdir)/sssd_ifp --uid 0 --gid 0 --debug-to-files --dbus-activated
@@ -142,7 +143,6 @@ sbin_PROGRAMS = \
     sss_groupmod \
     sss_groupshow \
     sss_cache \
-    sss_debuglevel \
     sss_override \
     sss_seed \
     sssctl \
@@ -257,6 +257,7 @@ if HAVE_CMOCKA
         test_search_bases \
         test_ldap_auth \
         test_sdap_access \
+        test_sdap_certmap \
         sdap-tests \
         test_sysdb_ts_cache \
         test_sysdb_views \
@@ -287,11 +288,9 @@ if HAVE_CMOCKA
         simple-access-tests \
         krb5_common_test \
         test_iobuf \
+        sss_certmap_test \
         $(NULL)
 
-if HAVE_NSS
-non_interactive_cmocka_based_tests +=  sss_certmap_test
-endif #HAVE_NSS
 
 if HAVE_LIBRESOLV
 non_interactive_cmocka_based_tests += test_resolv_fake
@@ -322,6 +321,10 @@ non_interactive_cmocka_based_tests += \
     test_ipa_subdom_server \
     $(NULL)
 endif
+
+if BUILD_KRB5_LOCALAUTH_PLUGIN
+non_interactive_cmocka_based_tests += test_sssd_krb5_localauth_plugin
+endif # BUILD_KRB5_LOCALAUTH_PLUGIN
 
 endif   # HAVE_CMOCKA
 
@@ -429,6 +432,10 @@ py3exec_LTLIBRARIES = \
     $(NULL)
 endif
 
+sbin_SCRIPTS = \
+	src/tools/wrappers/sss_debuglevel \
+	$(NULL)
+
 dist_noinst_SCRIPTS = \
     $(EXTRA_SCRIPTS) \
     src/config/setup.py \
@@ -530,6 +537,7 @@ SSSD_CACHE_REQ_OBJ = \
 	src/responder/common/cache_req/cache_req_search.c \
 	src/responder/common/cache_req/cache_req_data.c \
 	src/responder/common/cache_req/cache_req_domain.c \
+	src/responder/common/cache_req/cache_req_sr_overlay.c \
 	src/responder/common/cache_req/plugins/cache_req_common.c \
 	src/responder/common/cache_req/plugins/cache_req_enum_users.c \
 	src/responder/common/cache_req/plugins/cache_req_enum_groups.c \
@@ -574,6 +582,7 @@ SSSD_RESPONDER_OBJ = \
     src/responder/common/data_provider/rdp_client.c \
     src/monitor/monitor_iface_generated.c \
     src/providers/data_provider_req.c \
+    src/util/session_recording.c \
     $(SSSD_RESPONDER_IFACE_OBJ) \
     $(SSSD_CACHE_REQ_OBJ) \
     $(NULL)
@@ -581,8 +590,6 @@ SSSD_RESPONDER_OBJ = \
 SSSD_TOOLS_OBJ = \
     src/tools/sss_sync_ops.c \
     src/tools/tools_util.c \
-    src/tools/files.c \
-    src/tools/selinux.c \
     src/tools/common/sss_tools.c \
     src/tools/common/sss_process.c \
     src/confdb/confdb_setup.c \
@@ -650,9 +657,9 @@ dist_noinst_HEADERS = \
     src/util/dlinklist.h \
     src/util/debug.h \
     src/util/util.h \
-    src/util/io.h \
     src/util/util_errors.h \
     src/util/safe-format-string.h \
+    src/util/session_recording.h \
     src/util/strtonum.h \
     src/util/sss_cli_cmd.h \
     src/util/sss_ptr_hash.h \
@@ -670,13 +677,11 @@ dist_noinst_HEADERS = \
     src/util/refcount.h \
     src/util/find_uid.h \
     src/util/user_info_msg.h \
-    src/util/murmurhash3.h \
     src/util/mmap_cache.h \
     src/util/atomic_io.h \
     src/util/auth_utils.h \
     src/util/authtok.h \
     src/util/authtok-utils.h \
-    src/util/util_safealign.h \
     src/util/util_sss_idmap.h \
     src/util/util_creds.h \
     src/util/inotify.h \
@@ -803,6 +808,7 @@ dist_noinst_HEADERS = \
     src/providers/ipa/ipa_srv.h \
     src/providers/ipa/ipa_dn.h \
     src/providers/ipa/ipa_sudo.h \
+    src/providers/ipa/ipa_session.h \
     src/providers/ad/ad_srv.h \
     src/providers/ad/ad_common.h \
     src/providers/ad/ad_pac.h \
@@ -827,6 +833,7 @@ dist_noinst_HEADERS = \
     src/tests/cmocka/common_mock_krb5.h \
     src/tests/cmocka/common_mock_be.h \
     src/tests/cmocka/test_expire_common.h \
+    src/tests/cmocka/test_sdap_access.h \
     src/tests/cmocka/data_provider/mock_dp.h \
     src/tests/sbus_codegen_tests_generated.h \
     src/sss_client/pam_message.h \
@@ -846,6 +853,9 @@ dist_noinst_HEADERS = \
     src/tools/common/sss_colondb.h \
     src/tools/sssctl/sssctl.h \
     src/util/probes.h \
+    src/shared/io.h \
+    src/shared/murmurhash3.h \
+    src/shared/safealign.h \
     $(NULL)
 
 
@@ -1049,6 +1059,8 @@ libsss_util_la_SOURCES = \
     src/util/become_user.c \
     src/util/util_watchdog.c \
     src/util/sss_ptr_hash.c \
+    src/util/files.c \
+    src/util/selinux.c \
     $(NULL)
 libsss_util_la_CFLAGS = \
     $(AM_CFLAGS) \
@@ -1250,6 +1262,7 @@ dist_systemtap_tap_DATA = \
 dist_sssdtapscript_DATA = \
     contrib/systemtap/id_perf.stp \
     contrib/systemtap/nested_group_perf.stp \
+    contrib/systemtap/dp_request.stp \
     $(NULL)
 
 stap_generated_probes.h: $(srcdir)/src/systemtap/sssd_probes.d
@@ -1491,7 +1504,6 @@ sssd_secrets_SOURCES = \
     src/util/sss_iobuf.c \
     src/util/tev_curl.c \
     $(SSSD_RESPONDER_OBJ) \
-    $(SSSD_RESOLV_OBJ) \
     $(NULL)
 sssd_secrets_LDADD = \
     $(HTTP_PARSER_LIBS) \
@@ -1570,6 +1582,7 @@ sssd_be_SOURCES = \
     src/providers/data_provider/dp_target_subdomains.c \
     src/providers/data_provider/dp_target_id.c \
     src/providers/data_provider/dp_target_auth.c \
+    src/util/session_recording.c \
     $(SSSD_FAILOVER_OBJ)
 sssd_be_LDADD = \
     $(LIBADD_DL) \
@@ -1580,6 +1593,9 @@ sssd_be_LDADD = \
 sssd_be_LDFLAGS = \
     -Wl,--version-script,$(srcdir)/src/providers/sssd_be.exports \
     -export-dynamic
+if BUILD_SYSTEMTAP
+sssd_be_LDADD += stap_generated_probes.lo
+endif
 
 if BUILD_PYTHON_BINDINGS
 sss_obfuscate_pythondir = $(sbindir)
@@ -1680,13 +1696,6 @@ sss_cache_LDADD = \
     $(SSSD_INTERNAL_LTLIBS) \
     $(CLIENT_LIBS)
 sss_cache_CFLAGS = $(AM_CFLAGS)
-
-sss_debuglevel_SOURCES = \
-    src/tools/sss_debuglevel.c \
-    $(SSSD_TOOLS_OBJ)
-sss_debuglevel_LDADD = \
-    $(TOOLS_LIBS) \
-    $(SSSD_INTERNAL_LTLIBS)
 
 sss_seed_SOURCES = \
     src/tools/sss_seed.c \
@@ -1795,6 +1804,7 @@ libsss_certmap_la_SOURCES = \
     src/lib/certmap/sss_certmap_attr_names.c \
     src/lib/certmap/sss_certmap_krb5_match.c \
     src/lib/certmap/sss_certmap_ldap_mapping.c \
+    src/lib/certmap/sss_cert_content_common.c \
     src/util/util_ext.c \
     src/util/cert/cert_common.c \
     $(NULL)
@@ -1885,6 +1895,9 @@ libdlopen_test_providers_la_LIBADD = \
     $(SSSD_LIBS) \
     $(CARES_LIBS) \
     $(SSSD_INTERNAL_LTLIBS)
+if BUILD_SYSTEMTAP
+libdlopen_test_providers_la_LIBADD += stap_generated_probes.lo
+endif
 libdlopen_test_providers_la_LDFLAGS = \
     -shared \
     -avoid-version \
@@ -2012,8 +2025,8 @@ files_tests_SOURCES = \
     src/tests/files-tests.c \
     src/util/check_and_open.c \
     src/util/atomic_io.c \
-    src/tools/selinux.c \
-    src/tools/files.c
+    src/util/selinux.c \
+    src/util/files.c
 files_tests_CFLAGS = \
     $(AM_CFLAGS) \
     $(CHECK_CFLAGS)
@@ -2214,6 +2227,7 @@ responder_socket_access_tests_SOURCES = \
     src/responder/common/cache_req/cache_req_domain.c \
     src/responder/common/data_provider/rdp_message.c \
     src/responder/common/data_provider/rdp_client.c \
+    src/util/session_recording.c \
     $(SSSD_RESPONDER_IFACE_OBJ) \
     $(NULL)
 responder_socket_access_tests_CFLAGS = \
@@ -2302,6 +2316,7 @@ TEST_MOCK_RESP_OBJ = \
      src/responder/common/data_provider/rdp_message.c \
      src/responder/common/data_provider/rdp_client.c \
      src/responder/common/responder_utils.c \
+     src/util/session_recording.c \
      $(SSSD_CACHE_REQ_OBJ) \
      $(SSSD_RESPONDER_IFACE_OBJ) \
      $(NULL)
@@ -2664,6 +2679,24 @@ test_sdap_access_LDADD = \
     libsss_ldap_common.la \
     libsss_test_common.la \
     libdlopen_test_providers.la \
+    $(NULL)
+
+test_sdap_certmap_SOURCES = \
+    src/tests/cmocka/test_sdap_certmap.c \
+    src/providers/ldap/sdap_certmap.c \
+    $(NULL)
+test_sdap_certmap_CFLAGS = \
+    $(AM_CFLAGS) \
+    $(TALLOC_CFLAGS) \
+    $(POPT_CFLAGS) \
+    $(NULL)
+test_sdap_certmap_LDADD = \
+    $(CMOCKA_LIBS) \
+    $(TALLOC_LIBS) \
+    $(POPT_LIBS) \
+    $(SSSD_INTERNAL_LTLIBS) \
+    libsss_test_common.la \
+    libsss_certmap.la \
     $(NULL)
 
 ad_access_filter_tests_SOURCES = \
@@ -3307,6 +3340,9 @@ test_dp_request_LDADD = \
     $(LIBADD_DL) \
     libsss_test_common.la \
     $(NULL)
+if BUILD_SYSTEMTAP
+test_dp_request_LDADD += stap_generated_probes.lo
+endif
 
 test_dp_builtin_SOURCES = \
     src/providers/data_provider/dp_modules.c \
@@ -3416,7 +3452,6 @@ test_inotify_LDADD = \
     libsss_test_common.la \
     $(NULL)
 
-if HAVE_NSS
 sss_certmap_test_SOURCES = \
     src/tests/cmocka/test_certmap.c \
     src/lib/certmap/sss_certmap_attr_names.c \
@@ -3434,7 +3469,6 @@ sss_certmap_test_LDADD = \
     libsss_test_common.la \
     libsss_certmap.la \
     $(NULL)
-endif
 
 if BUILD_KCM
 test_kcm_json_SOURCES = \
@@ -3486,6 +3520,9 @@ endif
 if BUILD_WITH_LIBCURL
 noinst_PROGRAMS += tcurl-test-tool
 endif
+if BUILD_PAC_RESPONDER
+    noinst_PROGRAMS += sssd_pac_test_client
+endif
 
 if BUILD_AUTOFS
 autofs_test_client_SOURCES = \
@@ -3513,6 +3550,20 @@ tcurl_test_tool_LDADD = \
     $(NULL)
 endif
 
+if BUILD_KRB5_LOCALAUTH_PLUGIN
+test_sssd_krb5_localauth_plugin_SOURCES = \
+    src/tests/cmocka/test_sssd_krb5_localauth_plugin.c \
+    src/krb5_plugin/sssd_krb5_localauth_plugin.c \
+    $(NULL)
+test_sssd_krb5_localauth_plugin_CFLAGS = \
+    $(AM_CFLAGS) \
+    $(NULL)
+test_sssd_krb5_localauth_plugin_LDADD = \
+    $(CMOCKA_LIBS) \
+    $(KRB5_LIBS) \
+    $(NULL)
+endif
+
 #####################
 # Integration tests #
 #####################
@@ -3532,6 +3583,7 @@ intgcheck-prepare:
 	    --with-ldb-lib-dir="$$prefix"/lib/ldb \
 	    --enable-intgcheck-reqs \
 	    --without-semanage \
+	    --with-session-recording-shell=/bin/false \
 	    $(INTGCHECK_CONFIGURE_FLAGS) \
 	    CFLAGS="$$CFLAGS -DKCM_PEER_UID=$$(id -u)"; \
 	$(MAKE) $(AM_MAKEFLAGS) ; \
@@ -3709,6 +3761,7 @@ libsss_ldap_common_la_SOURCES = \
     src/providers/ldap/sdap_child_helpers.c \
     src/providers/ldap/sdap_fd_events.c \
     src/providers/ldap/sdap_id_op.c \
+    src/providers/ldap/sdap_certmap.c \
     src/providers/ldap/sdap_idmap.c \
     src/providers/ldap/sdap_idmap.h \
     src/providers/ldap/sdap_range.c \
@@ -3883,6 +3936,16 @@ libsss_ipa_la_SOURCES = \
     src/providers/ipa/ipa_hbac_services.c \
     src/providers/ipa/ipa_hbac_users.c \
     src/providers/ipa/ipa_hbac_common.c \
+    src/providers/ipa/ipa_rules_common.c \
+    src/providers/ipa/ipa_rules_common.h \
+    src/providers/ipa/ipa_session.c \
+    src/providers/ipa/ipa_deskprofile_private.h \
+    src/providers/ipa/ipa_deskprofile_config.c \
+    src/providers/ipa/ipa_deskprofile_config.h \
+    src/providers/ipa/ipa_deskprofile_rules.c \
+    src/providers/ipa/ipa_deskprofile_rules.h \
+    src/providers/ipa/ipa_deskprofile_rules_util.c \
+    src/providers/ipa/ipa_deskprofile_rules_util.h \
     src/providers/ipa/ipa_srv.c \
     src/providers/ipa/ipa_idmap.c \
     src/providers/ipa/ipa_dn.c \
@@ -4074,6 +4137,7 @@ selinux_child_LDADD = \
     $(POPT_LIBS) \
     $(DHASH_LIBS) \
     $(SEMANAGE_LIBS) \
+    $(SELINUX_LIBS) \
     $(NULL)
 endif
 
@@ -4192,6 +4256,19 @@ sssd_pac_plugin_la_LIBADD = \
 sssd_pac_plugin_la_LDFLAGS = \
     -avoid-version \
     -module
+
+sssd_pac_test_client_SOURCES = \
+    src/sss_client/sss_pac_responder_client.c \
+    src/sss_client/common.c \
+    src/util/strtonum.c \
+    $(NULL)
+sssd_pac_test_client_CFLAGS = \
+    $(AM_CFLAGS) \
+    $(NULL)
+sssd_pac_test_client_LDADD = \
+    $(CLIENT_LIBS) \
+    -lpthread \
+    $(NULL)
 
 # python[23] bindings
 pysss_la_SOURCES = \
@@ -4596,6 +4673,14 @@ src/sysv/systemd/sssd-kcm.service: src/sysv/systemd/sssd-kcm.service.in Makefile
 	$(replace_script)
 endif
 
+EXTRA_DIST += \
+    src/tools/wrappers/sss_debuglevel.in \
+    $(NULL)
+
+src/tools/wrappers/sss_debuglevel: src/tools/wrappers/sss_debuglevel.in Makefile
+	@$(MKDIR_P) src/tools/wrappers/
+	$(replace_script)
+
 SSSD_USER_DIRS = \
     $(DESTDIR)$(dbpath) \
     $(DESTDIR)$(keytabdir) \
@@ -4608,6 +4693,7 @@ SSSD_USER_DIRS = \
     $(DESTDIR)$(sssdconfdir)/conf.d \
     $(DESTDIR)$(sssddefaultconfdir) \
     $(DESTDIR)$(logpath) \
+    $(DESTDIR)$(deskprofilepath) \
     $(NULL)
 
 installsssddirs::
@@ -4839,6 +4925,7 @@ endif
 	rm -f $(builddir)/src/sysv/systemd/sssd-kcm.socket
 	rm -f $(builddir)/src/sysv/systemd/sssd-kcm.service
 	rm -f $(builddir)/src/sysv/systemd/journal.conf
+	rm -f $(builddir)/src/tools/wrappers/sss_debuglevel
 
 CLEANFILES += *.X */*.X */*/*.X
 

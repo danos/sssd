@@ -87,8 +87,12 @@ static int ifp_groups_list_copy(struct ifp_list_ctx *list_ctx,
                                 struct ldb_result *result)
 {
     size_t copy_count, i;
+    errno_t ret;
 
-    copy_count = ifp_list_ctx_remaining_capacity(list_ctx, result->count);
+    ret = ifp_list_ctx_remaining_capacity(list_ctx, result->count, &copy_count);
+    if (ret != EOK) {
+        goto done;
+    }
 
     for (i = 0; i < copy_count; i++) {
         list_ctx->paths[list_ctx->path_count + i] = \
@@ -96,12 +100,16 @@ static int ifp_groups_list_copy(struct ifp_list_ctx *list_ctx,
                                            list_ctx->dom,
                                            result->msgs[i]);
         if (list_ctx->paths[list_ctx->path_count + i] == NULL) {
-            return ENOMEM;
+            ret = ENOMEM;
+            goto done;
         }
     }
 
     list_ctx->path_count += copy_count;
-    return EOK;
+    ret = EOK;
+
+done:
+    return ret;
 }
 
 static void ifp_groups_find_by_name_done(struct tevent_req *req);
@@ -307,12 +315,14 @@ static void ifp_groups_list_by_name_done(struct tevent_req *req)
         return;
     }
 
-    ret = ifp_groups_list_copy(list_ctx, result->ldb_result);
-    if (ret != EOK) {
-        error = sbus_error_new(sbus_req, SBUS_ERROR_INTERNAL,
-                               "Failed to copy domain result");
-        sbus_request_fail_and_finish(sbus_req, error);
-        return;
+    if (ret == EOK) {
+        ret = ifp_groups_list_copy(list_ctx, result->ldb_result);
+        if (ret != EOK) {
+            error = sbus_error_new(sbus_req, SBUS_ERROR_INTERNAL,
+                                   "Failed to copy domain result");
+            sbus_request_fail_and_finish(sbus_req, error);
+            return;
+        }
     }
 
     list_ctx->dom = get_next_domain(list_ctx->dom, SSS_GND_DESCEND);
@@ -394,11 +404,13 @@ static void ifp_groups_list_by_domain_and_name_done(struct tevent_req *req)
         goto done;
     }
 
-    ret = ifp_groups_list_copy(list_ctx, result->ldb_result);
-    if (ret != EOK) {
-        error = sbus_error_new(sbus_req, SBUS_ERROR_INTERNAL,
-                               "Failed to copy domain result");
-        goto done;
+    if (ret == EOK) {
+        ret = ifp_groups_list_copy(list_ctx, result->ldb_result);
+        if (ret != EOK) {
+            error = sbus_error_new(sbus_req, SBUS_ERROR_INTERNAL,
+                                   "Failed to copy domain result");
+            goto done;
+        }
     }
 
 done:
@@ -607,12 +619,7 @@ static void resolv_ghosts_group_done(struct tevent_req *subreq)
     }
 
     el = ldb_msg_find_element(group, SYSDB_GHOST);
-    if (el == NULL) {
-        ret = ENOMEM;
-        goto done;
-    }
-
-    if (el->num_values == 0) {
+    if (el == NULL || el->num_values == 0) {
         ret = EOK;
         goto done;
     }

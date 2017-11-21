@@ -48,6 +48,7 @@ struct sudo_ctx {
      */
     bool timed;
     bool inverse_order;
+    int threshold;
 };
 
 struct sudo_cmd_ctx {
@@ -70,7 +71,7 @@ struct tevent_req *sudosrv_get_rules_send(TALLOC_CTX *mem_ctx,
                                           struct tevent_context *ev,
                                           struct sudo_ctx *sudo_ctx,
                                           enum sss_sudo_type type,
-                                          uid_t uid,
+                                          uid_t cli_uid,
                                           const char *username);
 
 errno_t sudosrv_get_rules_recv(TALLOC_CTX *mem_ctx,

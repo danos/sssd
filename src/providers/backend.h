@@ -27,6 +27,7 @@
 #include "providers/be_refresh.h"
 #include "providers/data_provider/dp.h"
 #include "util/child_common.h"
+#include "util/session_recording.h"
 #include "db/sysdb.h"
 
 /* a special token, if used in place of the hostname, denotes that real
@@ -83,6 +84,8 @@ struct be_ctx {
     const char *conf_path;
     uid_t uid;
     gid_t gid;
+    char override_space;
+    struct session_recording_conf sr_conf;
     struct be_failover_ctx *be_fo;
     struct be_resolv_ctx *be_res;
 
@@ -110,6 +113,11 @@ struct be_ctx {
     size_t check_online_ref_count;
 
     struct data_provider *provider;
+
+    /* Indicates whether the last state of the DP that has been logged is
+     * DP_ERR_OK or DP_ERR_OFFLINE. The only usage of this var, so far, is
+     * to log the DP status without spamming the syslog/journal. */
+    int last_dp_state;
 };
 
 bool be_is_offline(struct be_ctx *ctx);

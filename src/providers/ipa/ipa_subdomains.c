@@ -117,7 +117,7 @@ ipa_subdom_reinit(struct ipa_subdomains_ctx *ctx)
     ret = sss_write_krb5_conf_snippet(
                           dp_opt_get_string(ctx->ipa_id_ctx->ipa_options->basic,
                                             IPA_KRB5_CONFD_PATH),
-                          canonicalize);
+                          canonicalize, false);
     if (ret != EOK) {
         DEBUG(SSSDBG_MINOR_FAILURE, "sss_write_krb5_conf_snippet failed.\n");
         /* Just continue */
@@ -311,25 +311,6 @@ struct priv_sss_debug {
     int level;
 };
 
-void ext_debug(void *private, const char *file, long line, const char *function,
-               const char *format, ...)
-{
-    va_list ap;
-    struct priv_sss_debug *data = private;
-    int level = SSSDBG_OP_FAILURE;
-
-    if (data != NULL) {
-        level = data->level;
-    }
-
-    if (DEBUG_IS_SET(level)) {
-        va_start(ap, format);
-        sss_vdebug_fn(file, line, function, level, APPEND_LINE_FEED,
-                      format, ap);
-        va_end(ap);
-    }
-}
-
 static errno_t ipa_certmap_parse_results(TALLOC_CTX *mem_ctx,
                                          struct sss_domain_info *domain,
                                          struct sdap_options *sdap_opts,
@@ -344,7 +325,6 @@ static errno_t ipa_certmap_parse_results(TALLOC_CTX *mem_ctx,
     size_t c;
     size_t lc = 0;
     int ret;
-    struct sss_certmap_ctx *certmap_ctx = NULL;
     const char **ocs = NULL;
     bool user_name_hint = false;
 
@@ -444,30 +424,10 @@ static errno_t ipa_certmap_parse_results(TALLOC_CTX *mem_ctx,
 
     certmap_list[lc] = NULL;
 
-    ret = sss_certmap_init(mem_ctx, ext_debug, NULL, &certmap_ctx);
-    if (ret != 0) {
-        DEBUG(SSSDBG_OP_FAILURE, "sss_certmap_init failed.\n");
+    ret = sdap_setup_certmap(sdap_opts->sdap_certmap_ctx, certmap_list);
+    if (ret != EOK) {
+        DEBUG(SSSDBG_OP_FAILURE, "sdap_setup_certmap failed.\n");
         goto done;
-    }
-
-    for (c = 0; certmap_list[c] != NULL; c++) {
-        DEBUG(SSSDBG_TRACE_ALL, "Trying to add rule [%s][%d][%s][%s].\n",
-                                certmap_list[c]->name,
-                                certmap_list[c]->priority,
-                                certmap_list[c]->match_rule,
-                                certmap_list[c]->map_rule);
-
-        ret = sss_certmap_add_rule(certmap_ctx, certmap_list[c]->priority,
-                                   certmap_list[c]->match_rule,
-                                   certmap_list[c]->map_rule,
-                                   certmap_list[c]->domains);
-        if (ret != 0) {
-            DEBUG(SSSDBG_CRIT_FAILURE,
-                  "sss_certmap_add_rule failed for rule [%s], skipping. "
-                  "Please check for typos and if rule syntax is supported.\n",
-                  certmap_list[c]->name);
-            goto done;
-        }
     }
 
     ret = sysdb_update_certmap(domain->sysdb, certmap_list, user_name_hint);
@@ -476,18 +436,17 @@ static errno_t ipa_certmap_parse_results(TALLOC_CTX *mem_ctx,
         goto done;
     }
 
-    sss_certmap_free_ctx(sdap_opts->certmap_ctx);
-    sdap_opts->certmap_ctx = talloc_steal(sdap_opts, certmap_ctx);
-
     if (_certmap_list != NULL) {
         *_certmap_list = certmap_list;
+    } else {
+        talloc_free(certmap_list);
     }
+
     ret = EOK;
 
 done:
     talloc_free(ocs);
     if (ret != EOK) {
-        sss_certmap_free_ctx(certmap_ctx);
         talloc_free(certmap_list);
     }
 
@@ -780,6 +739,18 @@ done:
     return ret;
 }
 
+static void clean_view_name(struct sss_domain_info *domain)
+{
+    struct sss_domain_info *dom = domain;
+
+    while (dom) {
+        dom->has_views = false;
+        talloc_free(discard_const(dom->view_name));
+        dom->view_name = NULL;
+        dom = get_next_domain(dom, SSS_GND_DESCEND);
+    }
+}
+
 static errno_t ipa_apply_view(struct sss_domain_info *domain,
                               struct ipa_id_ctx *ipa_id_ctx,
                               const char *view_name,
@@ -872,7 +843,12 @@ static errno_t ipa_apply_view(struct sss_domain_info *domain,
     }
 
     if (!read_at_init) {
-        /* refresh view data of all domains at startup */
+        /* refresh view data of all domains at startup, since
+         * sysdb_master_domain_update and sysdb_update_subdomains might have
+         * been called earlier without the proper view name the name is
+         * cleaned here before the calls. This is acceptable because this is
+         * the initial setup (!read_at_init).  */
+        clean_view_name(domain);
         ret = sysdb_master_domain_update(domain);
         if (ret != EOK) {
             DEBUG(SSSDBG_OP_FAILURE, "sysdb_master_domain_update failed "

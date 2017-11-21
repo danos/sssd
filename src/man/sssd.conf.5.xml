@@ -560,6 +560,30 @@
                                 in a random order for each parent domain.
                             </para>
                             <para>
+                                Please, note that when this option is set the
+                                output format of all commands is always
+                                fully-qualified even when using short names
+                                for input.
+                                In case the administrator wants the output not
+                                fully-qualified, the full_name_format option
+                                can be used as shown below:
+                                <quote>full_name_format=%1$s</quote>
+                                However, keep in mind that during login, login
+                                applications often canonicalize the username by
+                                calling
+                                <citerefentry>
+                                    <refentrytitle>getpwnam</refentrytitle>
+                                    <manvolnum>3</manvolnum>
+                                </citerefentry>
+                                which, if a shortname is returned for a
+                                qualified input (while trying to reach a user
+                                which exists in multiple domains) might
+                                re-route the login attempt into the domain
+                                which users shortnames, making this workaround
+                                totally not recommended in cases where
+                                usernames may overlap between domains.
+                            </para>
+                            <para>
                                 Default: Not set
                             </para>
                         </listitem>
@@ -1098,9 +1122,9 @@ fallback_homedir = /home/%u
                     <listitem>
                         <para>
                             A comma separated list of strings which allows to
-                            remove (filter) data send by the PAM responder to
+                            remove (filter) data sent by the PAM responder to
                             pam_sss PAM module. There are different kind of
-                            responses send to pam_sss e.g. messages displayed to
+                            responses sent to pam_sss e.g. messages displayed to
                             the user or environment variables which should be
                             set by pam_sss.
                         </para>
@@ -1113,16 +1137,16 @@ fallback_homedir = /home/%u
                             Currently the following filters are supported:
                             <variablelist>
                                 <varlistentry><term>ENV</term>
-                                    <listitem><para>Do not sent any environment
+                                    <listitem><para>Do not send any environment
                                     variables to any service.</para></listitem>
                                 </varlistentry>
                                 <varlistentry><term>ENV:var_name</term>
-                                    <listitem><para>Do not sent environment
+                                    <listitem><para>Do not send environment
                                     variable var_name to any
                                     service.</para></listitem>
                                 </varlistentry>
                                 <varlistentry><term>ENV:var_name:service</term>
-                                    <listitem><para>Do not sent environment
+                                    <listitem><para>Do not send environment
                                     variable var_name to
                                     service.</para></listitem>
                                 </varlistentry>
@@ -1378,6 +1402,27 @@ pam_account_locked_message = Account locked, please contact help desk.
                     </listitem>
                 </varlistentry>
             </variablelist>
+            <variablelist>
+                <varlistentry>
+                    <term>sudo_threshold (integer)</term>
+                    <listitem>
+                        <para>
+                            Maximum number of expired rules that can be
+                            refreshed at once. If number of expired rules
+                            is below threshold, those rules are refreshed
+                            with <quote>rules refresh</quote> mechanism. If
+                            the threshold is exceeded a
+                            <quote>full refresh</quote> of sudo rules is
+                            triggered instead. This threshold number also
+                            applies to IPA sudo command and command group
+                            searches.
+                        </para>
+                        <para>
+                            Default: 50
+                        </para>
+                    </listitem>
+                </varlistentry>
+            </variablelist>
         </refsect2>
 
         <refsect2 id='AUTOFS' condition="with_autofs">
@@ -1512,6 +1557,105 @@ pam_account_locked_message = Account locked, please contact help desk.
                         </para>
                         <para>
                             Default: 300
+                        </para>
+                    </listitem>
+                </varlistentry>
+            </variablelist>
+        </refsect2>
+
+        <refsect2 id='SESSION_RECORDING'>
+            <title>Session recording configuration options</title>
+            <para>
+                Session recording works in conjunction with
+                <citerefentry>
+                    <refentrytitle>tlog-rec-session</refentrytitle>
+                    <manvolnum>8</manvolnum>
+                </citerefentry>, a part of tlog package, to log what users see
+                and type when they log in on a text terminal.
+                See also
+                <citerefentry>
+                    <refentrytitle>sssd-session-recording</refentrytitle>
+                    <manvolnum>5</manvolnum>
+                </citerefentry>.
+            </para>
+            <para>
+                These options can be used to configure session recording.
+            </para>
+            <variablelist>
+                <varlistentry>
+                    <term>scope (string)</term>
+                    <listitem>
+                        <para>
+                            One of the following strings specifying the scope
+                            of session recording:
+                            <variablelist>
+                                <varlistentry>
+                                    <term>"none"</term>
+                                    <listitem>
+                                        <para>
+                                            No users are recorded.
+                                        </para>
+                                    </listitem>
+                                </varlistentry>
+                                <varlistentry>
+                                    <term>"some"</term>
+                                    <listitem>
+                                        <para>
+                                            Users/groups specified by
+                                            <replaceable>users</replaceable>
+                                            and
+                                            <replaceable>groups</replaceable>
+                                            options are recorded.
+                                        </para>
+                                    </listitem>
+                                </varlistentry>
+                                <varlistentry>
+                                    <term>"all"</term>
+                                    <listitem>
+                                        <para>
+                                            All users are recorded.
+                                        </para>
+                                    </listitem>
+                                </varlistentry>
+                            </variablelist>
+                        </para>
+                        <para>
+                            Default: "none"
+                        </para>
+                    </listitem>
+                </varlistentry>
+                <varlistentry>
+                    <term>users (string)</term>
+                    <listitem>
+                        <para>
+                            A comma-separated list of users which should have
+                            session recording enabled. Matches user names as
+                            returned by NSS. I.e. after the possible space
+                            replacement, case changes, etc.
+                        </para>
+                        <para>
+                            Default: Empty. Matches no users.
+                        </para>
+                    </listitem>
+                </varlistentry>
+                <varlistentry>
+                    <term>groups (string)</term>
+                    <listitem>
+                        <para>
+                            A comma-separated list of groups, members of which
+                            should have session recording enabled. Matches
+                            group names as returned by NSS. I.e. after the
+                            possible space replacement, case changes, etc.
+                        </para>
+                        <para>
+                            NOTE: using this option (having it set to
+                            anything) has a considerable performance cost,
+                            because each uncached request for a user requires
+                            retrieving and matching the groups the user is
+                            member of.
+                        </para>
+                        <para>
+                            Default: Empty. Matches no groups.
                         </para>
                     </listitem>
                 </varlistentry>
@@ -2269,6 +2413,30 @@ pam_account_locked_message = Account locked, please contact help desk.
                         </para>
                     </listitem>
                 </varlistentry>
+                <varlistentry>
+                    <term>session_provider (string)</term>
+                    <listitem>
+                        <para>
+                            The provider which configures and manages user session
+                            related tasks. The only user session task currently
+                            provided is the integration with Fleet Commander, which
+                            works only with IPA.
+                            Supported session providers are:
+                        </para>
+                        <para>
+                            <quote>ipa</quote> to allow performing user session
+                            related tasks.
+                        </para>
+                        <para>
+                            <quote>none</quote> does not perform any kind of user
+                            session related tasks.
+                        </para>
+                        <para>
+                            Default: <quote>id_provider</quote> is used if it
+                            is set and can perform session related tasks.
+                        </para>
+                    </listitem>
+                </varlistentry>
 
                 <varlistentry condition="with_autofs">
                     <term>autofs_provider (string)</term>
@@ -2465,10 +2633,16 @@ pam_account_locked_message = Account locked, please contact help desk.
                     <term>dns_resolver_timeout (integer)</term>
                     <listitem>
                         <para>
-                            Defines the amount of time (in seconds) to wait for a reply from
-                            the DNS resolver before assuming that it is unreachable. If this
-                            timeout is reached, the domain will continue to operate in
-                            offline mode.
+                            Defines the amount of time (in seconds) to
+                            wait for a reply from the internal fail over
+                            service before assuming that the service is
+                            unreachable. If this timeout is reached, the
+                            domain will continue to operate in offline mode.
+                        </para>
+                        <para>
+                            Please see the section <quote>FAILOVER</quote>
+                            for more information about the service
+                            resolution.
                         </para>
                         <para>
                             Default: 6
@@ -2763,7 +2937,7 @@ subdomain_inherit = ldap_purge_cache_timeout
                 The following example illustrates the use of an application
                 domain. In this setup, the POSIX domain is connected to an LDAP
                 server and is used by the OS through the NSS responder. In addition,
-                the application domains also requests the telephoneNumber attribute,
+                the application domain also requests the telephoneNumber attribute,
                 stores it as the phone attribute in the cache and makes the phone
                 attribute reachable through the D-Bus interface.
             </para>
@@ -2917,6 +3091,8 @@ ldap_user_extra_attrs = phone:telephoneNumber
             Some options used in the domain section can also be used in the
             trusted domain section, that is, in a section called
             <quote>[domain/<replaceable>DOMAIN_NAME</replaceable>/<replaceable>TRUSTED_DOMAIN_NAME</replaceable>]</quote>.
+            Where DOMAIN_NAME is the actual joined-to base domain. Please refer
+            to examples below for explanation.
             Currently supported options in the trusted domain section are:
         </para>
             <para>ldap_search_base,</para>
@@ -2935,9 +3111,9 @@ ldap_user_extra_attrs = phone:telephoneNumber
     </refsect1>
 
     <refsect1 id='example'>
-        <title>EXAMPLE</title>
+        <title>EXAMPLES</title>
         <para>
-            The following example shows a typical SSSD config. It does
+            1. The following example shows a typical SSSD config. It does
             not describe configuration of the domains themselves - refer to
             documentation on configuring domains for more details.
 <programlisting>
@@ -2965,6 +3141,17 @@ cache_credentials = true
 min_id = 10000
 max_id = 20000
 enumerate = False
+</programlisting>
+        </para>
+        <para>
+            2. The following example shows configuration of IPA AD trust where
+            the AD forest consists of two domains in a parent-child structure.
+            Suppose IPA domain (ipa.com) has trust with AD domain(ad.com).
+            ad.com has child domain (child.ad.com). To enable shortnames in
+            the child domain the following configuration should be used.
+<programlisting>
+[domain/ipa.com/child.ad.com]
+use_fully_qualified_names = false
 </programlisting>
         </para>
     </refsect1>

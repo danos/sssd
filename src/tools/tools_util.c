@@ -33,7 +33,6 @@
 #include "util/util.h"
 #include "confdb/confdb.h"
 #include "db/sysdb.h"
-#include "tools/tools_util.h"
 #include "tools/sss_sync_ops.h"
 
 static int setup_db(struct tools_ctx *ctx)
@@ -73,18 +72,17 @@ static int setup_db(struct tools_ctx *ctx)
 void usage(poptContext pc, const char *error)
 {
     size_t lentmp;
-    char nl[2] = "";
 
     poptPrintUsage(pc, stderr, 0);
 
     if (error) {
         lentmp = strlen(error);
         if ((lentmp > 0) && (error[lentmp - 1] != '\n')) {
-            nl[0]='\n';
-            nl[1]='\0';
+            fprintf(stderr, "%s\n", error);
+            return;
         }
 
-        fprintf(stderr, "%s%s", error, nl);
+        fprintf(stderr, "%s", error);
     }
 }
 
@@ -414,7 +412,7 @@ int remove_homedir(TALLOC_CTX *mem_ctx,
     }
 
     /* Remove the tree */
-    ret = remove_tree(homedir);
+    ret = sss_remove_tree(homedir);
     if (ret != EOK) {
         DEBUG(SSSDBG_CRIT_FAILURE, "Cannot remove homedir %s: %d\n",
                   homedir, ret);
@@ -502,7 +500,7 @@ int create_homedir(const char *skeldir,
 
     selinux_file_context(homedir);
 
-    ret = copy_tree(skeldir, homedir, 0777 & ~default_umask, uid, gid);
+    ret = sss_copy_tree(skeldir, homedir, 0777 & ~default_umask, uid, gid);
     if (ret != EOK) {
         DEBUG(SSSDBG_CRIT_FAILURE,
               "Cannot populate user's home directory: [%d][%s].\n",

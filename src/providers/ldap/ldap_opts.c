@@ -174,12 +174,13 @@ struct sdap_attr_map rfc2307_user_map[] = {
     { "ldap_user_ad_user_account_control", "userAccountControl", SYSDB_AD_USER_ACCOUNT_CONTROL, NULL},
     { "ldap_ns_account_lock", "nsAccountLock", SYSDB_NS_ACCOUNT_LOCK, NULL},
     { "ldap_user_authorized_host", "host", SYSDB_AUTHORIZED_HOST, NULL },
+    { "ldap_user_authorized_rhost", "rhost", SYSDB_AUTHORIZED_RHOST, NULL },
     { "ldap_user_nds_login_disabled", "loginDisabled", SYSDB_NDS_LOGIN_DISABLED, NULL },
     { "ldap_user_nds_login_expiration_time", "loginExpirationTime", SYSDB_NDS_LOGIN_EXPIRATION_TIME, NULL },
     { "ldap_user_nds_login_allowed_time_map", "loginAllowedTimeMap", SYSDB_NDS_LOGIN_ALLOWED_TIME_MAP, NULL },
     { "ldap_user_ssh_public_key", "sshPublicKey", SYSDB_SSH_PUBKEY, NULL },
     { "ldap_user_auth_type", NULL, SYSDB_AUTH_TYPE, NULL },
-    { "ldap_user_certificate", NULL, SYSDB_USER_CERT, NULL },
+    { "ldap_user_certificate", "userCertificate;binary", SYSDB_USER_CERT, NULL },
     { "ldap_user_email", "mail", SYSDB_USER_EMAIL, NULL },
     SDAP_ATTR_MAP_TERMINATOR
 };
@@ -232,12 +233,13 @@ struct sdap_attr_map rfc2307bis_user_map[] = {
     { "ldap_user_ad_user_account_control", "userAccountControl", SYSDB_AD_USER_ACCOUNT_CONTROL, NULL},
     { "ldap_ns_account_lock", "nsAccountLock", SYSDB_NS_ACCOUNT_LOCK, NULL},
     { "ldap_user_authorized_host", "host", SYSDB_AUTHORIZED_HOST, NULL },
+    { "ldap_user_authorized_rhost", "rhost", SYSDB_AUTHORIZED_RHOST, NULL },
     { "ldap_user_nds_login_disabled", "loginDisabled", SYSDB_NDS_LOGIN_DISABLED, NULL },
     { "ldap_user_nds_login_expiration_time", "loginExpirationTime", SYSDB_NDS_LOGIN_EXPIRATION_TIME, NULL },
     { "ldap_user_nds_login_allowed_time_map", "loginAllowedTimeMap", SYSDB_NDS_LOGIN_ALLOWED_TIME_MAP, NULL },
     { "ldap_user_ssh_public_key", "sshPublicKey", SYSDB_SSH_PUBKEY, NULL },
     { "ldap_user_auth_type", NULL, SYSDB_AUTH_TYPE, NULL },
-    { "ldap_user_certificate", NULL, SYSDB_USER_CERT, NULL },
+    { "ldap_user_certificate", "userCertificate;binary", SYSDB_USER_CERT, NULL },
     { "ldap_user_email", "mail", SYSDB_USER_EMAIL, NULL },
     SDAP_ATTR_MAP_TERMINATOR
 };
@@ -290,12 +292,13 @@ struct sdap_attr_map gen_ad2008r2_user_map[] = {
     { "ldap_user_ad_user_account_control", "userAccountControl", SYSDB_AD_USER_ACCOUNT_CONTROL, NULL},
     { "ldap_ns_account_lock", NULL, SYSDB_NS_ACCOUNT_LOCK, NULL},
     { "ldap_user_authorized_host", NULL, SYSDB_AUTHORIZED_HOST, NULL },
+    { "ldap_user_authorized_rhost", NULL, SYSDB_AUTHORIZED_RHOST, NULL },
     { "ldap_user_nds_login_disabled", NULL, SYSDB_NDS_LOGIN_DISABLED, NULL },
     { "ldap_user_nds_login_expiration_time", NULL, SYSDB_NDS_LOGIN_EXPIRATION_TIME, NULL },
     { "ldap_user_nds_login_allowed_time_map", NULL, SYSDB_NDS_LOGIN_ALLOWED_TIME_MAP, NULL },
     { "ldap_user_ssh_public_key", NULL, SYSDB_SSH_PUBKEY, NULL },
     { "ldap_user_auth_type", NULL, SYSDB_AUTH_TYPE, NULL },
-    { "ldap_user_certificate", NULL, SYSDB_USER_CERT, NULL },
+    { "ldap_user_certificate", "userCertificate;binary", SYSDB_USER_CERT, NULL },
     { "ldap_user_email", "mail", SYSDB_USER_EMAIL, NULL },
     SDAP_ATTR_MAP_TERMINATOR
 };

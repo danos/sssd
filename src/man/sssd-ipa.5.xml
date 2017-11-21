@@ -113,6 +113,7 @@
                             Optional. May be set on machines where the
                             hostname(5) does not reflect the fully qualified
                             name used in the IPA domain to identify this host.
+                            The hostname must be fully qualified.
                         </para>
                     </listitem>
                 </varlistentry>
@@ -307,6 +308,19 @@
                 </varlistentry>
 
                 <varlistentry>
+                    <term>ipa_deskprofile_search_base (string)</term>
+                    <listitem>
+                        <para>
+                            Optional. Use the given string as search base for
+                            Desktop Profile related objects.
+                        </para>
+                        <para>
+                            Default: Use base DN
+                        </para>
+                    </listitem>
+                </varlistentry>
+
+                <varlistentry>
                     <term>ipa_hbac_search_base (string)</term>
                     <listitem>
                         <para>
@@ -443,6 +457,36 @@
                         <para>
                             Default: not set (krb5.include.d subdirectory of
                             SSSD's pubconf directory)
+                        </para>
+                    </listitem>
+                </varlistentry>
+
+                <varlistentry>
+                    <term>ipa_deskprofile_refresh (integer)</term>
+                    <listitem>
+                        <para>
+                            The amount of time between lookups of the Desktop
+                            Profile rules against the IPA server. This will
+                            reduce the latency and load on the IPA server if
+                            there are many desktop profiles requests made in a
+                            short period.
+                        </para>
+                        <para>
+                            Default: 5 (seconds)
+                        </para>
+                    </listitem>
+                </varlistentry>
+
+                <varlistentry>
+                    <term>ipa_deskprofile_request_interval (integer)</term>
+                    <listitem>
+                        <para>
+                            The amount of time between lookups of the Desktop
+                            Profile rules against the IPA server in case the
+                            last request did not return any rule.
+                        </para>
+                        <para>
+                            Default: 60 (minutes)
                         </para>
                     </listitem>
                 </varlistentry>

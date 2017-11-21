@@ -61,7 +61,7 @@ def create_sssd_secrets_fixture(request):
     else:
         sock_path = os.path.join(config.RUNSTATEDIR, "secrets.socket")
         sck = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        for _ in range(1, 10):
+        for _ in range(1, 100):
             try:
                 sck.connect(sock_path)
             except:
@@ -168,36 +168,6 @@ def test_crd_ops(setup_for_secrets, secrets_cli):
     with pytest.raises(HTTPError) as err404:
         cli.del_secret("foo")
     assert str(err404.value).startswith("404")
-
-    # Don't allow storing more secrets after reaching the max
-    # number of entries.
-    MAX_SECRETS = 10
-
-    sec_value = "value"
-    for x in range(MAX_SECRETS):
-        cli.set_secret(str(x), sec_value)
-
-    with pytest.raises(HTTPError) as err507:
-        cli.set_secret(str(MAX_SECRETS), sec_value)
-    assert str(err507.value).startswith("507")
-
-    # Delete all stored secrets used for max secrets tests
-    for x in range(MAX_SECRETS):
-        cli.del_secret(str(x))
-
-    # Don't allow storing a secrets which has a payload larger
-    # than max_payload_size
-    KILOBYTE = 1024
-    MAX_PAYLOAD_SIZE = 2 * KILOBYTE
-
-    sec_value = "x" * MAX_PAYLOAD_SIZE
-
-    cli.set_secret("foo", sec_value)
-
-    sec_value += "x"
-    with pytest.raises(HTTPError) as err413:
-        cli.set_secret("bar", sec_value)
-    assert str(err413.value).startswith("413")
 
 
 def run_curlwrap_tool(args, exp_http_code):
@@ -390,9 +360,9 @@ def test_containers(setup_for_secrets, secrets_cli):
     assert str(err406.value).startswith("406")
 
 
-def get_num_fds(pid):
+def get_fds(pid):
     procpath = os.path.join("/proc/", str(pid), "fd")
-    return len([fdname for fdname in os.listdir(procpath)])
+    return os.listdir(procpath)
 
 
 @pytest.fixture
@@ -418,13 +388,14 @@ def test_idle_timeout(setup_for_cli_timeout_test):
     secpid = setup_for_cli_timeout_test
     sock_path = get_secrets_socket()
 
-    nfds_pre = get_num_fds(secpid)
+    nfds_pre = get_fds(secpid)
 
     sock = socket.socket(family=socket.AF_UNIX)
     sock.connect(sock_path)
     time.sleep(1)
-    nfds_conn = get_num_fds(secpid)
-    assert nfds_pre + 1 == nfds_conn
+    nfds_conn = get_fds(secpid)
+    if len(nfds_pre) + 1 < len(nfds_conn):
+        raise Exception("FD difference %s\n", set(nfds_pre) - set(nfds_conn))
     # With the idle timeout set to 10 seconds, we need to sleep at least 15,
     # because the internal timer ticks every timeout/2 seconds, so it would
     # tick at 5, 10 and 15 seconds and the client timeout check uses a
@@ -432,5 +403,202 @@ def test_idle_timeout(setup_for_cli_timeout_test):
     # disconnect
     time.sleep(15)
 
-    nfds_post = get_num_fds(secpid)
-    assert nfds_pre == nfds_post
+    nfds_post = get_fds(secpid)
+    if len(nfds_pre) != len(nfds_post):
+        raise Exception("FD difference %s\n", set(nfds_pre) - set(nfds_post))
+
+
+def run_quota_test(cli, max_secrets, max_payload_size):
+    sec_value = "value"
+    for x in range(max_secrets):
+        cli.set_secret(str(x), sec_value)
+
+    with pytest.raises(HTTPError) as err507:
+        cli.set_secret(str(max_secrets), sec_value)
+    assert str(err507.value).startswith("507")
+
+    # Delete all stored secrets used for max secrets tests
+    for x in range(max_secrets):
+        cli.del_secret(str(x))
+
+    # Don't allow storing a secrets which has a payload larger
+    # than max_payload_size
+    KILOBYTE = 1024
+    kb_payload_size = max_payload_size * KILOBYTE
+
+    sec_value = "x" * kb_payload_size
+
+    cli.set_secret("foo", sec_value)
+
+    sec_value += "x"
+    with pytest.raises(HTTPError) as err413:
+        cli.set_secret("bar", sec_value)
+    assert str(err413.value).startswith("413")
+
+
+@pytest.fixture
+def setup_for_global_quota(request):
+    conf = unindent("""\
+        [sssd]
+        domains = local
+        services = nss
+
+        [domain/local]
+        id_provider = local
+
+        [secrets]
+        max_secrets = 10
+        max_payload_size = 2
+    """).format(**locals())
+
+    create_conf_fixture(request, conf)
+    create_sssd_secrets_fixture(request)
+    return None
+
+
+def test_global_quota(setup_for_global_quota, secrets_cli):
+    """
+    Test that the deprecated configuration of quotas in the global
+    secrets section is still supported
+    """
+    cli = secrets_cli
+
+    # Don't allow storing more secrets after reaching the max
+    # number of entries.
+    run_quota_test(cli, 10, 2)
+
+
+@pytest.fixture
+def setup_for_secrets_quota(request):
+    conf = unindent("""\
+        [sssd]
+        domains = local
+        services = nss
+
+        [domain/local]
+        id_provider = local
+
+        [secrets]
+        max_secrets = 5
+        max_payload_size = 1
+
+        [secrets/secrets]
+        max_secrets = 10
+        max_payload_size = 2
+    """).format(**locals())
+
+    create_conf_fixture(request, conf)
+    create_sssd_secrets_fixture(request)
+    return None
+
+
+def test_sec_quota(setup_for_secrets_quota, secrets_cli):
+    """
+    Test that the new secrets/secrets section takes precedence.
+    """
+    cli = secrets_cli
+
+    # Don't allow storing more secrets after reaching the max
+    # number of entries.
+    run_quota_test(cli, 10, 2)
+
+
+@pytest.fixture
+def setup_for_uid_limit(request):
+    conf = unindent("""\
+        [sssd]
+        domains = local
+        services = nss
+
+        [domain/local]
+        id_provider = local
+
+        [secrets]
+
+        [secrets/secrets]
+        max_secrets = 10
+        max_uid_secrets = 5
+    """).format(**locals())
+
+    create_conf_fixture(request, conf)
+    create_sssd_secrets_fixture(request)
+    return None
+
+
+def test_per_uid_limit(setup_for_uid_limit, secrets_cli):
+    """
+    Test that per-UID limits are enforced even if the global limit would still
+    allow to store more secrets
+    """
+    cli = secrets_cli
+
+    # Don't allow storing more secrets after reaching the max
+    # number of entries.
+    MAX_UID_SECRETS = 5
+
+    sec_value = "value"
+    for i in range(MAX_UID_SECRETS):
+        cli.set_secret(str(i), sec_value)
+
+    with pytest.raises(HTTPError) as err507:
+        cli.set_secret(str(MAX_UID_SECRETS), sec_value)
+    assert str(err507.value).startswith("507")
+
+    # FIXME - at this point, it would be nice to test that another UID can
+    # still store secrets, but sadly socket_wrapper doesn't allow us to fake
+    # UIDs yet
+
+
+@pytest.fixture
+def setup_for_unlimited_quotas(request):
+    conf = unindent("""\
+        [sssd]
+        domains = local
+        services = nss
+
+        [domain/local]
+        id_provider = local
+
+        [secrets]
+        debug_level = 10
+
+        [secrets/secrets]
+        max_secrets = 0
+        max_uid_secrets = 0
+        max_payload_size = 0
+        containers_nest_level = 0
+    """).format(**locals())
+
+    create_conf_fixture(request, conf)
+    create_sssd_secrets_fixture(request)
+    return None
+
+
+def test_unlimited_quotas(setup_for_unlimited_quotas, secrets_cli):
+    """
+    Test that setting quotas to zero disabled any checks and lets
+    store whatever.
+    """
+    cli = secrets_cli
+
+    # test much larger amount of secrets that we allow by default
+    sec_value = "value"
+    for i in range(2048):
+        cli.set_secret(str(i), sec_value)
+
+    # test a much larger secret size than the default one
+    KILOBYTE = 1024
+    payload_size = 32 * KILOBYTE
+
+    sec_value = "x" * payload_size
+    cli.set_secret("foo", sec_value)
+
+    fooval = cli.get_secret("foo")
+    assert fooval == sec_value
+
+    # test a deep secret nesting structure
+    DEFAULT_CONTAINERS_NEST_LEVEL = 128
+    container = "mycontainer"
+    for i in range(DEFAULT_CONTAINERS_NEST_LEVEL):
+        container += "%s/" % str(i)
+        cli.create_container(container)

@@ -31,29 +31,18 @@
 #define IPA_HBAC_SERVICE "ipaHBACService"
 #define IPA_HBAC_SERVICE_GROUP "ipaHBACServiceGroup"
 
-#define IPA_UNIQUE_ID "ipauniqueid"
-
 #define IPA_MEMBER "member"
 #define HBAC_HOSTS_SUBDIR "hbac_hosts"
 #define HBAC_HOSTGROUPS_SUBDIR "hbac_hostgroups"
 
-#define OBJECTCLASS "objectclass"
 #define IPA_MEMBEROF "memberOf"
 #define IPA_ACCESS_RULE_TYPE "accessRuleType"
 #define IPA_HBAC_ALLOW "allow"
-#define IPA_MEMBER_USER "memberUser"
-#define IPA_USER_CATEGORY "userCategory"
 #define IPA_SERVICE_NAME "serviceName"
 #define IPA_SOURCE_HOST "sourceHost"
 #define IPA_SOURCE_HOST_CATEGORY "sourceHostCategory"
-#define IPA_EXTERNAL_HOST "externalHost"
-#define IPA_ENABLED_FLAG "ipaenabledflag"
-#define IPA_MEMBER_HOST "memberHost"
-#define IPA_HOST_CATEGORY "hostCategory"
-#define IPA_CN "cn"
 #define IPA_MEMBER_SERVICE "memberService"
 #define IPA_SERVICE_CATEGORY "serviceCategory"
-#define IPA_TRUE_VALUE "TRUE"
 
 #define IPA_HBAC_BASE_TMPL "cn=hbac,%s"
 #define IPA_SERVICES_BASE_TMPL "cn=hbacservices,cn=accounts,%s"
@@ -65,13 +54,6 @@
 #define HBAC_SERVICEGROUPS_SUBDIR "hbac_servicegroups"
 
 /* From ipa_hbac_common.c */
-errno_t
-ipa_hbac_sysdb_save(struct sss_domain_info *domain,
-                    const char *primary_subdir, const char *attr_name,
-                    size_t primary_count, struct sysdb_attrs **primary,
-                    const char *group_subdir, const char *groupattr_name,
-                    size_t group_count, struct sysdb_attrs **groups);
-
 errno_t
 replace_attribute_name(const char *old_name,
                        const char *new_name, const size_t count,
@@ -101,11 +83,9 @@ hbac_shost_attrs_to_rule(TALLOC_CTX *mem_ctx,
                          struct sysdb_attrs *rule_attrs,
                          bool support_srchost,
                          struct hbac_rule_element **source_hosts);
-errno_t
-get_ipa_hostgroupname(TALLOC_CTX *mem_ctx,
-                      struct sysdb_ctx *sysdb,
-                      const char *host_dn,
-                      char **hostgroupname);
+
+const char **
+hbac_get_attrs_to_get_cached_rules(TALLOC_CTX *mem_ctx);
 
 /* From ipa_hbac_services.c */
 struct tevent_req *

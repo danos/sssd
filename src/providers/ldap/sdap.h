@@ -279,6 +279,7 @@ enum sdap_user_attrs {
     SDAP_AT_AD_USER_ACCOUNT_CONTROL,
     SDAP_AT_NS_ACCOUNT_LOCK,
     SDAP_AT_AUTHORIZED_HOST,
+    SDAP_AT_AUTHORIZED_RHOST,
     SDAP_AT_NDS_LOGIN_DISABLED,
     SDAP_AT_NDS_LOGIN_EXPIRATION_TIME,
     SDAP_AT_NDS_LOGIN_ALLOWED_TIME_MAP,
@@ -446,6 +447,8 @@ struct sdap_ext_member_ctx {
     ext_member_recv_fn_t ext_member_resolve_recv;
 };
 
+struct sdap_certmap_ctx;
+
 struct sdap_options {
     struct dp_option *basic;
     struct sdap_attr_map *gen_map;
@@ -481,7 +484,7 @@ struct sdap_options {
     enum dc_functional_level dc_functional_level;
 
     /* Certificate mapping support */
-    struct sss_certmap_ctx *certmap_ctx;
+    struct sdap_certmap_ctx *sdap_certmap_ctx;
 };
 
 struct sdap_server_opts {

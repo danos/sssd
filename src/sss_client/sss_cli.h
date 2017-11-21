@@ -32,7 +32,7 @@
 #include <stdint.h>
 #include <limits.h>
 
-#include "util/util_safealign.h"
+#include "shared/safealign.h"
 
 #ifndef HAVE_ERRNO_T
 #define HAVE_ERRNO_T
@@ -568,6 +568,12 @@ enum nss_status sss_nss_make_request(enum sss_cli_command cmd,
                                      uint8_t **repbuf, size_t *replen,
                                      int *errnop);
 
+enum nss_status sss_nss_make_request_timeout(enum sss_cli_command cmd,
+                                             struct sss_cli_req_data *rd,
+                                             int timeout,
+                                             uint8_t **repbuf, size_t *replen,
+                                             int *errnop);
+
 int sss_pam_make_request(enum sss_cli_command cmd,
                          struct sss_cli_req_data *rd,
                          uint8_t **repbuf, size_t *replen,
@@ -584,6 +590,11 @@ int sss_pac_make_request(enum sss_cli_command cmd,
                          struct sss_cli_req_data *rd,
                          uint8_t **repbuf, size_t *replen,
                          int *errnop);
+
+int sss_pac_make_request_with_lock(enum sss_cli_command cmd,
+                                   struct sss_cli_req_data *rd,
+                                   uint8_t **repbuf, size_t *replen,
+                                   int *errnop);
 
 int sss_sudo_make_request(enum sss_cli_command cmd,
                           struct sss_cli_req_data *rd,
@@ -634,6 +645,8 @@ void sss_pam_lock(void);
 void sss_pam_unlock(void);
 void sss_nss_mc_lock(void);
 void sss_nss_mc_unlock(void);
+void sss_pac_lock(void);
+void sss_pac_unlock(void);
 
 errno_t sss_readrep_copy_string(const char *in,
                                 size_t *offset,

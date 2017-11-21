@@ -592,6 +592,14 @@ static void sdap_id_op_connect_done(struct tevent_req *subreq)
             }
         }
         ret = sdap_id_conn_data_set_expire_timer(conn_data);
+        if (ret != EOK) {
+            DEBUG(SSSDBG_MINOR_FAILURE,
+                  "sdap_id_conn_data_set_expire_timer() failed [%d]: %s",
+                  ret, sss_strerror(ret));
+            /* Avoid causing the whole backend to be marked as offline because
+             * this operation failed. */
+            ret = EOK;
+        }
         sdap_steal_server_opts(conn_cache->id_conn->id_ctx, &srv_opts);
     }
 
@@ -608,6 +616,10 @@ static void sdap_id_op_connect_done(struct tevent_req *subreq)
 
             default:
                 /* do not attempt to retry on errors like ENOMEM */
+                DEBUG(SSSDBG_TRACE_FUNC,
+                      "Marking the backend \"%s\" offline [%d]: %s\n",
+                      conn_cache->id_conn->id_ctx->be->domain->name,
+                      ret, sss_strerror(ret));
                 can_retry = false;
                 is_offline = true;
                 be_mark_offline(conn_cache->id_conn->id_ctx->be);
