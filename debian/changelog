@@ -1,11 +1,11 @@
-sssd (1.16.0-1) UNRELEASED; urgency=medium
+sssd (1.16.0-1) unstable; urgency=medium
 
   * New upstream release.
   * sysdb-sanitize-search-filter-input.diff: Dropped, upstream.
   * sssd-common.install: Add sssd-session-recording.5.
   * control: Depend on python3 pkgs by default. (Closes: #883178)
 
- -- Timo Aaltonen <tjaalton@debian.org>  Tue, 21 Nov 2017 12:39:11 +0200
+ -- Timo Aaltonen <tjaalton@debian.org>  Wed, 20 Dec 2017 11:58:50 +0200
 
 sssd (1.15.3-3) unstable; urgency=medium
 
