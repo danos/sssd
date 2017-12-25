@@ -34,7 +34,8 @@ override_dh_auto_configure:
 	--disable-rpath \
 	--with-autofs \
 	--with-ssh \
-	--with-initscript=systemd --with-systemdunitdir=/lib/systemd/system \
+	--with-initscript=systemd \
+	--with-systemdunitdir=/lib/systemd/system \
 	--with-sudo
 
 override_dh_auto_test:
@@ -65,10 +66,6 @@ override_dh_install:
 	find $(CURDIR)/debian/tmp/ -name '*.pyc' -exec rm '{}' ';'
 	find $(CURDIR)/debian/tmp/ -name '*.egg-info' -exec rm '{}' ';'
 	rm -f $(CURDIR)/debian/tmp/etc/rc.d/init.d/sssd
-
-	# we don't need a default config, yet anyway
-	rm -f $(CURDIR)/debian/tmp/usr/lib/*/sssd/conf/sssd.conf
-	rm -f $(CURDIR)/debian/tmp/etc/pam.d/sssd-shadowutils
 
 	# match nn/nn/nnnn, replace with the date from changelog
 	sed -i 's/[0-1][0-9]\/[0-3][0-9]\/[0-9][0-9][0-9][0-9]/${PKGDATE}/g' $(CURDIR)/debian/tmp/usr/share/man/man*/*
