@@ -36,6 +36,7 @@ override_dh_auto_configure:
 	--with-ssh \
 	--with-initscript=systemd \
 	--with-systemdunitdir=/lib/systemd/system \
+	--enable-files-domain \
 	--with-sudo
 
 override_dh_auto_test:
