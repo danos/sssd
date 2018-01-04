@@ -1,8 +1,8 @@
-sssd (1.16.0-3) UNRELEASED; urgency=medium
+sssd (1.16.0-3) unstable; urgency=medium
 
   * Install responder service and socket files again.
 
- -- Timo Aaltonen <tjaalton@debian.org>  Thu, 04 Jan 2018 09:52:28 +0200
+ -- Timo Aaltonen <tjaalton@debian.org>  Thu, 04 Jan 2018 09:55:41 +0200
 
 sssd (1.16.0-2) unstable; urgency=medium
 
