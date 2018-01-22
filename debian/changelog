@@ -1,9 +1,9 @@
-sssd (1.16.0-4) UNRELEASED; urgency=medium
+sssd (1.16.0-4) unstable; urgency=medium
 
   * Revert installing responder service/socket files again.
     (Closes: #886483)
 
- -- Timo Aaltonen <tjaalton@debian.org>  Mon, 08 Jan 2018 10:46:57 +0200
+ -- Timo Aaltonen <tjaalton@debian.org>  Mon, 22 Jan 2018 16:50:14 +0200
 
 sssd (1.16.0-3) unstable; urgency=medium
 
