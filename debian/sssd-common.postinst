@@ -50,6 +50,33 @@ case "$1" in
             chown root:root /etc/sssd/sssd.conf
             chmod 0600 /etc/sssd/sssd.conf
         fi
+
+        if dpkg --compare-versions "$2" lt-nl "1.16.0-4"; then
+            if [ -x "/usr/bin/deb-systemd-helper" ]; then
+                deb-systemd-helper purge sssd-autofs.service >/dev/null
+                deb-systemd-helper unmask sssd-autofs.service >/dev/null
+                deb-systemd-helper purge sssd-autofs.socket >/dev/null
+                deb-systemd-helper unmask sssd-autofs.socket >/dev/null
+                deb-systemd-helper purge sssd-nss.service >/dev/null
+                deb-systemd-helper unmask sssd-nss.service >/dev/null
+                deb-systemd-helper purge sssd-nss.socket >/dev/null
+                deb-systemd-helper unmask sssd-nss.socket >/dev/null
+                deb-systemd-helper purge sssd-pam.service >/dev/null
+                deb-systemd-helper unmask sssd-pam.service >/dev/null
+                deb-systemd-helper purge sssd-pam.socket >/dev/null
+                deb-systemd-helper unmask sssd-pam.socket >/dev/null
+                deb-systemd-helper purge sssd-pam-priv.socket >/dev/null
+                deb-systemd-helper unmask sssd-pam-priv.socket >/dev/null
+                deb-systemd-helper purge sssd-sudo.service >/dev/null
+                deb-systemd-helper unmask sssd-sudo.service >/dev/null
+                deb-systemd-helper purge sssd-sudo.socket >/dev/null
+                deb-systemd-helper unmask sssd-sudo.socket >/dev/null
+                deb-systemd-helper purge sssd-ssh.service >/dev/null
+                deb-systemd-helper unmask sssd-ssh.service >/dev/null
+                deb-systemd-helper purge sssd-ssh.socket >/dev/null
+                deb-systemd-helper unmask sssd-ssh.socket >/dev/null
+            fi
+        fi
     ;;
 
     abort-upgrade|abort-remove|abort-deconfigure)

@@ -1,0 +1,28 @@
+#!/bin/sh
+
+set -e
+
+case "$1" in
+    configure)
+        if dpkg --compare-versions "$2" lt-nl "1.16.0-4"; then
+            if [ -x "/usr/bin/deb-systemd-helper" ]; then
+                deb-systemd-helper purge sssd-pac.service >/dev/null
+                deb-systemd-helper unmask sssd-pac.service >/dev/null
+                deb-systemd-helper purge sssd-pac.socket >/dev/null
+                deb-systemd-helper unmask sssd-pac.socket >/dev/null
+            fi
+        fi
+    ;;
+
+    abort-upgrade|abort-remove|abort-deconfigure)
+    ;;
+
+    *)
+        echo "postinst called with unknown argument \`$1'" >&2
+        exit 1
+    ;;
+esac
+
+#DEBHELPER#
+
+exit 0
