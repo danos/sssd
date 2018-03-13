@@ -8,6 +8,7 @@ sssd (1.16.1-1) UNRELEASED; urgency=medium
   * control: Add libgdm-dev to build-depends to support multiple
     certificates.
   * control, rules, common.install: Add support for systemtap.
+  * control: Bump policy to 4.1.3, no changes.
 
  -- Timo Aaltonen <tjaalton@debian.org>  Tue, 13 Mar 2018 09:38:28 +0200
 
