@@ -44,6 +44,7 @@ case "$1" in
 
         chmod 4754 $LIBDIR/p11_child
         chmod 755 $HOME/gpo_cache $HOME/mc $HOME/pipes $HOME/pubconf
+	chmod 751 $HOME/deskprofile
         chmod 750 /var/log/sssd
         chmod 711 /etc/sssd
         chmod 700 $HOME/db $HOME/pipes/private $HOME/secrets
