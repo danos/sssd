@@ -5,6 +5,8 @@ sssd (1.16.1-1) UNRELEASED; urgency=medium
     permissions. (Closes: #892315)
   * common: Add support for Fleet Commander, create deskprofile dir with
     correct permissions.
+  * control: Add libgdm-dev to build-depends to support multiple
+    certificates.
 
  -- Timo Aaltonen <tjaalton@debian.org>  Tue, 13 Mar 2018 09:38:28 +0200
 

@@ -24,6 +24,7 @@ Build-Depends:
  libcurl4-gnutls-dev,
  libdbus-1-dev,
  libdhash-dev,
+ libgdm-dev,
  libglib2.0-dev,
  libhttp-parser-dev,
  libini-config-dev,
