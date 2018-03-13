@@ -1,6 +1,8 @@
 sssd (1.16.1-1) UNRELEASED; urgency=medium
 
   * New upstream release.
+  * common.dirs, common.postinst: Add dir for secrets with correct
+    permissions. (Closes: #892315)
 
  -- Timo Aaltonen <tjaalton@debian.org>  Tue, 13 Mar 2018 09:38:28 +0200
 

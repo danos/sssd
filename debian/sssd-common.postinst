@@ -37,6 +37,7 @@ case "$1" in
             $HOME/pipes \
             $HOME/pipes/private \
             $HOME/pubconf \
+            $HOME/secrets \
             /etc/sssd \
             /var/log/sssd
         chown root:sssd $LIBDIR/p11_child
@@ -45,7 +46,7 @@ case "$1" in
         chmod 755 $HOME/gpo_cache $HOME/mc $HOME/pipes $HOME/pubconf
         chmod 750 /var/log/sssd
         chmod 711 /etc/sssd
-        chmod 700 $HOME/db $HOME/pipes/private
+        chmod 700 $HOME/db $HOME/pipes/private $HOME/secrets
         if [ -f /etc/sssd/sssd.conf ]; then
             chown root:root /etc/sssd/sssd.conf
             chmod 0600 /etc/sssd/sssd.conf
