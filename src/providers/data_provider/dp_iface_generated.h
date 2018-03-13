@@ -26,6 +26,10 @@
 #define IFACE_DP_FAILOVER_ACTIVESERVER "ActiveServer"
 #define IFACE_DP_FAILOVER_LISTSERVERS "ListServers"
 
+/* constants for org.freedesktop.sssd.DataProvider.AccessControl */
+#define IFACE_DP_ACCESS_CONTROL "org.freedesktop.sssd.DataProvider.AccessControl"
+#define IFACE_DP_ACCESS_CONTROL_REFRESHRULES "RefreshRules"
+
 /* constants for org.freedesktop.sssd.dataprovider */
 #define IFACE_DP "org.freedesktop.sssd.dataprovider"
 #define IFACE_DP_PAMHANDLER "pamHandler"
@@ -34,6 +38,7 @@
 #define IFACE_DP_HOSTHANDLER "hostHandler"
 #define IFACE_DP_GETDOMAINS "getDomains"
 #define IFACE_DP_GETACCOUNTINFO "getAccountInfo"
+#define IFACE_DP_GETACCOUNTDOMAIN "getAccountDomain"
 
 /* ------------------------------------------------------------------------
  * DBus handlers
@@ -88,6 +93,15 @@ int iface_dp_failover_ActiveServer_finish(struct sbus_request *req, const char *
 /* finish function for ListServers */
 int iface_dp_failover_ListServers_finish(struct sbus_request *req, const char *arg_servers[], int len_servers);
 
+/* vtable for org.freedesktop.sssd.DataProvider.AccessControl */
+struct iface_dp_access_control {
+    struct sbus_vtable vtable; /* derive from sbus_vtable */
+    int (*RefreshRules)(struct sbus_request *req, void *data);
+};
+
+/* finish function for RefreshRules */
+int iface_dp_access_control_RefreshRules_finish(struct sbus_request *req);
+
 /* vtable for org.freedesktop.sssd.dataprovider */
 struct iface_dp {
     struct sbus_vtable vtable; /* derive from sbus_vtable */
@@ -97,6 +111,7 @@ struct iface_dp {
     int (*hostHandler)(struct sbus_request *req, void *data, uint32_t arg_dp_flags, const char *arg_name, const char *arg_alias);
     int (*getDomains)(struct sbus_request *req, void *data, const char *arg_domain_hint);
     int (*getAccountInfo)(struct sbus_request *req, void *data, uint32_t arg_dp_flags, uint32_t arg_entry_type, const char *arg_filter, const char *arg_domain, const char *arg_extra);
+    int (*getAccountDomain)(struct sbus_request *req, void *data, uint32_t arg_entry_type, const char *arg_filter);
 };
 
 /* finish function for autofsHandler */
@@ -110,6 +125,9 @@ int iface_dp_getDomains_finish(struct sbus_request *req, uint16_t arg_dp_error, 
 
 /* finish function for getAccountInfo */
 int iface_dp_getAccountInfo_finish(struct sbus_request *req, uint16_t arg_dp_error, uint32_t arg_error, const char *arg_error_message);
+
+/* finish function for getAccountDomain */
+int iface_dp_getAccountDomain_finish(struct sbus_request *req, uint16_t arg_dp_error, uint32_t arg_error, const char *arg_domain_name);
 
 /* ------------------------------------------------------------------------
  * DBus Interface Metadata
@@ -129,6 +147,9 @@ extern const struct sbus_interface_meta iface_dp_backend_meta;
 
 /* interface info for org.freedesktop.sssd.DataProvider.Failover */
 extern const struct sbus_interface_meta iface_dp_failover_meta;
+
+/* interface info for org.freedesktop.sssd.DataProvider.AccessControl */
+extern const struct sbus_interface_meta iface_dp_access_control_meta;
 
 /* interface info for org.freedesktop.sssd.dataprovider */
 extern const struct sbus_interface_meta iface_dp_meta;

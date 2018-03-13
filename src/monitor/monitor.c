@@ -361,7 +361,7 @@ static int client_registration(struct sbus_request *dbus_req, void *data)
         if (dbus_error_is_set(&dbus_error)) dbus_error_free(&dbus_error);
         sbus_disconnect(dbus_req->conn);
         sbus_request_finish(dbus_req, NULL);
-        /* FIXME: should we just talloc_zfree(conn) ? */
+        /* FIXME: should we just talloc_zfree(conn)? */
         goto done;
     }
 
@@ -374,7 +374,7 @@ static int client_registration(struct sbus_request *dbus_req, void *data)
     if (ret != EOK) {
         sbus_disconnect(dbus_req->conn);
         sbus_request_finish(dbus_req, NULL);
-        /* FIXME: should we just talloc_zfree(conn) ? */
+        /* FIXME: should we just talloc_zfree(conn)? */
 
         goto done;
     }
@@ -526,12 +526,12 @@ static int mark_service_as_started(struct mt_svc *svc)
     DEBUG(SSSDBG_FUNC_DATA, "Marking %s as started.\n", svc->name);
     svc->svc_started = true;
 
-    /* we need to attach a spy to the connection structure so that if some code
+    /* We need to attach a spy to the connection structure so that if some code
      * frees it we can zero it out in the service structure. Otherwise we may
      * try to access or even free, freed memory. */
     ret = add_svc_conn_spy(svc);
     if (ret) {
-        DEBUG(SSSDBG_FATAL_FAILURE, "Failed to attch spy\n");
+        DEBUG(SSSDBG_FATAL_FAILURE, "Failed to attach spy\n");
         goto done;
     }
 
@@ -1211,22 +1211,11 @@ static int get_service_config(struct mt_ctx *ctx, const char *name,
             }
         }
 
-        if (debug_to_file) {
-            svc->command = talloc_strdup_append(
-                svc->command, " --debug-to-files"
-            );
-            if (!svc->command) {
-                talloc_free(svc);
-                return ENOMEM;
-            }
-        } else if (ctx->is_daemon == false) {
-            svc->command = talloc_strdup_append(
-                svc->command, " --debug-to-stderr"
-            );
-            if (!svc->command) {
-                talloc_free(svc);
-                return ENOMEM;
-            }
+        svc->command = talloc_asprintf_append(
+            svc->command, " --logger=%s", sss_logger_str[sss_logger]);
+        if (!svc->command) {
+            talloc_free(svc);
+            return ENOMEM;
         }
     }
 
@@ -1374,22 +1363,11 @@ static int get_provider_config(struct mt_ctx *ctx, const char *name,
             }
         }
 
-        if (debug_to_file) {
-            svc->command = talloc_strdup_append(
-                svc->command, " --debug-to-files"
-            );
-            if (!svc->command) {
-                talloc_free(svc);
-                return ENOMEM;
-            }
-        } else if (ctx->is_daemon == false) {
-            svc->command = talloc_strdup_append(
-                svc->command, " --debug-to-stderr"
-            );
-            if (!svc->command) {
-                talloc_free(svc);
-                return ENOMEM;
-            }
+        svc->command = talloc_asprintf_append(
+            svc->command, " --logger=%s", sss_logger_str[sss_logger]);
+        if (!svc->command) {
+            talloc_free(svc);
+            return ENOMEM;
         }
     }
 
@@ -1667,7 +1645,7 @@ static int monitor_ctx_destructor(void *mem)
     struct mt_ctx *mon = talloc_get_type(mem, struct mt_ctx);
     struct mt_svc *svc;
 
-    /* zero out references in svcs so that they don't try
+    /* zero out references in SVCs so that they don't try
      * to access the monitor context on process shutdown */
 
     for (svc = mon->svc_list; svc; svc = svc->next) {
@@ -1680,9 +1658,9 @@ static int monitor_ctx_destructor(void *mem)
  * This function should not be static otherwise gcc does some special kind of
  * optimisations which should not happen according to code: chown (unlink)
  * failed (return -1) but errno was zero.
- * As a result of this  * warning is printed ‘monitor’ may be used
+ * As a result of this * warning is printed ‘monitor’ may be used
  * uninitialized in this function. Instead of checking errno for 0
- * it's better to disable optimisation(in-lining) of this function.
+ * it's better to disable optimisation (in-lining) of this function.
  */
 errno_t load_configuration(TALLOC_CTX *mem_ctx,
                            const char *config_file,
@@ -2131,9 +2109,9 @@ static int monitor_process_init(struct mt_ctx *ctx,
     }
 
     if (num_providers > 0) {
-        /* now set the services stratup timeout *
+        /* now set the services startup timeout *
          * (responders will be started automatically when all
-         *  providers are up and running or when the tomeout
+         *  providers are up and running or when the timeout
          *  expires) */
         ret = add_services_startup_timeout(ctx);
         if (ret != EOK) {
@@ -2239,13 +2217,13 @@ static int monitor_service_shutdown(struct sbus_connection *conn, void *data)
 
     if (svc != NULL) {
         /* We must decrease the number of services when shutting down
-         * a {socket,dbus}-activted service. */
+         * a {socket,dbus}-activated service. */
         ctx->num_services--;
 
         DEBUG(SSSDBG_TRACE_FUNC,
               "Unregistering service %s (%p)\n", svc->identity, svc);
 
-        /* Before free'ing the service, let's unset the sbus_connection
+        /* Before freeing the service, let's unset the sbus_connection
          * destructor that triggered this call, otherwise we may end up
          * with a double-free due to a cycling call */
         talloc_set_destructor(svc->conn, NULL);
@@ -2454,6 +2432,7 @@ int main(int argc, const char *argv[])
     int opt_version = 0;
     int opt_netlinkoff = 0;
     char *opt_config_file = NULL;
+    char *opt_logger = NULL;
     char *config_file = NULL;
     int flags = 0;
     struct main_context *main_ctx;
@@ -2465,6 +2444,7 @@ int main(int argc, const char *argv[])
     struct poptOption long_options[] = {
         POPT_AUTOHELP
         SSSD_MAIN_OPTS
+        SSSD_LOGGER_OPTS
         {"daemon", 'D', POPT_ARG_NONE, &opt_daemon, 0, \
          _("Become a daemon (default)"), NULL }, \
         {"interactive", 'i', POPT_ARG_NONE, &opt_interactive, 0, \
@@ -2482,7 +2462,7 @@ int main(int argc, const char *argv[])
         POPT_TABLEEND
     };
 
-    /* Set debug level to invalid value so we can deside if -d 0 was used. */
+    /* Set debug level to invalid value so we can decide if -d 0 was used. */
     debug_level = SSSDBG_INVALID;
 
     pc = poptGetContext(argv[0], argc, argv, long_options, 0);
@@ -2551,6 +2531,8 @@ int main(int argc, const char *argv[])
         debug_to_stderr = 1;
     }
 
+    sss_set_logger(opt_logger);
+
     if (opt_config_file) {
         config_file = talloc_strdup(tmp_ctx, opt_config_file);
     } else {
@@ -2575,7 +2557,7 @@ int main(int argc, const char *argv[])
 
     /* Open before server_setup() does to have logging
      * during configuration checking */
-    if (debug_to_file) {
+    if (sss_logger == FILES_LOGGER) {
         ret = open_debug_file();
         if (ret) {
             return 7;
@@ -2672,7 +2654,7 @@ int main(int argc, const char *argv[])
      * if that's all we were asked to do */
     if (opt_genconf) return 0;
 
-    /* set up things like debug , signals, daemonization, etc... */
+    /* set up things like debug, signals, daemonization, etc. */
     monitor->conf_path = CONFDB_MONITOR_CONF_ENTRY;
     ret = close(STDIN_FILENO);
     if (ret != EOK) return 6;

@@ -1441,7 +1441,7 @@ void ifp_users_user_get_extra_attributes(struct sbus_request *sbus_req,
     }
 
     filter = talloc_asprintf(sbus_req, "(&(%s=%s)(%s=%s))",
-                             SYSDB_OBJECTCLASS, SYSDB_USER_CLASS,
+                             SYSDB_OBJECTCATEGORY, SYSDB_USER_CLASS,
                              SYSDB_NAME, name);
     if (filter == NULL) {
         DEBUG(SSSDBG_CRIT_FAILURE, "talloc_asprintf() failed\n");
@@ -1449,7 +1449,7 @@ void ifp_users_user_get_extra_attributes(struct sbus_request *sbus_req,
     }
 
     ret = sysdb_search_entry(sbus_req, domain->sysdb, basedn,
-                             LDB_SCOPE_ONELEVEL, filter,
+                             LDB_SCOPE_SUBTREE, filter,
                              extra, &count, &user);
     if (ret != EOK) {
         DEBUG(SSSDBG_CRIT_FAILURE, "Unable to lookup user [%d]: %s\n",

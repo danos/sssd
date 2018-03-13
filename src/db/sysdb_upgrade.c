@@ -149,6 +149,7 @@ int sysdb_upgrade_01(struct ldb_context *ldb, const char **ver)
     struct ldb_dn *mem_dn;
     struct ldb_message *msg;
     const struct ldb_val *val;
+    /* No change needed because this version has objectclass group */
     const char *filter = "(&(memberUid=*)(objectclass=group))";
     const char *attrs[] = { "memberUid", NULL };
     const char *mdn;
@@ -1041,6 +1042,7 @@ int sysdb_upgrade_10(struct sysdb_ctx *sysdb, struct sss_domain_info *domain,
     struct ldb_message_element *memberof_el;
     const char *name;
     struct ldb_dn *basedn;
+    /* No change needed because version 10 has objectclass user */
     const char *filter = "(&(objectClass=user)(!(uidNumber=*))(memberOf=*))";
     const char *attrs[] = { "name", "memberof", NULL };
     struct upgrade_ctx *ctx;
@@ -2082,6 +2084,7 @@ static void qualify_users(struct upgrade_ctx *ctx,
                           struct sss_names_ctx *names,
                           struct ldb_dn *base_dn)
 {
+    /* No change needed because this version has objectclass user */
     const char *user_filter = "objectclass=user";
     const char *user_name_attrs[] = { SYSDB_NAME,
                                       SYSDB_NAME_ALIAS,
@@ -2107,6 +2110,7 @@ static void qualify_groups(struct upgrade_ctx *ctx,
                            struct sss_names_ctx *names,
                            struct ldb_dn *base_dn)
 {
+    /* No change needed because this version has objectclass group */
     const char *group_filter = "objectclass=group";
     const char *group_name_attrs[] = { SYSDB_NAME,
                                        SYSDB_NAME_ALIAS,
@@ -2304,6 +2308,235 @@ int sysdb_upgrade_18(struct sysdb_ctx *sysdb, const char **ver)
     }
 
     talloc_free(msg);
+
+    /* conversion done, update version number */
+    ret = update_version(ctx);
+
+done:
+    ret = finish_upgrade(ret, &ctx, ver);
+    return ret;
+}
+
+static errno_t add_object_category(struct ldb_context *ldb,
+                                   struct upgrade_ctx *ctx)
+{
+    errno_t ret;
+    struct ldb_result *objects = NULL;
+    const char *attrs[] = { SYSDB_OBJECTCLASS, NULL };
+    struct ldb_dn *base_dn;
+    size_t c;
+    const char *class_name;
+    struct ldb_message *msg = NULL;
+    struct ldb_message *del_msg = NULL;
+
+    base_dn = ldb_dn_new(ctx, ldb, SYSDB_BASE);
+    if (base_dn == NULL) {
+        DEBUG(SSSDBG_CRIT_FAILURE, "Failed create base dn.\n");
+        return ENOMEM;
+    }
+
+    ret = ldb_search(ldb, ctx, &objects, base_dn,
+                     LDB_SCOPE_SUBTREE, attrs,
+                     "(|("SYSDB_OBJECTCLASS"="SYSDB_USER_CLASS")"
+                       "("SYSDB_OBJECTCLASS"="SYSDB_GROUP_CLASS"))");
+    talloc_free(base_dn);
+    if (ret != LDB_SUCCESS) {
+        DEBUG(SSSDBG_CRIT_FAILURE, "Failed to search objects: %d\n", ret);
+        ret = sysdb_error_to_errno(ret);
+        goto done;
+    }
+
+    if (objects == NULL || objects->count == 0) {
+        DEBUG(SSSDBG_TRACE_LIBS, "No objects found, nothing to do.");
+        ret = EOK;
+        goto done;
+    }
+
+    del_msg = ldb_msg_new(ctx);
+    if (del_msg == NULL) {
+        DEBUG(SSSDBG_OP_FAILURE, "ldb_msg_new failed.\n");
+        ret = ENOMEM;
+        goto done;
+    }
+    ret = ldb_msg_add_empty(del_msg, SYSDB_OBJECTCLASS, LDB_FLAG_MOD_DELETE,
+                            NULL);
+    if (ret != LDB_SUCCESS) {
+        DEBUG(SSSDBG_OP_FAILURE, "ldb_msg_add_empty failed.\n");
+        ret = sysdb_error_to_errno(ret);
+        goto done;
+    }
+
+    DEBUG(SSSDBG_TRACE_ALL, "Found [%d] objects.\n", objects->count);
+    for (c = 0; c < objects->count; c++) {
+        DEBUG(SSSDBG_TRACE_ALL, "Updating [%s].\n",
+              ldb_dn_get_linearized(objects->msgs[c]->dn));
+
+        class_name = ldb_msg_find_attr_as_string(objects->msgs[c],
+                                                 SYSDB_OBJECTCLASS, NULL);
+        if (class_name == NULL) {
+            DEBUG(SSSDBG_OP_FAILURE, "Searched objects by objectClass, "
+                                     "but result does not have one.\n");
+            ret = EINVAL;
+            goto done;
+        }
+
+        talloc_free(msg);
+        msg = ldb_msg_new(ctx);
+        if (msg == NULL) {
+            DEBUG(SSSDBG_OP_FAILURE, "ldb_msg_new failed.\n");
+            ret = ENOMEM;
+            goto done;
+        }
+
+        msg->dn = objects->msgs[c]->dn;
+        del_msg->dn = objects->msgs[c]->dn;
+
+        ret = ldb_msg_add_empty(msg, SYSDB_OBJECTCATEGORY, LDB_FLAG_MOD_ADD,
+                                NULL);
+        if (ret != LDB_SUCCESS) {
+            DEBUG(SSSDBG_OP_FAILURE, "ldb_msg_add_empty failed.\n");
+            ret = sysdb_error_to_errno(ret);
+            goto done;
+        }
+
+        ret = ldb_msg_add_string(msg, SYSDB_OBJECTCATEGORY, class_name);
+        if (ret != LDB_SUCCESS) {
+            DEBUG(SSSDBG_OP_FAILURE, "ldb_msg_add_string failed.\n");
+            ret = sysdb_error_to_errno(ret);
+            goto done;
+        }
+
+        DEBUG(SSSDBG_TRACE_ALL, "Adding [%s] to [%s].\n", class_name,
+              ldb_dn_get_linearized(objects->msgs[c]->dn));
+        ret = ldb_modify(ldb, msg);
+        if (ret != LDB_SUCCESS) {
+            DEBUG(SSSDBG_OP_FAILURE,
+                  "Failed to add objectCategory to %s: %d.\n",
+                  ldb_dn_get_linearized(objects->msgs[c]->dn),
+                  sysdb_error_to_errno(ret));
+            ret = sysdb_error_to_errno(ret);
+            goto done;
+        }
+
+        ret = ldb_modify(ldb, del_msg);
+        if (ret != LDB_SUCCESS) {
+            DEBUG(SSSDBG_OP_FAILURE,
+                  "Failed to remove objectClass from %s: %d.\n",
+                  ldb_dn_get_linearized(objects->msgs[c]->dn),
+                  sysdb_error_to_errno(ret));
+            ret = sysdb_error_to_errno(ret);
+            goto done;
+        }
+    }
+
+    ret = EOK;
+
+done:
+    talloc_free(msg);
+    talloc_free(del_msg);
+    talloc_free(objects);
+
+    return ret;
+}
+
+int sysdb_upgrade_19(struct sysdb_ctx *sysdb, const char **ver)
+{
+    struct upgrade_ctx *ctx;
+    errno_t ret;
+    struct ldb_message *msg = NULL;
+
+    ret = commence_upgrade(sysdb, sysdb->ldb, SYSDB_VERSION_0_20, &ctx);
+    if (ret) {
+        return ret;
+    }
+
+    ret = add_object_category(sysdb->ldb, ctx);
+    if (ret != EOK) {
+        DEBUG(SSSDBG_CRIT_FAILURE, "add_object_category failed.\n");
+        goto done;
+    }
+
+    /* Remove @IDXONE from index */
+    msg = ldb_msg_new(ctx);
+    if (msg == NULL) {
+        ret = ENOMEM;
+        goto done;
+    }
+
+    msg->dn = ldb_dn_new(msg, sysdb->ldb, "@INDEXLIST");
+    if (msg->dn == NULL) {
+        ret = ENOMEM;
+        goto done;
+    }
+
+    ret = ldb_msg_add_empty(msg, "@IDXONE", LDB_FLAG_MOD_DELETE, NULL);
+    if (ret != LDB_SUCCESS) {
+        ret = ENOMEM;
+        goto done;
+    }
+
+    ret = ldb_msg_add_empty(msg, "@IDXATTR", LDB_FLAG_MOD_ADD, NULL);
+    if (ret != LDB_SUCCESS) {
+        ret = ENOMEM;
+        goto done;
+    }
+
+    ret = ldb_msg_add_string(msg, "@IDXATTR", SYSDB_USER_MAPPED_CERT);
+    if (ret != LDB_SUCCESS) {
+        ret = ENOMEM;
+        goto done;
+    }
+
+    ret = ldb_modify(sysdb->ldb, msg);
+    if (ret != LDB_SUCCESS) {
+        ret = sysdb_error_to_errno(ret);
+        goto done;
+    }
+
+    /* conversion done, update version number */
+    ret = update_version(ctx);
+
+done:
+    ret = finish_upgrade(ret, &ctx, ver);
+    return ret;
+}
+
+int sysdb_ts_upgrade_01(struct sysdb_ctx *sysdb, const char **ver)
+{
+    struct upgrade_ctx *ctx;
+    errno_t ret;
+    struct ldb_message *msg = NULL;
+
+    ret = commence_upgrade(sysdb, sysdb->ldb, SYSDB_TS_VERSION_0_2, &ctx);
+    if (ret) {
+        return ret;
+    }
+
+    /* Remove @IDXONE from index */
+    talloc_free(msg);
+    msg = ldb_msg_new(ctx);
+    if (msg == NULL) {
+        ret = ENOMEM;
+        goto done;
+    }
+
+    msg->dn = ldb_dn_new(msg, sysdb->ldb, "@INDEXLIST");
+    if (msg->dn == NULL) {
+        ret = ENOMEM;
+        goto done;
+    }
+
+    ret = ldb_msg_add_empty(msg, "@IDXONE", LDB_FLAG_MOD_DELETE, NULL);
+    if (ret != LDB_SUCCESS) {
+        ret = ENOMEM;
+        goto done;
+    }
+
+    ret = ldb_modify(sysdb->ldb, msg);
+    if (ret != LDB_SUCCESS) {
+        ret = sysdb_error_to_errno(ret);
+        goto done;
+    }
 
     /* conversion done, update version number */
     ret = update_version(ctx);

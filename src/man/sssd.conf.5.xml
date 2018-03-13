@@ -207,7 +207,7 @@
                                 <phrase condition="have_systemd">
                                     The services' list is optional on platforms
                                     where systemd is supported, as they will either
-                                    be socket or dbus activated when needed.
+                                    be socket or D-Bus activated when needed.
                                 </phrase>
                             </para>
                             <para>
@@ -703,7 +703,7 @@
 
                             This option only has effect when SSSD is built with
                             systemd support and when services are either socket
-                            or dbus activated.
+                            or D-Bus activated.
                         </para>
                         <para>
                             Default: 300
@@ -974,10 +974,17 @@ fallback_homedir = /home/%u
                     <listitem>
                         <para>
                             Specifies time in seconds for which records
-                            in the in-memory cache will be valid.
+                            in the in-memory cache will be valid. Setting this
+                            option to zero will disable the in-memory cache.
                         </para>
                         <para>
                             Default: 300
+                        </para>
+                        <para>
+                            WARNING: Disabling the in-memory cache will
+                            have significant negative impact on SSSD's
+                            performance and should only be used for
+                            testing.
                         </para>
                         <para>
                             NOTE: If the environment variable
@@ -1737,7 +1744,11 @@ pam_account_locked_message = Account locked, please contact help desk.
                     <term>enumerate (bool)</term>
                     <listitem>
                         <para>
-                            Determines if a domain can be enumerated. This
+                            Determines if a domain can be enumerated,
+                            that is, whether the domain can list all the
+                            users and group it contains. Note that it is
+                            not required to enable enumeration in order
+                            for secondary groups to be displayed. This
                             parameter can have one of the following values:
                         </para>
                         <para>
@@ -1750,6 +1761,11 @@ pam_account_locked_message = Account locked, please contact help desk.
                             Default: FALSE
                         </para>
                         <para>
+                            Enumerating a domain requires SSSD to download
+                            and store ALL user and group entries from the
+                            remote server.
+                        </para>
+                        <para>
                             Note: Enabling enumeration has a moderate
                             performance impact on SSSD while enumeration
                             is running. It may take up to several minutes
@@ -1760,7 +1776,9 @@ pam_account_locked_message = Account locked, please contact help desk.
                             processing. Saving a large number of entries
                             to cache after the enumeration completes might
                             also be CPU intensive as the memberships have
-                            to be recomputed.
+                            to be recomputed. This can lead to the
+                            <quote>sssd_be</quote> process becoming unresponsive
+                            or even restarted by the internal watchdog.
                         </para>
                         <para>
                             While the first enumeration is running, requests
@@ -2348,6 +2366,14 @@ pam_account_locked_message = Account locked, please contact help desk.
                                  <manvolnum>5</manvolnum>
                              </citerefentry>.
                         </para>
+                        <para>
+                            <emphasis>NOTE:</emphasis> Sudo rules are
+                            periodically downloaded in the background unless
+                            the sudo provider is explicitly disabled. Set
+                            <emphasis>sudo_provider = None</emphasis> to
+                            disable all sudo-related activity in SSSD if you do
+                            not want to use sudo with SSSD at all.
+                        </para>
                     </listitem>
                 </varlistentry>
                 <varlistentry>
@@ -2434,6 +2460,11 @@ pam_account_locked_message = Account locked, please contact help desk.
                         <para>
                             Default: <quote>id_provider</quote> is used if it
                             is set and can perform session related tasks.
+                        </para>
+                        <para>
+                            <emphasis>NOTE:</emphasis> In order to have this feature
+                            working as expected SSSD must be running as "root" and
+                            not as the unprivileged user.
                         </para>
                     </listitem>
                 </varlistentry>
@@ -2813,6 +2844,35 @@ subdomain_inherit = ldap_purge_cache_timeout
                         </para>
                         <para>
                             Default: 0
+                        </para>
+                    </listitem>
+                </varlistentry>
+                <varlistentry>
+                    <term>auto_private_groups (string)</term>
+                    <listitem>
+                        <para>
+                            If this option is enabled, SSSD will automatically
+                            create user private groups based on user's
+                            UID number. The GID number is ignored in this case.
+		        </para>
+			<para>
+			    For POSIX subdomains, setting the option in the main
+			    domain is inherited in the subdomain.
+			</para>
+			<para>
+			    For ID-mapping subdomains, auto_private_groups is
+			    already enabled for the subdomains and setting it to
+			    false will not have any effect for the subdomain.
+			</para>
+                        <para>
+                            NOTE: Because the GID number and the user private group
+                            are inferred from the UID number, it is not supported
+                            to have multiple entries with the same UID or GID number
+                            with this option. In other words, enabling this option
+                            enforces uniqueness across the ID space.
+                        </para>
+                        <para>
+                            Default: False
                         </para>
                     </listitem>
                 </varlistentry>

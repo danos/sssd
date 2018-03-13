@@ -27,6 +27,7 @@
 #include "tests/cmocka/common_mock_resp.h"
 #include "db/sysdb.h"
 #include "responder/common/cache_req/cache_req.h"
+#include "db/sysdb_private.h"   /* new_subdomain() */
 
 #define TESTS_PATH "tp_" BASE_FILE_STEM
 #define TEST_CONF_DB "test_responder_cache_req_conf.ldb"
@@ -58,10 +59,20 @@ struct test_group {
                                     test_single_domain_setup, \
                                     test_single_domain_teardown)
 
+#define new_single_domain_id_limit_test(test) \
+    cmocka_unit_test_setup_teardown(test_ ## test, \
+                                    test_single_domain_id_limits_setup, \
+                                    test_single_domain_teardown)
+
 #define new_multi_domain_test(test) \
     cmocka_unit_test_setup_teardown(test_ ## test, \
                                     test_multi_domain_setup, \
                                     test_multi_domain_teardown)
+
+#define new_subdomain_test(test) \
+    cmocka_unit_test_setup_teardown(test_ ## test, \
+                                    test_subdomain_setup, \
+                                    test_subdomain_teardown)
 
 #define run_cache_req(ctx, send_fn, done_fn, dom, crp, lookup, expret) do { \
     TALLOC_CTX *req_mem_ctx;                                                \
@@ -110,6 +121,7 @@ struct cache_req_test_ctx {
     struct sss_test_ctx *tctx;
     struct resp_ctx *rctx;
     struct sss_nc_ctx *ncache;
+    struct sss_domain_info *subdomain;
 
     struct cache_req_result *result;
     bool dp_called;
@@ -120,6 +132,8 @@ struct cache_req_test_ctx {
     bool create_user2;
     bool create_group1;
     bool create_group2;
+    bool create_subgroup1;
+    bool create_subuser1;
 };
 
 const char *domains[] = {"responder_cache_req_test_a",
@@ -127,6 +141,8 @@ const char *domains[] = {"responder_cache_req_test_a",
                          "responder_cache_req_test_c",
                          "responder_cache_req_test_d",
                          NULL};
+
+const char *subdomain_name = "responder_cache_req_test_a_sub";
 
 struct cli_protocol_version *register_cli_protocol_version(void)
 {
@@ -192,6 +208,18 @@ static void cache_req_object_by_sid_test_done(struct tevent_req *req)
     ctx = tevent_req_callback_data(req, struct cache_req_test_ctx);
 
     ctx->tctx->error = cache_req_object_by_sid_recv(ctx, req, &ctx->result);
+    talloc_zfree(req);
+
+    ctx->tctx->done = true;
+}
+
+static void cache_req_object_by_id_test_done(struct tevent_req *req)
+{
+    struct cache_req_test_ctx *ctx = NULL;
+
+    ctx = tevent_req_callback_data(req, struct cache_req_test_ctx);
+
+    ctx->tctx->error = cache_req_object_by_id_recv(ctx, req, &ctx->result);
     talloc_zfree(req);
 
     ctx->tctx->done = true;
@@ -417,6 +445,33 @@ static void run_object_by_sid(struct cache_req_test_ctx *test_ctx,
     talloc_free(req_mem_ctx);
 }
 
+static void run_object_by_id(struct cache_req_test_ctx *test_ctx,
+                             struct sss_domain_info *domain,
+                             id_t id,
+                             const char **attrs,
+                             int cache_refresh_percent,
+                             errno_t exp_ret)
+{
+    TALLOC_CTX *req_mem_ctx;
+    struct tevent_req *req;
+    errno_t ret;
+
+    req_mem_ctx = talloc_new(global_talloc_context);
+    check_leaks_push(req_mem_ctx);
+
+    req = cache_req_object_by_id_send(req_mem_ctx, test_ctx->tctx->ev,
+            test_ctx->rctx, test_ctx->ncache, cache_refresh_percent,
+            (domain == NULL ? NULL : domain->name), id, attrs);
+    assert_non_null(req);
+    tevent_req_set_callback(req, cache_req_object_by_id_test_done, test_ctx);
+
+    ret = test_ev_loop(test_ctx->tctx);
+    assert_int_equal(ret, exp_ret);
+    assert_true(check_leaks_pop(req_mem_ctx));
+
+    talloc_free(req_mem_ctx);
+}
+
 struct tevent_req *
 __wrap_sss_dp_get_account_send(TALLOC_CTX *mem_ctx,
                                struct resp_ctx *rctx,
@@ -448,10 +503,31 @@ __wrap_sss_dp_get_account_send(TALLOC_CTX *mem_ctx,
         prepare_group(ctx->tctx->dom, &groups[1], 1000, time(NULL));
     }
 
+    if (ctx->create_subgroup1) {
+        struct sss_domain_info *domain = NULL;
+
+        domain = find_domain_by_name(ctx->tctx->dom,
+                                     subdomain_name,
+                                     true);
+        assert_non_null(domain);
+        prepare_group(domain, &groups[0], 1000, time(NULL));
+    }
+
+    if (ctx->create_subuser1) {
+        struct sss_domain_info *domain = NULL;
+
+        domain = find_domain_by_name(ctx->tctx->dom,
+                                     subdomain_name,
+                                     true);
+        assert_non_null(domain);
+        prepare_user(domain, &users[0], 1000, time(NULL));
+    }
+
     return test_req_succeed_send(mem_ctx, rctx->ev);
 }
 
-static int test_single_domain_setup(void **state)
+static int test_single_domain_setup_common(void **state,
+                                           struct sss_test_conf_param *params)
 {
     struct cache_req_test_ctx *test_ctx = NULL;
     errno_t ret;
@@ -465,7 +541,7 @@ static int test_single_domain_setup(void **state)
     *state = test_ctx;
 
     test_ctx->tctx = create_dom_test_ctx(test_ctx, TESTS_PATH, TEST_CONF_DB,
-                                         TEST_DOM_NAME, TEST_ID_PROVIDER, NULL);
+                                         TEST_DOM_NAME, TEST_ID_PROVIDER, params);
     assert_non_null(test_ctx->tctx);
 
     test_ctx->rctx = mock_rctx(test_ctx, test_ctx->tctx->ev,
@@ -478,6 +554,11 @@ static int test_single_domain_setup(void **state)
     check_leaks_push(test_ctx);
 
     return 0;
+}
+
+static int test_single_domain_setup(void **state)
+{
+    return test_single_domain_setup_common(state, NULL);
 }
 
 static int test_single_domain_teardown(void **state)
@@ -493,6 +574,16 @@ static int test_single_domain_teardown(void **state)
     test_dom_suite_cleanup(TESTS_PATH, TEST_CONF_DB, TEST_DOM_NAME);
     assert_true(leak_check_teardown());
     return 0;
+}
+
+static int test_single_domain_id_limits_setup(void **state)
+{
+    struct sss_test_conf_param params[] = {
+        { "min_id", "100" },
+        { "max_id", "10000" },
+        { NULL, NULL },             /* Sentinel */
+    };
+    return test_single_domain_setup_common(state, params);
 }
 
 static int test_multi_domain_setup(void **state)
@@ -526,6 +617,32 @@ static int test_multi_domain_setup(void **state)
     return 0;
 }
 
+void test_user_by_id_below_id_range(void **state)
+{
+    struct cache_req_test_ctx *test_ctx = NULL;
+
+    test_ctx = talloc_get_type_abort(*state, struct cache_req_test_ctx);
+
+    /* Test. */
+    run_cache_req(test_ctx, cache_req_user_by_id_send,
+                  cache_req_user_by_id_test_done, test_ctx->tctx->dom,
+                  0, 10, ENOENT);
+    assert_false(test_ctx->dp_called);
+}
+
+void test_user_by_id_above_id_range(void **state)
+{
+    struct cache_req_test_ctx *test_ctx = NULL;
+
+    test_ctx = talloc_get_type_abort(*state, struct cache_req_test_ctx);
+
+    /* Test. */
+    run_cache_req(test_ctx, cache_req_user_by_id_send,
+                  cache_req_user_by_id_test_done, test_ctx->tctx->dom,
+                  0, 100000, ENOENT);
+    assert_false(test_ctx->dp_called);
+}
+
 static int test_multi_domain_teardown(void **state)
 {
     struct cache_req_test_ctx *test_ctx;
@@ -538,6 +655,67 @@ static int test_multi_domain_teardown(void **state)
     assert_true(check_leaks_pop(test_ctx));
     talloc_zfree(test_ctx);
     test_multidom_suite_cleanup(TESTS_PATH, TEST_CONF_DB, domains);
+    assert_true(leak_check_teardown());
+    return 0;
+}
+
+static int test_subdomain_setup(void **state)
+{
+    struct cache_req_test_ctx *test_ctx = NULL;
+    int ret;
+    const char *const testdom[4] = { subdomain_name, "TEST_A.SUB", "test_a", "S-3" };
+
+    assert_true(leak_check_setup());
+
+    test_dom_suite_setup(TESTS_PATH);
+
+    test_ctx = talloc_zero(global_talloc_context, struct cache_req_test_ctx);
+    assert_non_null(test_ctx);
+    *state = test_ctx;
+
+    test_ctx->tctx = create_dom_test_ctx(test_ctx, TESTS_PATH, TEST_CONF_DB,
+                                         TEST_DOM_NAME, TEST_ID_PROVIDER, NULL);
+    assert_non_null(test_ctx->tctx);
+
+    test_ctx->rctx = mock_rctx(test_ctx, test_ctx->tctx->ev,
+                               test_ctx->tctx->dom, NULL);
+    assert_non_null(test_ctx->rctx);
+
+    ret = sss_ncache_init(test_ctx, 10, 0, &test_ctx->ncache);
+    assert_int_equal(ret, EOK);
+
+    test_ctx->subdomain = new_subdomain(test_ctx, test_ctx->tctx->dom,
+                              testdom[0], testdom[1], testdom[2], testdom[3],
+                              false, false, NULL, NULL, 0,
+                              test_ctx->tctx->confdb);
+    assert_non_null(test_ctx->subdomain);
+
+    ret = sysdb_subdomain_store(test_ctx->tctx->sysdb,
+                                testdom[0], testdom[1], testdom[2], testdom[3],
+                                false, false, NULL, 0, NULL);
+    assert_int_equal(ret, EOK);
+
+    ret = sysdb_update_subdomains(test_ctx->tctx->dom,
+                                  test_ctx->tctx->confdb);
+    assert_int_equal(ret, EOK);
+
+    *state = test_ctx;
+    check_leaks_push(test_ctx);
+    return 0;
+}
+
+static int test_subdomain_teardown(void **state)
+{
+    struct cache_req_test_ctx *test_ctx;
+
+    test_ctx = talloc_get_type_abort(*state, struct cache_req_test_ctx);
+
+    talloc_zfree(test_ctx->result);
+    talloc_zfree(test_ctx->rctx->cr_domains);
+
+    assert_true(check_leaks_pop(test_ctx));
+    talloc_zfree(test_ctx);
+    test_dom_suite_cleanup(TESTS_PATH, TEST_CONF_DB, TEST_DOM_NAME);
     assert_true(leak_check_teardown());
     return 0;
 }
@@ -935,6 +1113,7 @@ void test_user_by_id_multiple_domains_found(void **state)
     /* Mock values. */
     will_return_always(__wrap_sss_dp_get_account_send, test_ctx);
     will_return_always(sss_dp_req_recv, 0);
+    will_return_always(sss_dp_get_account_domain_recv, ERR_GET_ACCT_DOM_NOT_SUPPORTED);
 
     /* Test. */
     run_user_by_id(test_ctx, NULL, 0, ERR_OK);
@@ -951,10 +1130,341 @@ void test_user_by_id_multiple_domains_notfound(void **state)
     /* Mock values. */
     will_return_always(__wrap_sss_dp_get_account_send, test_ctx);
     will_return_always(sss_dp_req_recv, 0);
+    will_return_always(sss_dp_get_account_domain_recv, ERR_GET_ACCT_DOM_NOT_SUPPORTED);
 
     /* Test. */
     run_user_by_id(test_ctx, NULL, 0, ENOENT);
     assert_true(test_ctx->dp_called);
+}
+
+void test_user_by_id_multiple_domains_locator_cache_valid(void **state)
+{
+    struct cache_req_test_ctx *test_ctx = NULL;
+    struct sss_domain_info *domain = NULL;
+    const char *locator_domain;
+    TALLOC_CTX *tmp_ctx;
+
+    test_ctx = talloc_get_type_abort(*state, struct cache_req_test_ctx);
+
+    tmp_ctx = talloc_new(test_ctx);
+    assert_non_null(tmp_ctx);
+
+    /* Has to be a talloc ptr, not just const, so it's stealable inside cache_req */
+    locator_domain = talloc_strdup(tmp_ctx, "responder_cache_req_test_d");
+    assert_non_null(locator_domain);
+
+    /* Setup user. */
+    domain = find_domain_by_name(test_ctx->tctx->dom,
+                                 "responder_cache_req_test_d", true);
+    assert_non_null(domain);
+    prepare_user(domain, &users[0], 1000, time(NULL));
+
+    will_return(sss_dp_get_account_domain_recv, EOK);
+    will_return(sss_dp_get_account_domain_recv, locator_domain);
+    will_return_always(sss_dp_get_account_domain_recv, ERR_GET_ACCT_DOM_NOT_SUPPORTED);
+
+    will_return_always(__wrap_sss_dp_get_account_send, test_ctx);
+    will_return_always(sss_dp_req_recv, EOK);
+
+    /* Test. */
+    run_user_by_id(test_ctx, NULL, 0, ERR_OK);
+    /* Even though the locator tells us to skip all domains except d, the domains
+     * are standalone and the result of the locator request is only valid within
+     * the subdomains
+     */
+    assert_true(test_ctx->dp_called);
+    check_user(test_ctx, &users[0], domain);
+
+    talloc_free(tmp_ctx);
+}
+
+void test_user_by_id_multiple_domains_locator_cache_expired(void **state)
+{
+    struct cache_req_test_ctx *test_ctx = NULL;
+    struct sss_domain_info *domain = NULL;
+    const char *locator_domain;
+    TALLOC_CTX *tmp_ctx;
+
+    test_ctx = talloc_get_type_abort(*state, struct cache_req_test_ctx);
+
+    tmp_ctx = talloc_new(test_ctx);
+    assert_non_null(tmp_ctx);
+
+    /* Has to be a talloc ptr, not just const, so it's stealable inside cache_req */
+    locator_domain = talloc_strdup(tmp_ctx, "responder_cache_req_test_d");
+    assert_non_null(locator_domain);
+
+    /* Setup user. */
+    domain = find_domain_by_name(test_ctx->tctx->dom,
+                                 "responder_cache_req_test_d", true);
+    assert_non_null(domain);
+    prepare_user(domain, &users[0], -1000, time(NULL));
+
+    will_return_always(__wrap_sss_dp_get_account_send, test_ctx);
+    will_return_always(sss_dp_req_recv, EOK);
+
+    will_return(sss_dp_get_account_domain_recv, EOK);
+    will_return(sss_dp_get_account_domain_recv, locator_domain);
+    will_return_always(sss_dp_get_account_domain_recv, ERR_GET_ACCT_DOM_NOT_SUPPORTED);
+
+    /* Test. */
+    run_user_by_id(test_ctx, NULL, 0, ERR_OK);
+
+    assert_true(test_ctx->dp_called);
+    check_user(test_ctx, &users[0], domain);
+
+    talloc_free(tmp_ctx);
+}
+
+void test_user_by_id_sub_domains_locator_cache_valid(void **state)
+{
+    struct cache_req_test_ctx *test_ctx = NULL;
+    struct sss_domain_info *domain = NULL;
+    const char *locator_domain;
+    TALLOC_CTX *tmp_ctx;
+
+    test_ctx = talloc_get_type_abort(*state, struct cache_req_test_ctx);
+
+    tmp_ctx = talloc_new(test_ctx);
+    assert_non_null(tmp_ctx);
+
+    /* Has to be a talloc ptr, not just const, so it's stealable inside cache_req */
+    locator_domain = talloc_strdup(tmp_ctx, subdomain_name);
+    assert_non_null(locator_domain);
+
+    /* Setup user. */
+    domain = find_domain_by_name(test_ctx->tctx->dom,
+                                 subdomain_name,
+                                 true);
+    assert_non_null(domain);
+    prepare_user(domain, &users[0], 1000, time(NULL));
+
+    will_return(sss_dp_get_account_domain_recv, EOK);
+    will_return(sss_dp_get_account_domain_recv, locator_domain);
+
+    /* Test. */
+    run_user_by_id(test_ctx, NULL, 0, ERR_OK);
+
+    /* Even though the ID is present in the last domain,
+     * we're not calling sss_dp_get_account_send,
+     * because the locator will cause cache_req to skip
+     * all domains except _d
+     */
+    assert_false(test_ctx->dp_called);
+    check_user(test_ctx, &users[0], domain);
+
+    talloc_free(tmp_ctx);
+}
+
+void test_user_by_id_sub_domains_locator_cache_expired(void **state)
+{
+    struct cache_req_test_ctx *test_ctx = NULL;
+    struct sss_domain_info *domain = NULL;
+    const char *locator_domain;
+    TALLOC_CTX *tmp_ctx;
+
+    test_ctx = talloc_get_type_abort(*state, struct cache_req_test_ctx);
+
+    tmp_ctx = talloc_new(test_ctx);
+    assert_non_null(tmp_ctx);
+
+    /* Has to be a talloc ptr, not just const, so it's stealable inside cache_req */
+    locator_domain = talloc_strdup(tmp_ctx, subdomain_name);
+    assert_non_null(locator_domain);
+
+    /* Setup user. */
+    domain = find_domain_by_name(test_ctx->tctx->dom,
+                                 subdomain_name,
+                                 true);
+    assert_non_null(domain);
+    prepare_user(domain, &users[0], -1000, time(NULL));
+
+    /* Note - DP will only be called once (so, we're not using will_return_always)
+     * because the locator will tell us which domain to look into. For the recv
+     * function, we use always b/c internally it mocks several values.
+     */
+    will_return(__wrap_sss_dp_get_account_send, test_ctx);
+    will_return_always(sss_dp_req_recv, 0);
+
+    will_return(sss_dp_get_account_domain_recv, EOK);
+    will_return(sss_dp_get_account_domain_recv, locator_domain);
+
+    /* Test. */
+    run_user_by_id(test_ctx, NULL, 0, ERR_OK);
+
+    assert_true(test_ctx->dp_called);
+    check_user(test_ctx, &users[0], domain);
+
+    talloc_free(tmp_ctx);
+}
+
+void test_user_by_id_sub_domains_locator_cache_midpoint(void **state)
+{
+    struct cache_req_test_ctx *test_ctx = NULL;
+    struct sss_domain_info *domain = NULL;
+    const char *locator_domain;
+    TALLOC_CTX *tmp_ctx;
+
+    test_ctx = talloc_get_type_abort(*state, struct cache_req_test_ctx);
+
+    tmp_ctx = talloc_new(test_ctx);
+    assert_non_null(tmp_ctx);
+
+    /* Has to be a talloc ptr, not just const, so it's stealable inside cache_req */
+    locator_domain = talloc_strdup(tmp_ctx, subdomain_name);
+    assert_non_null(locator_domain);
+
+    /* Setup user. */
+    domain = find_domain_by_name(test_ctx->tctx->dom,
+                                 subdomain_name,
+                                 true);
+    assert_non_null(domain);
+    prepare_user(domain, &users[0], 50, time(NULL) - 26);
+
+    /* Note - DP will only be called once and we're not waiting
+     * for the results (so, we're not mocking _recv)
+     */
+    will_return(__wrap_sss_dp_get_account_send, test_ctx);
+
+    will_return(sss_dp_get_account_domain_recv, EOK);
+    will_return(sss_dp_get_account_domain_recv, locator_domain);
+
+    /* Test. */
+    run_user_by_id(test_ctx, NULL, 50, ERR_OK);
+
+    assert_true(test_ctx->dp_called);
+    check_user(test_ctx, &users[0], domain);
+
+    talloc_free(tmp_ctx);
+}
+
+void test_user_by_id_sub_domains_locator_missing_found(void **state)
+{
+    struct cache_req_test_ctx *test_ctx = NULL;
+    struct sss_domain_info *domain = NULL;
+    const char *locator_domain;
+    TALLOC_CTX *tmp_ctx;
+
+    test_ctx = talloc_get_type_abort(*state, struct cache_req_test_ctx);
+
+    tmp_ctx = talloc_new(test_ctx);
+    assert_non_null(tmp_ctx);
+
+    /* Has to be a talloc ptr, not just const, so it's stealable inside cache_req */
+    locator_domain = talloc_strdup(tmp_ctx, subdomain_name);
+    assert_non_null(locator_domain);
+
+    /* Note - DP will only be called once (so, we're not using will_return_always)
+     * because the locator will tell us which domain to look into. For the recv
+     * function, we use always b/c internally it mocks several values.
+     */
+    will_return(__wrap_sss_dp_get_account_send, test_ctx);
+    will_return_always(sss_dp_req_recv, 0);
+
+    will_return(sss_dp_get_account_domain_recv, EOK);
+    will_return(sss_dp_get_account_domain_recv, locator_domain);
+
+    /* Test. */
+    test_ctx->create_subuser1 = true;
+    run_user_by_id(test_ctx, NULL, 0, ERR_OK);
+
+    assert_true(test_ctx->dp_called);
+
+    domain = find_domain_by_name(test_ctx->tctx->dom,
+                                 subdomain_name,
+                                 true);
+    assert_non_null(domain);
+    check_user(test_ctx, &users[0], domain);
+
+    talloc_free(tmp_ctx);
+}
+
+void test_group_by_id_below_id_range(void **state)
+{
+    struct cache_req_test_ctx *test_ctx = NULL;
+
+    test_ctx = talloc_get_type_abort(*state, struct cache_req_test_ctx);
+
+    /* Test. */
+    run_cache_req(test_ctx, cache_req_group_by_id_send,
+                  cache_req_group_by_id_test_done, test_ctx->tctx->dom,
+                  0, 10, ENOENT);
+    assert_false(test_ctx->dp_called);
+}
+
+void test_group_by_id_above_id_range(void **state)
+{
+    struct cache_req_test_ctx *test_ctx = NULL;
+
+    test_ctx = talloc_get_type_abort(*state, struct cache_req_test_ctx);
+
+    /* Test. */
+    run_cache_req(test_ctx, cache_req_group_by_id_send,
+                  cache_req_group_by_id_test_done, test_ctx->tctx->dom,
+                  0, 100000, ENOENT);
+    assert_false(test_ctx->dp_called);
+}
+
+void test_user_by_id_sub_domains_locator_missing_notfound(void **state)
+{
+    struct cache_req_test_ctx *test_ctx = NULL;
+
+    test_ctx = talloc_get_type_abort(*state, struct cache_req_test_ctx);
+
+    will_return(sss_dp_get_account_domain_recv, ERR_NOT_FOUND);
+
+    /* Test. */
+    run_user_by_id(test_ctx, NULL, 0, ENOENT);
+    assert_false(test_ctx->dp_called);
+}
+
+void test_user_by_id_sub_domains_locator_cache_expired_two_calls(void **state)
+{
+    struct cache_req_test_ctx *test_ctx = NULL;
+    struct sss_domain_info *domain = NULL;
+    const char *locator_domain;
+    TALLOC_CTX *tmp_ctx;
+
+    test_ctx = talloc_get_type_abort(*state, struct cache_req_test_ctx);
+
+    tmp_ctx = talloc_new(test_ctx);
+    assert_non_null(tmp_ctx);
+
+    /* Has to be a talloc ptr, not just const, so it's stealable inside cache_req */
+    locator_domain = talloc_strdup(tmp_ctx, subdomain_name);
+    assert_non_null(locator_domain);
+
+    /* Setup user. */
+    domain = find_domain_by_name(test_ctx->tctx->dom,
+                                 subdomain_name,
+                                 true);
+    assert_non_null(domain);
+    test_ctx->create_subuser1 = true;
+    prepare_user(domain, &users[0], -1000, time(NULL));
+
+    /* Note - DP will only be called once (so, we're not using will_return_always)
+     * because the locator will tell us which domain to look into. For the recv
+     * function, we use always b/c internally it mocks several values.
+     */
+    will_return(__wrap_sss_dp_get_account_send, test_ctx);
+    will_return_always(sss_dp_req_recv, 0);
+
+    will_return(sss_dp_get_account_domain_recv, EOK);
+    will_return(sss_dp_get_account_domain_recv, locator_domain);
+
+    /* Test. */
+    run_user_by_id(test_ctx, NULL, 0, ERR_OK);
+    assert_true(test_ctx->dp_called);
+    check_user(test_ctx, &users[0], domain);
+
+    /* Request the same user again */
+    test_ctx->tctx->done = false;
+    talloc_zfree(test_ctx->result);
+
+    run_user_by_id(test_ctx, NULL, 0, ERR_OK);
+    check_user(test_ctx, &users[0], domain);
+
+    talloc_free(tmp_ctx);
 }
 
 void test_user_by_id_cache_valid(void **state)
@@ -1293,6 +1803,7 @@ void test_group_by_id_multiple_domains_found(void **state)
     /* Mock values. */
     will_return_always(__wrap_sss_dp_get_account_send, test_ctx);
     will_return_always(sss_dp_req_recv, 0);
+    will_return_always(sss_dp_get_account_domain_recv, ERR_GET_ACCT_DOM_NOT_SUPPORTED);
 
     /* Test. */
     run_group_by_id(test_ctx, NULL, 0, ERR_OK);
@@ -1309,10 +1820,316 @@ void test_group_by_id_multiple_domains_notfound(void **state)
     /* Mock values. */
     will_return_always(__wrap_sss_dp_get_account_send, test_ctx);
     will_return_always(sss_dp_req_recv, 0);
+    will_return_always(sss_dp_get_account_domain_recv, ERR_GET_ACCT_DOM_NOT_SUPPORTED);
 
     /* Test. */
     run_group_by_id(test_ctx, NULL, 0, ENOENT);
     assert_true(test_ctx->dp_called);
+}
+
+void test_group_by_id_multiple_domains_locator_cache_valid(void **state)
+{
+    struct cache_req_test_ctx *test_ctx = NULL;
+    struct sss_domain_info *domain = NULL;
+    const char *locator_domain;
+    TALLOC_CTX *tmp_ctx;
+
+    test_ctx = talloc_get_type_abort(*state, struct cache_req_test_ctx);
+
+    tmp_ctx = talloc_new(test_ctx);
+    assert_non_null(tmp_ctx);
+
+    /* Has to be a talloc ptr, not just const, so it's stealable inside cache_req */
+    locator_domain = talloc_strdup(tmp_ctx, "responder_cache_req_test_d");
+    assert_non_null(locator_domain);
+
+    /* Setup group. */
+    domain = find_domain_by_name(test_ctx->tctx->dom,
+                                 "responder_cache_req_test_d", true);
+    assert_non_null(domain);
+    prepare_group(domain, &groups[0], 1000, time(NULL));
+
+    will_return(sss_dp_get_account_domain_recv, EOK);
+    will_return(sss_dp_get_account_domain_recv, locator_domain);
+    will_return_always(sss_dp_get_account_domain_recv, ERR_GET_ACCT_DOM_NOT_SUPPORTED);
+
+    will_return_always(__wrap_sss_dp_get_account_send, test_ctx);
+    will_return_always(sss_dp_req_recv, EOK);
+
+    /* Test. */
+    run_group_by_id(test_ctx, NULL, 0, ERR_OK);
+
+    /* Even though the locator tells us to skip all domains except d, the domains
+     * are standalone and the result of the locator request is only valid within
+     * the subdomains
+     */
+    assert_true(test_ctx->dp_called);
+    check_group(test_ctx, &groups[0], domain);
+
+    talloc_free(tmp_ctx);
+}
+
+void test_group_by_id_multiple_domains_locator_cache_expired(void **state)
+{
+    struct cache_req_test_ctx *test_ctx = NULL;
+    struct sss_domain_info *domain = NULL;
+    const char *locator_domain;
+    TALLOC_CTX *tmp_ctx;
+
+    test_ctx = talloc_get_type_abort(*state, struct cache_req_test_ctx);
+
+    tmp_ctx = talloc_new(test_ctx);
+    assert_non_null(tmp_ctx);
+
+    /* Has to be a talloc ptr, not just const, so it's stealable inside cache_req */
+    locator_domain = talloc_strdup(tmp_ctx, "responder_cache_req_test_d");
+    assert_non_null(locator_domain);
+
+    /* Setup group. */
+    domain = find_domain_by_name(test_ctx->tctx->dom,
+                                 "responder_cache_req_test_d", true);
+    assert_non_null(domain);
+    prepare_group(domain, &groups[0], -1000, time(NULL));
+
+    will_return_always(__wrap_sss_dp_get_account_send, test_ctx);
+    will_return_always(sss_dp_req_recv, EOK);
+
+    will_return(sss_dp_get_account_domain_recv, EOK);
+    will_return(sss_dp_get_account_domain_recv, locator_domain);
+    will_return_always(sss_dp_get_account_domain_recv, ERR_GET_ACCT_DOM_NOT_SUPPORTED);
+
+    /* Test. */
+    run_group_by_id(test_ctx, NULL, 0, ERR_OK);
+
+    assert_true(test_ctx->dp_called);
+    check_group(test_ctx, &groups[0], domain);
+
+    talloc_free(tmp_ctx);
+}
+
+void test_group_by_id_sub_domains_locator_cache_valid(void **state)
+{
+    struct cache_req_test_ctx *test_ctx = NULL;
+    struct sss_domain_info *domain = NULL;
+    const char *locator_domain;
+    TALLOC_CTX *tmp_ctx;
+
+    test_ctx = talloc_get_type_abort(*state, struct cache_req_test_ctx);
+
+    tmp_ctx = talloc_new(test_ctx);
+    assert_non_null(tmp_ctx);
+
+    /* Has to be a talloc ptr, not just const, so it's stealable inside cache_req */
+    locator_domain = talloc_strdup(tmp_ctx, subdomain_name);
+    assert_non_null(locator_domain);
+
+    /* Setup group. */
+    domain = find_domain_by_name(test_ctx->tctx->dom,
+                                 subdomain_name,
+                                 true);
+    assert_non_null(domain);
+    prepare_group(domain, &groups[0], 1000, time(NULL));
+
+    will_return(sss_dp_get_account_domain_recv, EOK);
+    will_return(sss_dp_get_account_domain_recv, locator_domain);
+
+    /* Test. */
+    run_group_by_id(test_ctx, NULL, 0, ERR_OK);
+
+    /* Even though the ID is present in the last domain,
+     * we're not calling sss_dp_get_account_send,
+     * because the locator will cause cache_req to skip
+     * all domains except _d
+     */
+    assert_false(test_ctx->dp_called);
+    check_group(test_ctx, &groups[0], domain);
+
+    talloc_free(tmp_ctx);
+}
+
+void test_group_by_id_sub_domains_locator_cache_expired(void **state)
+{
+    struct cache_req_test_ctx *test_ctx = NULL;
+    struct sss_domain_info *domain = NULL;
+    const char *locator_domain;
+    TALLOC_CTX *tmp_ctx;
+
+    test_ctx = talloc_get_type_abort(*state, struct cache_req_test_ctx);
+
+    tmp_ctx = talloc_new(test_ctx);
+    assert_non_null(tmp_ctx);
+
+    /* Has to be a talloc ptr, not just const, so it's stealable inside cache_req */
+    locator_domain = talloc_strdup(tmp_ctx, subdomain_name);
+    assert_non_null(locator_domain);
+
+    /* Setup group. */
+    domain = find_domain_by_name(test_ctx->tctx->dom,
+                                 subdomain_name,
+                                 true);
+    assert_non_null(domain);
+    prepare_group(domain, &groups[0], -1000, time(NULL));
+
+    /* Note - DP will only be called once (so, we're not using will_return_always)
+     * because the locator will tell us which domain to look into. For the recv
+     * function, we use always b/c internally it mocks several values.
+     */
+    will_return(__wrap_sss_dp_get_account_send, test_ctx);
+    will_return_always(sss_dp_req_recv, 0);
+
+    will_return(sss_dp_get_account_domain_recv, EOK);
+    will_return(sss_dp_get_account_domain_recv, locator_domain);
+
+    /* Test. */
+    run_group_by_id(test_ctx, NULL, 0, ERR_OK);
+
+    assert_true(test_ctx->dp_called);
+    check_group(test_ctx, &groups[0], domain);
+
+    talloc_free(tmp_ctx);
+}
+
+void test_group_by_id_sub_domains_locator_cache_midpoint(void **state)
+{
+    struct cache_req_test_ctx *test_ctx = NULL;
+    struct sss_domain_info *domain = NULL;
+    const char *locator_domain;
+    TALLOC_CTX *tmp_ctx;
+
+    test_ctx = talloc_get_type_abort(*state, struct cache_req_test_ctx);
+
+    tmp_ctx = talloc_new(test_ctx);
+    assert_non_null(tmp_ctx);
+
+    /* Has to be a talloc ptr, not just const, so it's stealable inside cache_req */
+    locator_domain = talloc_strdup(tmp_ctx, subdomain_name);
+    assert_non_null(locator_domain);
+
+    /* Setup group. */
+    domain = find_domain_by_name(test_ctx->tctx->dom,
+                                 subdomain_name,
+                                 true);
+    assert_non_null(domain);
+    prepare_group(domain, &groups[0], 50, time(NULL) - 26);
+
+    /* Note - DP will only be called once and we're not waiting
+     * for the results (so, we're not mocking _recv)
+     */
+    will_return(__wrap_sss_dp_get_account_send, test_ctx);
+
+    will_return(sss_dp_get_account_domain_recv, EOK);
+    will_return(sss_dp_get_account_domain_recv, locator_domain);
+
+    /* Test. */
+    run_group_by_id(test_ctx, NULL, 50, ERR_OK);
+
+    assert_true(test_ctx->dp_called);
+    check_group(test_ctx, &groups[0], domain);
+
+    talloc_free(tmp_ctx);
+}
+
+void test_group_by_id_sub_domains_locator_missing_found(void **state)
+{
+    struct cache_req_test_ctx *test_ctx = NULL;
+    struct sss_domain_info *domain = NULL;
+    const char *locator_domain;
+    TALLOC_CTX *tmp_ctx;
+
+    test_ctx = talloc_get_type_abort(*state, struct cache_req_test_ctx);
+
+    tmp_ctx = talloc_new(test_ctx);
+    assert_non_null(tmp_ctx);
+
+    /* Has to be a talloc ptr, not just const, so it's stealable inside cache_req */
+    locator_domain = talloc_strdup(tmp_ctx, subdomain_name);
+    assert_non_null(locator_domain);
+
+    /* Note - DP will only be called once (so, we're not using will_return_always)
+     * because the locator will tell us which domain to look into. For the recv
+     * function, we use always b/c internally it mocks several values.
+     */
+    will_return(__wrap_sss_dp_get_account_send, test_ctx);
+    will_return_always(sss_dp_req_recv, 0);
+
+    will_return(sss_dp_get_account_domain_recv, EOK);
+    will_return(sss_dp_get_account_domain_recv, locator_domain);
+
+    /* Test. */
+    test_ctx->create_subgroup1 = true;
+    run_group_by_id(test_ctx, NULL, 0, ERR_OK);
+
+    assert_true(test_ctx->dp_called);
+
+    domain = find_domain_by_name(test_ctx->tctx->dom,
+                                 subdomain_name,
+                                 true);
+    assert_non_null(domain);
+    check_group(test_ctx, &groups[0], domain);
+
+    talloc_free(tmp_ctx);
+}
+
+void test_group_by_id_sub_domains_locator_missing_notfound(void **state)
+{
+    struct cache_req_test_ctx *test_ctx = NULL;
+
+    test_ctx = talloc_get_type_abort(*state, struct cache_req_test_ctx);
+
+    will_return(sss_dp_get_account_domain_recv, ERR_NOT_FOUND);
+
+    /* Test. */
+    run_group_by_id(test_ctx, NULL, 0, ENOENT);
+    assert_false(test_ctx->dp_called);
+}
+
+void test_group_by_id_sub_domains_locator_cache_expired_two_calls(void **state)
+{
+    struct cache_req_test_ctx *test_ctx = NULL;
+    struct sss_domain_info *domain = NULL;
+    const char *locator_domain;
+    TALLOC_CTX *tmp_ctx;
+
+    test_ctx = talloc_get_type_abort(*state, struct cache_req_test_ctx);
+
+    tmp_ctx = talloc_new(test_ctx);
+    assert_non_null(tmp_ctx);
+
+    /* Has to be a talloc ptr, not just const, so it's stealable inside cache_req */
+    locator_domain = talloc_strdup(tmp_ctx, subdomain_name);
+    assert_non_null(locator_domain);
+
+    /* Setup group. */
+    domain = find_domain_by_name(test_ctx->tctx->dom,
+                                 subdomain_name,
+                                 true);
+    assert_non_null(domain);
+    test_ctx->create_subgroup1 = true;
+    prepare_group(domain, &groups[0], -1000, time(NULL));
+
+    /* Note - DP will only be called once (so, we're not using will_return_always)
+     * because the locator will tell us which domain to look into. For the recv
+     * function, we use always b/c internally it mocks several values.
+     */
+    will_return(__wrap_sss_dp_get_account_send, test_ctx);
+    will_return_always(sss_dp_req_recv, 0);
+
+    will_return(sss_dp_get_account_domain_recv, EOK);
+    will_return(sss_dp_get_account_domain_recv, locator_domain);
+
+    /* Test. */
+    run_group_by_id(test_ctx, NULL, 0, ERR_OK);
+    assert_true(test_ctx->dp_called);
+    check_group(test_ctx, &groups[0], domain);
+
+    /* Request the same group again */
+    test_ctx->tctx->done = false;
+    talloc_zfree(test_ctx->result);
+
+    run_group_by_id(test_ctx, NULL, 0, ERR_OK);
+    check_group(test_ctx, &groups[0], domain);
+
+    talloc_free(tmp_ctx);
 }
 
 void test_group_by_id_cache_valid(void **state)
@@ -1544,7 +2361,7 @@ void test_users_by_filter_filter_old(void **state)
     test_ctx->create_user1 = true;
     test_ctx->create_user2 = false;
 
-    /* This user was updated in distant past, so it wont't be reported by
+    /* This user was updated in distant past, so it won't be reported by
      * the filter search */
     prepare_user(test_ctx->tctx->dom, &users[1], 1000, 1);
 
@@ -2132,6 +2949,966 @@ void test_object_by_sid_group_multiple_domains_notfound(void **state)
     assert_true(test_ctx->dp_called);
 }
 
+void test_object_by_id_user_cache_valid(void **state)
+{
+    struct cache_req_test_ctx *test_ctx = NULL;
+    const char *attrs[] = SYSDB_PW_ATTRS;
+
+    test_ctx = talloc_get_type_abort(*state, struct cache_req_test_ctx);
+
+    /* Setup user. */
+    prepare_user(test_ctx->tctx->dom, &users[0], 1000, time(NULL));
+
+    /* Test. */
+    run_object_by_id(test_ctx, NULL, users[0].uid, attrs, 0, ERR_OK);
+    check_user(test_ctx, &users[0], test_ctx->tctx->dom);
+}
+
+void test_object_by_id_user_cache_expired(void **state)
+{
+    struct cache_req_test_ctx *test_ctx = NULL;
+    const char *attrs[] = SYSDB_PW_ATTRS;
+
+    test_ctx = talloc_get_type_abort(*state, struct cache_req_test_ctx);
+
+    /* Setup user. */
+    prepare_user(test_ctx->tctx->dom, &users[0], -1000, time(NULL));
+
+    /* Mock values. */
+    /* DP should be contacted */
+    will_return(__wrap_sss_dp_get_account_send, test_ctx);
+    mock_account_recv_simple();
+
+    /* Test. */
+    run_object_by_id(test_ctx, NULL, users[0].uid, attrs, 0, ERR_OK);
+    assert_true(test_ctx->dp_called);
+    check_user(test_ctx, &users[0], test_ctx->tctx->dom);
+}
+
+void test_object_by_id_user_cache_midpoint(void **state)
+{
+    struct cache_req_test_ctx *test_ctx = NULL;
+    const char *attrs[] = SYSDB_PW_ATTRS;
+
+    test_ctx = talloc_get_type_abort(*state, struct cache_req_test_ctx);
+
+    /* Setup user. */
+    prepare_user(test_ctx->tctx->dom, &users[0], 50, time(NULL) - 26);
+
+    /* Mock values. */
+    /* DP should be contacted without callback */
+    will_return(__wrap_sss_dp_get_account_send, test_ctx);
+
+    /* Test. */
+    run_object_by_id(test_ctx, NULL, users[0].uid, attrs, 50, ERR_OK);
+    assert_true(test_ctx->dp_called);
+    check_user(test_ctx, &users[0], test_ctx->tctx->dom);
+}
+
+void test_object_by_id_user_ncache(void **state)
+{
+    struct cache_req_test_ctx *test_ctx = NULL;
+    const char *attrs[] = SYSDB_PW_ATTRS;
+    errno_t ret;
+
+    test_ctx = talloc_get_type_abort(*state, struct cache_req_test_ctx);
+
+    /* Setup user. We explicitly add the UID into BOTH UID and GID
+     * namespaces, because otherwise the cache_req plugin would
+     * search the Data Provider anyway, because it can't be sure
+     * the object can be of the other type or not
+     */
+    ret = sss_ncache_set_uid(test_ctx->ncache,
+                             false,
+                             test_ctx->tctx->dom,
+                             users[0].uid);
+    assert_int_equal(ret, EOK);
+
+    ret = sss_ncache_set_gid(test_ctx->ncache,
+                             false,
+                             test_ctx->tctx->dom,
+                             users[0].uid);
+    assert_int_equal(ret, EOK);
+
+    /* Test. */
+    run_object_by_id(test_ctx, NULL, users[0].uid, attrs, 0, ENOENT);
+    assert_false(test_ctx->dp_called);
+}
+
+void test_object_by_id_user_missing_found(void **state)
+{
+    struct cache_req_test_ctx *test_ctx = NULL;
+    const char *attrs[] = SYSDB_PW_ATTRS;
+
+    test_ctx = talloc_get_type_abort(*state, struct cache_req_test_ctx);
+
+    /* Mock values. */
+    will_return(__wrap_sss_dp_get_account_send, test_ctx);
+    mock_account_recv_simple();
+
+    test_ctx->create_user1 = true;
+    test_ctx->create_user2 = false;
+
+    /* Test. */
+    run_object_by_id(test_ctx, NULL, users[0].uid, attrs, 0, ERR_OK);
+    assert_true(test_ctx->dp_called);
+    check_user(test_ctx, &users[0], test_ctx->tctx->dom);
+}
+
+void test_object_by_id_user_missing_notfound(void **state)
+{
+    struct cache_req_test_ctx *test_ctx = NULL;
+    const char *attrs[] = SYSDB_PW_ATTRS;
+
+    test_ctx = talloc_get_type_abort(*state, struct cache_req_test_ctx);
+
+    /* Mock values. */
+    will_return(__wrap_sss_dp_get_account_send, test_ctx);
+    mock_account_recv_simple();
+
+    /* Test. */
+    run_object_by_id(test_ctx, NULL, users[0].uid, attrs, 0, ENOENT);
+    assert_true(test_ctx->dp_called);
+}
+
+void test_object_by_id_user_multiple_domains_found(void **state)
+{
+    struct cache_req_test_ctx *test_ctx = NULL;
+    struct sss_domain_info *domain = NULL;
+    const char *attrs[] = SYSDB_PW_ATTRS;
+
+    test_ctx = talloc_get_type_abort(*state, struct cache_req_test_ctx);
+
+    /* Setup user. */
+    domain = find_domain_by_name(test_ctx->tctx->dom,
+                                 "responder_cache_req_test_d", true);
+    assert_non_null(domain);
+
+    prepare_user(domain, &users[0], 1000, time(NULL));
+
+    /* Mock values. */
+    will_return_always(__wrap_sss_dp_get_account_send, test_ctx);
+    will_return_always(sss_dp_req_recv, 0);
+    will_return_always(sss_dp_get_account_domain_recv, ERR_GET_ACCT_DOM_NOT_SUPPORTED);
+
+    /* Test. */
+    run_object_by_id(test_ctx, NULL, users[0].uid, attrs, 0, ERR_OK);
+    assert_true(test_ctx->dp_called);
+    check_user(test_ctx, &users[0], domain);
+}
+
+void test_object_by_id_user_multiple_domains_notfound(void **state)
+{
+    struct cache_req_test_ctx *test_ctx = NULL;
+    const char *attrs[] = SYSDB_PW_ATTRS;
+
+    test_ctx = talloc_get_type_abort(*state, struct cache_req_test_ctx);
+
+    /* Mock values. */
+    will_return_always(__wrap_sss_dp_get_account_send, test_ctx);
+    will_return_always(sss_dp_req_recv, 0);
+    will_return_always(sss_dp_get_account_domain_recv, ERR_GET_ACCT_DOM_NOT_SUPPORTED);
+
+    /* Test. */
+    run_object_by_id(test_ctx, NULL, users[0].uid, attrs, 0, ENOENT);
+    assert_true(test_ctx->dp_called);
+}
+
+void test_object_by_id_group_cache_valid(void **state)
+{
+    struct cache_req_test_ctx *test_ctx = NULL;
+    const char *attrs[] = SYSDB_GRSRC_ATTRS;
+
+    test_ctx = talloc_get_type_abort(*state, struct cache_req_test_ctx);
+
+    /* Setup user. */
+    prepare_group(test_ctx->tctx->dom, &groups[0], 1000, time(NULL));
+
+    /* Test. */
+    run_object_by_id(test_ctx, NULL, groups[0].gid, attrs, 0, ERR_OK);
+    check_group(test_ctx, &groups[0], test_ctx->tctx->dom);
+}
+
+void test_object_by_id_group_cache_expired(void **state)
+{
+    struct cache_req_test_ctx *test_ctx = NULL;
+    const char *attrs[] = SYSDB_GRSRC_ATTRS;
+
+    test_ctx = talloc_get_type_abort(*state, struct cache_req_test_ctx);
+
+    /* Setup user. */
+    prepare_group(test_ctx->tctx->dom, &groups[0], -1000, time(NULL));
+
+    /* Mock values. */
+    /* DP should be contacted */
+    will_return(__wrap_sss_dp_get_account_send, test_ctx);
+    mock_account_recv_simple();
+
+    /* Test. */
+    run_object_by_id(test_ctx, NULL, groups[0].gid, attrs, 0, ERR_OK);
+    assert_true(test_ctx->dp_called);
+    check_group(test_ctx, &groups[0], test_ctx->tctx->dom);
+}
+
+void test_object_by_id_group_cache_midpoint(void **state)
+{
+    struct cache_req_test_ctx *test_ctx = NULL;
+    const char *attrs[] = SYSDB_GRSRC_ATTRS;
+
+    test_ctx = talloc_get_type_abort(*state, struct cache_req_test_ctx);
+
+    /* Setup user. */
+    prepare_group(test_ctx->tctx->dom, &groups[0], 50, time(NULL) - 26);
+
+    /* Mock values. */
+    /* DP should be contacted without callback */
+    will_return(__wrap_sss_dp_get_account_send, test_ctx);
+
+    /* Test. */
+    run_object_by_id(test_ctx, NULL, groups[0].gid, attrs, 50, ERR_OK);
+    assert_true(test_ctx->dp_called);
+    check_group(test_ctx, &groups[0], test_ctx->tctx->dom);
+}
+
+void test_object_by_id_group_ncache(void **state)
+{
+    struct cache_req_test_ctx *test_ctx = NULL;
+    const char *attrs[] = SYSDB_GRSRC_ATTRS;
+    errno_t ret;
+
+    test_ctx = talloc_get_type_abort(*state, struct cache_req_test_ctx);
+
+    /* Setup group. We explicitly add the UID into BOTH UID and GID
+     * namespaces, because otherwise the cache_req plugin would
+     * search the Data Provider anyway, because it can't be sure
+     * the object can be of the other type or not
+     */
+    ret = sss_ncache_set_uid(test_ctx->ncache,
+                             false,
+                             test_ctx->tctx->dom,
+                             groups[0].gid);
+    assert_int_equal(ret, EOK);
+
+    ret = sss_ncache_set_gid(test_ctx->ncache,
+                             false,
+                             test_ctx->tctx->dom,
+                             groups[0].gid);
+    assert_int_equal(ret, EOK);
+
+    assert_int_equal(ret, EOK);
+
+    /* Test. */
+    run_object_by_id(test_ctx, NULL, groups[0].gid, attrs, 0, ENOENT);
+    assert_false(test_ctx->dp_called);
+}
+
+void test_object_by_id_group_missing_found(void **state)
+{
+    struct cache_req_test_ctx *test_ctx = NULL;
+    const char *attrs[] = SYSDB_GRSRC_ATTRS;
+
+    test_ctx = talloc_get_type_abort(*state, struct cache_req_test_ctx);
+
+    /* Mock values. */
+    will_return(__wrap_sss_dp_get_account_send, test_ctx);
+    mock_account_recv_simple();
+
+    test_ctx->create_group1 = true;
+    test_ctx->create_group2 = false;
+
+    /* Test. */
+    run_object_by_id(test_ctx, NULL, groups[0].gid, attrs, 0, ERR_OK);
+    assert_true(test_ctx->dp_called);
+    check_group(test_ctx, &groups[0], test_ctx->tctx->dom);
+}
+
+void test_object_by_id_group_missing_notfound(void **state)
+{
+    struct cache_req_test_ctx *test_ctx = NULL;
+    const char *attrs[] = SYSDB_GRSRC_ATTRS;
+
+    test_ctx = talloc_get_type_abort(*state, struct cache_req_test_ctx);
+
+    /* Mock values. */
+    will_return(__wrap_sss_dp_get_account_send, test_ctx);
+    mock_account_recv_simple();
+
+    /* Test. */
+    run_object_by_id(test_ctx, NULL, groups[0].gid, attrs, 0, ENOENT);
+    assert_true(test_ctx->dp_called);
+}
+
+void test_object_by_id_group_multiple_domains_found(void **state)
+{
+    struct cache_req_test_ctx *test_ctx = NULL;
+    struct sss_domain_info *domain = NULL;
+    const char *attrs[] = SYSDB_GRSRC_ATTRS;
+
+    test_ctx = talloc_get_type_abort(*state, struct cache_req_test_ctx);
+
+    /* Setup user. */
+    domain = find_domain_by_name(test_ctx->tctx->dom,
+                                 "responder_cache_req_test_d", true);
+    assert_non_null(domain);
+
+    prepare_group(domain, &groups[0], 1000, time(NULL));
+
+    /* Mock values. */
+    will_return_always(__wrap_sss_dp_get_account_send, test_ctx);
+    will_return_always(sss_dp_req_recv, 0);
+    will_return_always(sss_dp_get_account_domain_recv, ERR_GET_ACCT_DOM_NOT_SUPPORTED);
+
+    /* Test. */
+    run_object_by_id(test_ctx, NULL, groups[0].gid, attrs, 0, ERR_OK);
+    assert_true(test_ctx->dp_called);
+    check_group(test_ctx, &groups[0], domain);
+}
+
+void test_object_by_id_group_multiple_domains_notfound(void **state)
+{
+    struct cache_req_test_ctx *test_ctx = NULL;
+    const char *attrs[] = SYSDB_GRSRC_ATTRS;
+
+    test_ctx = talloc_get_type_abort(*state, struct cache_req_test_ctx);
+
+    /* Mock values. */
+    will_return_always(__wrap_sss_dp_get_account_send, test_ctx);
+    will_return_always(sss_dp_req_recv, 0);
+    will_return_always(sss_dp_get_account_domain_recv, ERR_GET_ACCT_DOM_NOT_SUPPORTED);
+
+    /* Test. */
+    run_object_by_id(test_ctx, NULL, groups[0].gid, attrs, 0, ENOENT);
+    assert_true(test_ctx->dp_called);
+}
+
+void test_object_by_id_user_multiple_domains_locator_cache_valid(void **state)
+{
+    struct cache_req_test_ctx *test_ctx = NULL;
+    struct sss_domain_info *domain = NULL;
+    const char *locator_domain;
+    TALLOC_CTX *tmp_ctx;
+    const char *attrs[] = SYSDB_PW_ATTRS;
+
+    test_ctx = talloc_get_type_abort(*state, struct cache_req_test_ctx);
+
+    tmp_ctx = talloc_new(test_ctx);
+    assert_non_null(tmp_ctx);
+
+    /* Has to be a talloc ptr, not just const, so it's stealable inside cache_req */
+    locator_domain = talloc_strdup(tmp_ctx, "responder_cache_req_test_d");
+    assert_non_null(locator_domain);
+
+    /* Setup user. */
+    domain = find_domain_by_name(test_ctx->tctx->dom,
+                                 "responder_cache_req_test_d", true);
+    assert_non_null(domain);
+    prepare_user(domain, &users[0], 1000, time(NULL));
+
+    will_return(sss_dp_get_account_domain_recv, EOK);
+    will_return(sss_dp_get_account_domain_recv, locator_domain);
+    will_return_always(sss_dp_get_account_domain_recv, ERR_GET_ACCT_DOM_NOT_SUPPORTED);
+
+    will_return_always(__wrap_sss_dp_get_account_send, test_ctx);
+    will_return_always(sss_dp_req_recv, EOK);
+
+    /* Test. */
+    run_object_by_id(test_ctx, NULL, users[0].uid, attrs, 0, ERR_OK);
+    /* Even though the locator tells us to skip all domains except d, the domains
+     * are standalone and the result of the locator request is only valid within
+     * the subdomains
+     */
+    assert_true(test_ctx->dp_called);
+    check_user(test_ctx, &users[0], domain);
+
+    talloc_free(tmp_ctx);
+}
+
+void test_object_by_id_user_multiple_domains_locator_cache_expired(void **state)
+{
+    struct cache_req_test_ctx *test_ctx = NULL;
+    struct sss_domain_info *domain = NULL;
+    const char *locator_domain;
+    TALLOC_CTX *tmp_ctx;
+    const char *attrs[] = SYSDB_PW_ATTRS;
+
+    test_ctx = talloc_get_type_abort(*state, struct cache_req_test_ctx);
+
+    tmp_ctx = talloc_new(test_ctx);
+    assert_non_null(tmp_ctx);
+
+    /* Has to be a talloc ptr, not just const, so it's stealable inside cache_req */
+    locator_domain = talloc_strdup(tmp_ctx, "responder_cache_req_test_d");
+    assert_non_null(locator_domain);
+
+    /* Setup user. */
+    domain = find_domain_by_name(test_ctx->tctx->dom,
+                                 "responder_cache_req_test_d", true);
+    assert_non_null(domain);
+    prepare_user(domain, &users[0], -1000, time(NULL));
+
+    will_return_always(__wrap_sss_dp_get_account_send, test_ctx);
+    will_return_always(sss_dp_req_recv, EOK);
+
+    will_return(sss_dp_get_account_domain_recv, EOK);
+    will_return(sss_dp_get_account_domain_recv, locator_domain);
+    will_return_always(sss_dp_get_account_domain_recv, ERR_GET_ACCT_DOM_NOT_SUPPORTED);
+
+    /* Test. */
+    run_object_by_id(test_ctx, NULL, users[0].uid, attrs, 0, ERR_OK);
+
+    assert_true(test_ctx->dp_called);
+    check_user(test_ctx, &users[0], domain);
+
+    talloc_free(tmp_ctx);
+}
+
+void test_object_by_id_user_sub_domains_locator_cache_valid(void **state)
+{
+    struct cache_req_test_ctx *test_ctx = NULL;
+    struct sss_domain_info *domain = NULL;
+    const char *locator_domain;
+    TALLOC_CTX *tmp_ctx;
+    const char *attrs[] = SYSDB_PW_ATTRS;
+
+    test_ctx = talloc_get_type_abort(*state, struct cache_req_test_ctx);
+
+    tmp_ctx = talloc_new(test_ctx);
+    assert_non_null(tmp_ctx);
+
+    /* Has to be a talloc ptr, not just const, so it's stealable inside cache_req */
+    locator_domain = talloc_strdup(tmp_ctx, subdomain_name);
+    assert_non_null(locator_domain);
+
+    /* Setup user. */
+    domain = find_domain_by_name(test_ctx->tctx->dom,
+                                 subdomain_name,
+                                 true);
+    assert_non_null(domain);
+    prepare_user(domain, &users[0], 1000, time(NULL));
+
+    will_return(sss_dp_get_account_domain_recv, EOK);
+    will_return(sss_dp_get_account_domain_recv, locator_domain);
+
+    /* Test. */
+    run_object_by_id(test_ctx, NULL, users[0].uid, attrs, 0, ERR_OK);
+
+    /* Even though the ID is present in the last domain,
+     * we're not calling sss_dp_get_account_send,
+     * because the locator will cause cache_req to skip
+     * all domains except _d
+     */
+    assert_false(test_ctx->dp_called);
+    check_user(test_ctx, &users[0], domain);
+
+    talloc_free(tmp_ctx);
+}
+
+void test_object_by_id_user_sub_domains_locator_cache_expired(void **state)
+{
+    struct cache_req_test_ctx *test_ctx = NULL;
+    struct sss_domain_info *domain = NULL;
+    const char *locator_domain;
+    TALLOC_CTX *tmp_ctx;
+    const char *attrs[] = SYSDB_PW_ATTRS;
+
+    test_ctx = talloc_get_type_abort(*state, struct cache_req_test_ctx);
+
+    tmp_ctx = talloc_new(test_ctx);
+    assert_non_null(tmp_ctx);
+
+    /* Has to be a talloc ptr, not just const, so it's stealable inside cache_req */
+    locator_domain = talloc_strdup(tmp_ctx, subdomain_name);
+    assert_non_null(locator_domain);
+
+    /* Setup user. */
+    domain = find_domain_by_name(test_ctx->tctx->dom,
+                                 subdomain_name,
+                                 true);
+    assert_non_null(domain);
+    prepare_user(domain, &users[0], -1000, time(NULL));
+
+    /* Note - DP will only be called once (so, we're not using will_return_always)
+     * because the locator will tell us which domain to look into. For the recv
+     * function, we use always b/c internally it mocks several values.
+     */
+    will_return(__wrap_sss_dp_get_account_send, test_ctx);
+    will_return_always(sss_dp_req_recv, 0);
+
+    will_return(sss_dp_get_account_domain_recv, EOK);
+    will_return(sss_dp_get_account_domain_recv, locator_domain);
+
+    /* Test. */
+    run_object_by_id(test_ctx, NULL, users[0].uid, attrs, 0, ERR_OK);
+
+    assert_true(test_ctx->dp_called);
+    check_user(test_ctx, &users[0], domain);
+
+    talloc_free(tmp_ctx);
+}
+
+void test_object_by_id_user_sub_domains_locator_cache_midpoint(void **state)
+{
+    struct cache_req_test_ctx *test_ctx = NULL;
+    struct sss_domain_info *domain = NULL;
+    const char *locator_domain;
+    TALLOC_CTX *tmp_ctx;
+    const char *attrs[] = SYSDB_PW_ATTRS;
+
+    test_ctx = talloc_get_type_abort(*state, struct cache_req_test_ctx);
+
+    tmp_ctx = talloc_new(test_ctx);
+    assert_non_null(tmp_ctx);
+
+    /* Has to be a talloc ptr, not just const, so it's stealable inside cache_req */
+    locator_domain = talloc_strdup(tmp_ctx, subdomain_name);
+    assert_non_null(locator_domain);
+
+    /* Setup user. */
+    domain = find_domain_by_name(test_ctx->tctx->dom,
+                                 subdomain_name,
+                                 true);
+    assert_non_null(domain);
+    prepare_user(domain, &users[0], 50, time(NULL) - 26);
+
+    /* Note - DP will only be called once and we're not waiting
+     * for the results (so, we're not mocking _recv)
+     */
+    will_return(__wrap_sss_dp_get_account_send, test_ctx);
+
+    will_return(sss_dp_get_account_domain_recv, EOK);
+    will_return(sss_dp_get_account_domain_recv, locator_domain);
+
+    /* Test. */
+    run_object_by_id(test_ctx, NULL, users[0].uid, attrs, 50, ERR_OK);
+
+    assert_true(test_ctx->dp_called);
+    check_user(test_ctx, &users[0], domain);
+
+    talloc_free(tmp_ctx);
+}
+
+void test_object_by_id_user_sub_domains_locator_missing_found(void **state)
+{
+    struct cache_req_test_ctx *test_ctx = NULL;
+    struct sss_domain_info *domain = NULL;
+    const char *locator_domain;
+    TALLOC_CTX *tmp_ctx;
+    const char *attrs[] = SYSDB_PW_ATTRS;
+
+    test_ctx = talloc_get_type_abort(*state, struct cache_req_test_ctx);
+
+    tmp_ctx = talloc_new(test_ctx);
+    assert_non_null(tmp_ctx);
+
+    /* Has to be a talloc ptr, not just const, so it's stealable inside cache_req */
+    locator_domain = talloc_strdup(tmp_ctx, subdomain_name);
+    assert_non_null(locator_domain);
+
+    /* Note - DP will only be called once (so, we're not using will_return_always)
+     * because the locator will tell us which domain to look into. For the recv
+     * function, we use always b/c internally it mocks several values.
+     */
+    will_return(__wrap_sss_dp_get_account_send, test_ctx);
+    will_return_always(sss_dp_req_recv, 0);
+
+    will_return(sss_dp_get_account_domain_recv, EOK);
+    will_return(sss_dp_get_account_domain_recv, locator_domain);
+
+    /* Test. */
+    test_ctx->create_subuser1 = true;
+    run_object_by_id(test_ctx, NULL, users[0].uid, attrs, 0, ERR_OK);
+
+    assert_true(test_ctx->dp_called);
+
+    domain = find_domain_by_name(test_ctx->tctx->dom,
+                                 subdomain_name,
+                                 true);
+    assert_non_null(domain);
+    check_user(test_ctx, &users[0], domain);
+
+    talloc_free(tmp_ctx);
+}
+
+void test_object_by_id_user_sub_domains_locator_missing_notfound(void **state)
+{
+    struct cache_req_test_ctx *test_ctx = NULL;
+    const char *attrs[] = SYSDB_PW_ATTRS;
+
+    test_ctx = talloc_get_type_abort(*state, struct cache_req_test_ctx);
+
+    will_return(sss_dp_get_account_domain_recv, ERR_NOT_FOUND);
+
+    /* The test won't even ask the DP for the object, just iterate
+     * over the domains using the negative cache and quit
+     */
+    run_object_by_id(test_ctx, NULL, users[0].uid, attrs, 0, ENOENT);
+    assert_false(test_ctx->dp_called);
+}
+
+void test_object_by_id_user_sub_domains_locator_cache_expired_two_calls(void **state)
+{
+    struct cache_req_test_ctx *test_ctx = NULL;
+    struct sss_domain_info *domain = NULL;
+    const char *locator_domain;
+    TALLOC_CTX *tmp_ctx;
+    const char *attrs[] = SYSDB_PW_ATTRS;
+
+    test_ctx = talloc_get_type_abort(*state, struct cache_req_test_ctx);
+
+    tmp_ctx = talloc_new(test_ctx);
+    assert_non_null(tmp_ctx);
+
+    /* Has to be a talloc ptr, not just const, so it's stealable inside cache_req */
+    locator_domain = talloc_strdup(tmp_ctx, subdomain_name);
+    assert_non_null(locator_domain);
+
+    /* Setup user. */
+    domain = find_domain_by_name(test_ctx->tctx->dom,
+                                 subdomain_name,
+                                 true);
+    assert_non_null(domain);
+    test_ctx->create_subuser1 = true;
+    prepare_user(domain, &users[0], -1000, time(NULL));
+
+    /* Note - DP will only be called once (so, we're not using will_return_always)
+     * because the locator will tell us which domain to look into. For the recv
+     * function, we use always b/c internally it mocks several values.
+     */
+    will_return(__wrap_sss_dp_get_account_send, test_ctx);
+    will_return_always(sss_dp_req_recv, 0);
+
+    will_return(sss_dp_get_account_domain_recv, EOK);
+    will_return(sss_dp_get_account_domain_recv, locator_domain);
+
+    /* Test. */
+    run_object_by_id(test_ctx, NULL, users[0].uid, attrs, 0, EOK);
+    assert_true(test_ctx->dp_called);
+    check_user(test_ctx, &users[0], domain);
+
+    /* Request the same user again */
+    test_ctx->tctx->done = false;
+    talloc_zfree(test_ctx->result);
+
+    run_object_by_id(test_ctx, NULL, users[0].uid, attrs, 0, EOK);
+    check_user(test_ctx, &users[0], domain);
+
+    talloc_free(tmp_ctx);
+}
+
+void test_object_by_id_group_multiple_domains_locator_cache_valid(void **state)
+{
+    struct cache_req_test_ctx *test_ctx = NULL;
+    struct sss_domain_info *domain = NULL;
+    const char *locator_domain;
+    TALLOC_CTX *tmp_ctx;
+    const char *attrs[] = SYSDB_PW_ATTRS;
+
+    test_ctx = talloc_get_type_abort(*state, struct cache_req_test_ctx);
+
+    tmp_ctx = talloc_new(test_ctx);
+    assert_non_null(tmp_ctx);
+
+    /* Has to be a talloc ptr, not just const, so it's stealable inside cache_req */
+    locator_domain = talloc_strdup(tmp_ctx, "responder_cache_req_test_d");
+    assert_non_null(locator_domain);
+
+    /* Setup group. */
+    domain = find_domain_by_name(test_ctx->tctx->dom,
+                                 "responder_cache_req_test_d", true);
+    assert_non_null(domain);
+    prepare_group(domain, &groups[0], 1000, time(NULL));
+
+    will_return(sss_dp_get_account_domain_recv, EOK);
+    will_return(sss_dp_get_account_domain_recv, locator_domain);
+    will_return_always(sss_dp_get_account_domain_recv, ERR_GET_ACCT_DOM_NOT_SUPPORTED);
+
+    will_return_always(__wrap_sss_dp_get_account_send, test_ctx);
+    will_return_always(sss_dp_req_recv, EOK);
+
+    /* Test. */
+    run_object_by_id(test_ctx, NULL, groups[0].gid, attrs, 0, ERR_OK);
+    /* Even though the locator tells us to skip all domains except d, the domains
+     * are standalone and the result of the locator request is only valid within
+     * the subdomains
+     */
+    assert_true(test_ctx->dp_called);
+    check_group(test_ctx, &groups[0], domain);
+
+    talloc_free(tmp_ctx);
+}
+
+void test_object_by_id_group_multiple_domains_locator_cache_expired(void **state)
+{
+    struct cache_req_test_ctx *test_ctx = NULL;
+    struct sss_domain_info *domain = NULL;
+    const char *locator_domain;
+    TALLOC_CTX *tmp_ctx;
+    const char *attrs[] = SYSDB_PW_ATTRS;
+
+    test_ctx = talloc_get_type_abort(*state, struct cache_req_test_ctx);
+
+    tmp_ctx = talloc_new(test_ctx);
+    assert_non_null(tmp_ctx);
+
+    /* Has to be a talloc ptr, not just const, so it's stealable inside cache_req */
+    locator_domain = talloc_strdup(tmp_ctx, "responder_cache_req_test_d");
+    assert_non_null(locator_domain);
+
+    /* Setup group. */
+    domain = find_domain_by_name(test_ctx->tctx->dom,
+                                 "responder_cache_req_test_d", true);
+    assert_non_null(domain);
+    prepare_group(domain, &groups[0], -1000, time(NULL));
+
+    will_return_always(__wrap_sss_dp_get_account_send, test_ctx);
+    will_return_always(sss_dp_req_recv, EOK);
+
+    will_return(sss_dp_get_account_domain_recv, EOK);
+    will_return(sss_dp_get_account_domain_recv, locator_domain);
+    will_return_always(sss_dp_get_account_domain_recv, ERR_GET_ACCT_DOM_NOT_SUPPORTED);
+
+    /* Test. */
+    run_object_by_id(test_ctx, NULL, groups[0].gid, attrs, 0, ERR_OK);
+
+    assert_true(test_ctx->dp_called);
+    check_group(test_ctx, &groups[0], domain);
+
+    talloc_free(tmp_ctx);
+}
+
+void test_object_by_id_group_sub_domains_locator_cache_valid(void **state)
+{
+    struct cache_req_test_ctx *test_ctx = NULL;
+    struct sss_domain_info *domain = NULL;
+    const char *locator_domain;
+    TALLOC_CTX *tmp_ctx;
+    const char *attrs[] = SYSDB_PW_ATTRS;
+
+    test_ctx = talloc_get_type_abort(*state, struct cache_req_test_ctx);
+
+    tmp_ctx = talloc_new(test_ctx);
+    assert_non_null(tmp_ctx);
+
+    /* Has to be a talloc ptr, not just const, so it's stealable inside cache_req */
+    locator_domain = talloc_strdup(tmp_ctx, subdomain_name);
+    assert_non_null(locator_domain);
+
+    /* Setup group. */
+    domain = find_domain_by_name(test_ctx->tctx->dom,
+                                 subdomain_name,
+                                 true);
+    assert_non_null(domain);
+    prepare_group(domain, &groups[0], 1000, time(NULL));
+
+    will_return(sss_dp_get_account_domain_recv, EOK);
+    will_return(sss_dp_get_account_domain_recv, locator_domain);
+
+    /* Test. */
+    run_object_by_id(test_ctx, NULL, groups[0].gid, attrs, 0, ERR_OK);
+
+    /* Even though the ID is present in the last domain,
+     * we're not calling sss_dp_get_account_send,
+     * because the locator will cause cache_req to skip
+     * all domains except _d
+     */
+    assert_false(test_ctx->dp_called);
+    check_group(test_ctx, &groups[0], domain);
+
+    talloc_free(tmp_ctx);
+}
+
+void test_object_by_id_group_sub_domains_locator_cache_expired(void **state)
+{
+    struct cache_req_test_ctx *test_ctx = NULL;
+    struct sss_domain_info *domain = NULL;
+    const char *locator_domain;
+    TALLOC_CTX *tmp_ctx;
+    const char *attrs[] = SYSDB_PW_ATTRS;
+
+    test_ctx = talloc_get_type_abort(*state, struct cache_req_test_ctx);
+
+    tmp_ctx = talloc_new(test_ctx);
+    assert_non_null(tmp_ctx);
+
+    /* Has to be a talloc ptr, not just const, so it's stealable inside cache_req */
+    locator_domain = talloc_strdup(tmp_ctx, subdomain_name);
+    assert_non_null(locator_domain);
+
+    /* Setup group. */
+    domain = find_domain_by_name(test_ctx->tctx->dom,
+                                 subdomain_name,
+                                 true);
+    assert_non_null(domain);
+    prepare_group(domain, &groups[0], -1000, time(NULL));
+
+    /* Note - DP will only be called once (so, we're not using will_return_always)
+     * because the locator will tell us which domain to look into. For the recv
+     * function, we use always b/c internally it mocks several values.
+     */
+    will_return(__wrap_sss_dp_get_account_send, test_ctx);
+    will_return_always(sss_dp_req_recv, 0);
+
+    will_return(sss_dp_get_account_domain_recv, EOK);
+    will_return(sss_dp_get_account_domain_recv, locator_domain);
+
+    /* Test. */
+    run_object_by_id(test_ctx, NULL, groups[0].gid, attrs, 0, ERR_OK);
+
+    assert_true(test_ctx->dp_called);
+    check_group(test_ctx, &groups[0], domain);
+
+    talloc_free(tmp_ctx);
+}
+
+void test_object_by_id_group_sub_domains_locator_cache_midpoint(void **state)
+{
+    struct cache_req_test_ctx *test_ctx = NULL;
+    struct sss_domain_info *domain = NULL;
+    const char *locator_domain;
+    TALLOC_CTX *tmp_ctx;
+    const char *attrs[] = SYSDB_PW_ATTRS;
+
+    test_ctx = talloc_get_type_abort(*state, struct cache_req_test_ctx);
+
+    tmp_ctx = talloc_new(test_ctx);
+    assert_non_null(tmp_ctx);
+
+    /* Has to be a talloc ptr, not just const, so it's stealable inside cache_req */
+    locator_domain = talloc_strdup(tmp_ctx, subdomain_name);
+    assert_non_null(locator_domain);
+
+    /* Setup group. */
+    domain = find_domain_by_name(test_ctx->tctx->dom,
+                                 subdomain_name,
+                                 true);
+    assert_non_null(domain);
+    prepare_group(domain, &groups[0], 50, time(NULL) - 26);
+
+    /* Note - DP will only be called once and we're not waiting
+     * for the results (so, we're not mocking _recv)
+     */
+    will_return(__wrap_sss_dp_get_account_send, test_ctx);
+
+    will_return(sss_dp_get_account_domain_recv, EOK);
+    will_return(sss_dp_get_account_domain_recv, locator_domain);
+
+    /* Test. */
+    run_object_by_id(test_ctx, NULL, groups[0].gid, attrs, 50, ERR_OK);
+
+    assert_true(test_ctx->dp_called);
+    check_group(test_ctx, &groups[0], domain);
+
+    talloc_free(tmp_ctx);
+}
+
+void test_object_by_id_group_sub_domains_locator_missing_found(void **state)
+{
+    struct cache_req_test_ctx *test_ctx = NULL;
+    struct sss_domain_info *domain = NULL;
+    const char *locator_domain;
+    TALLOC_CTX *tmp_ctx;
+    const char *attrs[] = SYSDB_PW_ATTRS;
+
+    test_ctx = talloc_get_type_abort(*state, struct cache_req_test_ctx);
+
+    tmp_ctx = talloc_new(test_ctx);
+    assert_non_null(tmp_ctx);
+
+    /* Has to be a talloc ptr, not just const, so it's stealable inside cache_req */
+    locator_domain = talloc_strdup(tmp_ctx, subdomain_name);
+    assert_non_null(locator_domain);
+
+    /* Note - DP will only be called once (so, we're not using will_return_always)
+     * because the locator will tell us which domain to look into. For the recv
+     * function, we use always b/c internally it mocks several values.
+     */
+    will_return(__wrap_sss_dp_get_account_send, test_ctx);
+    will_return_always(sss_dp_req_recv, 0);
+
+    will_return(sss_dp_get_account_domain_recv, EOK);
+    will_return(sss_dp_get_account_domain_recv, locator_domain);
+
+    /* Test. */
+    test_ctx->create_subgroup1 = true;
+    run_object_by_id(test_ctx, NULL, groups[0].gid, attrs, 0, ERR_OK);
+
+    assert_true(test_ctx->dp_called);
+
+    domain = find_domain_by_name(test_ctx->tctx->dom,
+                                 subdomain_name,
+                                 true);
+    assert_non_null(domain);
+    check_group(test_ctx, &groups[0], domain);
+
+    talloc_free(tmp_ctx);
+}
+
+void test_object_by_id_group_sub_domains_locator_missing_notfound(void **state)
+{
+    struct cache_req_test_ctx *test_ctx = NULL;
+    const char *attrs[] = SYSDB_PW_ATTRS;
+
+    test_ctx = talloc_get_type_abort(*state, struct cache_req_test_ctx);
+
+    will_return(sss_dp_get_account_domain_recv, ERR_NOT_FOUND);
+
+    /* The test won't even ask the DP for the object, just iterate
+     * over the domains using the negative cache and quit
+     */
+    run_object_by_id(test_ctx, NULL, groups[0].gid, attrs, 0, ENOENT);
+    assert_false(test_ctx->dp_called);
+}
+
+void test_object_by_id_group_sub_domains_locator_cache_expired_two_calls(void **state)
+{
+    struct cache_req_test_ctx *test_ctx = NULL;
+    struct sss_domain_info *domain = NULL;
+    const char *locator_domain;
+    TALLOC_CTX *tmp_ctx;
+    const char *attrs[] = SYSDB_PW_ATTRS;
+
+    test_ctx = talloc_get_type_abort(*state, struct cache_req_test_ctx);
+
+    tmp_ctx = talloc_new(test_ctx);
+    assert_non_null(tmp_ctx);
+
+    /* Has to be a talloc ptr, not just const, so it's stealable inside cache_req */
+    locator_domain = talloc_strdup(tmp_ctx, subdomain_name);
+    assert_non_null(locator_domain);
+
+    /* Setup group. */
+    domain = find_domain_by_name(test_ctx->tctx->dom,
+                                 subdomain_name,
+                                 true);
+    assert_non_null(domain);
+    test_ctx->create_subgroup1 = true;
+    prepare_group(domain, &groups[0], -1000, time(NULL));
+
+    /* Note - DP will only be called once (so, we're not using will_return_always)
+     * because the locator will tell us which domain to look into. For the recv
+     * function, we use always b/c internally it mocks several values.
+     */
+    will_return(__wrap_sss_dp_get_account_send, test_ctx);
+    will_return_always(sss_dp_req_recv, 0);
+
+    will_return(sss_dp_get_account_domain_recv, EOK);
+    will_return(sss_dp_get_account_domain_recv, locator_domain);
+
+    /* Test. */
+    run_object_by_id(test_ctx, NULL, groups[0].gid, attrs, 0, EOK);
+    assert_true(test_ctx->dp_called);
+    check_group(test_ctx, &groups[0], domain);
+
+    /* Request the same group again */
+    test_ctx->tctx->done = false;
+    talloc_zfree(test_ctx->result);
+
+    run_object_by_id(test_ctx, NULL, groups[0].gid, attrs, 0, EOK);
+    check_group(test_ctx, &groups[0], domain);
+
+    talloc_free(tmp_ctx);
+}
+
 int main(int argc, const char *argv[])
 {
     poptContext pc;
@@ -2170,6 +3947,8 @@ int main(int argc, const char *argv[])
         new_single_domain_test(user_by_id_missing_notfound),
         new_multi_domain_test(user_by_id_multiple_domains_found),
         new_multi_domain_test(user_by_id_multiple_domains_notfound),
+        new_single_domain_id_limit_test(user_by_id_below_id_range),
+        new_single_domain_id_limit_test(user_by_id_above_id_range),
 
         new_single_domain_test(group_by_name_cache_valid),
         new_single_domain_test(group_by_name_cache_expired),
@@ -2180,6 +3959,8 @@ int main(int argc, const char *argv[])
         new_multi_domain_test(group_by_name_multiple_domains_found),
         new_multi_domain_test(group_by_name_multiple_domains_notfound),
         new_multi_domain_test(group_by_name_multiple_domains_parse),
+        new_single_domain_id_limit_test(group_by_id_below_id_range),
+        new_single_domain_id_limit_test(group_by_id_above_id_range),
 
         new_single_domain_test(group_by_id_cache_valid),
         new_single_domain_test(group_by_id_cache_expired),
@@ -2189,6 +3970,24 @@ int main(int argc, const char *argv[])
         new_single_domain_test(group_by_id_missing_notfound),
         new_multi_domain_test(group_by_id_multiple_domains_found),
         new_multi_domain_test(group_by_id_multiple_domains_notfound),
+
+        new_multi_domain_test(group_by_id_multiple_domains_locator_cache_valid),
+        new_multi_domain_test(group_by_id_multiple_domains_locator_cache_expired),
+        new_subdomain_test(group_by_id_sub_domains_locator_cache_valid),
+        new_subdomain_test(group_by_id_sub_domains_locator_cache_expired),
+        new_subdomain_test(group_by_id_sub_domains_locator_cache_midpoint),
+        new_subdomain_test(group_by_id_sub_domains_locator_missing_found),
+        new_subdomain_test(group_by_id_sub_domains_locator_missing_notfound),
+        new_subdomain_test(group_by_id_sub_domains_locator_cache_expired_two_calls),
+
+        new_multi_domain_test(user_by_id_multiple_domains_locator_cache_valid),
+        new_multi_domain_test(user_by_id_multiple_domains_locator_cache_expired),
+        new_subdomain_test(user_by_id_sub_domains_locator_cache_valid),
+        new_subdomain_test(user_by_id_sub_domains_locator_cache_expired),
+        new_subdomain_test(user_by_id_sub_domains_locator_cache_midpoint),
+        new_subdomain_test(user_by_id_sub_domains_locator_missing_found),
+        new_subdomain_test(user_by_id_sub_domains_locator_missing_notfound),
+        new_subdomain_test(user_by_id_sub_domains_locator_cache_expired_two_calls),
 
         new_single_domain_test(user_by_recent_filter_valid),
         new_single_domain_test(users_by_recent_filter_valid),
@@ -2218,9 +4017,45 @@ int main(int argc, const char *argv[])
         new_single_domain_test(object_by_sid_group_missing_notfound),
         new_multi_domain_test(object_by_sid_group_multiple_domains_found),
         new_multi_domain_test(object_by_sid_group_multiple_domains_notfound),
+
+        new_single_domain_test(object_by_id_user_cache_valid),
+        new_single_domain_test(object_by_id_user_cache_expired),
+        new_single_domain_test(object_by_id_user_cache_midpoint),
+        new_single_domain_test(object_by_id_user_ncache),
+        new_single_domain_test(object_by_id_user_missing_found),
+        new_single_domain_test(object_by_id_user_missing_notfound),
+        new_multi_domain_test(object_by_id_user_multiple_domains_found),
+        new_multi_domain_test(object_by_id_user_multiple_domains_notfound),
+
+        new_single_domain_test(object_by_id_group_cache_valid),
+        new_single_domain_test(object_by_id_group_cache_expired),
+        new_single_domain_test(object_by_id_group_cache_midpoint),
+        new_single_domain_test(object_by_id_group_ncache),
+        new_single_domain_test(object_by_id_group_missing_found),
+        new_single_domain_test(object_by_id_group_missing_notfound),
+        new_multi_domain_test(object_by_id_group_multiple_domains_found),
+        new_multi_domain_test(object_by_id_group_multiple_domains_notfound),
+
+        new_multi_domain_test(object_by_id_user_multiple_domains_locator_cache_valid),
+        new_multi_domain_test(object_by_id_user_multiple_domains_locator_cache_expired),
+        new_subdomain_test(object_by_id_user_sub_domains_locator_cache_valid),
+        new_subdomain_test(object_by_id_user_sub_domains_locator_cache_expired),
+        new_subdomain_test(object_by_id_user_sub_domains_locator_cache_midpoint),
+        new_subdomain_test(object_by_id_user_sub_domains_locator_missing_found),
+        new_subdomain_test(object_by_id_user_sub_domains_locator_missing_notfound),
+        new_subdomain_test(object_by_id_user_sub_domains_locator_cache_expired_two_calls),
+
+        new_multi_domain_test(object_by_id_group_multiple_domains_locator_cache_valid),
+        new_multi_domain_test(object_by_id_group_multiple_domains_locator_cache_expired),
+        new_subdomain_test(object_by_id_group_sub_domains_locator_cache_valid),
+        new_subdomain_test(object_by_id_group_sub_domains_locator_cache_expired),
+        new_subdomain_test(object_by_id_group_sub_domains_locator_cache_midpoint),
+        new_subdomain_test(object_by_id_group_sub_domains_locator_missing_found),
+        new_subdomain_test(object_by_id_group_sub_domains_locator_missing_notfound),
+        new_subdomain_test(object_by_id_group_sub_domains_locator_cache_expired_two_calls),
     };
 
-    /* Set debug level to invalid value so we can deside if -d 0 was used. */
+    /* Set debug level to invalid value so we can decide if -d 0 was used. */
     debug_level = SSSDBG_INVALID;
 
     pc = poptGetContext(argv[0], argc, argv, long_options, 0);
@@ -2238,7 +4073,7 @@ int main(int argc, const char *argv[])
     DEBUG_CLI_INIT(debug_level);
 
     /* Even though normally the tests should clean up after themselves
-     * they might not after a failed run. Remove the old db to be sure */
+     * they might not after a failed run. Remove the old DB to be sure */
     tests_set_cwd();
     test_multidom_suite_cleanup(TESTS_PATH, TEST_CONF_DB, domains);
     test_dom_suite_cleanup(TESTS_PATH, TEST_CONF_DB, TEST_DOM_NAME);

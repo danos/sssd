@@ -187,6 +187,33 @@ const struct sbus_interface_meta iface_dp_failover_meta = {
     sbus_invoke_get_all, /* GetAll invoker */
 };
 
+int iface_dp_access_control_RefreshRules_finish(struct sbus_request *req)
+{
+   return sbus_request_return_and_finish(req,
+                                         DBUS_TYPE_INVALID);
+}
+
+/* methods for org.freedesktop.sssd.DataProvider.AccessControl */
+const struct sbus_method_meta iface_dp_access_control__methods[] = {
+    {
+        "RefreshRules", /* name */
+        NULL, /* no in_args */
+        NULL, /* no out_args */
+        offsetof(struct iface_dp_access_control, RefreshRules),
+        NULL, /* no invoker */
+    },
+    { NULL, }
+};
+
+/* interface info for org.freedesktop.sssd.DataProvider.AccessControl */
+const struct sbus_interface_meta iface_dp_access_control_meta = {
+    "org.freedesktop.sssd.DataProvider.AccessControl", /* name */
+    iface_dp_access_control__methods,
+    NULL, /* no signals */
+    NULL, /* no properties */
+    sbus_invoke_get_all, /* GetAll invoker */
+};
+
 /* arguments for org.freedesktop.sssd.dataprovider.autofsHandler */
 const struct sbus_arg_meta iface_dp_autofsHandler__in[] = {
     { "dp_flags", "u" },
@@ -286,6 +313,30 @@ int iface_dp_getAccountInfo_finish(struct sbus_request *req, uint16_t arg_dp_err
                                          DBUS_TYPE_INVALID);
 }
 
+/* arguments for org.freedesktop.sssd.dataprovider.getAccountDomain */
+const struct sbus_arg_meta iface_dp_getAccountDomain__in[] = {
+    { "entry_type", "u" },
+    { "filter", "s" },
+    { NULL, }
+};
+
+/* arguments for org.freedesktop.sssd.dataprovider.getAccountDomain */
+const struct sbus_arg_meta iface_dp_getAccountDomain__out[] = {
+    { "dp_error", "q" },
+    { "error", "u" },
+    { "domain_name", "s" },
+    { NULL, }
+};
+
+int iface_dp_getAccountDomain_finish(struct sbus_request *req, uint16_t arg_dp_error, uint32_t arg_error, const char *arg_domain_name)
+{
+   return sbus_request_return_and_finish(req,
+                                         DBUS_TYPE_UINT16, &arg_dp_error,
+                                         DBUS_TYPE_UINT32, &arg_error,
+                                         DBUS_TYPE_STRING, &arg_domain_name,
+                                         DBUS_TYPE_INVALID);
+}
+
 /* methods for org.freedesktop.sssd.dataprovider */
 const struct sbus_method_meta iface_dp__methods[] = {
     {
@@ -329,6 +380,13 @@ const struct sbus_method_meta iface_dp__methods[] = {
         iface_dp_getAccountInfo__out,
         offsetof(struct iface_dp, getAccountInfo),
         invoke_uusss_method,
+    },
+    {
+        "getAccountDomain", /* name */
+        iface_dp_getAccountDomain__in,
+        iface_dp_getAccountDomain__out,
+        offsetof(struct iface_dp, getAccountDomain),
+        invoke_us_method,
     },
     { NULL, }
 };

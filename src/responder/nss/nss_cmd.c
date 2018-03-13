@@ -50,10 +50,31 @@ nss_cmd_ctx_create(TALLOC_CTX *mem_ctx,
     return cmd_ctx;
 }
 
+static errno_t eval_flags(struct nss_cmd_ctx *cmd_ctx,
+                          struct cache_req_data *data)
+{
+    if ((cmd_ctx->flags & SSS_NSS_EX_FLAG_NO_CACHE) != 0
+            && (cmd_ctx->flags & SSS_NSS_EX_FLAG_INVALIDATE_CACHE) != 0) {
+        DEBUG(SSSDBG_CRIT_FAILURE, "Flags SSS_NSS_EX_FLAG_NO_CACHE and "
+                                   "SSS_NSS_EX_FLAG_INVALIDATE_CACHE are "
+                                   "mutually exclusive.\n");
+        return EINVAL;
+    }
+
+    if ((cmd_ctx->flags & SSS_NSS_EX_FLAG_NO_CACHE) != 0) {
+        cache_req_data_set_bypass_cache(data, true);
+    } else if ((cmd_ctx->flags & SSS_NSS_EX_FLAG_INVALIDATE_CACHE) != 0) {
+        cache_req_data_set_bypass_dp(data, true);
+    }
+
+    return EOK;
+}
+
 static void nss_getby_done(struct tevent_req *subreq);
 static void nss_getlistby_done(struct tevent_req *subreq);
 
 static errno_t nss_getby_name(struct cli_ctx *cli_ctx,
+                              bool ex_version,
                               enum cache_req_type type,
                               const char **attrs,
                               enum sss_mc_type memcache,
@@ -71,7 +92,12 @@ static errno_t nss_getby_name(struct cli_ctx *cli_ctx,
         goto done;
     }
 
-    ret = nss_protocol_parse_name(cli_ctx, &rawname);
+    cmd_ctx->flags = 0;
+    if (ex_version) {
+        ret = nss_protocol_parse_name_ex(cli_ctx, &rawname, &cmd_ctx->flags);
+    } else {
+        ret = nss_protocol_parse_name(cli_ctx, &rawname);
+    }
     if (ret != EOK) {
         DEBUG(SSSDBG_CRIT_FAILURE, "Invalid request message!\n");
         goto done;
@@ -83,6 +109,12 @@ static errno_t nss_getby_name(struct cli_ctx *cli_ctx,
     if (data == NULL) {
         DEBUG(SSSDBG_CRIT_FAILURE, "Unable to set cache request data!\n");
         ret = ENOMEM;
+        goto done;
+    }
+
+    ret = eval_flags(cmd_ctx, data);
+    if (ret != EOK) {
+        DEBUG(SSSDBG_OP_FAILURE, "eval_flags failed.\n");
         goto done;
     }
 
@@ -108,6 +140,7 @@ done:
 }
 
 static errno_t nss_getby_id(struct cli_ctx *cli_ctx,
+                            bool ex_version,
                             enum cache_req_type type,
                             const char **attrs,
                             enum sss_mc_type memcache,
@@ -125,7 +158,11 @@ static errno_t nss_getby_id(struct cli_ctx *cli_ctx,
         goto done;
     }
 
-    ret = nss_protocol_parse_id(cli_ctx, &id);
+    if (ex_version) {
+        ret = nss_protocol_parse_id_ex(cli_ctx, &id, &cmd_ctx->flags);
+    } else {
+        ret = nss_protocol_parse_id(cli_ctx, &id);
+    }
     if (ret != EOK) {
         DEBUG(SSSDBG_CRIT_FAILURE, "Invalid request message!\n");
         goto done;
@@ -137,6 +174,12 @@ static errno_t nss_getby_id(struct cli_ctx *cli_ctx,
     if (data == NULL) {
         DEBUG(SSSDBG_CRIT_FAILURE, "Unable to set cache request data!\n");
         ret = ENOMEM;
+        goto done;
+    }
+
+    ret = eval_flags(cmd_ctx, data);
+    if (ret != EOK) {
+        DEBUG(SSSDBG_OP_FAILURE, "eval_flags failed.\n");
         goto done;
     }
 
@@ -405,6 +448,98 @@ done:
     return EOK;
 }
 
+static errno_t invalidate_cache(struct nss_cmd_ctx *cmd_ctx,
+                                struct cache_req_result *result)
+{
+    int ret;
+    enum sss_mc_type memcache_type;
+    const char *name;
+    char *output_name = NULL;
+    bool is_user;
+    struct sysdb_attrs *attrs = NULL;
+
+    switch (cmd_ctx->type) {
+    case CACHE_REQ_INITGROUPS:
+    case CACHE_REQ_INITGROUPS_BY_UPN:
+        memcache_type = SSS_MC_INITGROUPS;
+        is_user = true;
+        break;
+    case CACHE_REQ_USER_BY_NAME:
+    case CACHE_REQ_USER_BY_ID:
+        memcache_type = SSS_MC_PASSWD;
+        is_user = true;
+        break;
+    case CACHE_REQ_GROUP_BY_NAME:
+    case CACHE_REQ_GROUP_BY_ID:
+        memcache_type = SSS_MC_GROUP;
+        is_user = false;
+        break;
+    default:
+        /* nothing to do */
+        return EOK;
+    }
+
+    /* Find output name to invalidate memory cache entry*/
+    name = sss_get_name_from_msg(result->domain, result->msgs[0]);
+    if (name == NULL) {
+        DEBUG(SSSDBG_CRIT_FAILURE, "Found object has no name.\n");
+        return EINVAL;
+    }
+    ret = sss_output_fqname(cmd_ctx, result->domain, name,
+                            cmd_ctx->nss_ctx->rctx->override_space,
+                            &output_name);
+    if (ret != EOK) {
+        DEBUG(SSSDBG_OP_FAILURE, "sss_output_fqname failed.\n");
+        return ret;
+    }
+
+    memcache_delete_entry(cmd_ctx->nss_ctx, cmd_ctx->nss_ctx->rctx, NULL,
+                          output_name, 0, memcache_type);
+    if (memcache_type == SSS_MC_INITGROUPS) {
+        /* Invalidate the passwd data as well */
+        memcache_delete_entry(cmd_ctx->nss_ctx, cmd_ctx->nss_ctx->rctx,
+                              result->domain, output_name, 0, SSS_MC_PASSWD);
+    }
+    talloc_free(output_name);
+
+    /* Use sysdb name to invalidate disk cache entry */
+    name = ldb_msg_find_attr_as_string(result->msgs[0], SYSDB_NAME, NULL);
+    if (name == NULL) {
+        DEBUG(SSSDBG_CRIT_FAILURE, "Found object has no name.\n");
+        return EINVAL;
+    }
+
+    if (memcache_type == SSS_MC_INITGROUPS) {
+        attrs = sysdb_new_attrs(cmd_ctx);
+        if (attrs == NULL) {
+            DEBUG(SSSDBG_OP_FAILURE, "sysdb_new_attrs failed.\n");
+            return ENOMEM;
+        }
+
+        ret = sysdb_attrs_add_time_t(attrs, SYSDB_INITGR_EXPIRE, 1);
+        if (ret != EOK) {
+            talloc_free(attrs);
+            DEBUG(SSSDBG_OP_FAILURE, "sysdb_attrs_add_time_t failed.\n");
+            return ret;
+        }
+
+        ret = sysdb_set_user_attr(result->domain, name, attrs, SYSDB_MOD_REP);
+        talloc_free(attrs);
+        if (ret != EOK) {
+            DEBUG(SSSDBG_OP_FAILURE, "sysdb_set_user_attr failed.\n");
+            return ret;
+        }
+    }
+
+    ret = sysdb_invalidate_cache_entry(result->domain, name, is_user);
+    if (ret != EOK) {
+        DEBUG(SSSDBG_OP_FAILURE, "sysdb_invalidate_cache_entry failed.\n");
+        return ret;
+    }
+
+    return EOK;
+}
+
 static void nss_getby_done(struct tevent_req *subreq)
 {
     struct cache_req_result *result;
@@ -418,6 +553,16 @@ static void nss_getby_done(struct tevent_req *subreq)
     if (ret != EOK) {
         nss_protocol_done(cmd_ctx->cli_ctx, ret);
         goto done;
+    }
+
+    if ((cmd_ctx->flags & SSS_NSS_EX_FLAG_INVALIDATE_CACHE) != 0) {
+        ret = invalidate_cache(cmd_ctx, result);
+        if (ret != EOK) {
+            DEBUG(SSSDBG_OP_FAILURE, "Failed to invalidate cache for [%s].\n",
+                                     cmd_ctx->rawname);
+            nss_protocol_done(cmd_ctx->cli_ctx, ret);
+            goto done;
+        }
     }
 
     nss_protocol_reply(cmd_ctx->cli_ctx, cmd_ctx->nss_ctx, cmd_ctx,
@@ -766,14 +911,26 @@ static errno_t nss_endent(struct cli_ctx *cli_ctx,
 
 static errno_t nss_cmd_getpwnam(struct cli_ctx *cli_ctx)
 {
-    return nss_getby_name(cli_ctx, CACHE_REQ_USER_BY_NAME, NULL, SSS_MC_PASSWD,
-                          nss_protocol_fill_pwent);
+    return nss_getby_name(cli_ctx, false, CACHE_REQ_USER_BY_NAME, NULL,
+                          SSS_MC_PASSWD, nss_protocol_fill_pwent);
 }
 
 static errno_t nss_cmd_getpwuid(struct cli_ctx *cli_ctx)
 {
-    return nss_getby_id(cli_ctx, CACHE_REQ_USER_BY_ID, NULL, SSS_MC_PASSWD,
-                        nss_protocol_fill_pwent);
+    return nss_getby_id(cli_ctx, false, CACHE_REQ_USER_BY_ID, NULL,
+                        SSS_MC_PASSWD, nss_protocol_fill_pwent);
+}
+
+static errno_t nss_cmd_getpwnam_ex(struct cli_ctx *cli_ctx)
+{
+    return nss_getby_name(cli_ctx, true, CACHE_REQ_USER_BY_NAME, NULL,
+                          SSS_MC_PASSWD, nss_protocol_fill_pwent);
+}
+
+static errno_t nss_cmd_getpwuid_ex(struct cli_ctx *cli_ctx)
+{
+    return nss_getby_id(cli_ctx, true, CACHE_REQ_USER_BY_ID, NULL,
+                        SSS_MC_PASSWD, nss_protocol_fill_pwent);
 }
 
 static errno_t nss_cmd_setpwent(struct cli_ctx *cli_ctx)
@@ -809,15 +966,28 @@ static errno_t nss_cmd_endpwent(struct cli_ctx *cli_ctx)
 
 static errno_t nss_cmd_getgrnam(struct cli_ctx *cli_ctx)
 {
-    return nss_getby_name(cli_ctx, CACHE_REQ_GROUP_BY_NAME, NULL, SSS_MC_GROUP,
-                          nss_protocol_fill_grent);
+    return nss_getby_name(cli_ctx, false, CACHE_REQ_GROUP_BY_NAME, NULL,
+                          SSS_MC_GROUP, nss_protocol_fill_grent);
 }
 
 static errno_t nss_cmd_getgrgid(struct cli_ctx *cli_ctx)
 {
-    return nss_getby_id(cli_ctx, CACHE_REQ_GROUP_BY_ID, NULL, SSS_MC_GROUP,
-                        nss_protocol_fill_grent);
+    return nss_getby_id(cli_ctx, false, CACHE_REQ_GROUP_BY_ID, NULL,
+                        SSS_MC_GROUP, nss_protocol_fill_grent);
 }
+
+static errno_t nss_cmd_getgrnam_ex(struct cli_ctx *cli_ctx)
+{
+    return nss_getby_name(cli_ctx, true, CACHE_REQ_GROUP_BY_NAME, NULL,
+                          SSS_MC_GROUP, nss_protocol_fill_grent);
+}
+
+static errno_t nss_cmd_getgrgid_ex(struct cli_ctx *cli_ctx)
+{
+    return nss_getby_id(cli_ctx, true, CACHE_REQ_GROUP_BY_ID, NULL,
+                        SSS_MC_GROUP, nss_protocol_fill_grent);
+}
+
 
 static errno_t nss_cmd_setgrent(struct cli_ctx *cli_ctx)
 {
@@ -852,7 +1022,13 @@ static errno_t nss_cmd_endgrent(struct cli_ctx *cli_ctx)
 
 static errno_t nss_cmd_initgroups(struct cli_ctx *cli_ctx)
 {
-    return nss_getby_name(cli_ctx, CACHE_REQ_INITGROUPS, NULL,
+    return nss_getby_name(cli_ctx, false, CACHE_REQ_INITGROUPS, NULL,
+                          SSS_MC_INITGROUPS, nss_protocol_fill_initgr);
+}
+
+static errno_t nss_cmd_initgroups_ex(struct cli_ctx *cli_ctx)
+{
+    return nss_getby_name(cli_ctx, true, CACHE_REQ_INITGROUPS, NULL,
                           SSS_MC_INITGROUPS, nss_protocol_fill_initgr);
 }
 
@@ -943,7 +1119,7 @@ static errno_t nss_cmd_getsidbyname(struct cli_ctx *cli_ctx)
 {
     const char *attrs[] = { SYSDB_SID_STR, NULL };
 
-    return nss_getby_name(cli_ctx, CACHE_REQ_OBJECT_BY_NAME, attrs,
+    return nss_getby_name(cli_ctx, false, CACHE_REQ_OBJECT_BY_NAME, attrs,
                           SSS_MC_NONE, nss_protocol_fill_sid);
 }
 
@@ -951,7 +1127,7 @@ static errno_t nss_cmd_getsidbyid(struct cli_ctx *cli_ctx)
 {
     const char *attrs[] = { SYSDB_SID_STR, NULL };
 
-    return nss_getby_id(cli_ctx, CACHE_REQ_OBJECT_BY_ID, attrs,
+    return nss_getby_id(cli_ctx, false, CACHE_REQ_OBJECT_BY_ID, attrs,
                         SSS_MC_NONE, nss_protocol_fill_sid);
 }
 
@@ -972,7 +1148,7 @@ static errno_t nss_cmd_getorigbyname(struct cli_ctx *cli_ctx)
     errno_t ret;
     struct nss_ctx *nss_ctx;
     const char **attrs;
-    static const char *defattrs[] = { SYSDB_NAME, SYSDB_OBJECTCLASS,
+    static const char *defattrs[] = { SYSDB_NAME, SYSDB_OBJECTCATEGORY,
                                       SYSDB_SID_STR,
                                       ORIGINALAD_PREFIX SYSDB_NAME,
                                       ORIGINALAD_PREFIX SYSDB_UIDNUM,
@@ -1006,7 +1182,7 @@ static errno_t nss_cmd_getorigbyname(struct cli_ctx *cli_ctx)
         attrs = defattrs;
     }
 
-    return nss_getby_name(cli_ctx, CACHE_REQ_OBJECT_BY_NAME, attrs,
+    return nss_getby_name(cli_ctx, false, CACHE_REQ_OBJECT_BY_NAME, attrs,
                           SSS_MC_NONE, nss_protocol_fill_orig);
 }
 
@@ -1051,6 +1227,11 @@ struct sss_cmd_table *get_nss_cmds(void)
         { SSS_NSS_GETORIGBYNAME, nss_cmd_getorigbyname },
         { SSS_NSS_GETNAMEBYCERT, nss_cmd_getnamebycert },
         { SSS_NSS_GETLISTBYCERT, nss_cmd_getlistbycert },
+        { SSS_NSS_GETPWNAM_EX, nss_cmd_getpwnam_ex },
+        { SSS_NSS_GETPWUID_EX, nss_cmd_getpwuid_ex },
+        { SSS_NSS_GETGRNAM_EX, nss_cmd_getgrnam_ex },
+        { SSS_NSS_GETGRGID_EX, nss_cmd_getgrgid_ex },
+        { SSS_NSS_INITGR_EX, nss_cmd_initgroups_ex },
         { SSS_CLI_NULL, NULL }
     };
 

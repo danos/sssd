@@ -336,7 +336,7 @@ static void test_ad_get_pac_data_from_user_entry(void **state)
 
     ret = ldb_msg_add_string(user_msg, SYSDB_NAME, "username");
     assert_int_equal(ret, EOK);
-    ret = ldb_msg_add_string(user_msg, SYSDB_OBJECTCLASS, "user");
+    ret = ldb_msg_add_string(user_msg, SYSDB_OBJECTCATEGORY, SYSDB_USER_CLASS);
     assert_int_equal(ret, EOK);
     ret = ldb_msg_add_string(user_msg, SYSDB_PAC_BLOB_EXPIRE, "12345");
     assert_int_equal(ret, EOK);
@@ -771,7 +771,7 @@ void test_user_conn_list(void **state)
                                                      struct ad_common_test_ctx);
     assert_non_null(test_ctx);
 
-    conn_list = ad_user_conn_list(test_ctx->ad_ctx,
+    conn_list = ad_user_conn_list(test_ctx, test_ctx->ad_ctx,
                                   test_ctx->dom);
     assert_non_null(conn_list);
 
@@ -780,7 +780,7 @@ void test_user_conn_list(void **state)
     assert_null(conn_list[1]);
     talloc_free(conn_list);
 
-    conn_list = ad_user_conn_list(test_ctx->ad_ctx,
+    conn_list = ad_user_conn_list(test_ctx, test_ctx->ad_ctx,
                                   test_ctx->subdom);
     assert_non_null(conn_list);
 
@@ -917,7 +917,7 @@ int main(int argc, const char *argv[])
                                         test_ad_common_teardown),
     };
 
-    /* Set debug level to invalid value so we can deside if -d 0 was used. */
+    /* Set debug level to invalid value so we can decide if -d 0 was used. */
     debug_level = SSSDBG_INVALID;
 
     pc = poptGetContext(argv[0], argc, argv, long_options, 0);
@@ -939,7 +939,7 @@ int main(int argc, const char *argv[])
     ret = cmocka_run_group_tests(tests, NULL, NULL);
 
 #ifdef HAVE_NSS
-    /* Cleanup NSS and NSPR to make valgrind happy. */
+    /* Cleanup NSS and NSPR to make Valgrind happy. */
     nspr_nss_cleanup();
 #endif
 

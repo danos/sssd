@@ -574,7 +574,7 @@ static krb5_error_code privileged_krb5_setup(struct input_buffer *ibuf)
     krb5_error_code kerr;
     char *keytab_name;
 
-    kerr = krb5_init_context(&ibuf->context);
+    kerr = sss_krb5_init_context(&ibuf->context);
     if (kerr != 0) {
         DEBUG(SSSDBG_CRIT_FAILURE, "Failed to init kerberos context\n");
         return kerr;
@@ -599,6 +599,7 @@ int main(int argc, const char *argv[])
     int kerr;
     int opt;
     int debug_fd = -1;
+    const char *opt_logger = NULL;
     poptContext pc;
     TALLOC_CTX *main_ctx = NULL;
     uint8_t *buf = NULL;
@@ -622,6 +623,7 @@ int main(int argc, const char *argv[])
          _("An open file descriptor for the debug logs"), NULL},
         {"debug-to-stderr", 0, POPT_ARG_NONE | POPT_ARGFLAG_DOC_HIDDEN, &debug_to_stderr, 0, \
          _("Send the debug output to stderr directly."), NULL }, \
+        SSSD_LOGGER_OPTS
         POPT_TABLEEND
     };
 
@@ -655,7 +657,10 @@ int main(int argc, const char *argv[])
         if (ret != EOK) {
             DEBUG(SSSDBG_CRIT_FAILURE, "set_debug_file_from_fd failed.\n");
         }
+        opt_logger = sss_logger_str[FILES_LOGGER];
     }
+
+    sss_set_logger(opt_logger);
 
     BlockSignals(false, SIGTERM);
     CatchSignal(SIGTERM, sig_term_handler);

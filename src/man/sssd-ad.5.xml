@@ -38,7 +38,7 @@
             joined to the AD domain and a keytab is available. Back end
             communication occurs over a GSSAPI-encrypted channel, SSL/TLS
             options should not be used with the AD provider and will be
-            superceded by Kerberos usage.
+            superseded by Kerberos usage.
         </para>
         <para>
             The AD provider supports connecting to Active Directory 2008 R2
@@ -76,6 +76,12 @@
             is required on the client side.
         </para>
         <para>
+            If <quote>auth_provider=ad</quote> or
+            <quote>access_provider=ad</quote> is configured
+            in sssd.conf then the id_provider must also be set to
+            <quote>ad</quote>.
+        </para>
+        <para>
             By default, the AD provider will map UID and GID values from the
             objectSID parameter in Active Directory. For details on this, see
             the <quote>ID MAPPING</quote> section below. If you want to
@@ -84,9 +90,16 @@
             <programlisting>
 ldap_id_mapping = False
             </programlisting>
-            In order to retrieve users and groups using POSIX attributes from trusted
-            domains, the AD administrator must make sure that the POSIX attributes
-            are replicated to the Global Catalog.
+            If POSIX attributes should be used, it is recommended for
+            performance reasons that the attributes are also replicated
+            to the Global Catalog. If POSIX attributes are replicated,
+            SSSD will attempt to locate the domain of a requested
+            numerical ID with the help of the Global Catalog and only
+            search that domain. In contrast, if POSIX attributes are not
+            replicated to the Global Catalog, SSSD must search all the
+            domains in the forest sequentially. Please note that the
+            <quote>cache_first</quote> option might be also helpful in
+            speeding up domainless searches.
         </para>
         <para>
             Users, groups and other entities served by SSSD are always treated as
@@ -344,6 +357,13 @@ DOM:dom1:(memberOf:1.2.840.113556.1.4.1941:=cn=nestedgroup,ou=groups,dc=example,
                             policy settings to determine whether or not a
                             particular user is allowed to logon to a particular
                             host.
+                        </para>
+                        <para>
+                            NOTE: The current version of SSSD does not support
+                            host (computer) entries in the GPO 'Security
+                            Filtering' list. Only user and group entries are
+                            supported. Host entries in the list have no
+                            effect.
                         </para>
                         <para>
                             NOTE: If the operation mode is set to enforcing, it

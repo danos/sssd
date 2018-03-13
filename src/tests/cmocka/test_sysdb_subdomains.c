@@ -513,6 +513,31 @@ static void test_sysdb_link_ad_multidom(void **state)
 
 }
 
+static void test_sysdb_set_and_get_site(void **state)
+{
+    TALLOC_CTX *tmp_ctx;
+    struct subdom_test_ctx *test_ctx =
+        talloc_get_type(*state, struct subdom_test_ctx);
+    const char *site;
+    errno_t ret;
+
+    tmp_ctx = talloc_new(NULL);
+    assert_non_null(test_ctx);
+
+    ret = sysdb_get_site(test_ctx, test_ctx->tctx->dom, &site);
+    assert_int_equal(ret, EOK);
+    assert_null(site);
+
+    ret = sysdb_set_site(test_ctx->tctx->dom, "TestSite");
+    assert_int_equal(ret, EOK);
+
+    ret = sysdb_get_site(tmp_ctx, test_ctx->tctx->dom, &site);
+    assert_int_equal(ret, EOK);
+    assert_string_equal(site, "TestSite");
+
+    talloc_free(tmp_ctx);
+}
+
 int main(int argc, const char *argv[])
 {
     int rv;
@@ -546,9 +571,12 @@ int main(int argc, const char *argv[])
         cmocka_unit_test_setup_teardown(test_sysdb_link_ad_multidom,
                                         test_sysdb_subdom_setup,
                                         test_sysdb_subdom_teardown),
+        cmocka_unit_test_setup_teardown(test_sysdb_set_and_get_site,
+                                        test_sysdb_subdom_setup,
+                                        test_sysdb_subdom_teardown),
     };
 
-    /* Set debug level to invalid value so we can deside if -d 0 was used. */
+    /* Set debug level to invalid value so we can decide if -d 0 was used. */
     debug_level = SSSDBG_INVALID;
 
     pc = poptGetContext(argv[0], argc, argv, long_options, 0);

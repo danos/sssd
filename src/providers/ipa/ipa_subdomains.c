@@ -1547,9 +1547,9 @@ ipa_subdomains_view_name_send(TALLOC_CTX *mem_ctx,
     maps->num_attrs = IPA_OPTS_VIEW;
 
     filter = talloc_asprintf(state, "(&(objectClass=%s)(%s=%s))",
-                        ipa_options->host_map[IPA_OC_HOST].name,
-                        ipa_options->host_map[IPA_AT_HOST_FQDN].name,
-                        dp_opt_get_string(ipa_options->basic, IPA_HOSTNAME));
+                             ipa_options->id->host_map[SDAP_OC_HOST].name,
+                             ipa_options->id->host_map[SDAP_AT_HOST_FQDN].name,
+                             dp_opt_get_string(ipa_options->basic, IPA_HOSTNAME));
     if (filter == NULL) {
         ret = ENOMEM;
         goto immediately;
@@ -2379,6 +2379,11 @@ errno_t ipa_subdomains_init(TALLOC_CTX *mem_ctx,
     struct ipa_options *ipa_options;
     time_t period;
     errno_t ret;
+    /* Delay the first ptask that refreshes the trusted domains so that a race between
+     * the first responder-induced request and the ptask doesn't cause issues, see
+     * also upstream ticket #3601
+     */
+    const time_t ptask_first_delay = 600;
 
     ipa_options = ipa_id_ctx->ipa_options;
 
@@ -2394,14 +2399,14 @@ errno_t ipa_subdomains_init(TALLOC_CTX *mem_ctx,
     sd_ctx->search_bases = ipa_options->subdomains_search_bases;
     sd_ctx->master_search_bases = ipa_options->master_domain_search_bases;
     sd_ctx->ranges_search_bases = ipa_options->ranges_search_bases;
-    sd_ctx->host_search_bases = ipa_options->host_search_bases;
+    sd_ctx->host_search_bases = ipa_options->id->sdom->host_search_bases;
 
     dp_set_method(dp_methods, DPM_DOMAINS_HANDLER,
                   ipa_subdomains_handler_send, ipa_subdomains_handler_recv, sd_ctx,
                   struct ipa_subdomains_ctx, struct dp_subdomains_data, struct dp_reply_std);
 
     period = be_ctx->domain->subdomain_refresh_interval;
-    ret = be_ptask_create(sd_ctx, be_ctx, period, 0, 0, 0, period,
+    ret = be_ptask_create(sd_ctx, be_ctx, period, ptask_first_delay, 0, 0, period,
                           BE_PTASK_OFFLINE_DISABLE, 0,
                           ipa_subdomains_ptask_send, ipa_subdomains_ptask_recv, sd_ctx,
                           "Subdomains Refresh", NULL);

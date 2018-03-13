@@ -24,7 +24,7 @@
 #include "responder/common/responder.h"
 #include "tests/cmocka/common_mock_resp.h"
 
-/* Mock DP requests that finish immediatelly and return
+/* Mock DP requests that finish immediately and return
  * mocked values as per previous set by mock_account_recv
  */
 struct tevent_req *
@@ -178,4 +178,27 @@ sss_dp_get_domains_send(TALLOC_CTX *mem_ctx,
 errno_t sss_dp_get_domains_recv(struct tevent_req *req)
 {
     return test_request_recv(req);
+}
+
+struct tevent_req *
+sss_dp_get_account_domain_send(TALLOC_CTX *mem_ctx,
+                               struct resp_ctx *rctx,
+                               struct sss_domain_info *domain,
+                               enum sss_dp_acct_type type,
+                               uint32_t opt_id)
+{
+    return test_req_succeed_send(mem_ctx, rctx->ev);
+}
+
+errno_t sss_dp_get_account_domain_recv(TALLOC_CTX *mem_ctx,
+                                       struct tevent_req *req,
+                                       char **_domain)
+{
+    errno_t ret;
+
+    ret = sss_mock_type(errno_t);
+    if (ret == EOK) {
+        *_domain = sss_mock_ptr_type(char *);
+    }
+    return ret;
 }

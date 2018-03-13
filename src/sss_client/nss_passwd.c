@@ -28,6 +28,7 @@
 #include <string.h>
 #include "sss_cli.h"
 #include "nss_mc.h"
+#include "nss_common.h"
 
 static struct sss_nss_getpwent_data {
     size_t len;
@@ -63,14 +64,8 @@ static void sss_nss_getpwent_data_clean(void) {
  *  8-X: sequence of 5, 0 terminated, strings (name, passwd, gecos, dir, shell)
  */
 
-struct sss_nss_pw_rep {
-    struct passwd *result;
-    char *buffer;
-    size_t buflen;
-};
-
-static int sss_nss_getpw_readrep(struct sss_nss_pw_rep *pr,
-                                 uint8_t *buf, size_t *len)
+int sss_nss_getpw_readrep(struct sss_nss_pw_rep *pr,
+                          uint8_t *buf, size_t *len)
 {
     errno_t ret;
     size_t i, slen, dlen;
@@ -168,7 +163,7 @@ enum nss_status _nss_sss_getpwnam_r(const char *name, struct passwd *result,
          * if no entry is found */
         break;
     default:
-        /* if using the mmaped cache failed,
+        /* if using the mmapped cache failed,
          * fall back to socket based comms */
         break;
     }
@@ -194,7 +189,7 @@ enum nss_status _nss_sss_getpwnam_r(const char *name, struct passwd *result,
          * if no entry is found */
         break;
     default:
-        /* if using the mmaped cache failed,
+        /* if using the mmapped cache failed,
          * fall back to socket based comms */
         break;
     }
@@ -256,7 +251,10 @@ enum nss_status _nss_sss_getpwuid_r(uid_t uid, struct passwd *result,
     int ret;
 
     /* Caught once glibc passing in buffer == 0x0 */
-    if (!buffer || !buflen) return ERANGE;
+    if (!buffer || !buflen) {
+	*errnop = ERANGE;
+	return NSS_STATUS_TRYAGAIN;
+    }
 
     ret = sss_nss_mc_getpwuid(uid, result, buffer, buflen);
     switch (ret) {
@@ -271,7 +269,7 @@ enum nss_status _nss_sss_getpwuid_r(uid_t uid, struct passwd *result,
          * if no entry is found */
         break;
     default:
-        /* if using the mmaped cache failed,
+        /* if using the mmapped cache failed,
          * fall back to socket based comms */
         break;
     }
@@ -298,7 +296,7 @@ enum nss_status _nss_sss_getpwuid_r(uid_t uid, struct passwd *result,
          * if no entry is found */
         break;
     default:
-        /* if using the mmaped cache failed,
+        /* if using the mmapped cache failed,
          * fall back to socket based comms */
         break;
     }
@@ -381,7 +379,10 @@ static enum nss_status internal_getpwent_r(struct passwd *result,
     int ret;
 
     /* Caught once glibc passing in buffer == 0x0 */
-    if (!buffer || !buflen) return ERANGE;
+    if (!buffer || !buflen) {
+	*errnop = ERANGE;
+	return NSS_STATUS_TRYAGAIN;
+    }
 
     /* if there are leftovers return the next one */
     if (sss_nss_getpwent_data.data != NULL &&

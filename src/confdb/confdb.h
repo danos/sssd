@@ -197,7 +197,7 @@
                                  "cache_credentials_minimal_first_factor_length"
 #define CONFDB_DEFAULT_CACHE_CREDS_MIN_FF_LENGTH 8
 #define CONFDB_DOMAIN_LEGACY_PASS "store_legacy_passwords"
-#define CONFDB_DOMAIN_MPG "magic_private_groups"
+#define CONFDB_DOMAIN_AUTO_UPG "auto_private_groups"
 #define CONFDB_DOMAIN_FQ "use_fully_qualified_names"
 #define CONFDB_DOMAIN_ENTRY_CACHE_TIMEOUT "entry_cache_timeout"
 #define CONFDB_DOMAIN_ACCOUNT_CACHE_EXPIRATION "account_cache_expiration"
@@ -636,7 +636,7 @@ int confdb_get_string_as_list(struct confdb_ctx *cdb, TALLOC_CTX *ctx,
  * @param[in] section The ConfDB section to look for.
  *                    All sections should start with 'config/'.
  *                    Subsections are separated by slashes.
- * @param[out] sections Names of the subsections realtive to the section
+ * @param[out] sections Names of the subsections relative to the section
  *                      requested. If "a/b" is requested then "c/d" is
  *                      returned for the section named [a/b/c/d]
  * @param[out] num_sections Number of section names returned

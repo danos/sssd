@@ -34,6 +34,7 @@
 #include "providers/fail_over_srv.h"
 #include "providers/ldap/sdap.h"
 #include "providers/ldap/sdap_async.h"
+#include "db/sysdb.h"
 
 #define AD_SITE_DOMAIN_FMT "%s._sites.%s"
 
@@ -475,16 +476,19 @@ int ad_get_client_site_recv(TALLOC_CTX *mem_ctx,
 }
 
 struct ad_srv_plugin_ctx {
+    struct be_ctx *be_ctx;
     struct be_resolv_ctx *be_res;
     enum host_database *host_dbs;
     struct sdap_options *opts;
     const char *hostname;
     const char *ad_domain;
     const char *ad_site_override;
+    const char *current_site;
 };
 
 struct ad_srv_plugin_ctx *
 ad_srv_plugin_ctx_init(TALLOC_CTX *mem_ctx,
+                       struct be_ctx *be_ctx,
                        struct be_resolv_ctx *be_res,
                        enum host_database *host_dbs,
                        struct sdap_options *opts,
@@ -493,12 +497,14 @@ ad_srv_plugin_ctx_init(TALLOC_CTX *mem_ctx,
                        const char *ad_site_override)
 {
     struct ad_srv_plugin_ctx *ctx = NULL;
+    errno_t ret;
 
     ctx = talloc_zero(mem_ctx, struct ad_srv_plugin_ctx);
     if (ctx == NULL) {
         return NULL;
     }
 
+    ctx->be_ctx = be_ctx;
     ctx->be_res = be_res;
     ctx->host_dbs = host_dbs;
     ctx->opts = opts;
@@ -518,6 +524,20 @@ ad_srv_plugin_ctx_init(TALLOC_CTX *mem_ctx,
         if (ctx->ad_site_override == NULL) {
             goto fail;
         }
+
+        ctx->current_site = talloc_strdup(ctx, ad_site_override);
+        if (ctx->current_site == NULL) {
+            goto fail;
+        }
+    } else {
+        ret = sysdb_get_site(ctx, be_ctx->domain, &ctx->current_site);
+        if (ret != EOK) {
+            /* Not fatal. */
+            DEBUG(SSSDBG_MINOR_FAILURE,
+                  "Unable to get current site from cache [%d]: %s\n",
+                  ret, sss_strerror(ret));
+            ctx->current_site = NULL;
+        }
     }
 
     return ctx;
@@ -525,6 +545,39 @@ ad_srv_plugin_ctx_init(TALLOC_CTX *mem_ctx,
 fail:
     talloc_free(ctx);
     return NULL;
+}
+
+static errno_t
+ad_srv_plugin_ctx_switch_site(struct ad_srv_plugin_ctx *ctx,
+                              const char *new_site)
+{
+    const char *site;
+    errno_t ret;
+
+    if (new_site == NULL) {
+        return EOK;
+    }
+
+    if (ctx->current_site != NULL && strcmp(ctx->current_site, new_site) == 0) {
+        return EOK;
+    }
+
+    site = talloc_strdup(ctx, new_site);
+    if (site == NULL) {
+        return ENOMEM;
+    }
+
+    talloc_zfree(ctx->current_site);
+    ctx->current_site = site;
+
+    ret = sysdb_set_site(ctx->be_ctx->domain, ctx->current_site);
+    if (ret != EOK) {
+        /* Not fatal. */
+        DEBUG(SSSDBG_MINOR_FAILURE, "Unable to store site information "
+              "[%d]: %s\n", ret, sss_strerror(ret));
+    }
+
+    return EOK;
 }
 
 struct ad_srv_plugin_state {
@@ -613,7 +666,7 @@ struct tevent_req *ad_srv_plugin_send(TALLOC_CTX *mem_ctx,
 
     subreq = ad_get_dc_servers_send(state, ev, ctx->be_res->resolv,
                                     state->discovery_domain,
-                                    state->ctx->ad_site_override);
+                                    state->ctx->current_site);
     if (subreq == NULL) {
         ret = ENOMEM;
         goto immediately;
@@ -709,6 +762,16 @@ static void ad_srv_plugin_site_done(struct tevent_req *subreq)
     backup_domain = NULL;
 
     if (ret == EOK) {
+        /* Remember current site so it can be used during next lookup so
+         * we can contact directory controllers within a known reachable
+         * site first. */
+        ret = ad_srv_plugin_ctx_switch_site(state->ctx, state->site);
+        if (ret != EOK) {
+            DEBUG(SSSDBG_CRIT_FAILURE, "Unable to set site [%d]: %s\n",
+                  ret, sss_strerror(ret));
+            goto done;
+        }
+
         if (strcmp(state->service, "gc") == 0) {
             if (state->forest != NULL) {
                 if (state->site != NULL) {

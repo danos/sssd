@@ -210,7 +210,7 @@ bool sec_key_match_uuid(const char *sec_key,
 /*
  * Creates an array of principal elements that will be used later
  * in the form of:
- *          "componenets": [ "elem1", "elem2", ...]
+ *          "components": [ "elem1", "elem2", ...]
  */
 static json_t *princ_data_to_json(TALLOC_CTX *mem_ctx,
                                   krb5_principal princ)
@@ -265,7 +265,7 @@ static json_t *princ_data_to_json(TALLOC_CTX *mem_ctx,
  *      {
  *          "type": "number",
  *          "realm": "string",
- *          "componenents": [ "elem1", "elem2", ...]
+ *          "components": [ "elem1", "elem2", ...]
  *      }
  */
 static json_t *princ_to_json(TALLOC_CTX *mem_ctx,
@@ -400,7 +400,7 @@ static json_t *creds_to_json_array(struct kcm_cred *creds)
  *      principal : {
  *          "type": "number",
  *          "realm": "string",
- *          "componenents": [ "elem1", "elem2", ...]
+ *          "components": [ "elem1", "elem2", ...]
  *      }
  *      creds : [
  *                  {

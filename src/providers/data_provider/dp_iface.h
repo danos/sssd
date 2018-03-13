@@ -58,6 +58,23 @@ errno_t dp_subdomains_handler(struct sbus_request *sbus_req,
                               void *dp_cli,
                               const char *domain_hint);
 
+/*
+ * Return a domain the account belongs to.
+ *
+ * The request uses the dp_reply_std structure for reply, with the following
+ * semantics:
+ *  - DP_ERR_OK - it is expected that the string message contains the domain name
+ *                the entry was found in. A 'negative' reply where the
+ *                request returns DP_ERR_OK, but no domain should be treated
+ *                as authoritative, as if the entry does not exist.
+ *  - DP_ERR_*  - the string message contains error string that corresponds
+ *                to the errno field in dp_reply_std().
+ */
+errno_t dp_get_account_domain_handler(struct sbus_request *sbus_req,
+                                      void *dp_cli,
+                                      uint32_t entry_type,
+                                      const char *filter);
+
 /* org.freedesktop.sssd.DataProvider.Backend */
 errno_t dp_backend_is_online(struct sbus_request *sbus_req,
                              void *dp_cli,
@@ -75,5 +92,9 @@ errno_t dp_failover_active_server(struct sbus_request *sbus_req,
 errno_t dp_failover_list_servers(struct sbus_request *sbus_req,
                                  void *dp_cli,
                                  const char *service_name);
+
+/* org.freedesktop.sssd.DataProvider.AccessControl */
+errno_t dp_access_control_refresh_rules_handler(struct sbus_request *sbus_req,
+                                                void *dp_cli);
 
 #endif /* DP_IFACE_H_ */

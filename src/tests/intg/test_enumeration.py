@@ -237,9 +237,7 @@ def sanity_rfc2307(request, ldap_conn):
     create_sssd_fixture(request)
     return None
 
-
-@pytest.fixture
-def sanity_rfc2307_bis(request, ldap_conn):
+def populate_rfc2307bis(request, ldap_conn):
     ent_list = ldap_ent.List(ldap_conn.ds_inst.base_dn)
     ent_list.add_user("user1", 1001, 2001)
     ent_list.add_user("user2", 1002, 2002)
@@ -266,6 +264,11 @@ def sanity_rfc2307_bis(request, ldap_conn):
                            [], ["one_user_group1", "one_user_group2"])
 
     create_ldap_fixture(request, ldap_conn, ent_list)
+
+
+@pytest.fixture
+def sanity_rfc2307_bis(request, ldap_conn):
+    populate_rfc2307bis(request, ldap_conn)
     conf = format_basic_conf(ldap_conn, SCHEMA_RFC2307_BIS)
     create_conf_fixture(request, conf)
     create_sssd_fixture(request)
@@ -403,7 +406,7 @@ def user_and_groups_rfc2307_bis(request, ldap_conn):
     return None
 
 
-def _test_add_remove_user(ldap_conn, blank_rfc2307):
+def test_add_remove_user(ldap_conn, blank_rfc2307):
     """Test user addition and removal are reflected by SSSD"""
     e = ldap_ent.user(ldap_conn.ds_inst.base_dn, "user", 2001, 2000)
     time.sleep(INTERACTIVE_TIMEOUT/2)
@@ -418,7 +421,7 @@ def _test_add_remove_user(ldap_conn, blank_rfc2307):
     ent.assert_passwd(ent.contains_only())
 
 
-def _test_add_remove_group_rfc2307(ldap_conn, blank_rfc2307):
+def test_add_remove_group_rfc2307(ldap_conn, blank_rfc2307):
     """Test RFC2307 group addition and removal are reflected by SSSD"""
     e = ldap_ent.group(ldap_conn.ds_inst.base_dn, "group", 2001)
     time.sleep(INTERACTIVE_TIMEOUT/2)
@@ -433,7 +436,7 @@ def _test_add_remove_group_rfc2307(ldap_conn, blank_rfc2307):
     ent.assert_group(ent.contains_only())
 
 
-def _test_add_remove_group_rfc2307_bis(ldap_conn, blank_rfc2307_bis):
+def test_add_remove_group_rfc2307_bis(ldap_conn, blank_rfc2307_bis):
     """Test RFC2307bis group addition and removal are reflected by SSSD"""
     e = ldap_ent.group_bis(ldap_conn.ds_inst.base_dn, "group", 2001)
     time.sleep(INTERACTIVE_TIMEOUT/2)
@@ -448,7 +451,7 @@ def _test_add_remove_group_rfc2307_bis(ldap_conn, blank_rfc2307_bis):
     ent.assert_group(ent.contains_only())
 
 
-def _test_add_remove_membership_rfc2307(ldap_conn, user_and_group_rfc2307):
+def test_add_remove_membership_rfc2307(ldap_conn, user_and_group_rfc2307):
     """Test user membership addition and removal are reflected by SSSD"""
     time.sleep(INTERACTIVE_TIMEOUT/2)
     # Add user to group
@@ -464,7 +467,7 @@ def _test_add_remove_membership_rfc2307(ldap_conn, user_and_group_rfc2307):
     ent.assert_group_by_name("group", dict(mem=ent.contains_only()))
 
 
-def _test_add_remove_membership_rfc2307_bis(ldap_conn,
+def test_add_remove_membership_rfc2307_bis(ldap_conn,
                                            user_and_groups_rfc2307_bis):
     """
     Test user and group membership addition and removal are reflected by SSSD,
@@ -695,3 +698,73 @@ def test_vetoed_shells(vetoed_shells):
                  shell="/bin/default")
         )
     )
+
+
+@pytest.fixture
+def sanity_rfc2307_bis_mpg(request, ldap_conn):
+    populate_rfc2307bis(request, ldap_conn)
+
+    ent_list = ldap_ent.List(ldap_conn.ds_inst.base_dn)
+    ent_list.add_group_bis("conflict1", 1001)
+    ent_list.add_group_bis("conflict2", 1002)
+    create_ldap_fixture(request, ldap_conn, ent_list)
+
+    conf = \
+        format_basic_conf(ldap_conn, SCHEMA_RFC2307_BIS) + \
+        unindent("""
+            [domain/LDAP]
+            auto_private_groups = True
+        """).format(**locals())
+    create_conf_fixture(request, conf)
+    create_sssd_fixture(request)
+    return None
+
+
+def test_ldap_auto_private_groups_enumerate(ldap_conn,
+                                            sanity_rfc2307_bis_mpg):
+    """
+    Test the auto_private_groups together with enumeration
+    """
+    passwd_pattern = ent.contains_only(
+        dict(name='user1', passwd='*', uid=1001, gid=1001, gecos='1001',
+             dir='/home/user1', shell='/bin/bash'),
+        dict(name='user2', passwd='*', uid=1002, gid=1002, gecos='1002',
+             dir='/home/user2', shell='/bin/bash'),
+        dict(name='user3', passwd='*', uid=1003, gid=1003, gecos='1003',
+             dir='/home/user3', shell='/bin/bash')
+    )
+    ent.assert_passwd(passwd_pattern)
+
+    group_pattern = ent.contains_only(
+        dict(name='user1', passwd='*', gid=1001, mem=ent.contains_only()),
+        dict(name='user2', passwd='*', gid=1002, mem=ent.contains_only()),
+        dict(name='user3', passwd='*', gid=1003, mem=ent.contains_only()),
+        dict(name='group1', passwd='*', gid=2001, mem=ent.contains_only()),
+        dict(name='group2', passwd='*', gid=2002, mem=ent.contains_only()),
+        dict(name='group3', passwd='*', gid=2003, mem=ent.contains_only()),
+        dict(name='empty_group1', passwd='*', gid=2010,
+             mem=ent.contains_only()),
+        dict(name='empty_group2', passwd='*', gid=2011,
+             mem=ent.contains_only()),
+        dict(name='two_user_group', passwd='*', gid=2012,
+             mem=ent.contains_only("user1", "user2")),
+        dict(name='group_empty_group', passwd='*', gid=2013,
+             mem=ent.contains_only()),
+        dict(name='group_two_empty_groups', passwd='*', gid=2014,
+             mem=ent.contains_only()),
+        dict(name='one_user_group1', passwd='*', gid=2015,
+             mem=ent.contains_only("user1")),
+        dict(name='one_user_group2', passwd='*', gid=2016,
+             mem=ent.contains_only("user2")),
+        dict(name='group_one_user_group', passwd='*', gid=2017,
+             mem=ent.contains_only("user1")),
+        dict(name='group_two_user_group', passwd='*', gid=2018,
+             mem=ent.contains_only("user1", "user2")),
+        dict(name='group_two_one_user_groups', passwd='*', gid=2019,
+             mem=ent.contains_only("user1", "user2"))
+    )
+    ent.assert_group(group_pattern)
+
+    with pytest.raises(KeyError):
+        grp.getgrnam("conflict1")
+    ent.assert_group_by_gid(1002, dict(name="user2", mem=ent.contains_only()))

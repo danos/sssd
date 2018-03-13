@@ -92,7 +92,7 @@ static errno_t sssctl_backup(bool force)
     }
 
     if (sssctl_backup_exist(files) && !force) {
-        prompt = sssctl_prompt(_("SSSD backup of local data already exist, "
+        prompt = sssctl_prompt(_("SSSD backup of local data already exists, "
                                  "override?"), SSSCTL_PROMPT_NO);
         switch (prompt) {
         case SSSCTL_PROMPT_YES:
@@ -270,7 +270,7 @@ errno_t sssctl_cache_upgrade(struct sss_cmdline *cmdline,
         return ret;
     }
 
-    if (sss_deamon_running()) {
+    if (sss_daemon_running()) {
         return ERR_SSSD_RUNNING;
     }
 

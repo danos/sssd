@@ -113,8 +113,8 @@ static int ad_sasl_log(void *context, int level, const char *message)
 }
 
 static const sasl_callback_t ad_sasl_callbacks[] = {
-    { SASL_CB_GETOPT, (sss_sasl_gen_cb_fn)ad_sasl_getopt, NULL },
-    { SASL_CB_LOG, (sss_sasl_gen_cb_fn)ad_sasl_log, NULL },
+    { SASL_CB_GETOPT, (sss_sasl_gen_cb_fn)(void *)ad_sasl_getopt, NULL },
+    { SASL_CB_LOG, (sss_sasl_gen_cb_fn)(void *)ad_sasl_log, NULL },
     { SASL_CB_LIST_END, NULL, NULL }
 };
 
@@ -199,7 +199,7 @@ static errno_t ad_init_srv_plugin(struct be_ctx *be_ctx,
         return EOK;
     }
 
-    srv_ctx = ad_srv_plugin_ctx_init(be_ctx, be_ctx->be_res,
+    srv_ctx = ad_srv_plugin_ctx_init(be_ctx, be_ctx, be_ctx->be_res,
                                      default_host_dbs, ad_options->id,
                                      hostname, ad_domain,
                                      ad_site_override);
@@ -320,6 +320,7 @@ static errno_t ad_init_auth_ctx(TALLOC_CTX *mem_ctx,
     }
 
     krb5_auth_ctx->config_type = K5C_GENERIC;
+    krb5_auth_ctx->sss_creds_password = true;
     krb5_auth_ctx->service = ad_options->service->krb5_service;
 
     ret = ad_get_auth_options(krb5_auth_ctx, ad_options, be_ctx,
@@ -509,6 +510,10 @@ errno_t sssm_ad_id_init(TALLOC_CTX *mem_ctx,
     dp_set_method(dp_methods, DPM_CHECK_ONLINE,
                   sdap_online_check_handler_send, sdap_online_check_handler_recv, id_ctx->sdap_id_ctx,
                   struct sdap_id_ctx, void, struct dp_reply_std);
+
+    dp_set_method(dp_methods, DPM_ACCT_DOMAIN_HANDLER,
+                  ad_get_account_domain_send, ad_get_account_domain_recv, id_ctx,
+                  struct ad_id_ctx, struct dp_get_acct_domain_data, struct dp_reply_std);
 
     return EOK;
 }

@@ -114,15 +114,16 @@ static errno_t merge_msg_ts_attrs(struct sysdb_ctx *sysdb,
         return EIO;
     }
 
-    /* Deliberately start from 1 in order to not merge objectclass and avoid
-     * breaking MPGs where the OC might be made up
+    /* Deliberately start from 2 in order to not merge
+     * objectclass/objectcategory and avoid breaking MPGs where the OC might
+     * be made up
      */
-    for (size_t c = 1; sysdb_ts_cache_attrs[c]; c++) {
+    for (size_t c = 2; sysdb_ts_cache_attrs[c]; c++) {
         ret = merge_ts_attr(ts_msgs[0], sysdb_msg,
                             sysdb_ts_cache_attrs[c], attrs);
         if (ret != EOK) {
             DEBUG(SSSDBG_MINOR_FAILURE,
-                  "Canot merge ts attr %s\n", sysdb_ts_cache_attrs[c]);
+                  "Cannot merge ts attr %s\n", sysdb_ts_cache_attrs[c]);
             goto done;
         }
     }
@@ -218,11 +219,27 @@ int sysdb_getpwnam(TALLOC_CTX *mem_ctx,
         goto done;
     }
 
+    if (res->count > 1) {
+        /* We expected either 0 or 1 result for search with
+         * SYSDB_PWNAM_FILTER, but we got more. This error
+         * is handled individually depending on what function
+         * called sysdb_getpwnam, so we just print a message
+         * here and let the caller decide what error code to
+         * propagate based on res->count > 1. */
+        DEBUG(SSSDBG_CRIT_FAILURE,
+              "Search for [%s] returned multiple results. It can be an email "
+              "address shared among multiple users or an email address of a "
+              "user that conflicts with another user's fully qualified name. "
+              "SSSD will not be able to handle those users properly.\n",
+              sanitized_name);
+    }
+
     /* Merge in the timestamps from the fast ts db */
     ret = sysdb_merge_res_ts_attrs(domain->sysdb, res, attrs);
     if (ret != EOK) {
         DEBUG(SSSDBG_MINOR_FAILURE, "Cannot merge timestamp cache values\n");
         /* non-fatal */
+        ret = EOK;
     }
 
     *_res = talloc_steal(mem_ctx, res);
@@ -335,6 +352,7 @@ int sysdb_getpwuid(TALLOC_CTX *mem_ctx,
     if (ret != EOK) {
         DEBUG(SSSDBG_MINOR_FAILURE, "Cannot merge timestamp cache values\n");
         /* non-fatal */
+        ret = EOK;
     }
 
     *_res = talloc_steal(mem_ctx, res);
@@ -656,6 +674,7 @@ int sysdb_enumpwent_filter(TALLOC_CTX *mem_ctx,
     if (ret != EOK) {
         DEBUG(SSSDBG_MINOR_FAILURE, "Cannot merge timestamp cache values\n");
         /* non-fatal */
+        ret = EOK;
     }
 
     res = sss_merge_ldb_results(res, ts_cache_res);
@@ -736,7 +755,7 @@ static int mpg_convert(struct ldb_message *msg)
     struct ldb_val *val = NULL;
     int i;
 
-    el = ldb_msg_find_element(msg, "objectClass");
+    el = ldb_msg_find_element(msg, SYSDB_OBJECTCATEGORY);
     if (!el) return EINVAL;
 
     /* see if this is a user to convert to a group */
@@ -885,8 +904,7 @@ int sysdb_getgrnam(TALLOC_CTX *mem_ctx,
 
     if (domain->mpg) {
         fmt_filter = SYSDB_GRNAM_MPG_FILTER;
-        base_dn = ldb_dn_new_fmt(tmp_ctx, domain->sysdb->ldb,
-                                 SYSDB_DOM_BASE, domain->name);
+        base_dn = sysdb_domain_dn(tmp_ctx, domain);
     } else {
         fmt_filter = SYSDB_GRNAM_FILTER;
         base_dn = sysdb_group_base_dn(tmp_ctx, domain);
@@ -1040,8 +1058,7 @@ int sysdb_getgrgid(TALLOC_CTX *mem_ctx,
 
     if (domain->mpg) {
         fmt_filter = SYSDB_GRGID_MPG_FILTER;
-        base_dn = ldb_dn_new_fmt(tmp_ctx, domain->sysdb->ldb,
-                                 SYSDB_DOM_BASE, domain->name);
+        base_dn = sysdb_domain_dn(tmp_ctx, domain);
     } else {
         fmt_filter = SYSDB_GRGID_FILTER;
         base_dn = sysdb_group_base_dn(tmp_ctx, domain);
@@ -1106,8 +1123,7 @@ int sysdb_enumgrent_filter(TALLOC_CTX *mem_ctx,
 
     if (domain->mpg) {
         base_filter = SYSDB_GRENT_MPG_FILTER;
-        base_dn = ldb_dn_new_fmt(tmp_ctx, domain->sysdb->ldb,
-                                 SYSDB_DOM_BASE, domain->name);
+        base_dn = sysdb_domain_dn(tmp_ctx, domain);
     } else {
         base_filter = SYSDB_GRENT_FILTER;
         base_dn = sysdb_group_base_dn(tmp_ctx, domain);
@@ -1172,6 +1188,7 @@ int sysdb_enumgrent_filter(TALLOC_CTX *mem_ctx,
     if (ret != EOK) {
         DEBUG(SSSDBG_MINOR_FAILURE, "Cannot merge timestamp cache values\n");
         /* non-fatal */
+        ret = EOK;
     }
 
     res = sss_merge_ldb_results(res, ts_cache_res);
@@ -1575,6 +1592,7 @@ int sysdb_get_user_attr(TALLOC_CTX *mem_ctx,
     if (ret != EOK) {
         DEBUG(SSSDBG_MINOR_FAILURE, "Cannot merge timestamp cache values\n");
         /* non-fatal */
+        ret = EOK;
     }
 
     *_res = talloc_steal(mem_ctx, res);
@@ -2073,7 +2091,7 @@ errno_t sysdb_get_direct_parents(TALLOC_CTX *mem_ctx,
     }
 
     member_filter = talloc_asprintf(tmp_ctx, "(&(%s=%s)(%s=%s))",
-                                    SYSDB_OBJECTCLASS, SYSDB_GROUP_CLASS,
+                                    SYSDB_OBJECTCATEGORY, SYSDB_GROUP_CLASS,
                                     SYSDB_MEMBER, sanitized_dn);
     if (!member_filter) {
         ret = ENOMEM;

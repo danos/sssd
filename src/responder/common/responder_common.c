@@ -1211,7 +1211,7 @@ int sss_process_init(TALLOC_CTX *mem_ctx,
                          GET_DOMAINS_DEFAULT_TIMEOUT, &rctx->domains_timeout);
     if (ret != EOK) {
         DEBUG(SSSDBG_OP_FAILURE,
-              "Cannnot get the default domain timeout [%d]: %s\n",
+              "Cannot get the default domain timeout [%d]: %s\n",
                ret, strerror(ret));
         goto fail;
     }
@@ -1232,7 +1232,7 @@ int sss_process_init(TALLOC_CTX *mem_ctx,
                             &rctx->default_domain);
     if (ret != EOK) {
         DEBUG(SSSDBG_OP_FAILURE,
-              "Cannnot get the default domain [%d]: %s\n",
+              "Cannot get the default domain [%d]: %s\n",
                ret, strerror(ret));
         goto fail;
     }
@@ -1242,7 +1242,7 @@ int sss_process_init(TALLOC_CTX *mem_ctx,
                             &tmp);
     if (ret != EOK) {
         DEBUG(SSSDBG_OP_FAILURE,
-              "Cannnot get the space substitution character [%d]: %s\n",
+              "Cannot get the space substitution character [%d]: %s\n",
                ret, strerror(ret));
         goto fail;
     }
@@ -1585,7 +1585,7 @@ errno_t responder_setup_idle_timeout_config(struct resp_ctx *rctx)
         ret = setup_responder_idle_timer(rctx);
         if (ret != EOK) {
             DEBUG(SSSDBG_MINOR_FAILURE,
-                  "An error ocurrend when setting up the responder's idle "
+                  "An error occurred when setting up the responder's idle "
                   "timeout for the responder [%p]: %s [%d].\n"
                   "The responder won't be automatically shutdown after %d "
                   "seconds inactive. \n",
@@ -1815,7 +1815,7 @@ int sized_output_name(TALLOC_CTX *mem_ctx,
         goto done;
     }
 
-    ret = sss_output_fqname(mem_ctx, name_dom, orig_name,
+    ret = sss_output_fqname(name, name_dom, orig_name,
                             rctx->override_space, &name_str);
     if (ret != EOK) {
         goto done;

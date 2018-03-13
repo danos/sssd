@@ -33,7 +33,8 @@ struct iface_dp iface_dp = {
     .autofsHandler = dp_autofs_handler,
     .hostHandler = dp_host_handler,
     .getDomains = dp_subdomains_handler,
-    .getAccountInfo = dp_get_account_info_handler
+    .getAccountInfo = dp_get_account_info_handler,
+    .getAccountDomain = dp_get_account_domain_handler,
 };
 
 struct iface_dp_backend iface_dp_backend = {
@@ -48,10 +49,16 @@ struct iface_dp_failover iface_dp_failover = {
     .ListServers = dp_failover_list_servers
 };
 
+struct iface_dp_access_control iface_dp_access_control = {
+    { &iface_dp_access_control_meta, 0 },
+    .RefreshRules = dp_access_control_refresh_rules_handler
+};
+
 static struct sbus_iface_map dp_map[] = {
     { DP_PATH, &iface_dp.vtable },
     { DP_PATH, &iface_dp_backend.vtable },
     { DP_PATH, &iface_dp_failover.vtable },
+    { DP_PATH, &iface_dp_access_control.vtable },
     { NULL, NULL }
 };
 

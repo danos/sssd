@@ -22,10 +22,15 @@ import ent
 import grp
 import pwd
 import config
+import random
 import signal
+import string
+import struct
 import subprocess
 import time
 import pytest
+import pysss_murmur
+
 import ds_openldap
 import ldap_ent
 import sssd_id
@@ -201,6 +206,32 @@ def fqname_case_insensitive_rfc2307(request, ldap_conn):
         ldap_search_base    = {ldap_conn.ds_inst.base_dn}
         use_fully_qualified_names = true
         case_sensitive = false
+    """).format(**locals())
+    create_conf_fixture(request, conf)
+    create_sssd_fixture(request)
+    return None
+
+
+@pytest.fixture
+def zero_timeout_rfc2307(request, ldap_conn):
+    load_data_to_ldap(request, ldap_conn)
+
+    conf = unindent("""\
+        [sssd]
+        domains             = LDAP
+        services            = nss
+
+        [nss]
+        memcache_timeout = 0
+
+        [domain/LDAP]
+        ldap_auth_disable_tls_never_use_in_production = true
+        ldap_schema         = rfc2307
+        id_provider         = ldap
+        auth_provider       = ldap
+        sudo_provider       = ldap
+        ldap_uri            = {ldap_conn.ds_inst.ldap_url}
+        ldap_search_base    = {ldap_conn.ds_inst.base_dn}
     """).format(**locals())
     create_conf_fixture(request, conf)
     create_sssd_fixture(request)
@@ -744,6 +775,82 @@ def test_invalidate_everything_after_stop(ldap_conn, sanity_rfc2307):
     assert_missing_mc_records_for_user1()
 
 
+def get_random_string(length):
+    return ''.join([random.choice(string.ascii_letters + string.digits)
+                    for n in range(length)])
+
+
+class MemoryCache(object):
+    SIZEOF_UINT32_T = 4
+
+    def __init__(self, path):
+        with open(path, "rb") as fin:
+            fin.seek(4 * self.SIZEOF_UINT32_T)
+            self.seed = struct.unpack('i', fin.read(4))[0]
+            self.data_size = struct.unpack('i', fin.read(4))[0]
+            self.ft_size = struct.unpack('i', fin.read(4))[0]
+            hash_len = struct.unpack('i', fin.read(4))[0]
+            self.hash_size = hash_len / self.SIZEOF_UINT32_T
+
+    def sss_nss_mc_hash(self, key):
+        input_key = key + '\0'
+        input_len = len(key) + 1
+
+        murmur_hash = pysss_murmur.murmurhash3(input_key, input_len, self.seed)
+        return murmur_hash % self.hash_size
+
+
+def test_colliding_hashes(ldap_conn, sanity_rfc2307):
+    """
+    Regression test for ticket:
+    https://pagure.io/SSSD/sssd/issue/3571
+    """
+
+    first_user = 'user1'
+
+    # initialize data in memcache
+    ent.assert_passwd_by_name(
+        first_user,
+        dict(name='user1', passwd='*', uid=1001, gid=2001,
+             gecos='1001', shell='/bin/bash'))
+
+    mem_cache = MemoryCache(config.MCACHE_PATH + '/passwd')
+
+    colliding_hash = mem_cache.sss_nss_mc_hash(first_user)
+
+    while True:
+        # string for colliding hash need to be longer then data for user1
+        # stored in memory cache (almost equivalent to:
+        #   `getent passwd user1 | wc -c` ==> 45
+        second_user = get_random_string(80)
+        val = mem_cache.sss_nss_mc_hash(second_user)
+        if val == colliding_hash:
+            break
+
+    # add new user to LDAP
+    ent_list = ldap_ent.List(ldap_conn.ds_inst.base_dn)
+    ent_list.add_user(second_user, 5001, 5001)
+    ldap_conn.add_s(ent_list[0][0], ent_list[0][1])
+
+    ent.assert_passwd_by_name(
+        second_user,
+        dict(name=second_user, passwd='*', uid=5001, gid=5001,
+             gecos='5001', shell='/bin/bash'))
+
+    stop_sssd()
+
+    # check that both users are stored in cache
+    ent.assert_passwd_by_name(
+        first_user,
+        dict(name='user1', passwd='*', uid=1001, gid=2001,
+             gecos='1001', shell='/bin/bash'))
+
+    ent.assert_passwd_by_name(
+        second_user,
+        dict(name=second_user, passwd='*', uid=5001, gid=5001,
+             gecos='5001', shell='/bin/bash'))
+
+
 def test_removed_mc(ldap_conn, sanity_rfc2307):
     """
     Regression test for ticket:
@@ -766,6 +873,39 @@ def test_removed_mc(ldap_conn, sanity_rfc2307):
     # remove cache without invalidation
     for path in os.listdir(config.MCACHE_PATH):
         os.unlink(config.MCACHE_PATH + "/" + path)
+
+    # sssd is stopped; so the memory cache should not be used
+    # in long living clients (py.test in this case)
+    with pytest.raises(KeyError):
+        pwd.getpwnam('user1')
+    with pytest.raises(KeyError):
+        pwd.getpwuid(1001)
+
+    with pytest.raises(KeyError):
+        grp.getgrnam('group1')
+    with pytest.raises(KeyError):
+        grp.getgrgid(2001)
+
+
+def test_mc_zero_timeout(ldap_conn, zero_timeout_rfc2307):
+    """
+    Test that the memory cache is not created at all with memcache_timeout=0
+    """
+    # No memory cache files must be created
+    assert len(os.listdir(config.MCACHE_PATH)) == 0
+
+    ent.assert_passwd_by_name(
+        'user1',
+        dict(name='user1', passwd='*', uid=1001, gid=2001,
+             gecos='1001', shell='/bin/bash'))
+    ent.assert_passwd_by_uid(
+        1001,
+        dict(name='user1', passwd='*', uid=1001, gid=2001,
+             gecos='1001', shell='/bin/bash'))
+
+    ent.assert_group_by_name("group1", dict(name="group1", gid=2001))
+    ent.assert_group_by_gid(2001, dict(name="group1", gid=2001))
+    stop_sssd()
 
     # sssd is stopped; so the memory cache should not be used
     # in long living clients (py.test in this case)

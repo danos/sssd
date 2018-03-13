@@ -26,6 +26,7 @@
 struct cache_req_domain {
     struct sss_domain_info *domain;
     bool fqnames;
+    bool locate_domain;
 
     struct cache_req_domain *prev;
     struct cache_req_domain *next;
@@ -49,6 +50,11 @@ cache_req_domain_new_list_from_domain_resolution_order(
                                         struct sss_domain_info *domains,
                                         const char *domain_resolution_order,
                                         struct cache_req_domain **_cr_domains);
+
+errno_t
+cache_req_domain_copy_cr_domains(TALLOC_CTX *mem_ctx,
+                                 struct cache_req_domain *src,
+                                 struct cache_req_domain **_dest);
 
 void cache_req_domain_list_zfree(struct cache_req_domain **cr_domains);
 

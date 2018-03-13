@@ -122,17 +122,49 @@ static errno_t sdap_set_non_posix_flag(struct sysdb_attrs *attrs,
     ret = sysdb_attrs_add_uint32(attrs, pkey, 0);
     if (ret != EOK) {
         DEBUG(SSSDBG_CRIT_FAILURE,
-              "Failed to add a zero ID to a non-posix object!\n");
+              "Failed to add a zero ID to a non-POSIX object!\n");
         return ret;
     }
 
     ret = sysdb_attrs_add_bool(attrs, SYSDB_POSIX, false);
     if (ret != EOK) {
         DEBUG(SSSDBG_OP_FAILURE,
-              "Error: Failed to mark objects as non-posix!\n");
+              "Error: Failed to mark objects as non-POSIX!\n");
         return ret;
     }
 
+    return EOK;
+}
+
+static int sdap_user_set_mpg(struct sysdb_attrs *user_attrs,
+                             gid_t *_gid)
+{
+    errno_t ret;
+
+    if (_gid == NULL) {
+        return EINVAL;
+    }
+
+    if (*_gid == 0) {
+        /* The original entry had no GID number. This is OK, we just won't add
+         * the SYSDB_PRIMARY_GROUP_GIDNUM attribute
+         */
+        return EOK;
+    }
+
+    ret = sysdb_attrs_add_uint32(user_attrs,
+                                 SYSDB_PRIMARY_GROUP_GIDNUM,
+                                 (uint32_t) *_gid);
+    if (ret != EOK) {
+        DEBUG(SSSDBG_OP_FAILURE, "sysdb_attrs_add_uint32 failed.\n");
+        return ret;
+    }
+
+    /* We won't really store gidNumber=0, but the zero value tells
+     * the sysdb layer that no GID is set, which sysdb requires for
+     * MPG-enabled domains
+     */
+    *_gid = 0;
     return EOK;
 }
 
@@ -322,7 +354,7 @@ int sdap_save_user(TALLOC_CTX *memctx,
                                        &uid);
         if (ret == ENOENT && dom->type == DOM_TYPE_APPLICATION) {
             DEBUG(SSSDBG_TRACE_INTERNAL,
-                  "Marking object as non-posix and setting ID=0!\n");
+                  "Marking object as non-POSIX and setting ID=0!\n");
             ret = sdap_set_non_posix_flag(user_attrs,
                     opts->user_map[SDAP_AT_USER_UID].sys_name);
             if (ret != EOK) {
@@ -357,22 +389,21 @@ int sdap_save_user(TALLOC_CTX *memctx,
             goto done;
         }
 
-        if (IS_SUBDOMAIN(dom)) {
+        if (IS_SUBDOMAIN(dom) || dom->mpg == true) {
             /* For subdomain users, only create the private group as
              * the subdomain is an MPG domain.
              * But we have to save the GID of the original primary group
-             * becasuse otherwise this information might be lost because
-             * typically (Unix and AD) the user is not listed in his primary
+             * because otherwise this information might be lost because
+             * typically (UNIX and AD) the user is not listed in his primary
              * group as a member.
              */
-            ret = sysdb_attrs_add_uint32(user_attrs, SYSDB_PRIMARY_GROUP_GIDNUM,
-                                         (uint32_t) gid);
+            ret = sdap_user_set_mpg(user_attrs, &gid);
             if (ret != EOK) {
-                DEBUG(SSSDBG_OP_FAILURE, "sysdb_attrs_add_uint32 failed.\n");
+                DEBUG(SSSDBG_OP_FAILURE,
+                      "sdap_user_set_mpg failed [%d]: %s\n", ret,
+                      sss_strerror(ret));
                 goto done;
             }
-
-            gid = 0;
         }
 
         /* Store the GID in the ldap_attrs so it doesn't get
@@ -380,13 +411,48 @@ int sdap_save_user(TALLOC_CTX *memctx,
         */
         ret = sysdb_attrs_add_uint32(attrs, SYSDB_GIDNUM, gid);
         if (ret != EOK) goto done;
+    } else if (dom->mpg) {
+        /* Likewise, if a domain is set to contain 'magic private groups', do
+         * not process the real GID, but save it in the cache as originalGID
+         * (if available)
+         */
+        ret = sysdb_attrs_get_uint32_t(attrs,
+                                       opts->user_map[SDAP_AT_USER_GID].sys_name,
+                                       &gid);
+        if (ret == ENOENT) {
+            DEBUG(SSSDBG_TRACE_LIBS,
+                  "Missing GID, won't save the %s attribute\n",
+                  SYSDB_PRIMARY_GROUP_GIDNUM);
+
+            /* Store the UID as GID (since we're in a MPG domain so that it doesn't
+             * get treated as a missing attribute and removed
+             */
+            ret = sdap_replace_id(attrs, SYSDB_GIDNUM, uid);
+            if (ret) {
+                DEBUG(SSSDBG_OP_FAILURE, "Cannot set the id-mapped UID\n");
+                goto done;
+            }
+            gid = 0;
+        } else if (ret != EOK) {
+            DEBUG(SSSDBG_MINOR_FAILURE,
+                  "Cannot retrieve GID, won't save the %s attribute\n",
+                  SYSDB_PRIMARY_GROUP_GIDNUM);
+            gid = 0;
+        }
+
+        ret = sdap_user_set_mpg(user_attrs, &gid);
+        if (ret != EOK) {
+            DEBUG(SSSDBG_OP_FAILURE,
+                  "sdap_user_set_mpg failed [%d]: %s\n", ret, sss_strerror(ret));
+            goto done;
+        }
     } else {
         ret = sysdb_attrs_get_uint32_t(attrs,
                                        opts->user_map[SDAP_AT_USER_GID].sys_name,
                                        &gid);
         if (ret == ENOENT && dom->type == DOM_TYPE_APPLICATION) {
             DEBUG(SSSDBG_TRACE_INTERNAL,
-                  "Marking object as non-posix and setting ID=0!\n");
+                  "Marking object as non-POSIX and setting ID=0!\n");
             ret = sdap_set_non_posix_flag(attrs,
                     opts->user_map[SDAP_AT_USER_GID].sys_name);
             if (ret != EOK) {
@@ -403,8 +469,9 @@ int sdap_save_user(TALLOC_CTX *memctx,
     }
 
     /* check that the gid is valid for this domain */
-    if (is_posix == true && IS_SUBDOMAIN(dom) == false &&
-            OUT_OF_ID_RANGE(gid, dom->id_min, dom->id_max)) {
+    if (is_posix == true && IS_SUBDOMAIN(dom) == false
+            && dom->mpg == false
+            && OUT_OF_ID_RANGE(gid, dom->id_min, dom->id_max)) {
         DEBUG(SSSDBG_CRIT_FAILURE,
               "User [%s] filtered out! (primary gid out of range)\n",
                user_name);

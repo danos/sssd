@@ -62,7 +62,7 @@ typedef int errno_t;
  * @{
  */
 
-/** The allowed commands a SSS client can send to the SSSD */
+/** The allowed commands an SSS client can send to the SSSD */
 
 enum sss_cli_command {
 /* null */
@@ -79,6 +79,9 @@ enum sss_cli_command {
     SSS_NSS_GETPWENT       = 0x0014,
     SSS_NSS_ENDPWENT       = 0x0015,
 
+    SSS_NSS_GETPWNAM_EX    = 0x0019,
+    SSS_NSS_GETPWUID_EX    = 0x001A,
+
 /* group */
 
     SSS_NSS_GETGRNAM       = 0x0021,
@@ -87,6 +90,10 @@ enum sss_cli_command {
     SSS_NSS_GETGRENT       = 0x0024,
     SSS_NSS_ENDGRENT       = 0x0025,
     SSS_NSS_INITGR         = 0x0026,
+
+    SSS_NSS_GETGRNAM_EX    = 0x0029,
+    SSS_NSS_GETGRGID_EX    = 0x002A,
+    SSS_NSS_INITGR_EX      = 0x002E,
 
 #if 0
 /* aliases */
@@ -281,7 +288,7 @@ SSS_NSS_GETLISTBYCERT = 0x0117, /**< Takes the zero terminated string
  * PAM stack of the operation system. pam_sss will collect all the data about
  * the user from the PAM stack and sends them via a socket to the PAM
  * responder of the SSSD. The PAM responder selects the appropriate backend
- * and forwards the data via DBUS to the backend. The backend preforms the
+ * and forwards the data via D-BUS to the backend. The backend preforms the
  * requested operation and sends the result expressed by a PAM return value
  * and optional additional information back to the PAM responder. Finally the
  * PAM responder forwards the response back to the client.
@@ -319,11 +326,11 @@ enum sss_authtok_type {
                                           * factors, they may or may no contain
                                           * a trailing \\0 */
     SSS_AUTHTOK_TYPE_SC_PIN =    0x0004, /**< Authentication token is a Smart
-                                          * Card pin, it may or may no contain
+                                          * Card PIN, it may or may no contain
                                           * a trailing \\0 */
     SSS_AUTHTOK_TYPE_SC_KEYPAD = 0x0005, /**< Authentication token indicates
                                           * Smart Card authentication is used
-                                          * and that the pin will be entered
+                                          * and that the PIN will be entered
                                           * at the card reader. */
 };
 
@@ -418,8 +425,8 @@ enum response_type {
                           * @param User info message, see #user_info_type
                           * for details. */
     SSS_PAM_TEXT_MSG,    /**< A plain text message which should be displayed to
-                          * the user.This should only be used in the case where
-                          * it is not possile to use SSS_PAM_USER_INFO.
+                          * the user. This should only be used in the case where
+                          * it is not possible to use SSS_PAM_USER_INFO.
                           * @param A zero terminated string. */
     SSS_PAM_OTP_INFO,    /**< A message which optionally may contain the name
                           * of the vendor, the ID of an OTP token and a
@@ -434,7 +441,7 @@ enum response_type {
                           * @param token name, zero terminated
                           * @param PKCS#11 module name, zero terminated
                           * @param key id, zero terminated */
-    SSS_OTP,             /**< Indicates that the autotok was a OTP, so don't
+    SSS_OTP,             /**< Indicates that the authtok was a OTP, so don't
                           * cache it. There is no message.
                           * @param None. */
     SSS_PASSWORD_PROMPTING, /**< Indicates that password prompting is possible.

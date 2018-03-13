@@ -936,6 +936,14 @@ static int confdb_get_domain_internal(struct confdb_ctx *cdb,
         goto done;
     }
 
+    ret = get_entry_as_bool(res->msgs[0], &domain->mpg,
+                            CONFDB_DOMAIN_AUTO_UPG, 0);
+    if (ret != EOK) {
+        DEBUG(SSSDBG_FATAL_FAILURE,
+              "Invalid value for %s\n", CONFDB_DOMAIN_AUTO_UPG);
+        goto done;
+    }
+
     if (strcasecmp(domain->provider, "local") == 0) {
         /* If this is the local provider, we need to ensure that
          * no other provider was specified for other types, since
@@ -981,7 +989,7 @@ static int confdb_get_domain_internal(struct confdb_ctx *cdb,
     /* Determine if this domain can be enumerated */
 
     /* TEMP: test if the old bitfield conf value is used and warn it has been
-     * superceeded. */
+     * superseded. */
     val = ldb_msg_find_attr_as_int(res->msgs[0], CONFDB_DOMAIN_ENUMERATE, 0);
     if (val > 0) { /* ok there was a number in here */
         DEBUG(SSSDBG_FATAL_FAILURE,
@@ -1021,7 +1029,7 @@ static int confdb_get_domain_internal(struct confdb_ctx *cdb,
                             &default_domain);
     if (ret != EOK) {
         DEBUG(SSSDBG_OP_FAILURE,
-              "Cannnot get the default domain [%d]: %s\n",
+              "Cannot get the default domain [%d]: %s\n",
                ret, strerror(ret));
         goto done;
     }
@@ -1710,15 +1718,91 @@ done:
     return ret;
 }
 
+static bool need_implicit_files_domain(TALLOC_CTX *tmp_ctx,
+                                       struct confdb_ctx *cdb,
+                                       struct ldb_result *doms)
+{
+    const char *id_provider = NULL;
+    unsigned int i;
+    errno_t ret;
+    char **domlist;
+    const char *val;
+
+    ret = confdb_get_string_as_list(cdb, tmp_ctx,
+                                    CONFDB_MONITOR_CONF_ENTRY,
+                                    CONFDB_MONITOR_ACTIVE_DOMAINS,
+                                    &domlist);
+    if (ret == ENOENT) {
+        return true;
+    } else if (ret != EOK) {
+        DEBUG(SSSDBG_CRIT_FAILURE,
+              "Cannot get active domains %d[%s]\n",
+              ret, sss_strerror(ret));
+        return false;
+    }
+
+    for (i = 0; i < doms->count; i++) {
+        val = ldb_msg_find_attr_as_string(doms->msgs[i], CONFDB_DOMAIN_ATTR,
+                                          NULL);
+        if (val == NULL) {
+            DEBUG(SSSDBG_CRIT_FAILURE,
+                  "The object [%s] doesn't have a name\n",
+                  ldb_dn_get_linearized(doms->msgs[i]->dn));
+            continue;
+        }
+
+        /* skip disabled domain */
+        if (!string_in_list(val, domlist, false)) {
+            continue;
+        }
+
+        id_provider = ldb_msg_find_attr_as_string(doms->msgs[i],
+                                                  CONFDB_DOMAIN_ID_PROVIDER,
+                                                  NULL);
+        if (id_provider == NULL) {
+            DEBUG(SSSDBG_OP_FAILURE,
+                  "The object [%s] doesn't have an id_provider\n",
+                  ldb_dn_get_linearized(doms->msgs[i]->dn));
+            continue;
+        }
+
+        if (strcasecmp(id_provider, "files") == 0) {
+            return false;
+        }
+
+        if (strcasecmp(id_provider, "proxy") == 0) {
+            val = ldb_msg_find_attr_as_string(doms->msgs[i],
+                                              CONFDB_PROXY_LIBNAME, NULL);
+            if (val == NULL) {
+                DEBUG(SSSDBG_OP_FAILURE,
+                      "The object [%s] doesn't have proxy_lib_name with "
+                      "id_provider proxy\n",
+                      ldb_dn_get_linearized(doms->msgs[i]->dn));
+                continue;
+            }
+
+            /* id_provider = proxy + proxy_lib_name = files are equivalent
+             * to id_provider = files
+             */
+            if (strcmp(val, "files") == 0) {
+                return false;
+            }
+        }
+    }
+
+    return true;
+}
+
 static int confdb_has_files_domain(struct confdb_ctx *cdb)
 {
     TALLOC_CTX *tmp_ctx = NULL;
     struct ldb_dn *dn = NULL;
     struct ldb_result *res = NULL;
-    static const char *attrs[] = { CONFDB_DOMAIN_ID_PROVIDER, NULL };
-    const char *id_provider = NULL;
+    static const char *attrs[] = { CONFDB_DOMAIN_ID_PROVIDER,
+                                   CONFDB_DOMAIN_ATTR,
+                                   CONFDB_PROXY_LIBNAME, NULL };
     int ret;
-    unsigned int i;
+    bool need_files_dom;
 
     tmp_ctx = talloc_new(NULL);
     if (tmp_ctx == NULL) {
@@ -1738,24 +1822,9 @@ static int confdb_has_files_domain(struct confdb_ctx *cdb)
         goto done;
     }
 
-    for (i = 0; i < res->count; i++) {
-        id_provider = ldb_msg_find_attr_as_string(res->msgs[i],
-                                                  CONFDB_DOMAIN_ID_PROVIDER,
-                                                  NULL);
-        if (id_provider == NULL) {
-            DEBUG(SSSDBG_CRIT_FAILURE,
-                  "The object [%s] doesn't have a id_provider\n",
-                  ldb_dn_get_linearized(res->msgs[i]->dn));
-            ret = EINVAL;
-            goto done;
-        }
+    need_files_dom = need_implicit_files_domain(tmp_ctx, cdb, res);
 
-        if (strcasecmp(id_provider, "files") == 0) {
-            break;
-        }
-    }
-
-    ret = i < res->count ? EOK : ENOENT;
+    ret = need_files_dom ? ENOENT : EOK;
 done:
     talloc_free(tmp_ctx);
     return ret;

@@ -26,6 +26,17 @@
 #include "providers/data_provider.h"
 #include "responder/common/cache_req/cache_req_plugin.h"
 
+errno_t cache_req_idminmax_check(struct cache_req_data *data,
+	                         struct sss_domain_info *domain)
+{
+   if (((domain->id_min != 0) && (data->id < domain->id_min)) ||
+       ((domain->id_max != 0) && (data->id > domain->id_max))) {
+        DEBUG(SSSDBG_FUNC_DATA, "id exceeds min/max boundaries\n");
+        return ERR_ID_OUTSIDE_RANGE;
+   }
+   return EOK;
+}
+
 static struct ldb_message *
 cache_req_well_known_sid_msg(TALLOC_CTX *mem_ctx,
                              const char *sid,
@@ -53,7 +64,7 @@ cache_req_well_known_sid_msg(TALLOC_CTX *mem_ctx,
         goto done;
     }
 
-    ldberr = ldb_msg_add_string(msg, SYSDB_OBJECTCLASS, SYSDB_GROUP_CLASS);
+    ldberr = ldb_msg_add_string(msg, SYSDB_OBJECTCATEGORY, SYSDB_GROUP_CLASS);
     if (ldberr != LDB_SUCCESS) {
         goto done;
     }
@@ -146,4 +157,21 @@ cache_req_common_dp_recv(struct tevent_req *subreq,
 done:
     talloc_free(err_msg);
     return bret;
+}
+
+errno_t
+cache_req_common_get_acct_domain_recv(TALLOC_CTX *mem_ctx,
+                                      struct tevent_req *subreq,
+                                      struct cache_req *cr,
+                                      char **_domain)
+{
+    errno_t ret;
+
+    ret = sss_dp_get_account_domain_recv(mem_ctx, subreq, _domain);
+    if (ret != EOK) {
+        CACHE_REQ_DEBUG(SSSDBG_MINOR_FAILURE, cr,
+                        "Could not get account domain [%d]: %s\n",
+                        ret, sss_strerror(ret));
+    }
+    return ret;
 }

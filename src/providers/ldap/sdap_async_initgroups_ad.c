@@ -372,7 +372,6 @@ immediately:
 
 static void sdap_get_ad_tokengroups_done(struct tevent_req *subreq)
 {
-    TALLOC_CTX *tmp_ctx = NULL;
     struct sdap_get_ad_tokengroups_state *state = NULL;
     struct tevent_req *req = NULL;
     struct sysdb_attrs **users = NULL;
@@ -386,7 +385,7 @@ static void sdap_get_ad_tokengroups_done(struct tevent_req *subreq)
     req = tevent_req_callback_data(subreq, struct tevent_req);
     state = tevent_req_data(req, struct sdap_get_ad_tokengroups_state);
 
-    ret = sdap_get_generic_recv(subreq, tmp_ctx, &num_users, &users);
+    ret = sdap_get_generic_recv(subreq, state, &num_users, &users);
     talloc_zfree(subreq);
     if (ret != EOK) {
         DEBUG(SSSDBG_MINOR_FAILURE,
@@ -449,8 +448,6 @@ static void sdap_get_ad_tokengroups_done(struct tevent_req *subreq)
     ret = EOK;
 
 done:
-    talloc_free(tmp_ctx);
-
     if (ret != EOK) {
         tevent_req_error(req, ret);
         return;
@@ -1606,14 +1603,14 @@ sdap_ad_get_domain_local_groups_parse_parents(TALLOC_CTX *mem_ctx,
         goto done;
     }
 
-    ret = sysdb_attrs_get_string(gr->group, SYSDB_OBJECTCLASS, &class);
+    ret = sysdb_attrs_get_string(gr->group, SYSDB_OBJECTCATEGORY, &class);
     if (ret != EOK) {
-        /* If objectclass is missing gr->group is a nested parent found during
-         * the nested group lookup. It might not already stored in the cache.
+        /* If objectcategory is missing, gr->group is a nested parent found during
+         * the nested group lookup. It might not already be stored in the cache.
          */
         DEBUG(SSSDBG_TRACE_LIBS,
-              "sysdb_attrs_get_string failed to get SYSDB_OBJECTCLASS "
-              "for [%s], assuming group.\n", sysdb_name);
+              "sysdb_attrs_get_string failed to get %s for [%s], assuming "
+              "group.\n", SYSDB_OBJECTCATEGORY, sysdb_name);
 
         /* make sure group exists in cache */
         groups[0]= gr->group;

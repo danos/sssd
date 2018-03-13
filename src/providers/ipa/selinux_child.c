@@ -27,7 +27,6 @@
 #include <unistd.h>
 #include <sys/stat.h>
 #include <popt.h>
-#include <selinux/selinux.h>
 
 #include "util/util.h"
 #include "util/child_common.h"
@@ -158,9 +157,9 @@ static int sc_set_seuser(const char *login_name, const char *seuser_name,
          * default. We need to remove the SELinux user from the DB
          * in that case
          */
-        ret = del_seuser(login_name);
+        ret = sss_del_seuser(login_name);
     } else {
-        ret = set_seuser(login_name, seuser_name, mls);
+        ret = sss_set_seuser(login_name, seuser_name, mls);
     }
     umask(old_mask);
     return ret;
@@ -173,7 +172,7 @@ static bool seuser_needs_update(struct input_buffer *ibuf)
     char *db_mls_range = NULL;
     errno_t ret;
 
-    ret = getseuserbyname(ibuf->username, &db_seuser, &db_mls_range);
+    ret = sss_get_seuser(ibuf->username, &db_seuser, &db_mls_range);
     DEBUG(SSSDBG_TRACE_INTERNAL,
           "getseuserbyname: ret: %d seuser: %s mls: %s\n",
           ret, db_seuser ? db_seuser : "unknown",
@@ -206,6 +205,7 @@ int main(int argc, const char *argv[])
     struct response *resp = NULL;
     ssize_t written;
     bool needs_update;
+    const char *opt_logger = NULL;
 
     struct poptOption long_options[] = {
         POPT_AUTOHELP
@@ -220,6 +220,7 @@ int main(int argc, const char *argv[])
         {"debug-to-stderr", 0, POPT_ARG_NONE | POPT_ARGFLAG_DOC_HIDDEN,
          &debug_to_stderr, 0,
          _("Send the debug output to stderr directly."), NULL },
+        SSSD_LOGGER_OPTS
         POPT_TABLEEND
     };
 
@@ -252,7 +253,10 @@ int main(int argc, const char *argv[])
         if (ret != EOK) {
             DEBUG(SSSDBG_CRIT_FAILURE, "set_debug_file_from_fd failed.\n");
         }
+        opt_logger = sss_logger_str[FILES_LOGGER];
     }
+
+    sss_set_logger(opt_logger);
 
     DEBUG(SSSDBG_TRACE_FUNC, "selinux_child started.\n");
     DEBUG(SSSDBG_TRACE_INTERNAL,

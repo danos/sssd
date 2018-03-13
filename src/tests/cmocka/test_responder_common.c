@@ -316,6 +316,23 @@ void test_schedule_get_domains_task(void **state)
     talloc_free(dummy_ncache_ptr);
 }
 
+void test_sss_output_fqname(void **state)
+{
+    struct parse_inp_test_ctx *parse_inp_ctx = talloc_get_type(*state,
+                                                   struct parse_inp_test_ctx);
+    errno_t ret;
+    struct sized_string *res = NULL;
+
+    ret = sized_output_name(parse_inp_ctx, parse_inp_ctx->rctx, "dummy",
+                            parse_inp_ctx->tctx->dom, &res);
+    assert_int_equal(ret, EOK);
+    assert_non_null(res);
+    assert_string_equal("dummy", res->str);
+    assert_int_equal(6, res->len);
+
+    talloc_zfree(res);
+}
+
 int main(int argc, const char *argv[])
 {
     int rv;
@@ -346,9 +363,12 @@ int main(int argc, const char *argv[])
         cmocka_unit_test_setup_teardown(test_schedule_get_domains_task,
                                         parse_inp_test_setup,
                                         parse_inp_test_teardown),
+        cmocka_unit_test_setup_teardown(test_sss_output_fqname,
+                                        parse_inp_test_setup,
+                                        parse_inp_test_teardown),
     };
 
-    /* Set debug level to invalid value so we can deside if -d 0 was used. */
+    /* Set debug level to invalid value so we can decide if -d 0 was used. */
     debug_level = SSSDBG_INVALID;
 
     pc = poptGetContext(argv[0], argc, argv, long_options, 0);
@@ -366,7 +386,7 @@ int main(int argc, const char *argv[])
     DEBUG_CLI_INIT(debug_level);
 
     /* Even though normally the tests should clean up after themselves
-     * they might not after a failed run. Remove the old db to be sure */
+     * they might not after a failed run. Remove the old DB to be sure */
     tests_set_cwd();
     test_dom_suite_cleanup(TESTS_PATH, TEST_CONF_DB, TEST_DOM_NAME);
     test_dom_suite_setup(TESTS_PATH);

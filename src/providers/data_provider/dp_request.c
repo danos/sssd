@@ -302,7 +302,7 @@ struct tevent_req *dp_req_send(TALLOC_CTX *mem_ctx,
                           method, dp_flags, request_data, req, &dp_req);
 
     if (dp_req == NULL) {
-        /* An error ocurred before request could be created. */
+        /* An error occurred before request could be created. */
         if (_request_name != NULL) {
             *_request_name = "Request Not Yet Created";
         }
@@ -412,7 +412,7 @@ static void dp_terminate_request(struct dp_req *dp_req)
 {
     if (dp_req->handler_req == NULL) {
         /* This may occur when the handler already finished but the caller
-         * of dp request did not yet recieved data/free dp_req. We just
+         * of dp request did not yet received data/free dp_req. We just
          * return here. */
         return;
     }

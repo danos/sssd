@@ -503,7 +503,7 @@ static int test_search_all_users(struct test_data *data)
     }
 
     ret = sysdb_search_entry(data, data->ctx->sysdb, base_dn,
-                             LDB_SCOPE_SUBTREE, "objectClass=user",
+                             LDB_SCOPE_SUBTREE, SYSDB_UC,
                              data->attrlist, &data->msgs_count, &data->msgs);
     return ret;
 }
@@ -1029,6 +1029,37 @@ START_TEST (test_sysdb_getpwnam)
             "Invalid number of replies. Expected 0, got %d", res->count);
 
     talloc_free(test_ctx);
+}
+END_TEST
+
+START_TEST(test_user_group_by_name)
+{
+    struct sysdb_test_ctx *test_ctx;
+    struct test_data *data;
+    struct ldb_message *msg;
+    int ret;
+    const char *groupname;
+
+    /* Setup */
+    ret = setup_sysdb_tests(&test_ctx);
+    if (ret != EOK) {
+        fail("Could not set up the test");
+        return;
+    }
+
+    data = test_data_new_user(test_ctx, _i);
+    fail_if(data == NULL);
+
+    ret = sysdb_search_group_by_name(data,
+                                     data->ctx->domain,
+                                     data->username, /* we're searching for the private group */
+                                     NULL,
+                                     &msg);
+    fail_if(ret != EOK);
+    fail_if(msg == NULL);
+
+    groupname = ldb_msg_find_attr_as_string(msg, SYSDB_NAME, NULL);
+    ck_assert_str_eq(groupname, data->username);
 }
 END_TEST
 
@@ -1728,7 +1759,7 @@ START_TEST (test_sysdb_search_custom_by_name)
     fail_if(ret != EOK, "Could not search custom object");
 
     fail_unless(data->msgs_count == 1,
-                "Wrong number of objects, exptected [1] got [%d]",
+                "Wrong number of objects, expected [1] got [%d]",
                 data->msgs_count);
     fail_unless(data->msgs[0]->num_elements == 1,
                 "Wrong number of results, expected [1] got [%d]",
@@ -1830,7 +1861,7 @@ START_TEST (test_sysdb_search_custom_update)
     fail_if(ret != EOK, "Could not search custom object");
 
     fail_unless(data->msgs_count == 1,
-                "Wrong number of objects, exptected [1] got [%d]",
+                "Wrong number of objects, expected [1] got [%d]",
                 data->msgs_count);
     fail_unless(data->msgs[0]->num_elements == 2,
                 "Wrong number of results, expected [2] got [%d]",
@@ -1893,7 +1924,7 @@ START_TEST (test_sysdb_search_custom)
     fail_if(ret != EOK, "Could not search custom object");
 
     fail_unless(data->msgs_count == 10,
-                "Wrong number of objects, exptected [10] got [%d]",
+                "Wrong number of objects, expected [10] got [%d]",
                 data->msgs_count);
 
     talloc_free(test_ctx);
@@ -2219,7 +2250,8 @@ START_TEST (test_sysdb_search_all_users)
     struct test_data *data;
     int ret;
     int i;
-    char *uid_str;
+    int j;
+    char *uid_str = NULL;
 
     /* Setup */
     ret = setup_sysdb_tests(&test_ctx);
@@ -2253,8 +2285,15 @@ START_TEST (test_sysdb_search_all_users)
                     "wrong number of values, found [%d] expected [1]",
                     data->msgs[i]->elements[0].num_values);
 
-        uid_str = talloc_asprintf(data, "%d", 27010 + i);
-        fail_unless(uid_str != NULL, "talloc_asprintf failed.");
+        for (j = 0; j < data->msgs_count; j++) {
+            uid_str = talloc_asprintf(data, "%d", 27010 + j);
+            fail_unless(uid_str != NULL, "talloc_asprintf failed.");
+            if (strncmp(uid_str,
+                        (char *) data->msgs[i]->elements[0].values[0].data,
+                        data->msgs[i]->elements[0].values[0].length)  == 0) {
+                break;
+            }
+        }
         fail_unless(strncmp(uid_str,
                             (char *) data->msgs[i]->elements[0].values[0].data,
                             data->msgs[i]->elements[0].values[0].length)  == 0,
@@ -3334,8 +3373,8 @@ START_TEST (test_sysdb_memberof_check_convert)
     struct ldb_message_element *members;
     int exp_mem, exp_gh;
 
-    /* Eplicitly disable enumeration during setup as converting the ghost
-     * users into real ones work only when enumeration is disabled
+    /* Explicitly disable enumeration during setup as converting the ghost
+     * users into real ones works only when enumeration is disabled
      */
     ret = _setup_sysdb_tests(&test_ctx, false);
     if (ret != EOK) {
@@ -4411,13 +4450,13 @@ START_TEST(test_SSS_LDB_SEARCH)
 
     /* Non-empty filter */
     SSS_LDB_SEARCH(ret, test_ctx->sysdb->ldb, test_ctx, &res, group_dn,
-                   LDB_SCOPE_BASE, NULL, "objectClass=group");
+                   LDB_SCOPE_BASE, NULL, SYSDB_GC);
 
     fail_unless(ret == EOK, "SSS_LDB_SEARCH error [%d][%s]",
                 ret, strerror(ret));
     talloc_zfree(res);
 
-    /* Filter yeilding no results */
+    /* Filter yielding no results */
     SSS_LDB_SEARCH(ret, test_ctx->sysdb->ldb, test_ctx, &res, group_dn,
                    LDB_SCOPE_BASE, NULL,
                    "objectClass=nonExistingObjectClass");
@@ -5203,7 +5242,7 @@ START_TEST (test_sysdb_search_return_ENOENT)
 
     ret = sysdb_search_entry(test_ctx, test_ctx->sysdb,
                              user_dn, LDB_SCOPE_SUBTREE,
-                             "objectClass=user", NULL,
+                             SYSDB_UC, NULL,
                              &count, &msgs);
     fail_unless(ret == ENOENT, "sysdb_search_entry failed: %d, %s",
                                ret, strerror(ret));
@@ -5215,7 +5254,7 @@ START_TEST (test_sysdb_search_return_ENOENT)
                             data->username);
     fail_if(user_dn == NULL, "sysdb_user_dn failed");
     SSS_LDB_SEARCH(ret, test_ctx->sysdb->ldb, test_ctx, &res, user_dn,
-                   LDB_SCOPE_BASE, NULL, "objectClass=user");
+                   LDB_SCOPE_BASE, NULL, SYSDB_UC);
 
     fail_unless(ret == ENOENT, "SSS_LDB_SEARCH failed: %d, %s",
                                ret, strerror(ret));
@@ -5944,7 +5983,7 @@ START_TEST(test_sysdb_subdomain_store_user)
     subdomain = new_subdomain(test_ctx, test_ctx->domain,
                               testdom[0], testdom[1], testdom[2], testdom[3],
                               false, false, NULL, NULL, 0, NULL);
-    fail_unless(subdomain != NULL, "Failed to create new subdomin.");
+    fail_unless(subdomain != NULL, "Failed to create new subdomain.");
     ret = sysdb_subdomain_store(test_ctx->sysdb,
                                 testdom[0], testdom[1], testdom[2], testdom[3],
                                 false, false, NULL, 0, NULL);
@@ -5983,7 +6022,7 @@ START_TEST(test_sysdb_subdomain_store_user)
                                      "expected [%d], got [%d]",
                                      1, results->count);
     fail_unless(ldb_dn_compare(results->msgs[0]->dn, check_dn) == 0,
-                "Unexpedted DN returned");
+                "Unexpected DN returned");
 
     /* Subdomains are case-insensitive. Test that the lowercased name
      * can be found, too */
@@ -6023,7 +6062,7 @@ START_TEST(test_sysdb_subdomain_user_ops)
     subdomain = new_subdomain(test_ctx, test_ctx->domain,
                               testdom[0], testdom[1], testdom[2], testdom[3],
                               false, false, NULL, NULL, 0, NULL);
-    fail_unless(subdomain != NULL, "Failed to create new subdomin.");
+    fail_unless(subdomain != NULL, "Failed to create new subdomain.");
     ret = sysdb_subdomain_store(test_ctx->sysdb,
                                 testdom[0], testdom[1], testdom[2], testdom[3],
                                 false, false, NULL, 0, NULL);
@@ -6054,7 +6093,7 @@ START_TEST(test_sysdb_subdomain_user_ops)
     fail_unless(ret == EOK, "sysdb_search_user_by_name failed with [%d][%s].",
                             ret, strerror(ret));
     fail_unless(ldb_dn_compare(msg->dn, check_dn) == 0,
-                "Unexpedted DN returned");
+                "Unexpected DN returned");
 
     name = ldb_msg_find_attr_as_string(msg, SYSDB_NAME, NULL);
     fail_if(name == NULL);
@@ -6068,7 +6107,7 @@ START_TEST(test_sysdb_subdomain_user_ops)
     fail_unless(ret == EOK, "sysdb_search_domuser_by_uid failed with [%d][%s].",
                             ret, strerror(ret));
     fail_unless(ldb_dn_compare(msg->dn, check_dn) == 0,
-                "Unexpedted DN returned");
+                "Unexpected DN returned");
 
     ret = sysdb_delete_user(subdomain, data->username, data->uid);
     fail_unless(ret == EOK, "sysdb_delete_domuser failed with [%d][%s].",
@@ -6096,7 +6135,7 @@ START_TEST(test_sysdb_subdomain_group_ops)
     subdomain = new_subdomain(test_ctx, test_ctx->domain,
                               testdom[0], testdom[1], testdom[2], testdom[3],
                               false, false, NULL, NULL, 0, NULL);
-    fail_unless(subdomain != NULL, "Failed to create new subdomin.");
+    fail_unless(subdomain != NULL, "Failed to create new subdomain.");
     ret = sysdb_subdomain_store(test_ctx->sysdb,
                                 testdom[0], testdom[1], testdom[2], testdom[3],
                                 false, false, NULL, 0, NULL);
@@ -6152,7 +6191,7 @@ START_TEST(test_sysdb_subdomain_group_ops)
     fail_unless(ret == EOK, "sysdb_search_group_by_gid failed with [%d][%s].",
                             ret, strerror(ret));
     fail_unless(ldb_dn_compare(msg->dn, check_dn) == 0,
-                "Unexpedted DN returned");
+                "Unexpected DN returned");
 
     ret = sysdb_delete_group(subdomain, data->groupname, data->gid);
     fail_unless(ret == EOK, "sysdb_delete_group failed with [%d][%s].",
@@ -7005,6 +7044,11 @@ Suite *create_sysdb_suite(void)
     /* Verify the users were added */
     tcase_add_loop_test(tc_sysdb, test_sysdb_getpwnam, 27000, 27010);
 
+    /* Since this is a local (mpg) domain, verify the user groups
+     * can be found. Regression test for ticket #3615
+     */
+    tcase_add_loop_test(tc_sysdb, test_user_group_by_name, 27000, 27010);
+
     /* Create a new group */
     tcase_add_loop_test(tc_sysdb, test_sysdb_add_group, 28000, 28010);
 
@@ -7437,7 +7481,7 @@ int main(int argc, const char *argv[]) {
         POPT_TABLEEND
     };
 
-    /* Set debug level to invalid value so we can deside if -d 0 was used. */
+    /* Set debug level to invalid value so we can decide if -d 0 was used. */
     debug_level = SSSDBG_INVALID;
 
     pc = poptGetContext(argv[0], argc, argv, long_options, 0);

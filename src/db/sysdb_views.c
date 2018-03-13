@@ -279,6 +279,45 @@ done:
     return ret;
 }
 
+static errno_t invalidate_entry_override(struct sysdb_ctx *sysdb,
+                                         struct ldb_dn *dn,
+                                         struct ldb_message *msg_del,
+                                         struct ldb_message *msg_repl)
+{
+    int ret;
+
+    msg_del->dn = dn;
+    msg_repl->dn = dn;
+
+    ret = ldb_modify(sysdb->ldb, msg_del);
+    if (ret != LDB_SUCCESS && ret != LDB_ERR_NO_SUCH_ATTRIBUTE) {
+        DEBUG(SSSDBG_OP_FAILURE,
+              "ldb_modify failed: [%s](%d)[%s]\n",
+              ldb_strerror(ret), ret, ldb_errstring(sysdb->ldb));
+        return sysdb_error_to_errno(ret);
+    }
+
+    ret = ldb_modify(sysdb->ldb, msg_repl);
+    if (ret != LDB_SUCCESS && ret != LDB_ERR_NO_SUCH_ATTRIBUTE) {
+        DEBUG(SSSDBG_OP_FAILURE,
+              "ldb_modify failed: [%s](%d)[%s]\n",
+              ldb_strerror(ret), ret, ldb_errstring(sysdb->ldb));
+        return sysdb_error_to_errno(ret);
+    }
+
+    if (sysdb->ldb_ts != NULL) {
+        ret = ldb_modify(sysdb->ldb_ts, msg_repl);
+        if (ret != LDB_SUCCESS && ret != LDB_ERR_NO_SUCH_ATTRIBUTE) {
+            DEBUG(SSSDBG_OP_FAILURE,
+                  "ldb_modify failed: [%s](%d)[%s]\n",
+                  ldb_strerror(ret), ret, ldb_errstring(sysdb->ldb_ts));
+            return sysdb_error_to_errno(ret);
+        }
+    }
+
+    return EOK;
+}
+
 errno_t sysdb_invalidate_overrides(struct sysdb_ctx *sysdb)
 {
     int ret;
@@ -287,20 +326,21 @@ errno_t sysdb_invalidate_overrides(struct sysdb_ctx *sysdb)
     bool in_transaction = false;
     struct ldb_result *res;
     size_t c;
-    struct ldb_message *msg;
+    struct ldb_message *msg_del;
+    struct ldb_message *msg_repl;
     struct ldb_dn *base_dn;
+
+    if (sysdb->ldb_ts == NULL) {
+        DEBUG(SSSDBG_CRIT_FAILURE,
+              "Timestamp cache context not available, cache might not be "
+              "invalidated completely. Please call 'sss_cache -E' or remove "
+              "the cache file if there are issues after a view name change.\n");
+    }
 
     tmp_ctx = talloc_new(NULL);
     if (tmp_ctx == NULL) {
         DEBUG(SSSDBG_OP_FAILURE, "talloc_new failed.\n");
         return ENOMEM;
-    }
-
-    msg = ldb_msg_new(tmp_ctx);
-    if (msg == NULL) {
-        DEBUG(SSSDBG_OP_FAILURE, "ldb_msg_new failed.\n");
-        ret = ENOMEM;
-        goto done;
     }
 
     base_dn = ldb_dn_new(tmp_ctx, sysdb->ldb, SYSDB_BASE);
@@ -310,23 +350,36 @@ errno_t sysdb_invalidate_overrides(struct sysdb_ctx *sysdb)
         goto done;
     }
 
-    ret = ldb_msg_add_empty(msg, SYSDB_CACHE_EXPIRE, LDB_FLAG_MOD_REPLACE,
+    msg_del = ldb_msg_new(tmp_ctx);
+    if (msg_del == NULL) {
+        DEBUG(SSSDBG_OP_FAILURE, "ldb_msg_new failed.\n");
+        ret = ENOMEM;
+        goto done;
+    }
+    ret = ldb_msg_add_empty(msg_del, SYSDB_OVERRIDE_DN, LDB_FLAG_MOD_DELETE,
                             NULL);
     if (ret != LDB_SUCCESS) {
         DEBUG(SSSDBG_OP_FAILURE, "ldb_msg_add_empty failed.\n");
         ret = sysdb_error_to_errno(ret);
         goto done;
     }
-    ret = ldb_msg_add_string(msg, SYSDB_CACHE_EXPIRE, "1");
+
+    msg_repl = ldb_msg_new(tmp_ctx);
+    if (msg_repl == NULL) {
+        DEBUG(SSSDBG_OP_FAILURE, "ldb_msg_new failed.\n");
+        ret = ENOMEM;
+        goto done;
+    }
+    ret = ldb_msg_add_empty(msg_repl, SYSDB_CACHE_EXPIRE,
+                            LDB_FLAG_MOD_REPLACE, NULL);
     if (ret != LDB_SUCCESS) {
-        DEBUG(SSSDBG_OP_FAILURE, "ldb_msg_add_string failed.\n");
+        DEBUG(SSSDBG_OP_FAILURE, "ldb_msg_add_empty failed.\n");
         ret = sysdb_error_to_errno(ret);
         goto done;
     }
-
-    ret = ldb_msg_add_empty(msg, SYSDB_OVERRIDE_DN, LDB_FLAG_MOD_DELETE, NULL);
+    ret = ldb_msg_add_string(msg_repl, SYSDB_CACHE_EXPIRE, "1");
     if (ret != LDB_SUCCESS) {
-        DEBUG(SSSDBG_OP_FAILURE, "ldb_msg_add_empty failed.\n");
+        DEBUG(SSSDBG_OP_FAILURE, "ldb_msg_add_string failed.\n");
         ret = sysdb_error_to_errno(ret);
         goto done;
     }
@@ -347,14 +400,12 @@ errno_t sysdb_invalidate_overrides(struct sysdb_ctx *sysdb)
     }
 
     for (c = 0; c < res->count; c++) {
-        msg->dn = res->msgs[c]->dn;
-
-        ret = ldb_modify(sysdb->ldb, msg);
-        if (ret != LDB_SUCCESS && ret != LDB_ERR_NO_SUCH_ATTRIBUTE) {
+        ret = invalidate_entry_override(sysdb, res->msgs[c]->dn, msg_del,
+                                                                 msg_repl);
+        if (ret != EOK) {
             DEBUG(SSSDBG_OP_FAILURE,
-                  "ldb_modify failed: [%s](%d)[%s]\n",
-                  ldb_strerror(ret), ret, ldb_errstring(sysdb->ldb));
-            ret = sysdb_error_to_errno(ret);
+                  "invalidate_entry_override failed [%d][%s].\n",
+                  ret, sss_strerror(ret));
             goto done;
         }
     }
@@ -370,14 +421,12 @@ errno_t sysdb_invalidate_overrides(struct sysdb_ctx *sysdb)
     }
 
     for (c = 0; c < res->count; c++) {
-        msg->dn = res->msgs[c]->dn;
-
-        ret = ldb_modify(sysdb->ldb, msg);
-        if (ret != LDB_SUCCESS && ret != LDB_ERR_NO_SUCH_ATTRIBUTE) {
+        ret = invalidate_entry_override(sysdb, res->msgs[c]->dn, msg_del,
+                                                                 msg_repl);
+        if (ret != EOK) {
             DEBUG(SSSDBG_OP_FAILURE,
-                  "ldb_modify failed: [%s](%d)[%s]\n",
-                  ldb_strerror(ret), ret, ldb_errstring(sysdb->ldb));
-            ret = sysdb_error_to_errno(ret);
+                  "invalidate_entry_override failed [%d][%s].\n",
+                  ret, sss_strerror(ret));
             goto done;
         }
     }
@@ -722,7 +771,7 @@ static errno_t safe_original_attributes(struct sss_domain_info *domain,
         goto done;
     }
 
-    /* Safe orginal values in attributes prefixed by OriginalAD. */
+    /* Safe original values in attributes prefixed by OriginalAD. */
     for (c = 0; allowed_attrs[c] != NULL; c++) {
         el = ldb_msg_find_element(orig_obj->msgs[0], allowed_attrs[c]);
         if (el != NULL) {
@@ -753,7 +802,7 @@ static errno_t safe_original_attributes(struct sss_domain_info *domain,
     el = ldb_msg_find_element(orig_obj->msgs[0], SYSDB_NAME_ALIAS);
     if (el != NULL) {
         for (c = 0; c < el->num_values; c++) {
-            /* To avoid issue with ldb_modify if e.g. the orginal and the
+            /* To avoid issue with ldb_modify if e.g. the original and the
              * override name are the same, we use the *_safe version here. */
             ret = sysdb_attrs_add_val_safe(attrs, SYSDB_NAME_ALIAS,
                                            &el->values[c]);
@@ -793,6 +842,8 @@ errno_t sysdb_apply_default_override(struct sss_domain_info *domain,
                                     NULL };
     bool override_attrs_found = false;
     bool is_cert = false;
+    struct ldb_message_element el_del = { 0, SYSDB_SSH_PUBKEY, 0, NULL };
+    struct sysdb_attrs del_attrs = { 1, &el_del };
 
     if (override_attrs == NULL) {
         /* nothing to do */
@@ -892,7 +943,17 @@ errno_t sysdb_apply_default_override(struct sss_domain_info *domain,
                           el->values[d].data, ldb_dn_get_linearized(obj_dn));
                 }
             }
-        } else if (ret != ENOENT) {
+        } else if (ret == ENOENT) {
+            if (strcmp(allowed_attrs[c], SYSDB_SSH_PUBKEY) == 0) {
+                ret = sysdb_set_entry_attr(domain->sysdb, obj_dn, &del_attrs,
+                                           SYSDB_MOD_DEL);
+                if (ret != EOK && ret != ENOENT) {
+                    DEBUG(SSSDBG_OP_FAILURE,
+                          "sysdb_set_entry_attr failed.\n");
+                    goto done;
+                }
+            }
+        } else {
             DEBUG(SSSDBG_OP_FAILURE, "sysdb_attrs_get_el_ext failed.\n");
             goto done;
         }

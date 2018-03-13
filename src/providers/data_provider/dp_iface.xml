@@ -32,6 +32,12 @@
         </method>
     </interface>
 
+    <interface name="org.freedesktop.sssd.DataProvider.AccessControl">
+        <annotation value="iface_dp_access_control" name="org.freedesktop.DBus.GLib.CSymbol"/>
+        <method name="RefreshRules">
+        </method>
+    </interface>
+
     <interface name="org.freedesktop.sssd.dataprovider">
         <annotation value="iface_dp" name="org.freedesktop.DBus.GLib.CSymbol"/>
         <method name="pamHandler">
@@ -72,6 +78,13 @@
             <arg name="dp_error" type="q" direction="out" />
             <arg name="error" type="u" direction="out" />
             <arg name="error_message" type="s" direction="out" />
+        </method>
+        <method name="getAccountDomain">
+            <arg name="entry_type" type="u" direction="in" />
+            <arg name="filter" type="s" direction="in" />
+            <arg name="dp_error" type="q" direction="out" />
+            <arg name="error" type="u" direction="out" />
+            <arg name="domain_name" type="s" direction="out" />
         </method>
     </interface>
 </node>

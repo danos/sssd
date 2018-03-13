@@ -123,6 +123,21 @@ int sdap_get_netgroups_recv(struct tevent_req *req,
                             size_t *reply_count,
                             struct sysdb_attrs ***reply);
 
+struct tevent_req *
+sdap_host_info_send(TALLOC_CTX *mem_ctx,
+                    struct tevent_context *ev,
+                    struct sdap_handle *sh,
+                    struct sdap_options *opts,
+                    const char *hostname,
+                    struct sdap_attr_map *host_map,
+                    struct sdap_search_base **search_bases);
+
+errno_t
+sdap_host_info_recv(struct tevent_req *req,
+                    TALLOC_CTX *mem_ctx,
+                    size_t *host_count,
+                    struct sysdb_attrs ***hosts);
+
 struct tevent_req *sdap_auth_send(TALLOC_CTX *memctx,
                                   struct tevent_context *ev,
                                   struct sdap_handle *sh,
@@ -266,14 +281,19 @@ int sdap_deref_search_recv(struct tevent_req *req,
                            size_t *reply_count,
                            struct sdap_deref_attrs ***reply);
 
+/*
+ * This request should only be ran against a Global Catalog connection
+ * because it uses a NULL search base to search all domains in the forest,
+ * which would return an error with an LDAP port:
+ *  https://technet.microsoft.com/en-us/library/cc755809(v=ws.10).aspx
+ */
 struct tevent_req *
-sdap_posix_check_send(TALLOC_CTX *memctx, struct tevent_context *ev,
-                      struct sdap_options *opts, struct sdap_handle *sh,
-                      struct sdap_search_base **search_bases,
-                      int timeout);
+sdap_gc_posix_check_send(TALLOC_CTX *memctx, struct tevent_context *ev,
+                         struct sdap_options *opts, struct sdap_handle *sh,
+                         int timeout);
 
-int sdap_posix_check_recv(struct tevent_req *req,
-                          bool *_has_posix);
+int sdap_gc_posix_check_recv(struct tevent_req *req,
+                             bool *_has_posix);
 
 struct tevent_req *
 sdap_sd_search_send(TALLOC_CTX *memctx,

@@ -72,7 +72,7 @@ void test_sbus_opath_escape_unescape(void **state)
 
     escaped = sbus_opath_escape_part(mem_ctx, "path_with_underscore");
     assert_non_null(escaped);
-    /* underscore is 0x5F in ascii */
+    /* underscore is 0x5F in ASCII */
     assert_string_equal(escaped, "path_5fwith_5funderscore");
     raw = sbus_opath_unescape_part(mem_ctx, escaped);
     talloc_free(escaped);
@@ -289,7 +289,7 @@ int main(int argc, const char *argv[])
         cmocka_unit_test(test_sbus_opath_get_object_name)
     };
 
-    /* Set debug level to invalid value so we can deside if -d 0 was used. */
+    /* Set debug level to invalid value so we can decide if -d 0 was used. */
     debug_level = SSSDBG_INVALID;
 
     pc = poptGetContext(argv[0], argc, argv, long_options, 0);

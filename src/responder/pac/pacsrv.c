@@ -83,7 +83,7 @@ static void pac_dp_reconnect_init(struct sbus_connection *conn,
     DEBUG(SSSDBG_FATAL_FAILURE, "Could not reconnect to %s provider.\n",
               be_conn->domain->name);
 
-    /* FIXME: kill the frontend and let the monitor restart it ? */
+    /* FIXME: kill the frontend and let the monitor restart it? */
     /* nss_shutdown(rctx); */
 }
 
@@ -209,6 +209,7 @@ int main(int argc, const char *argv[])
 {
     int opt;
     poptContext pc;
+    char *opt_logger = NULL;
     struct main_context *main_ctx;
     int ret;
     uid_t uid;
@@ -217,6 +218,7 @@ int main(int argc, const char *argv[])
     struct poptOption long_options[] = {
         POPT_AUTOHELP
         SSSD_MAIN_OPTS
+        SSSD_LOGGER_OPTS
         SSSD_SERVER_OPTS(uid, gid)
         SSSD_RESPONDER_OPTS
         POPT_TABLEEND
@@ -242,8 +244,10 @@ int main(int argc, const char *argv[])
 
     DEBUG_INIT(debug_level);
 
-    /* set up things like debug, signals, daemonization, etc... */
+    /* set up things like debug, signals, daemonization, etc. */
     debug_log_file = "sssd_pac";
+
+    sss_set_logger(opt_logger);
 
     ret = server_setup("sssd[pac]", 0, uid, gid,
                        CONFDB_PAC_CONF_ENTRY, &main_ctx);

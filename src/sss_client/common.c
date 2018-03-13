@@ -43,6 +43,7 @@
 #include <libintl.h>
 #define _(STRING) dgettext (PACKAGE, STRING)
 #include "sss_cli.h"
+#include "common_private.h"
 
 #if HAVE_PTHREAD
 #include <pthread.h>
@@ -135,7 +136,7 @@ static enum sss_status sss_cli_send_req(enum sss_cli_command cmd,
                 *errnop = EBUSY;
             }
             break;
-        default: /* more than one avail ?? */
+        default: /* more than one available!? */
             *errnop = EBADF;
             break;
         }
@@ -200,7 +201,7 @@ static enum sss_status sss_cli_recv_rep(enum sss_cli_command cmd,
     int len;
     int ret;
 
-    header[0] = SSS_NSS_HEADER_SIZE; /* unitl we know the real length */
+    header[0] = SSS_NSS_HEADER_SIZE; /* until we know the real length */
     header[1] = 0;
     header[2] = 0;
     header[3] = 0;
@@ -247,7 +248,7 @@ static enum sss_status sss_cli_recv_rep(enum sss_cli_command cmd,
                 *errnop = EBUSY;
             }
             break;
-        default: /* more than one avail ?? */
+        default: /* more than one available!? */
             *errnop = EBADF;
             break;
         }
@@ -433,7 +434,7 @@ static bool sss_cli_check_version(const char *socket_name, int timeout)
     return (obtained_version == expected_version);
 }
 
-/* this 2 functions are adapted from samba3 winbinbd's wb_common.c */
+/* this 2 functions are adapted from samba3 winbind's wb_common.c */
 
 /* Make sure socket handle isn't stdin (0), stdout(1) or stderr(2) by setting
  * the limit to 3 */
@@ -538,10 +539,14 @@ static int sss_cli_open_socket(int *errnop, const char *socket_name, int timeout
     int ret;
     int sd;
 
+    if (sizeof(nssaddr.sun_path) <= strlen(socket_name) + 1) {
+        *errnop = EINVAL;
+        return -1;
+    }
+
     memset(&nssaddr, 0, sizeof(struct sockaddr_un));
     nssaddr.sun_family = AF_UNIX;
-    strncpy(nssaddr.sun_path, socket_name,
-            strlen(socket_name) + 1);
+    strncpy(nssaddr.sun_path, socket_name, sizeof(nssaddr.sun_path));
 
     sd = socket(AF_UNIX, SOCK_STREAM, 0);
     if (sd == -1) {
@@ -684,7 +689,7 @@ static enum sss_status sss_cli_check_socket(int *errnop,
                 *errnop = EBUSY;
             }
             break;
-        default: /* more than one avail ?? */
+        default: /* more than one available!? */
             *errnop = EBADF;
             break;
         }
@@ -1113,13 +1118,7 @@ errno_t sss_strnlen(const char *str, size_t maxlen, size_t *len)
 #if HAVE_PTHREAD
 typedef void (*sss_mutex_init)(void);
 
-struct sss_mutex {
-    pthread_mutex_t mtx;
-
-    int old_cancel_state;
-};
-
-static struct sss_mutex sss_nss_mtx = { .mtx  = PTHREAD_MUTEX_INITIALIZER };
+struct sss_mutex sss_nss_mtx = { .mtx  = PTHREAD_MUTEX_INITIALIZER };
 
 static struct sss_mutex sss_pam_mtx = { .mtx  = PTHREAD_MUTEX_INITIALIZER };
 

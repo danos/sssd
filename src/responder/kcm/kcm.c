@@ -28,6 +28,7 @@
 #include "responder/kcm/kcmsrv_pvt.h"
 #include "responder/common/responder.h"
 #include "util/util.h"
+#include "util/sss_krb5.h"
 
 #define DEFAULT_KCM_FD_LIMIT 2048
 
@@ -183,7 +184,7 @@ static struct kcm_resp_ctx *kcm_data_setup(TALLOC_CTX *mem_ctx,
         return NULL;
     }
 
-    kret = krb5_init_context(&kcm_data->k5c);
+    kret = sss_krb5_init_context(&kcm_data->k5c);
     if (kret != EOK) {
         talloc_free(kcm_data);
         return NULL;
@@ -258,6 +259,7 @@ int main(int argc, const char *argv[])
 {
     int opt;
     poptContext pc;
+    char *opt_logger = NULL;
     struct main_context *main_ctx;
     int ret;
     uid_t uid;
@@ -266,11 +268,12 @@ int main(int argc, const char *argv[])
     struct poptOption long_options[] = {
         POPT_AUTOHELP
         SSSD_MAIN_OPTS
+        SSSD_LOGGER_OPTS
         SSSD_SERVER_OPTS(uid, gid)
         POPT_TABLEEND
     };
 
-    /* Set debug level to invalid value so we can deside if -d 0 was used. */
+    /* Set debug level to invalid value so we can decide if -d 0 was used. */
     debug_level = SSSDBG_INVALID;
 
     umask(DFL_RSP_UMASK);
@@ -290,8 +293,10 @@ int main(int argc, const char *argv[])
 
     DEBUG_INIT(debug_level);
 
-    /* set up things like debug, signals, daemonization, etc... */
+    /* set up things like debug, signals, daemonization, etc. */
     debug_log_file = "sssd_kcm";
+
+    sss_set_logger(opt_logger);
 
     ret = server_setup("sssd[kcm]", 0, uid, gid, CONFDB_KCM_CONF_ENTRY,
                        &main_ctx);
