@@ -61,6 +61,7 @@ Build-Depends:
  quilt,
  samba-dev (>= 2:4.1.13),
  systemd,
+ systemtap-sdt-dev,
  uuid-dev,
  xml-core,
  xsltproc

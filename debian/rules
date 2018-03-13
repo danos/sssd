@@ -30,6 +30,7 @@ override_dh_auto_configure:
 	--with-krb5-plugin-path=/usr/lib/$(DEB_HOST_MULTIARCH)/krb5/plugins/libkrb5 \
 	--enable-nsslibdir=/lib/$(DEB_HOST_MULTIARCH) \
 	--enable-pammoddir=/lib/$(DEB_HOST_MULTIARCH)/security \
+	--enable-systemtap \
 	--disable-static \
 	--disable-rpath \
 	--with-autofs \
