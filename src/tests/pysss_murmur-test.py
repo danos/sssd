@@ -33,8 +33,8 @@ class PySssMurmurImport(unittest.TestCase):
     def setUp(self):
         " Make sure we load the in-tree module "
         self.system_path = sys.path[:]
-        sys.path = [ MODPATH ]
-        print (os.getcwd())
+        sys.path = [MODPATH]
+        print(os.getcwd())
         print(MODPATH)
 
     def tearDown(self):
@@ -56,7 +56,8 @@ class PySssMurmurImport(unittest.TestCase):
 
             import pysss_murmur
         except ImportError as e:
-            print("Could not load the pysss_murmur module. Please check if it is compiled", file=sys.stderr)
+            print("Could not load the pysss_murmur module. "
+                  "Please check if it is compiled", file=sys.stderr)
             raise e
         self.assertEqual(pysss_murmur.__file__, MODPATH + "/pysss_murmur.so")
 

@@ -44,6 +44,14 @@
 #include "providers/backend.h"
 #include "util/crypto/sss_crypto.h"
 #include "util/cert.h"
+#include "p11_child/p11_child.h"
+
+struct p11_ctx {
+    NSSInitContext *nss_ctx;
+    CERTCertDBHandle *handle;
+    struct cert_verify_opts *cert_verify_opts;
+    const char *nss_db;
+};
 
 #define EXP_USAGES (  certificateUsageSSLClient \
                     | certificateUsageSSLServer \
@@ -53,18 +61,6 @@
                     | certificateUsageObjectSigner \
                     | certificateUsageStatusResponder \
                     | certificateUsageSSLCA )
-
-enum op_mode {
-    OP_NONE,
-    OP_AUTH,
-    OP_PREAUTH
-};
-
-enum pin_mode {
-    PIN_NONE,
-    PIN_STDIN,
-    PIN_KEYPAD
-};
 
 static char *password_passthrough(PK11SlotInfo *slot, PRBool retry, void *arg)
 {
@@ -100,179 +96,56 @@ static char *get_key_id_str(PK11SlotInfo *slot, CERTCertificate *cert)
     return key_id_str;
 }
 
-int do_work(TALLOC_CTX *mem_ctx, const char *nss_db,
-            enum op_mode mode, const char *pin,
-            struct cert_verify_opts *cert_verify_opts,
-            const char *module_name_in, const char *token_name_in,
-            const char *key_id_in, char **_multi)
+static int b64_to_cert(struct p11_ctx *p11_ctx, const char *b64,
+                       CERTCertificate **cert)
 {
-    int ret;
+    CERTCertificate *c = NULL;
+    SECItem der_item = { 0 };
+
+    der_item.data = ATOB_AsciiToData(b64, &der_item.len);
+    if (der_item.data == NULL) {
+        DEBUG(SSSDBG_OP_FAILURE, "ATOB_AsciiToData failed.\n");
+        return EIO;
+    }
+
+    c = CERT_NewTempCertificate(p11_ctx->handle, &der_item, NULL, PR_FALSE,
+                                PR_TRUE);
+    PORT_Free(der_item.data);
+    if (c == NULL) {
+        DEBUG(SSSDBG_OP_FAILURE, "CERT_NewTempCertificate failed.\n");
+        return EINVAL;
+    }
+
+    *cert = c;
+
+    return EOK;
+}
+
+static int talloc_free_handle(struct p11_ctx *p11_ctx)
+{
     SECStatus rv;
-    NSSInitContext *nss_ctx;
-    SECMODModuleList *mod_list;
-    SECMODModuleList *mod_list_item;
-    SECMODModule *module;
-    const char *slot_name;
-    const char *token_name;
-    uint32_t flags = NSS_INIT_READONLY
-                                   | NSS_INIT_FORCEOPEN
-                                   | NSS_INIT_NOROOTINIT
-                                   | NSS_INIT_OPTIMIZESPACE
-                                   | NSS_INIT_PK11RELOAD;
-    NSSInitParameters parameters = { 0 };
-    parameters.length =  sizeof (parameters);
-    PK11SlotInfo *slot = NULL;
-    CK_SLOT_ID slot_id;
-    SECMODModuleID module_id;
-    const char *module_name;
-    CERTCertList *cert_list = NULL;
-    CERTCertListNode *cert_list_node;
-    const PK11DefaultArrayEntry friendly_attr = { "Publicly-readable certs",
-                                                  SECMOD_FRIENDLY_FLAG,
-                                                  CKM_INVALID_MECHANISM };
+
+    /* Disable OCSP default responder so that NSS can shutdown properly */
+    if (p11_ctx->cert_verify_opts->do_ocsp
+            && p11_ctx->cert_verify_opts->ocsp_default_responder != NULL
+            && p11_ctx->cert_verify_opts->ocsp_default_responder_signing_cert
+                                                                      != NULL) {
+        rv = CERT_DisableOCSPDefaultResponder(p11_ctx->handle);
+        if (rv != SECSuccess) {
+            DEBUG(SSSDBG_OP_FAILURE,
+                  "CERT_DisableOCSPDefaultResponder failed: [%d][%s].\n",
+                  PR_GetError(), PORT_ErrorToString(PR_GetError()));
+        }
+    }
+
+    return 0;
+}
+
+errno_t init_verification(struct p11_ctx *p11_ctx,
+                          struct cert_verify_opts *cert_verify_opts)
+{
+    SECStatus rv;
     CERTCertDBHandle *handle;
-    unsigned char random_value[128];
-    SECKEYPrivateKey *priv_key;
-    SECOidTag algtag;
-    SECItem signed_random_value = {0};
-    SECKEYPublicKey *pub_key;
-    CERTCertificate *found_cert = NULL;
-    PK11SlotList *list = NULL;
-    PK11SlotListElement *le;
-    const char *label;
-    char *key_id_str = NULL;
-    CERTCertList *valid_certs = NULL;
-    char *cert_b64 = NULL;
-    char *multi = NULL;
-    PRCList *node;
-    SECCertificateUsage returned_usage = 0;
-
-    nss_ctx = NSS_InitContext(nss_db, "", "", SECMOD_DB, &parameters, flags);
-    if (nss_ctx == NULL) {
-        DEBUG(SSSDBG_OP_FAILURE, "NSS_InitContext failed [%d][%s].\n",
-              PR_GetError(), PORT_ErrorToString(PR_GetError()));
-        return EIO;
-    }
-
-    PK11_SetPasswordFunc(password_passthrough);
-
-    DEBUG(SSSDBG_TRACE_ALL, "Default Module List:\n");
-    mod_list = SECMOD_GetDefaultModuleList();
-    for (mod_list_item = mod_list; mod_list_item != NULL;
-                                   mod_list_item = mod_list_item->next) {
-        DEBUG(SSSDBG_TRACE_ALL, "common name: [%s].\n",
-                                mod_list_item->module->commonName);
-        DEBUG(SSSDBG_TRACE_ALL, "dll name: [%s].\n",
-                                mod_list_item->module->dllName);
-    }
-
-    DEBUG(SSSDBG_TRACE_ALL, "Dead Module List:\n");
-    mod_list = SECMOD_GetDeadModuleList();
-    for (mod_list_item = mod_list; mod_list_item != NULL;
-                                   mod_list_item = mod_list_item->next) {
-        DEBUG(SSSDBG_TRACE_ALL, "common name: [%s].\n",
-                                mod_list_item->module->commonName);
-        DEBUG(SSSDBG_TRACE_ALL, "dll name: [%s].\n",
-                                mod_list_item->module->dllName);
-    }
-
-    DEBUG(SSSDBG_TRACE_ALL, "DB Module List:\n");
-    mod_list = SECMOD_GetDBModuleList();
-    for (mod_list_item = mod_list; mod_list_item != NULL;
-                                   mod_list_item = mod_list_item->next) {
-        DEBUG(SSSDBG_TRACE_ALL, "common name: [%s].\n",
-                                mod_list_item->module->commonName);
-        DEBUG(SSSDBG_TRACE_ALL, "dll name: [%s].\n",
-                                mod_list_item->module->dllName);
-    }
-
-    list = PK11_GetAllTokens(CKM_INVALID_MECHANISM, PR_FALSE, PR_TRUE,
-                             NULL);
-    if (list == NULL) {
-        DEBUG(SSSDBG_OP_FAILURE, "PK11_GetAllTokens failed.\n");
-        return EIO;
-    }
-
-    for (le = list->head; le; le = le->next) {
-        CK_SLOT_INFO slInfo;
-
-        slInfo.flags = 0;
-        rv = PK11_GetSlotInfo(le->slot, &slInfo);
-        DEBUG(SSSDBG_TRACE_ALL,
-              "Description [%s] Manufacturer [%s] flags [%lu].\n",
-              slInfo.slotDescription, slInfo.manufacturerID, slInfo.flags);
-        if (rv == SECSuccess && (slInfo.flags & CKF_REMOVABLE_DEVICE)) {
-            slot = PK11_ReferenceSlot(le->slot);
-            break;
-        }
-    }
-    PK11_FreeSlotList(list);
-    if (slot == NULL) {
-        DEBUG(SSSDBG_OP_FAILURE, "No removable slots found.\n");
-        return EIO;
-    }
-
-    slot_id = PK11_GetSlotID(slot);
-    module_id = PK11_GetModuleID(slot);
-    slot_name = PK11_GetSlotName(slot);
-    token_name = PK11_GetTokenName(slot);
-    module = PK11_GetModule(slot);
-    module_name = module->dllName == NULL ? "NSS-Internal" : module->dllName;
-
-    DEBUG(SSSDBG_TRACE_ALL, "Found [%s] in slot [%s][%d] of module [%d][%s].\n",
-          token_name, slot_name, (int) slot_id, (int) module_id, module_name);
-
-    if (PK11_IsFriendly(slot)) {
-        DEBUG(SSSDBG_TRACE_ALL, "Token is friendly.\n");
-    } else {
-        DEBUG(SSSDBG_TRACE_ALL,
-              "Token is NOT friendly.\n");
-        if (mode == OP_PREAUTH) {
-            DEBUG(SSSDBG_TRACE_ALL, "Trying to switch to friendly to read certificate.\n");
-            rv = PK11_UpdateSlotAttribute(slot, &friendly_attr, PR_TRUE);
-            if (rv != SECSuccess) {
-                DEBUG(SSSDBG_OP_FAILURE,
-                      "PK11_UpdateSlotAttribute failed, continue.\n");
-            }
-        }
-    }
-
-    /* TODO: check  PK11_ProtectedAuthenticationPath() and return the result */
-    if (mode == OP_AUTH || PK11_NeedLogin(slot)) {
-        DEBUG(SSSDBG_TRACE_ALL, "Login required.\n");
-        if (pin != NULL) {
-            rv = PK11_Authenticate(slot, PR_FALSE, discard_const(pin));
-            if (rv !=  SECSuccess) {
-                DEBUG(SSSDBG_OP_FAILURE, "PK11_Authenticate failed: [%d][%s].\n",
-                      PR_GetError(), PORT_ErrorToString(PR_GetError()));
-                return EIO;
-            }
-        } else {
-            DEBUG(SSSDBG_CRIT_FAILURE,
-                  "Login required but no PIN available, continue.\n");
-        }
-    } else {
-        DEBUG(SSSDBG_TRACE_ALL, "Login NOT required.\n");
-    }
-
-    cert_list = PK11_ListCertsInSlot(slot);
-    if (cert_list == NULL) {
-        DEBUG(SSSDBG_OP_FAILURE, "PK11_ListCertsInSlot failed: [%d][%s].\n",
-              PR_GetError(), PORT_ErrorToString(PR_GetError()));
-        return EIO;
-    }
-
-    for (cert_list_node = CERT_LIST_HEAD(cert_list);
-                !CERT_LIST_END(cert_list_node, cert_list);
-                cert_list_node = CERT_LIST_NEXT(cert_list_node)) {
-        if (cert_list_node->cert) {
-            DEBUG(SSSDBG_TRACE_ALL, "found cert[%s][%s]\n",
-                             cert_list_node->cert->nickname,
-                             cert_list_node->cert->subjectName);
-        } else {
-            DEBUG(SSSDBG_TRACE_ALL, "--- empty cert list node ---\n");
-        }
-    }
 
     handle = CERT_GetDefaultCertDB();
     if (handle == NULL) {
@@ -312,6 +185,210 @@ int do_work(TALLOC_CTX *mem_ctx, const char *nss_db,
         }
     }
 
+    p11_ctx->handle = handle;
+    p11_ctx->cert_verify_opts = cert_verify_opts;
+    talloc_set_destructor(p11_ctx, talloc_free_handle);
+
+    return EOK;
+}
+
+bool do_verification(struct p11_ctx *p11_ctx, CERTCertificate *cert)
+{
+    SECStatus rv;
+    SECCertificateUsage returned_usage = 0;
+
+    rv = CERT_VerifyCertificateNow(p11_ctx->handle, cert, PR_TRUE,
+                                   certificateUsageCheckAllUsages,
+                                   NULL, &returned_usage);
+    if (rv != SECSuccess || ((returned_usage & EXP_USAGES) == 0)) {
+        DEBUG(SSSDBG_OP_FAILURE,
+              "Certificate [%s][%s] not valid [%d][%s].\n",
+              cert->nickname, cert->subjectName,
+              PR_GetError(), PORT_ErrorToString(PR_GetError()));
+        return false;
+    }
+
+    return true;
+}
+
+bool do_verification_b64(struct p11_ctx *p11_ctx, const char *cert_b64)
+{
+    int ret;
+    CERTCertificate *cert;
+    bool res;
+
+    ret = b64_to_cert(p11_ctx, cert_b64, &cert);
+    if (ret != EOK) {
+        DEBUG(SSSDBG_OP_FAILURE, "Failed to convert certificate.\n");
+        return EINVAL;
+    }
+
+    res = do_verification(p11_ctx, cert);
+    CERT_DestroyCertificate(cert);
+
+    return res;
+}
+
+errno_t do_card(TALLOC_CTX *mem_ctx, struct p11_ctx *p11_ctx,
+                enum op_mode mode, const char *pin,
+                const char *module_name_in, const char *token_name_in,
+                const char *key_id_in, char **_multi)
+{
+    int ret;
+    SECStatus rv;
+    SECMODModuleList *mod_list;
+    SECMODModuleList *mod_list_item;
+    SECMODModule *module;
+    const char *slot_name;
+    const char *token_name;
+    PK11SlotInfo *slot = NULL;
+    CK_SLOT_ID slot_id;
+    SECMODModuleID module_id;
+    const char *module_name;
+    CERTCertList *cert_list = NULL;
+    CERTCertListNode *cert_list_node;
+    const PK11DefaultArrayEntry friendly_attr = { "Publicly-readable certs",
+                                                  SECMOD_FRIENDLY_FLAG,
+                                                  CKM_INVALID_MECHANISM };
+    unsigned char random_value[128];
+    SECKEYPrivateKey *priv_key;
+    SECOidTag algtag;
+    SECItem signed_random_value = {0};
+    SECKEYPublicKey *pub_key;
+    CERTCertificate *found_cert = NULL;
+    PK11SlotList *list = NULL;
+    PK11SlotListElement *le;
+    const char *label;
+    char *key_id_str = NULL;
+    CERTCertList *valid_certs = NULL;
+    char *cert_b64 = NULL;
+    char *multi = NULL;
+    PRCList *node;
+
+    PK11_SetPasswordFunc(password_passthrough);
+
+    DEBUG(SSSDBG_TRACE_ALL, "Default Module List:\n");
+    mod_list = SECMOD_GetDefaultModuleList();
+    for (mod_list_item = mod_list; mod_list_item != NULL;
+                                   mod_list_item = mod_list_item->next) {
+        DEBUG(SSSDBG_TRACE_ALL, "common name: [%s].\n",
+                                mod_list_item->module->commonName);
+        DEBUG(SSSDBG_TRACE_ALL, "dll name: [%s].\n",
+                                mod_list_item->module->dllName);
+    }
+
+    DEBUG(SSSDBG_TRACE_ALL, "Dead Module List:\n");
+    mod_list = SECMOD_GetDeadModuleList();
+    for (mod_list_item = mod_list; mod_list_item != NULL;
+                                   mod_list_item = mod_list_item->next) {
+        DEBUG(SSSDBG_TRACE_ALL, "common name: [%s].\n",
+                                mod_list_item->module->commonName);
+        DEBUG(SSSDBG_TRACE_ALL, "dll name: [%s].\n",
+                                mod_list_item->module->dllName);
+    }
+
+    DEBUG(SSSDBG_TRACE_ALL, "DB Module List:\n");
+    mod_list = SECMOD_GetDBModuleList();
+    for (mod_list_item = mod_list; mod_list_item != NULL;
+                                   mod_list_item = mod_list_item->next) {
+        DEBUG(SSSDBG_TRACE_ALL, "common name: [%s].\n",
+                                mod_list_item->module->commonName);
+        DEBUG(SSSDBG_TRACE_ALL, "dll name: [%s].\n",
+                                mod_list_item->module->dllName);
+    }
+
+    list = PK11_GetAllTokens(CKM_INVALID_MECHANISM, PR_FALSE, PR_TRUE,
+                             NULL);
+    if (list == NULL) {
+        DEBUG(SSSDBG_OP_FAILURE, "PK11_GetAllTokens failed.\n");
+        ret = EIO;
+        goto done;
+    }
+
+    for (le = list->head; le; le = le->next) {
+        CK_SLOT_INFO slInfo;
+
+        slInfo.flags = 0;
+        rv = PK11_GetSlotInfo(le->slot, &slInfo);
+        DEBUG(SSSDBG_TRACE_ALL,
+              "Description [%s] Manufacturer [%s] flags [%lu].\n",
+              slInfo.slotDescription, slInfo.manufacturerID, slInfo.flags);
+        if (rv == SECSuccess && (slInfo.flags & CKF_REMOVABLE_DEVICE)) {
+            slot = PK11_ReferenceSlot(le->slot);
+            break;
+        }
+    }
+    PK11_FreeSlotList(list);
+    if (slot == NULL) {
+        DEBUG(SSSDBG_OP_FAILURE, "No removable slots found.\n");
+        ret = EIO;
+        goto done;
+    }
+
+    slot_id = PK11_GetSlotID(slot);
+    module_id = PK11_GetModuleID(slot);
+    slot_name = PK11_GetSlotName(slot);
+    token_name = PK11_GetTokenName(slot);
+    module = PK11_GetModule(slot);
+    module_name = module->dllName == NULL ? "NSS-Internal" : module->dllName;
+
+    DEBUG(SSSDBG_TRACE_ALL, "Found [%s] in slot [%s][%d] of module [%d][%s].\n",
+          token_name, slot_name, (int) slot_id, (int) module_id, module_name);
+
+    if (PK11_IsFriendly(slot)) {
+        DEBUG(SSSDBG_TRACE_ALL, "Token is friendly.\n");
+    } else {
+        DEBUG(SSSDBG_TRACE_ALL,
+              "Token is NOT friendly.\n");
+        if (mode == OP_PREAUTH) {
+            DEBUG(SSSDBG_TRACE_ALL, "Trying to switch to friendly to read certificate.\n");
+            rv = PK11_UpdateSlotAttribute(slot, &friendly_attr, PR_TRUE);
+            if (rv != SECSuccess) {
+                DEBUG(SSSDBG_OP_FAILURE,
+                      "PK11_UpdateSlotAttribute failed, continue.\n");
+            }
+        }
+    }
+
+    /* TODO: check  PK11_ProtectedAuthenticationPath() and return the result */
+    if (mode == OP_AUTH || PK11_NeedLogin(slot)) {
+        DEBUG(SSSDBG_TRACE_ALL, "Login required.\n");
+        if (pin != NULL) {
+            rv = PK11_Authenticate(slot, PR_FALSE, discard_const(pin));
+            if (rv !=  SECSuccess) {
+                DEBUG(SSSDBG_OP_FAILURE, "PK11_Authenticate failed: [%d][%s].\n",
+                      PR_GetError(), PORT_ErrorToString(PR_GetError()));
+                ret = EIO;
+                goto done;
+            }
+        } else {
+            DEBUG(SSSDBG_CRIT_FAILURE,
+                  "Login required but no PIN available, continue.\n");
+        }
+    } else {
+        DEBUG(SSSDBG_TRACE_ALL, "Login NOT required.\n");
+    }
+
+    cert_list = PK11_ListCertsInSlot(slot);
+    if (cert_list == NULL) {
+        DEBUG(SSSDBG_OP_FAILURE, "PK11_ListCertsInSlot failed: [%d][%s].\n",
+              PR_GetError(), PORT_ErrorToString(PR_GetError()));
+        ret = EIO;
+        goto done;
+    }
+
+    for (cert_list_node = CERT_LIST_HEAD(cert_list);
+                !CERT_LIST_END(cert_list_node, cert_list);
+                cert_list_node = CERT_LIST_NEXT(cert_list_node)) {
+        if (cert_list_node->cert) {
+            DEBUG(SSSDBG_TRACE_ALL, "found cert[%s][%s]\n",
+                             cert_list_node->cert->nickname,
+                             cert_list_node->cert->subjectName);
+        } else {
+            DEBUG(SSSDBG_TRACE_ALL, "--- empty cert list node ---\n");
+        }
+    }
+
     found_cert = NULL;
     valid_certs = CERT_NewCertList();
     if (valid_certs == NULL) {
@@ -335,17 +412,12 @@ int do_work(TALLOC_CTX *mem_ctx, const char *nss_db,
               cert_list_node->cert->nickname,
               cert_list_node->cert->subjectName);
 
-        if (cert_verify_opts->do_verification) {
-            rv = CERT_VerifyCertificateNow(handle, cert_list_node->cert,
-                                           PR_TRUE,
-                                           certificateUsageCheckAllUsages,
-                                           NULL, &returned_usage);
-            if (rv != SECSuccess || ((returned_usage & EXP_USAGES) == 0)) {
+        if (p11_ctx->handle != NULL) {
+            if (!do_verification(p11_ctx, cert_list_node->cert)) {
                 DEBUG(SSSDBG_OP_FAILURE,
-                      "Certificate [%s][%s] not valid [%d][%s], skipping.\n",
+                      "Certificate [%s][%s] not valid, skipping.\n",
                       cert_list_node->cert->nickname,
-                      cert_list_node->cert->subjectName,
-                      PR_GetError(), PORT_ErrorToString(PR_GetError()));
+                      cert_list_node->cert->subjectName);
                 continue;
             }
         }
@@ -392,18 +464,6 @@ int do_work(TALLOC_CTX *mem_ctx, const char *nss_db,
         }
     }
 
-    /* Disable OCSP default responder so that NSS can shutdown properly */
-    if (cert_verify_opts->do_ocsp
-            && cert_verify_opts->ocsp_default_responder != NULL
-            && cert_verify_opts->ocsp_default_responder_signing_cert != NULL) {
-        rv = CERT_DisableOCSPDefaultResponder(handle);
-        if (rv != SECSuccess) {
-            DEBUG(SSSDBG_OP_FAILURE,
-                  "CERT_DisableOCSPDefaultResponder failed: [%d][%s].\n",
-                  PR_GetError(), PORT_ErrorToString(PR_GetError()));
-        }
-    }
-
     if (CERT_LIST_EMPTY(valid_certs)) {
         DEBUG(SSSDBG_TRACE_ALL, "No certificate found.\n");
         *_multi = NULL;
@@ -434,7 +494,8 @@ int do_work(TALLOC_CTX *mem_ctx, const char *nss_db,
             DEBUG(SSSDBG_OP_FAILURE,
                   "PK11_GenerateRandom failed [%d][%s].\n",
                   PR_GetError(), PORT_ErrorToString(PR_GetError()));
-            return EIO;
+            ret = EIO;
+            goto done;
         }
 
         priv_key = PK11_FindPrivateKeyFromCert(slot, found_cert, NULL);
@@ -573,267 +634,53 @@ done:
 
     talloc_free(cert_b64);
 
-    rv = NSS_ShutdownContext(nss_ctx);
+    return ret;
+}
+
+static int talloc_nss_shutdown(struct p11_ctx *p11_ctx)
+{
+    SECStatus rv;
+
+    rv = NSS_ShutdownContext(p11_ctx->nss_ctx);
     if (rv != SECSuccess) {
         DEBUG(SSSDBG_OP_FAILURE, "NSS_ShutdownContext failed [%d][%s].\n",
               PR_GetError(), PORT_ErrorToString(PR_GetError()));
     }
 
-    return ret;
+    return 0;
 }
 
-static errno_t p11c_recv_data(TALLOC_CTX *mem_ctx, int fd, char **pin)
+errno_t init_p11_ctx(TALLOC_CTX *mem_ctx, const char *nss_db,
+                     struct p11_ctx **p11_ctx)
 {
-    uint8_t buf[IN_BUF_SIZE];
-    ssize_t len;
-    errno_t ret;
-    char *str;
+    struct p11_ctx *ctx;
+    uint32_t flags = NSS_INIT_READONLY
+                                   | NSS_INIT_FORCEOPEN
+                                   | NSS_INIT_NOROOTINIT
+                                   | NSS_INIT_OPTIMIZESPACE
+                                   | NSS_INIT_PK11RELOAD;
+    NSSInitParameters parameters = { 0 };
+    parameters.length =  sizeof (parameters);
 
-    errno = 0;
-    len = sss_atomic_read_s(fd, buf, IN_BUF_SIZE);
-    if (len == -1) {
-        ret = errno;
-        ret = (ret == 0) ? EINVAL: ret;
-        DEBUG(SSSDBG_CRIT_FAILURE,
-              "read failed [%d][%s].\n", ret, strerror(ret));
-        return ret;
-    }
-
-    if (len == 0 || *buf == '\0') {
-        DEBUG(SSSDBG_CRIT_FAILURE, "Missing PIN.\n");
-        return EINVAL;
-    }
-
-    str = talloc_strndup(mem_ctx, (char *) buf, len);
-    if (str == NULL) {
-        DEBUG(SSSDBG_OP_FAILURE, "talloc_strndup failed.\n");
+    ctx = talloc_zero(mem_ctx, struct p11_ctx);
+    if (ctx == NULL) {
+        DEBUG(SSSDBG_OP_FAILURE, "talloc_zero failed.\n");
         return ENOMEM;
     }
+    ctx->nss_db = nss_db;
 
-    if (strlen(str) != len) {
-        DEBUG(SSSDBG_CRIT_FAILURE,
-              "Input contains additional data, only PIN expected.\n");
-        talloc_free(str);
-        return EINVAL;
+    ctx->nss_ctx = NSS_InitContext(nss_db, "", "", SECMOD_DB, &parameters,
+                                    flags);
+    if (ctx->nss_ctx == NULL) {
+        DEBUG(SSSDBG_OP_FAILURE, "NSS_InitContext failed [%d][%s].\n",
+              PR_GetError(), PORT_ErrorToString(PR_GetError()));
+        talloc_free(p11_ctx);
+        return EIO;
     }
 
-    *pin = str;
+    talloc_set_destructor(ctx, talloc_nss_shutdown);
+
+    *p11_ctx = ctx;
 
     return EOK;
-}
-
-int main(int argc, const char *argv[])
-{
-    int opt;
-    poptContext pc;
-    int debug_fd = -1;
-    const char *opt_logger = NULL;
-    errno_t ret;
-    TALLOC_CTX *main_ctx = NULL;
-    enum op_mode mode = OP_NONE;
-    enum pin_mode pin_mode = PIN_NONE;
-    char *pin = NULL;
-    char *nss_db = NULL;
-    struct cert_verify_opts *cert_verify_opts;
-    char *verify_opts = NULL;
-    char *multi = NULL;
-    char *module_name = NULL;
-    char *token_name = NULL;
-    char *key_id = NULL;
-
-    struct poptOption long_options[] = {
-        POPT_AUTOHELP
-        {"debug-level", 'd', POPT_ARG_INT, &debug_level, 0,
-         _("Debug level"), NULL},
-        {"debug-timestamps", 0, POPT_ARG_INT, &debug_timestamps, 0,
-         _("Add debug timestamps"), NULL},
-        {"debug-microseconds", 0, POPT_ARG_INT, &debug_microseconds, 0,
-         _("Show timestamps with microseconds"), NULL},
-        {"debug-fd", 0, POPT_ARG_INT, &debug_fd, 0,
-         _("An open file descriptor for the debug logs"), NULL},
-        {"debug-to-stderr", 0, POPT_ARG_NONE | POPT_ARGFLAG_DOC_HIDDEN,
-         &debug_to_stderr, 0,
-         _("Send the debug output to stderr directly."), NULL },
-        SSSD_LOGGER_OPTS
-        {"auth", 0, POPT_ARG_NONE, NULL, 'a', _("Run in auth mode"), NULL},
-        {"pre", 0, POPT_ARG_NONE, NULL, 'p', _("Run in pre-auth mode"), NULL},
-        {"pin", 0, POPT_ARG_NONE, NULL, 'i', _("Expect PIN on stdin"), NULL},
-        {"keypad", 0, POPT_ARG_NONE, NULL, 'k', _("Expect PIN on keypad"),
-         NULL},
-        {"verify", 0, POPT_ARG_STRING, &verify_opts, 0 , _("Tune validation"),
-         NULL},
-        {"nssdb", 0, POPT_ARG_STRING, &nss_db, 0, _("NSS DB to use"),
-         NULL},
-        {"module_name", 0, POPT_ARG_STRING, &module_name, 0,
-         _("Module name for authentication"), NULL},
-        {"token_name", 0, POPT_ARG_STRING, &token_name, 0,
-         _("Token name for authentication"), NULL},
-        {"key_id", 0, POPT_ARG_STRING, &key_id, 0,
-         _("Key ID for authentication"), NULL},
-        POPT_TABLEEND
-    };
-
-    /* Set debug level to invalid value so we can decide if -d 0 was used. */
-    debug_level = SSSDBG_INVALID;
-
-    /*
-     * This child can run as root or as sssd user relying on policy kit to
-     * grant access to pcscd. This means that no setuid or setgid bit must be
-     * set on the binary. We still should make sure to run with a restrictive
-     * umask but do not have to make additional precautions like clearing the
-     * environment. This would allow to use e.g. pkcs11-spy.so for further
-     * debugging.
-     */
-    umask(SSS_DFL_UMASK);
-
-    pc = poptGetContext(argv[0], argc, argv, long_options, 0);
-    while ((opt = poptGetNextOpt(pc)) != -1) {
-        switch(opt) {
-        case 'a':
-            if (mode != OP_NONE) {
-                fprintf(stderr,
-                        "\n--auth and --pre are mutually exclusive and " \
-                        "should be only used once.\n\n");
-                poptPrintUsage(pc, stderr, 0);
-                _exit(-1);
-            }
-            mode = OP_AUTH;
-            break;
-        case 'p':
-            if (mode != OP_NONE) {
-                fprintf(stderr,
-                        "\n--auth and --pre are mutually exclusive and " \
-                        "should be only used once.\n\n");
-                poptPrintUsage(pc, stderr, 0);
-                _exit(-1);
-            }
-            mode = OP_PREAUTH;
-            break;
-        case 'i':
-            if (pin_mode != PIN_NONE) {
-                fprintf(stderr, "\n--pin and --keypad are mutually exclusive " \
-                                "and should be only used once.\n\n");
-                poptPrintUsage(pc, stderr, 0);
-                _exit(-1);
-            }
-            pin_mode = PIN_STDIN;
-            break;
-        case 'k':
-            if (pin_mode != PIN_NONE) {
-                fprintf(stderr, "\n--pin and --keypad are mutually exclusive " \
-                                "and should be only used once.\n\n");
-                poptPrintUsage(pc, stderr, 0);
-                _exit(-1);
-            }
-            pin_mode = PIN_KEYPAD;
-            break;
-        default:
-            fprintf(stderr, "\nInvalid option %s: %s\n\n",
-                  poptBadOption(pc, 0), poptStrerror(opt));
-            poptPrintUsage(pc, stderr, 0);
-            _exit(-1);
-        }
-    }
-
-    if (nss_db == NULL) {
-        fprintf(stderr, "\nMissing NSS DB --nssdb must be specified.\n\n");
-        poptPrintUsage(pc, stderr, 0);
-        _exit(-1);
-    }
-
-    if (mode == OP_NONE) {
-        fprintf(stderr, "\nMissing operation mode, " \
-                        "either --auth or --pre must be specified.\n\n");
-        poptPrintUsage(pc, stderr, 0);
-        _exit(-1);
-    } else if (mode == OP_AUTH && pin_mode == PIN_NONE) {
-        fprintf(stderr, "\nMissing PIN mode for authentication, " \
-                        "either --pin or --keypad must be specified.\n");
-        poptPrintUsage(pc, stderr, 0);
-        _exit(-1);
-    }
-
-    poptFreeContext(pc);
-
-    DEBUG_INIT(debug_level);
-
-    debug_prg_name = talloc_asprintf(NULL, "[sssd[p11_child[%d]]]", getpid());
-    if (debug_prg_name == NULL) {
-        DEBUG(SSSDBG_CRIT_FAILURE, "talloc_asprintf failed.\n");
-        goto fail;
-    }
-
-    if (debug_fd != -1) {
-        ret = set_debug_file_from_fd(debug_fd);
-        if (ret != EOK) {
-            DEBUG(SSSDBG_CRIT_FAILURE, "set_debug_file_from_fd failed.\n");
-        }
-        opt_logger = sss_logger_str[FILES_LOGGER];
-    }
-
-    sss_set_logger(opt_logger);
-
-    DEBUG(SSSDBG_TRACE_FUNC, "p11_child started.\n");
-
-    DEBUG(SSSDBG_TRACE_INTERNAL, "Running in [%s] mode.\n",
-          mode == OP_AUTH ? "auth"
-                          : (mode == OP_PREAUTH ? "pre-auth" : "unknown"));
-
-    DEBUG(SSSDBG_TRACE_INTERNAL,
-          "Running with effective IDs: [%"SPRIuid"][%"SPRIgid"].\n",
-          geteuid(), getegid());
-
-    DEBUG(SSSDBG_TRACE_INTERNAL,
-          "Running with real IDs [%"SPRIuid"][%"SPRIgid"].\n",
-          getuid(), getgid());
-
-    main_ctx = talloc_new(NULL);
-    if (main_ctx == NULL) {
-        DEBUG(SSSDBG_CRIT_FAILURE, "talloc_new failed.\n");
-        talloc_free(discard_const(debug_prg_name));
-        goto fail;
-    }
-    talloc_steal(main_ctx, debug_prg_name);
-
-    if (mode == OP_AUTH && (module_name == NULL || token_name == NULL
-                                || key_id == NULL)) {
-        DEBUG(SSSDBG_FATAL_FAILURE,
-              "--module_name, --token_name and --key_id must be given for "
-              "authentication");
-        ret = EINVAL;
-        goto fail;
-    }
-
-    ret = parse_cert_verify_opts(main_ctx, verify_opts, &cert_verify_opts);
-    if (ret != EOK) {
-        DEBUG(SSSDBG_FATAL_FAILURE, "Failed to parse verifiy option.\n");
-        goto fail;
-    }
-
-    if (mode == OP_AUTH && pin_mode == PIN_STDIN) {
-        ret = p11c_recv_data(main_ctx, STDIN_FILENO, &pin);
-        if (ret != EOK) {
-            DEBUG(SSSDBG_FATAL_FAILURE, "Failed to read PIN.\n");
-            goto fail;
-        }
-    }
-
-    ret = do_work(main_ctx, nss_db, mode, pin, cert_verify_opts, module_name,
-                  token_name, key_id, &multi);
-    if (ret != EOK) {
-        DEBUG(SSSDBG_OP_FAILURE, "do_work failed.\n");
-        goto fail;
-    }
-
-    if (multi != NULL) {
-        fprintf(stdout, "%s", multi);
-    }
-
-    talloc_free(main_ctx);
-    return EXIT_SUCCESS;
-fail:
-    DEBUG(SSSDBG_CRIT_FAILURE, "p11_child failed!\n");
-    close(STDOUT_FILENO);
-    talloc_free(main_ctx);
-    return EXIT_FAILURE;
 }

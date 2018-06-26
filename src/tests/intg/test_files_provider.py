@@ -25,6 +25,7 @@ import subprocess
 import pwd
 import grp
 import pytest
+import tempfile
 
 import ent
 import sssd_id
@@ -33,7 +34,7 @@ from sssd_passwd import (call_sssd_getpwnam,
                          call_sssd_enumeration,
                          call_sssd_getpwuid)
 from sssd_group import call_sssd_getgrnam, call_sssd_getgrgid
-from files_ops import passwd_ops_setup, group_ops_setup
+from files_ops import passwd_ops_setup, group_ops_setup, PasswdOps, GroupOps
 from util import unindent
 
 # Sync this with files_ops.c
@@ -59,6 +60,11 @@ OV_USER1 = dict(name='ov_user1', passwd='x', uid=10010, gid=20010,
                 dir='/home/ov/user1',
                 shell='/bin/ov_user1_shell')
 
+ALT_USER1 = dict(name='altuser1', passwd='x', uid=60001, gid=70001,
+                 gecos='User for tests from alt files',
+                 dir='/home/altuser1',
+                 shell='/bin/bash')
+
 CANARY_GR = dict(name='canary',
                  gid=300001,
                  mem=[])
@@ -78,6 +84,10 @@ GROUP12 = dict(name='group12',
 GROUP_NOMEM = dict(name='group_nomem',
                    gid=40000,
                    mem=[])
+
+ALT_GROUP1 = dict(name='alt_group1',
+                  gid=80001,
+                  mem=['alt_user1'])
 
 
 def start_sssd():
@@ -143,6 +153,72 @@ def files_domain_only(request):
     create_conf_fixture(request, conf)
     create_sssd_fixture(request)
     return None
+
+
+@pytest.fixture
+def files_multiple_sources(request):
+    _, alt_passwd_path = tempfile.mkstemp(prefix='altpasswd')
+    request.addfinalizer(lambda: os.unlink(alt_passwd_path))
+    alt_pwops = PasswdOps(alt_passwd_path)
+
+    _, alt_group_path = tempfile.mkstemp(prefix='altgroup')
+    request.addfinalizer(lambda: os.unlink(alt_group_path))
+    alt_grops = GroupOps(alt_group_path)
+
+    passwd_list = ",".join([os.environ["NSS_WRAPPER_PASSWD"], alt_passwd_path])
+    group_list = ",".join([os.environ["NSS_WRAPPER_GROUP"], alt_group_path])
+
+    conf = unindent("""\
+        [sssd]
+        domains             = files
+        services            = nss
+
+        [nss]
+        debug_level = 10
+
+        [domain/files]
+        id_provider = files
+        passwd_files = {passwd_list}
+        group_files = {group_list}
+        debug_level = 10
+    """).format(**locals())
+    create_conf_fixture(request, conf)
+    create_sssd_fixture(request)
+    return alt_pwops, alt_grops
+
+
+@pytest.fixture
+def files_multiple_sources_nocreate(request):
+    """
+    Sets up SSSD with multiple sources, but does not actually create
+    the files.
+    """
+    alt_passwd_path = tempfile.mktemp(prefix='altpasswd')
+    request.addfinalizer(lambda: os.unlink(alt_passwd_path))
+
+    alt_group_path = tempfile.mktemp(prefix='altgroup')
+    request.addfinalizer(lambda: os.unlink(alt_group_path))
+
+    passwd_list = ",".join([os.environ["NSS_WRAPPER_PASSWD"], alt_passwd_path])
+    group_list = ",".join([os.environ["NSS_WRAPPER_GROUP"], alt_group_path])
+
+    conf = unindent("""\
+        [sssd]
+        domains             = files
+        services            = nss
+
+        [nss]
+        debug_level = 10
+
+        [domain/files]
+        id_provider = files
+        passwd_files = {passwd_list}
+        group_files = {group_list}
+        debug_level = 10
+    """).format(**locals())
+    create_conf_fixture(request, conf)
+    create_sssd_fixture(request)
+    return alt_passwd_path, alt_group_path
 
 
 @pytest.fixture
@@ -214,6 +290,22 @@ def disabled_files_domain(request):
 
 @pytest.fixture
 def no_sssd_conf(request):
+    create_sssd_fixture(request)
+    return None
+
+
+@pytest.fixture
+def domain_resolution_order(request):
+    conf = unindent("""\
+        [sssd]
+        domains             = files
+        services            = nss
+        domain_resolution_order = foo
+
+        [domain/files]
+        id_provider = files
+    """).format(**locals())
+    create_conf_fixture(request, conf)
     create_sssd_fixture(request)
     return None
 
@@ -1054,3 +1146,55 @@ def test_no_sssd_conf(add_user_with_canary, no_sssd_conf):
     res, user = sssd_getpwnam_sync(USER1["name"])
     assert res == NssReturnCode.SUCCESS
     assert user == USER1
+
+
+def test_multiple_passwd_group_files(add_user_with_canary,
+                                     add_group_with_canary,
+                                     files_multiple_sources):
+    """
+    Test that users and groups can be mirrored from multiple files
+    """
+    alt_pwops, alt_grops = files_multiple_sources
+    alt_pwops.useradd(**ALT_USER1)
+    alt_grops.groupadd(**ALT_GROUP1)
+
+    check_user(USER1)
+    check_user(ALT_USER1)
+
+    check_group(GROUP1)
+    check_group(ALT_GROUP1)
+
+
+def test_multiple_files_created_after_startup(add_user_with_canary,
+                                              add_group_with_canary,
+                                              files_multiple_sources_nocreate):
+    """
+    Test that users and groups can be mirrored from multiple files,
+    but those files are not created when SSSD starts, only afterwards.
+    """
+    alt_passwd_path, alt_group_path = files_multiple_sources_nocreate
+
+    check_user(USER1)
+    check_group(GROUP1)
+
+    # touch the files
+    for fpath in (alt_passwd_path, alt_group_path):
+        with open(fpath, "w") as f:
+            pass
+
+    alt_pwops = PasswdOps(alt_passwd_path)
+    alt_grops = GroupOps(alt_group_path)
+    alt_pwops.useradd(**ALT_USER1)
+    alt_grops.groupadd(**ALT_GROUP1)
+
+    check_user(ALT_USER1)
+    check_group(ALT_GROUP1)
+
+
+def test_files_with_domain_resolution_order(add_user_with_canary,
+                                            domain_resolution_order):
+    """
+    Test that when using domain_resolution_order the user won't be using
+    its fully-qualified name.
+    """
+    check_user(USER1)

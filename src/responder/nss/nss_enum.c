@@ -144,7 +144,8 @@ static void nss_setent_internal_done(struct tevent_req *subreq)
             /* We need to expand the netgroup into triples and members. */
             ret = sysdb_netgr_to_entries(state->enum_ctx,
                                          result[0]->ldb_result,
-                                         &state->enum_ctx->netgroup);
+                                         &state->enum_ctx->netgroup,
+                                         &state->enum_ctx->netgroup_count);
             if (ret != EOK) {
                 goto done;
             }
@@ -280,7 +281,18 @@ nss_setnetgrent_set_timeout(struct tevent_context *ev,
     struct timeval tv;
     uint32_t timeout;
 
-    timeout = enum_ctx->result[0]->domain->netgroup_timeout;
+    if (nss_ctx->cache_refresh_percent) {
+        timeout = enum_ctx->result[0]->domain->netgroup_timeout *
+            (nss_ctx->cache_refresh_percent / 100.0);
+    } else {
+        timeout = enum_ctx->result[0]->domain->netgroup_timeout;
+    }
+
+    /* In order to not trash the cache between setnetgrent()/getnetgrent()
+     * calls with too low timeout values, we only allow 10 seconds as
+     * the minimal timeout
+     */
+    if (timeout < 10) timeout = 10;
 
     tv = tevent_timeval_current_ofs(timeout, 0);
     te = tevent_add_timer(ev, enum_ctx, tv, nss_setnetgrent_timeout, enum_ctx);

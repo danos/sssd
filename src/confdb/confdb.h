@@ -87,6 +87,7 @@
 #define CONFDB_RESPONDER_CLI_IDLE_TIMEOUT "client_idle_timeout"
 #define CONFDB_RESPONDER_CLI_IDLE_DEFAULT_TIMEOUT 60
 #define CONFDB_RESPONDER_LOCAL_NEG_TIMEOUT "local_negative_timeout"
+#define CONFDB_RESPONDER_LOCAL_NEG_TIMEOUT_DEFAULT 14400
 #define CONFDB_RESPONDER_IDLE_TIMEOUT "responder_idle_timeout"
 #define CONFDB_RESPONDER_IDLE_DEFAULT_TIMEOUT 300
 #define CONFDB_RESPONDER_CACHE_FIRST "cache_first"
@@ -153,7 +154,13 @@
 #define CONFDB_SSH_KNOWN_HOSTS_TIMEOUT "ssh_known_hosts_timeout"
 #define CONFDB_DEFAULT_SSH_KNOWN_HOSTS_TIMEOUT 180
 #define CONFDB_SSH_CA_DB "ca_db"
+#ifdef HAVE_NSS
 #define CONFDB_DEFAULT_SSH_CA_DB SYSCONFDIR"/pki/nssdb"
+#else
+#define CONFDB_DEFAULT_SSH_CA_DB SYSCONFDIR"/sssd/pki/sssd_auth_ca_db.pem"
+#endif
+#define CONFDB_SSH_USE_CERT_KEYS "ssh_use_certificate_keys"
+#define CONFDB_DEFAULT_SSH_USE_CERT_KEYS true
 
 /* PAC */
 #define CONFDB_PAC_CONF_ENTRY "config/pac"
@@ -241,6 +248,10 @@
 #define CONFDB_PROXY_PAM_TARGET "proxy_pam_target"
 #define CONFDB_PROXY_FAST_ALIAS "proxy_fast_alias"
 #define CONFDB_PROXY_MAX_CHILDREN "proxy_max_children"
+
+/* Files Provider */
+#define CONFDB_FILES_PASSWD "passwd_files"
+#define CONFDB_FILES_GROUP "group_files"
 
 /* Secrets Service */
 #define CONFDB_SEC_CONF_ENTRY "config/secrets"

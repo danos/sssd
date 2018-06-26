@@ -66,7 +66,9 @@ int sss_ldb_modify_permissive(struct ldb_context *ldb,
                               struct ldb_message *msg)
 {
     struct ldb_request *req;
-    int ret = EOK;
+    int ret;
+    int cancel_ret;
+    bool in_transaction = false;
 
     ret = ldb_build_mod_req(&req, ldb, ldb,
                             msg,
@@ -84,9 +86,44 @@ int sss_ldb_modify_permissive(struct ldb_context *ldb,
         return ret;
     }
 
+    ret = ldb_transaction_start(ldb);
+    if (ret != LDB_SUCCESS) {
+        DEBUG(SSSDBG_CRIT_FAILURE,
+              "Failed to start ldb transaction [%d]: %s\n",
+              ret, sss_strerror(ret));
+        goto done;
+    }
+
+    in_transaction = true;
+
     ret = ldb_request(ldb, req);
     if (ret == LDB_SUCCESS) {
         ret = ldb_wait(req->handle, LDB_WAIT_ALL);
+        if (ret != LDB_SUCCESS) {
+            goto done;
+        }
+    }
+
+    ret = ldb_transaction_commit(ldb);
+    if (ret != LDB_SUCCESS) {
+        DEBUG(SSSDBG_CRIT_FAILURE,
+              "Failed to commit ldb transaction [%d]: %s\n",
+              ret, sss_strerror(ret));
+        goto done;
+    }
+
+    in_transaction = false;
+
+    ret = LDB_SUCCESS;
+
+done:
+    if (in_transaction) {
+        cancel_ret = ldb_transaction_cancel(ldb);
+        if (cancel_ret != LDB_SUCCESS) {
+            DEBUG(SSSDBG_CRIT_FAILURE,
+                  "Failed to cancel ldb transaction [%d]: %s\n",
+                  cancel_ret, sss_strerror(cancel_ret));
+        }
     }
 
     talloc_free(req);
@@ -457,7 +494,7 @@ static int sysdb_search_by_name(TALLOC_CTX *mem_ctx,
         break;
     case SYSDB_GROUP:
         def_attrs[1] = SYSDB_GIDNUM;
-        if (domain->mpg) {
+        if (domain->mpg && strcasecmp(domain->provider, "local") != 0) {
             /* When searching a group by name in a MPG domain, we also
              * need to search the user space in order to be able to match
              * a user private group/
@@ -716,6 +753,9 @@ int sysdb_search_group_by_name(TALLOC_CTX *mem_ctx,
     return sysdb_search_by_name(mem_ctx, domain, name, SYSDB_GROUP, attrs, msg);
 }
 
+/* Please note that sysdb_search_group_by_gid() is not aware of MPGs. If MPG
+ * support is needed either the caller must handle it or sysdb_getgrgid() or
+ * sysdb_getgrgid_attrs() should be used. */
 int sysdb_search_group_by_gid(TALLOC_CTX *mem_ctx,
                               struct sss_domain_info *domain,
                               gid_t gid,
@@ -2340,10 +2380,41 @@ int sysdb_add_incomplete_group(struct sss_domain_info *domain,
     TALLOC_CTX *tmp_ctx;
     int ret;
     struct sysdb_attrs *attrs;
+    struct ldb_message *msg;
+    const char *previous = NULL;
+    const char *group_attrs[] = { SYSDB_SID_STR, SYSDB_UUID, SYSDB_ORIG_DN, NULL };
+    const char *values[] = { sid_str, uuid, original_dn, NULL };
+    bool same = false;
 
     tmp_ctx = talloc_new(NULL);
     if (!tmp_ctx) {
         return ENOMEM;
+    }
+
+    if (posix) {
+        ret = sysdb_search_group_by_gid(tmp_ctx, domain, gid, group_attrs, &msg);
+        if (ret == EOK) {
+            for (int i = 0; !same && group_attrs[i] != NULL; i++) {
+                previous = ldb_msg_find_attr_as_string(msg,
+                                                       group_attrs[i],
+                                                       NULL);
+                if (previous != NULL && values[i] != NULL) {
+                    same = strcmp(previous, values[i]) == 0;
+                }
+            }
+
+            if (same == true) {
+                DEBUG(SSSDBG_TRACE_LIBS,
+                      "The group with GID [%"SPRIgid"] was renamed\n", gid);
+                ret = ERR_GID_DUPLICATED;
+                goto done;
+            }
+
+            DEBUG(SSSDBG_OP_FAILURE,
+                  "Another group with GID [%"SPRIgid"] already exists\n", gid);
+            ret = EEXIST;
+            goto done;
+        }
     }
 
     /* try to add the group */
@@ -5368,6 +5439,19 @@ errno_t sysdb_mark_entry_as_expired_ldb_dn(struct sss_domain_info *dom,
     }
 
     ret = ldb_msg_add_string(msg, SYSDB_CACHE_EXPIRE, "1");
+    if (ret != LDB_SUCCESS) {
+        ret = sysdb_error_to_errno(ret);
+        goto done;
+    }
+
+    ret = ldb_msg_add_empty(msg, SYSDB_ORIG_MODSTAMP,
+                            LDB_FLAG_MOD_REPLACE, NULL);
+    if (ret != LDB_SUCCESS) {
+        ret = sysdb_error_to_errno(ret);
+        goto done;
+    }
+
+    ret = ldb_msg_add_string(msg, SYSDB_ORIG_MODSTAMP, "1");
     if (ret != LDB_SUCCESS) {
         ret = sysdb_error_to_errno(ret);
         goto done;

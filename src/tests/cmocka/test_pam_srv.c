@@ -22,6 +22,7 @@
 
 #include <security/pam_modules.h>
 #include <popt.h>
+#include <stdlib.h> /* putenv */
 
 #include "tests/cmocka/common_mock.h"
 #include "tests/cmocka/common_mock_resp.h"
@@ -38,6 +39,14 @@
 #include "util/crypto/nss/nss_util.h"
 #endif
 
+#ifdef HAVE_TEST_CA
+#include "tests/test_CA/SSSD_test_cert_x509_0001.h"
+#include "tests/test_CA/SSSD_test_cert_x509_0002.h"
+#else
+#define SSSD_TEST_CERT_0001 ""
+#define SSSD_TEST_CERT_0002 ""
+#endif
+
 #define TESTS_PATH "tp_" BASE_FILE_STEM
 #define TEST_CONF_DB "test_pam_conf.ldb"
 #define TEST_DOM_NAME "pam_test"
@@ -49,58 +58,25 @@
 
 #define NSS_DB_PATH_2CERTS TESTS_PATH "_2certs"
 #define NSS_DB_2CERTS "sql:"NSS_DB_PATH_2CERTS
+#ifdef HAVE_NSS
+#define CA_DB NSS_DB
+#else
+#define CA_DB ABS_BUILD_DIR"/src/tests/test_CA/SSSD_test_CA.pem"
+#endif
 
 #define TEST_TOKEN_NAME "SSSD Test Token"
+#define TEST_KEY_ID "C554C9F82C2A9D58B70921C143304153A8A42F17"
+#ifdef HAVE_NSS
 #define TEST_MODULE_NAME "NSS-Internal"
-#define TEST_KEY_ID "A5EF7DEE625CA5996C8D1BA7D036708161FD49E7"
-#define TEST_PROMPT "Server-Cert\nCN=ipa-devel.ipa.devel,O=IPA.DEVEL"
-#define TEST_TOKEN_CERT \
-"MIIECTCCAvGgAwIBAgIBCTANBgkqhkiG9w0BAQsFADA0MRIwEAYDVQQKDAlJUEEu" \
-"REVWRUwxHjAcBgNVBAMMFUNlcnRpZmljYXRlIEF1dGhvcml0eTAeFw0xNjA1MjMx" \
-"NDE0MTVaFw0xODA1MjQxNDE0MTVaMDIxEjAQBgNVBAoMCUlQQS5ERVZFTDEcMBoG" \
-"A1UEAwwTaXBhLWRldmVsLmlwYS5kZXZlbDCCASIwDQYJKoZIhvcNAQEBBQADggEP" \
-"ADCCAQoCggEBALHvOzZy/3llvoAYxrtOpux0gDVvSuSRpTGOW/bjpgdTowvXoOb5" \
-"G9Cy/9S6be7ZJ9D95lc/J9W8tX+ShKN8Q4b74l4WjmILQJ4dUsJ/BXfvoMPR8tw/" \
-"G47dGbLZanMXdWGBSTuXhoiogZWib2DhSwrX2DbEH5L3OWooeAVU5ZWOw55/HD7O" \
-"Q/7Of7H3tf4bvxNTFkxh39KQMG28wjPZSv+SZWNHMB+rj2yZgyeHBMkoPOPesAEi" \
-"7KKHxw1MHSv2xBI1AiV+aMdKfYUMy0Rq3PrRU4274i3eaBX4Q9GnDi36K/7bHjbt" \
-"LW0YTIW/L5/cH/BO88BREjxS3bEXAQqlKOcCAwEAAaOCASYwggEiMB8GA1UdIwQY" \
-"MBaAFPci/0Km5D/L5z7YqwEc7E1/GwgcMDsGCCsGAQUFBwEBBC8wLTArBggrBgEF" \
-"BQcwAYYfaHR0cDovL2lwYS1jYS5pcGEuZGV2ZWwvY2Evb2NzcDAOBgNVHQ8BAf8E" \
-"BAMCBPAwHQYDVR0lBBYwFAYIKwYBBQUHAwEGCCsGAQUFBwMCMHQGA1UdHwRtMGsw" \
-"aaAxoC+GLWh0dHA6Ly9pcGEtY2EuaXBhLmRldmVsL2lwYS9jcmwvTWFzdGVyQ1JM" \
-"LmJpbqI0pDIwMDEOMAwGA1UECgwFaXBhY2ExHjAcBgNVBAMMFUNlcnRpZmljYXRl" \
-"IEF1dGhvcml0eTAdBgNVHQ4EFgQUIJuWIts3m3uEYqJ9pUL0y7utTiEwDQYJKoZI" \
-"hvcNAQELBQADggEBAB0GyqGxtZ99fsXA1+fHfAwKOwznT7Hh8hN9efEMBJICVud+" \
-"ivUBOH6JpSTWgNLuBhrpebV/b/DSjhn+ayuvoPWng3hjwMbSEIe0euzCEdwVcokt" \
-"bwNMMSeTxSg6wbJnEyZqQEIr2h/TR9dRNxE+RbQXyamW0fUxSVT16iueL0hMwszT" \
-"jCfI/UZv3tDMHbh6D4811A0HO8daW7ufMGb/M+kDxYigJiL2gllMZ+6xba1RRgzF" \
-"8Z+9gqZhCa7FEKJOPNR9RVtJs0qUUutMZrp1zpyx0GTmXQBA7LbgPxy8L68uymEQ" \
-"XyQBwOYRORlnfGyu+Yc9c3E0Wx8Tlznz0lqPR9g="
+#define TEST_PROMPT "SSSD test cert 0001 - SSSD\nCN=SSSD test cert 0001,OU=SSSD test,O=SSSD"
+#define TEST2_PROMPT "SSSD test cert 0002 - SSSD\nCN=SSSD test cert 0002,OU=SSSD test,O=SSSD"
+#else
+#define TEST_MODULE_NAME SOFTHSM2_PATH
+#define TEST_PROMPT "SSSD test cert 0001\nCN=SSSD test cert 0001,OU=SSSD test,O=SSSD"
+#define TEST2_PROMPT "SSSD test cert 0002\nCN=SSSD test cert 0002,OU=SSSD test,O=SSSD"
+#endif
 
-#define TEST2_KEY_ID "C8D60E009EB195D01A7083EE1D5419251AA87C2C"
-#define TEST2_PROMPT "ipaCert\nCN=IPA RA,O=IPA.DEVEL"
-#define TEST_TOKEN_2ND_CERT \
-"MIIDazCCAlOgAwIBAgIBBzANBgkqhkiG9w0BAQsFADA0MRIwEAYDVQQKDAlJUEEu" \
-"REVWRUwxHjAcBgNVBAMMFUNlcnRpZmljYXRlIEF1dGhvcml0eTAeFw0xNjA1MjMx" \
-"NDEzMDFaFw0xODA1MTMxNDEzMDFaMCUxEjAQBgNVBAoMCUlQQS5ERVZFTDEPMA0G" \
-"A1UEAwwGSVBBIFJBMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA3abE" \
-"8LmIc6QN16VVxsMlN/rrCOoZKyyJolSzpP4+K66t+KZUiW/1j1MZogjyYyD39U1F" \
-"zpa2H+pID74XYrdiqP7sp+uE9/k2XOv/nN3FobXDt+fSINLDriCmxNhUZqpgo2uq" \
-"Mmka+yx2iJZwkntEoJTcd3aynoa2Sa2ZZbkMBy5p6/pUQKwnD6scOwe6mUDppIBK" \
-"+ZZRm+u/NDdIRFI5wfKLRR1r/ONaJA9nz1TxSEsgLsjG/1m+Zbb6lGG4pePIFkQ9" \
-"Iotpi64obBh93oIxzQR29lBG/FMjQVHlPIbx+xuGx11Vtp5pAomgFz0HRrj0leI7" \
-"bROE+jnC/VGPLQD2aQIDAQABo4GWMIGTMB8GA1UdIwQYMBaAFPci/0Km5D/L5z7Y" \
-"qwEc7E1/GwgcMEEGCCsGAQUFBwEBBDUwMzAxBggrBgEFBQcwAYYlaHR0cDovL2lw" \
-"YS1kZXZlbC5pcGEuZGV2ZWw6ODAvY2Evb2NzcDAOBgNVHQ8BAf8EBAMCBPAwHQYD" \
-"VR0lBBYwFAYIKwYBBQUHAwEGCCsGAQUFBwMCMA0GCSqGSIb3DQEBCwUAA4IBAQBg" \
-"4Sppx2C3eXPJ4Pd9XElkQPOaBReXf1vV0uk/GlK+rG+aAqAkA2Lryx5PK/iAuzAU" \
-"M6JUpELuQYgqugoCgBXMgsMlpAO/0C3CFq4ZH3KgIsRlRngKPrt6RG0UPMRD1CE2" \
-"tSVkwUWvyK83lDiu2BbWDXyMyz5eZOlp7uHusf5BKvob8jEndHj1YzaNTmVSsDM5" \
-"kiIwf8qgFhsO1HCq08PtAnbVHhqkcvnmIJN98eNWNfTKodDmFVbN8gB0wK+WB5ii" \
-"WVOw7+3/zF1QgqnYX3t+kPLRryip/wvTZkzXWwMNj/W6UHgjNF/4gWGoBgCHu+u3" \
-"EvjMmbVSrEkesibpGQS5"
-
+#define TEST2_KEY_ID "5405842D56CF31F0BB025A695C5F3E907051C5B9"
 
 static char CACHED_AUTH_TIMEOUT_STR[] = "4";
 static const int CACHED_AUTH_TIMEOUT = 4;
@@ -187,7 +163,7 @@ static errno_t setup_nss_db(void)
         DEBUG(SSSDBG_FATAL_FAILURE, "fprintf() failed.\n");
         return ret;
     }
-    ret = fprintf(fp, "parameters=configdir='sql:%s/src/tests/cmocka/p11_nssdb' dbSlotDescription='SSSD Test Slot' dbTokenDescription='SSSD Test Token' secmod='secmod.db' flags=readOnly \n\n", ABS_SRC_DIR);
+    ret = fprintf(fp, "parameters=configdir='sql:%s/src/tests/test_CA/p11_nssdb' dbSlotDescription='SSSD Test Slot' dbTokenDescription='SSSD Test Token' secmod='secmod.db' flags=readOnly \n\n", ABS_BUILD_DIR);
     if (ret < 0) {
         DEBUG(SSSDBG_FATAL_FAILURE, "fprintf() failed.\n");
         return ret;
@@ -208,7 +184,7 @@ static errno_t setup_nss_db(void)
         DEBUG(SSSDBG_FATAL_FAILURE, "fprintf() failed.\n");
         return ret;
     }
-    ret = fprintf(fp, "parameters=configdir='sql:%s/src/tests/cmocka/p11_nssdb_2certs' dbSlotDescription='SSSD Test Slot' dbTokenDescription='SSSD Test Token' secmod='secmod.db' flags=readOnly \n\n", ABS_SRC_DIR);
+    ret = fprintf(fp, "parameters=configdir='sql:%s/src/tests/test_CA/p11_nssdb_2certs' dbSlotDescription='SSSD Test Slot' dbTokenDescription='SSSD Test Token' secmod='secmod.db' flags=readOnly \n\n", ABS_BUILD_DIR);
     if (ret < 0) {
         DEBUG(SSSDBG_FATAL_FAILURE, "fprintf() failed.\n");
         return ret;
@@ -451,7 +427,7 @@ static int pam_test_setup(void **state)
     return 0;
 }
 
-#ifdef HAVE_NSS
+#ifdef HAVE_TEST_CA
 static int pam_test_setup_no_verification(void **state)
 {
     struct sss_test_conf_param dom_params[] = {
@@ -475,7 +451,7 @@ static int pam_test_setup_no_verification(void **state)
     pam_test_setup_common();
     return 0;
 }
-#endif /* HAVE_NSS */
+#endif /* HAVE_TEST_CA */
 
 static int pam_cached_test_setup(void **state)
 {
@@ -863,14 +839,59 @@ static int test_pam_cert_check_gdm_smartcard(uint32_t status, uint8_t *body,
     return EOK;
 }
 
+static void check_string_array(const char **strs, uint8_t *body, size_t *rp)
+{
+    size_t c;
+
+    for (c = 0; strs[c] != NULL; c++) {
+        assert_int_equal(*(body + *rp + strlen(strs[c])), 0);
+        assert_string_equal(body + *rp, strs[c]);
+        *rp += strlen(strs[c]) + 1;
+    }
+}
+
+static size_t check_string_array_len(const char **strs)
+{
+    size_t c;
+    size_t sum = 0;
+
+    for (c = 0; strs[c] != NULL; c++) {
+        sum += strlen(strs[c]) + 1;
+    }
+
+    return sum;
+}
+
 static int test_pam_cert_check_ex(uint32_t status, uint8_t *body, size_t blen,
                                   enum response_type type, const char *name,
                                   const char *name2)
 {
     size_t rp = 0;
     uint32_t val;
+    bool test2_first = false;
+
+    size_t check_len = 0;
+    char const *check_strings[] = { NULL,
+                                    TEST_TOKEN_NAME,
+                                    TEST_MODULE_NAME,
+                                    TEST_KEY_ID,
+                                    TEST_PROMPT,
+                                    NULL };
+
+    size_t check2_len = 0;
+    char const *check2_strings[] = { NULL,
+                                     TEST_TOKEN_NAME,
+                                     TEST_MODULE_NAME,
+                                     TEST2_KEY_ID,
+                                     TEST2_PROMPT,
+                                     NULL };
 
     assert_int_equal(status, 0);
+
+    check_strings[0] = name;
+    check_len = check_string_array_len(check_strings);
+    check2_strings[0] = name;
+    check2_len = check_string_array_len(check2_strings);
 
     SAFEALIGN_COPY_UINT32(&val, body + rp, &rp);
     assert_int_equal(val, pam_test_ctx->exp_pam_status);
@@ -900,62 +921,39 @@ static int test_pam_cert_check_ex(uint32_t status, uint8_t *body, size_t blen,
     assert_int_equal(val, type);
 
     SAFEALIGN_COPY_UINT32(&val, body + rp, &rp);
-    assert_int_equal(val, (strlen(name) + 1
+
+    /* look ahead to check if the certificate #2 comes first */
+    if (name2 != NULL && *name2 != '\0'
+            && val == check2_len
+            && strncmp((char *) body + rp + strlen(name) + 1
                                 + sizeof(TEST_TOKEN_NAME)
-                                + sizeof(TEST_MODULE_NAME)
-                                + sizeof(TEST_KEY_ID)
-                                + sizeof(TEST_PROMPT)));
+                                + sizeof(TEST_MODULE_NAME),
+                       TEST2_KEY_ID,
+                       sizeof(TEST2_KEY_ID)) == 0 ) {
+        test2_first = true;
 
-    assert_int_equal(*(body + rp + strlen(name)), 0);
-    assert_string_equal(body + rp, name);
-    rp += strlen(name) + 1;
+        assert_int_equal(val, check2_len);
 
-    assert_int_equal(*(body + rp + sizeof(TEST_TOKEN_NAME) - 1), 0);
-    assert_string_equal(body + rp, TEST_TOKEN_NAME);
-    rp += sizeof(TEST_TOKEN_NAME);
+        check_string_array(check2_strings, body, &rp);
 
-    assert_int_equal(*(body + rp + sizeof(TEST_MODULE_NAME) - 1), 0);
-    assert_string_equal(body + rp, TEST_MODULE_NAME);
-    rp += sizeof(TEST_MODULE_NAME);
-
-    assert_int_equal(*(body + rp + sizeof(TEST_KEY_ID) - 1), 0);
-    assert_string_equal(body + rp, TEST_KEY_ID);
-    rp += sizeof(TEST_KEY_ID);
-
-    assert_int_equal(*(body + rp + sizeof(TEST_PROMPT) - 1), 0);
-    assert_string_equal(body + rp, TEST_PROMPT);
-    rp += sizeof(TEST_PROMPT);
-
-    if (name2 != NULL && *name2 != '\0') {
         SAFEALIGN_COPY_UINT32(&val, body + rp, &rp);
         assert_int_equal(val, type);
 
         SAFEALIGN_COPY_UINT32(&val, body + rp, &rp);
-        assert_int_equal(val, (strlen(name) + 1
-                                    + sizeof(TEST_TOKEN_NAME)
-                                    + sizeof(TEST_MODULE_NAME)
-                                    + sizeof(TEST2_KEY_ID)
-                                    + sizeof(TEST2_PROMPT)));
+    }
 
-        assert_int_equal(*(body + rp + strlen(name)), 0);
-        assert_string_equal(body + rp, name);
-        rp += strlen(name) + 1;
+    assert_int_equal(val, check_len);
 
-        assert_int_equal(*(body + rp + sizeof(TEST_TOKEN_NAME) - 1), 0);
-        assert_string_equal(body + rp, TEST_TOKEN_NAME);
-        rp += sizeof(TEST_TOKEN_NAME);
+    check_string_array(check_strings, body, &rp);
 
-        assert_int_equal(*(body + rp + sizeof(TEST_MODULE_NAME) - 1), 0);
-        assert_string_equal(body + rp, TEST_MODULE_NAME);
-        rp += sizeof(TEST_MODULE_NAME);
+    if (name2 != NULL && *name2 != '\0' && !test2_first) {
+        SAFEALIGN_COPY_UINT32(&val, body + rp, &rp);
+        assert_int_equal(val, type);
 
-        assert_int_equal(*(body + rp + sizeof(TEST2_KEY_ID) - 1), 0);
-        assert_string_equal(body + rp, TEST2_KEY_ID);
-        rp += sizeof(TEST2_KEY_ID);
+        SAFEALIGN_COPY_UINT32(&val, body + rp, &rp);
+        assert_int_equal(val, check2_len);
 
-        assert_int_equal(*(body + rp + sizeof(TEST2_PROMPT) - 1), 0);
-        assert_string_equal(body + rp, TEST2_PROMPT);
-        rp += sizeof(TEST2_PROMPT);
+        check_string_array(check2_strings, body, &rp);
     }
 
     assert_int_equal(rp, blen);
@@ -1869,7 +1867,12 @@ void test_pam_preauth_cert_nocert(void **state)
 {
     int ret;
 
+#ifdef HAVE_NSS
     set_cert_auth_param(pam_test_ctx->pctx, "/no/path");
+#else
+    set_cert_auth_param(pam_test_ctx->pctx, CA_DB);
+#endif
+
 
     mock_input_pam_cert(pam_test_ctx, "pamuser", NULL, NULL, NULL, NULL, NULL,
                         NULL, NULL, false);
@@ -1915,6 +1918,7 @@ static int test_lookup_by_cert_cb(void *pvt)
 
     return EOK;
 }
+
 static int test_lookup_by_cert_cb_2nd_cert_same_user(void *pvt)
 {
     int ret;
@@ -1927,7 +1931,7 @@ static int test_lookup_by_cert_cb_2nd_cert_same_user(void *pvt)
     attrs = sysdb_new_attrs(pam_test_ctx);
     assert_non_null(attrs);
 
-    der = sss_base64_decode(pam_test_ctx, TEST_TOKEN_2ND_CERT, &der_size);
+    der = sss_base64_decode(pam_test_ctx, SSSD_TEST_CERT_0002, &der_size);
     assert_non_null(der);
 
     ret = sysdb_attrs_add_mem(attrs, SYSDB_USER_MAPPED_CERT, der, der_size);
@@ -2008,7 +2012,10 @@ void test_pam_preauth_cert_nomatch(void **state)
 {
     int ret;
 
-    set_cert_auth_param(pam_test_ctx->pctx, NSS_DB);
+#ifndef HAVE_NSS
+    putenv(discard_const("SOFTHSM2_CONF=" ABS_BUILD_DIR "/src/tests/test_CA/softhsm2_one.conf"));
+#endif
+    set_cert_auth_param(pam_test_ctx->pctx, CA_DB);
 
     mock_input_pam_cert(pam_test_ctx, "pamuser", NULL, NULL, NULL, NULL, NULL,
                         test_lookup_by_cert_cb, NULL, false);
@@ -2030,10 +2037,10 @@ void test_pam_preauth_cert_match(void **state)
 {
     int ret;
 
-    set_cert_auth_param(pam_test_ctx->pctx, NSS_DB);
+    set_cert_auth_param(pam_test_ctx->pctx, CA_DB);
 
     mock_input_pam_cert(pam_test_ctx, "pamuser", NULL, NULL, NULL, NULL, NULL,
-                        test_lookup_by_cert_cb, TEST_TOKEN_CERT, false);
+                        test_lookup_by_cert_cb, SSSD_TEST_CERT_0001, false);
 
     will_return(__wrap_sss_packet_get_cmd, SSS_PAM_PREAUTH);
     will_return(__wrap_sss_packet_get_body, WRAP_CALL_REAL);
@@ -2053,11 +2060,11 @@ void test_pam_preauth_cert_match_gdm_smartcard(void **state)
 {
     int ret;
 
-    set_cert_auth_param(pam_test_ctx->pctx, NSS_DB);
+    set_cert_auth_param(pam_test_ctx->pctx, CA_DB);
 
     mock_input_pam_cert(pam_test_ctx, "pamuser", NULL, NULL, NULL, NULL,
                         "gdm-smartcard", test_lookup_by_cert_cb,
-                        TEST_TOKEN_CERT, false);
+                        SSSD_TEST_CERT_0001, false);
 
     will_return(__wrap_sss_packet_get_cmd, SSS_PAM_PREAUTH);
     will_return(__wrap_sss_packet_get_body, WRAP_CALL_REAL);
@@ -2076,11 +2083,11 @@ void test_pam_preauth_cert_match_wrong_user(void **state)
 {
     int ret;
 
-    set_cert_auth_param(pam_test_ctx->pctx, NSS_DB);
+    set_cert_auth_param(pam_test_ctx->pctx, CA_DB);
 
     mock_input_pam_cert(pam_test_ctx, "pamuser", NULL, NULL, NULL, NULL, NULL,
                         test_lookup_by_cert_wrong_user_cb,
-                        TEST_TOKEN_CERT, false);
+                        SSSD_TEST_CERT_0001, false);
 
     will_return(__wrap_sss_packet_get_cmd, SSS_PAM_PREAUTH);
     will_return(__wrap_sss_packet_get_body, WRAP_CALL_REAL);
@@ -2100,7 +2107,7 @@ void test_pam_preauth_cert_no_logon_name(void **state)
 {
     int ret;
 
-    set_cert_auth_param(pam_test_ctx->pctx, NSS_DB);
+    set_cert_auth_param(pam_test_ctx->pctx, CA_DB);
 
     /* If no logon name is given the user is looked by certificate first.
      * Since there is a matching user the upcoming lookup by name will find
@@ -2111,7 +2118,7 @@ void test_pam_preauth_cert_no_logon_name(void **state)
      * request will be done with the username found by the certificate
      * lookup. */
     mock_input_pam_cert(pam_test_ctx, NULL, NULL, NULL, NULL, NULL, NULL,
-                        test_lookup_by_cert_cb, TEST_TOKEN_CERT, false);
+                        test_lookup_by_cert_cb, SSSD_TEST_CERT_0001, false);
     mock_account_recv_simple();
     mock_parse_inp("pamuser", NULL, EOK);
 
@@ -2132,7 +2139,7 @@ void test_pam_preauth_cert_no_logon_name_with_hint(void **state)
 {
     int ret;
 
-    set_cert_auth_param(pam_test_ctx->pctx, NSS_DB);
+    set_cert_auth_param(pam_test_ctx->pctx, CA_DB);
     pam_test_ctx->rctx->domains->user_name_hint = true;
 
     /* If no logon name is given the user is looked by certificate first.
@@ -2140,7 +2147,7 @@ void test_pam_preauth_cert_no_logon_name_with_hint(void **state)
      * during pre-auth and there is no need for an extra mocked response as in
      * test_pam_preauth_cert_no_logon_name. */
     mock_input_pam_cert(pam_test_ctx, NULL, NULL, NULL, NULL, NULL, NULL,
-                        test_lookup_by_cert_cb, TEST_TOKEN_CERT, false);
+                        test_lookup_by_cert_cb, SSSD_TEST_CERT_0001, false);
 
     will_return(__wrap_sss_packet_get_cmd, SSS_PAM_PREAUTH);
     will_return(__wrap_sss_packet_get_body, WRAP_CALL_REAL);
@@ -2159,10 +2166,11 @@ void test_pam_preauth_cert_no_logon_name_double_cert(void **state)
 {
     int ret;
 
-    set_cert_auth_param(pam_test_ctx->pctx, NSS_DB);
+    set_cert_auth_param(pam_test_ctx->pctx, CA_DB);
 
     mock_input_pam_cert(pam_test_ctx, NULL, NULL, NULL, NULL, NULL, NULL,
-                        test_lookup_by_cert_double_cb, TEST_TOKEN_CERT, false);
+                        test_lookup_by_cert_double_cb, SSSD_TEST_CERT_0001,
+                        false);
 
     will_return(__wrap_sss_packet_get_cmd, SSS_PAM_PREAUTH);
     will_return(__wrap_sss_packet_get_body, WRAP_CALL_REAL);
@@ -2181,11 +2189,12 @@ void test_pam_preauth_cert_no_logon_name_double_cert_with_hint(void **state)
 {
     int ret;
 
-    set_cert_auth_param(pam_test_ctx->pctx, NSS_DB);
+    set_cert_auth_param(pam_test_ctx->pctx, CA_DB);
     pam_test_ctx->rctx->domains->user_name_hint = true;
 
     mock_input_pam_cert(pam_test_ctx, NULL, NULL, NULL, NULL, NULL, NULL,
-                        test_lookup_by_cert_double_cb, TEST_TOKEN_CERT, false);
+                        test_lookup_by_cert_double_cb, SSSD_TEST_CERT_0001,
+                        false);
 
     will_return(__wrap_sss_packet_get_cmd, SSS_PAM_PREAUTH);
     will_return(__wrap_sss_packet_get_body, WRAP_CALL_REAL);
@@ -2226,7 +2235,7 @@ void test_pam_preauth_cert_no_logon_name_no_match(void **state)
 {
     int ret;
 
-    set_cert_auth_param(pam_test_ctx->pctx, NSS_DB);
+    set_cert_auth_param(pam_test_ctx->pctx, CA_DB);
 
     mock_input_pam_cert(pam_test_ctx, NULL, NULL, NULL, NULL, NULL, NULL,
                         test_lookup_by_cert_cb, NULL, false);
@@ -2248,7 +2257,7 @@ void test_pam_cert_auth(void **state)
 {
     int ret;
 
-    set_cert_auth_param(pam_test_ctx->pctx, NSS_DB);
+    set_cert_auth_param(pam_test_ctx->pctx, CA_DB);
 
     /* Here the last option must be set to true because the backend is only
      * connected once. During authentication the backend is connected first to
@@ -2257,9 +2266,9 @@ void test_pam_cert_auth(void **state)
      * to the user entry the lookup by certificate will already find the user
      * in the cache and no second request to the backend is needed. */
     mock_input_pam_cert(pam_test_ctx, "pamuser", "123456", "SSSD Test Token",
-                        "NSS-Internal",
-                        "A5EF7DEE625CA5996C8D1BA7D036708161FD49E7", NULL,
-                        test_lookup_by_cert_cb, TEST_TOKEN_CERT, true);
+                        TEST_MODULE_NAME,
+                        "C554C9F82C2A9D58B70921C143304153A8A42F17", NULL,
+                        test_lookup_by_cert_cb, SSSD_TEST_CERT_0001, true);
 
     will_return(__wrap_sss_packet_get_cmd, SSS_PAM_AUTHENTICATE);
     will_return(__wrap_sss_packet_get_body, WRAP_CALL_REAL);
@@ -2282,7 +2291,10 @@ void test_pam_cert_auth_no_logon_name(void **state)
 {
     int ret;
 
-    set_cert_auth_param(pam_test_ctx->pctx, NSS_DB);
+#ifndef HAVE_NSS
+    putenv(discard_const("SOFTHSM2_CONF=" ABS_BUILD_DIR "/src/tests/test_CA/softhsm2_one.conf"));
+#endif
+    set_cert_auth_param(pam_test_ctx->pctx, CA_DB);
 
     /* Here the last option must be set to true because the backend is only
      * connected once. During authentication the backend is connected first to
@@ -2291,9 +2303,9 @@ void test_pam_cert_auth_no_logon_name(void **state)
      * to the user entry the lookup by certificate will already find the user
      * in the cache and no second request to the backend is needed. */
     mock_input_pam_cert(pam_test_ctx, NULL, "123456", "SSSD Test Token",
-                        "NSS-Internal",
-                        "A5EF7DEE625CA5996C8D1BA7D036708161FD49E7", NULL,
-                        test_lookup_by_cert_cb, TEST_TOKEN_CERT, true);
+                        TEST_MODULE_NAME,
+                        "C554C9F82C2A9D58B70921C143304153A8A42F17", NULL,
+                        test_lookup_by_cert_cb, SSSD_TEST_CERT_0001, true);
 
     mock_account_recv_simple();
     mock_parse_inp("pamuser", NULL, EOK);
@@ -2318,7 +2330,7 @@ void test_pam_cert_auth_no_logon_name_no_key_id(void **state)
 {
     int ret;
 
-    set_cert_auth_param(pam_test_ctx->pctx, NSS_DB);
+    set_cert_auth_param(pam_test_ctx->pctx, CA_DB);
 
     /* Here the last option must be set to true because the backend is only
      * connected once. During authentication the backend is connected first to
@@ -2327,7 +2339,7 @@ void test_pam_cert_auth_no_logon_name_no_key_id(void **state)
      * to the user entry the lookup by certificate will already find the user
      * in the cache and no second request to the backend is needed. */
     mock_input_pam_cert(pam_test_ctx, NULL, "123456", "SSSD Test Token",
-                        "NSS-Internal", NULL, NULL,
+                        TEST_MODULE_NAME, NULL, NULL,
                         NULL, NULL, false);
 
     will_return(__wrap_sss_packet_get_cmd, SSS_PAM_AUTHENTICATE);
@@ -2350,12 +2362,13 @@ void test_pam_cert_auth_double_cert(void **state)
 {
     int ret;
 
-    set_cert_auth_param(pam_test_ctx->pctx, NSS_DB);
+    set_cert_auth_param(pam_test_ctx->pctx, CA_DB);
 
     mock_input_pam_cert(pam_test_ctx, "pamuser", "123456", "SSSD Test Token",
-                        "NSS-Internal",
-                        "A5EF7DEE625CA5996C8D1BA7D036708161FD49E7", NULL,
-                        test_lookup_by_cert_double_cb, TEST_TOKEN_CERT, true);
+                        TEST_MODULE_NAME,
+                        "C554C9F82C2A9D58B70921C143304153A8A42F17", NULL,
+                        test_lookup_by_cert_double_cb, SSSD_TEST_CERT_0001,
+                        true);
 
     will_return(__wrap_sss_packet_get_cmd, SSS_PAM_AUTHENTICATE);
     will_return(__wrap_sss_packet_get_body, WRAP_CALL_REAL);
@@ -2377,10 +2390,17 @@ void test_pam_cert_preauth_2certs_one_mapping(void **state)
 {
     int ret;
 
+#ifdef HAVE_NSS
     set_cert_auth_param(pam_test_ctx->pctx, NSS_DB_2CERTS);
+#else
+    set_cert_auth_param(pam_test_ctx->pctx, CA_DB);
+    putenv(discard_const("SOFTHSM2_CONF=" ABS_BUILD_DIR "/src/tests/test_CA/softhsm2_two.conf"));
+#endif
 
+    ret = test_lookup_by_cert_cb(discard_const(SSSD_TEST_CERT_0001));
+    assert_int_equal(ret, EOK);
     mock_input_pam_cert(pam_test_ctx, "pamuser", NULL, NULL, NULL, NULL, NULL,
-                        test_lookup_by_cert_cb, TEST_TOKEN_CERT, false);
+                        test_lookup_by_cert_cb, NULL, false);
 
     will_return(__wrap_sss_packet_get_cmd, SSS_PAM_PREAUTH);
     will_return(__wrap_sss_packet_get_body, WRAP_CALL_REAL);
@@ -2399,11 +2419,16 @@ void test_pam_cert_preauth_2certs_two_mappings(void **state)
 {
     int ret;
 
+#ifdef HAVE_NSS
     set_cert_auth_param(pam_test_ctx->pctx, NSS_DB_2CERTS);
+#else
+    set_cert_auth_param(pam_test_ctx->pctx, CA_DB);
+    putenv(discard_const("SOFTHSM2_CONF=" ABS_BUILD_DIR "/src/tests/test_CA/softhsm2_two.conf"));
+#endif
 
     mock_input_pam_cert(pam_test_ctx, "pamuser", NULL, NULL, NULL, NULL, NULL,
                         test_lookup_by_cert_cb_2nd_cert_same_user,
-                        TEST_TOKEN_CERT, false);
+                        SSSD_TEST_CERT_0001, false);
 
     will_return(__wrap_sss_packet_get_cmd, SSS_PAM_PREAUTH);
     will_return(__wrap_sss_packet_get_body, WRAP_CALL_REAL);
@@ -2812,8 +2837,7 @@ int main(int argc, const char *argv[])
         cmocka_unit_test_setup_teardown(test_pam_cached_auth_failed_combined_pw_with_cached_2fa,
                                         pam_cached_test_setup,
                                         pam_test_teardown),
-/* p11_child is not built without NSS */
-#ifdef HAVE_NSS
+#ifdef HAVE_TEST_CA
         cmocka_unit_test_setup_teardown(test_pam_preauth_cert_nocert,
                                         pam_test_setup, pam_test_teardown),
         cmocka_unit_test_setup_teardown(test_pam_preauth_cert_nomatch,
@@ -2855,7 +2879,7 @@ int main(int argc, const char *argv[])
                                         pam_test_setup, pam_test_teardown),
         cmocka_unit_test_setup_teardown(test_pam_cert_auth_no_logon_name_no_key_id,
                                         pam_test_setup, pam_test_teardown),
-#endif /* HAVE_NSS */
+#endif /* HAVE_TEST_CA */
 
         cmocka_unit_test_setup_teardown(test_filter_response,
                                         pam_test_setup, pam_test_teardown),

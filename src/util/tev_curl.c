@@ -35,7 +35,8 @@
 #include "util/tev_curl.h"
 
 #define TCURL_IOBUF_CHUNK   1024
-#define TCURL_IOBUF_MAX    16384
+/* This limit in the same one as KCM_REPLY_MAX */
+#define TCURL_IOBUF_MAX     10*1024*1024
 
 static bool global_is_curl_initialized;
 
@@ -567,12 +568,16 @@ static size_t tcurl_write_data(char *ptr,
     errno_t ret;
     size_t realsize = size * nmemb;
     struct sss_iobuf *outbuf;
+    char *envval;
 
     outbuf = talloc_get_type(userdata, struct sss_iobuf);
 
-    DEBUG(SSSDBG_TRACE_INTERNAL, "---> begin libcurl data\n");
-    DEBUG(SSSDBG_TRACE_INTERNAL, "%s\n", ptr);
-    DEBUG(SSSDBG_TRACE_INTERNAL, "<--- end libcurl data\n");
+    envval = getenv("SSS_KCM_LOG_PRIVATE_DATA");
+    if (envval != NULL && strcasecmp(envval, "YES") == 0) {
+        DEBUG(SSSDBG_TRACE_INTERNAL, "---> begin libcurl data\n");
+        DEBUG(SSSDBG_TRACE_INTERNAL, "%s\n", ptr);
+        DEBUG(SSSDBG_TRACE_INTERNAL, "<--- end libcurl data\n");
+    }
 
     ret = sss_iobuf_write_len(outbuf, (uint8_t *)ptr, realsize);
     if (ret != EOK) {

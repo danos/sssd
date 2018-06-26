@@ -207,7 +207,6 @@ static void sec_list_done(struct tevent_req *subreq)
             return;
         }
     } else if (http_code == 200) {
-        DEBUG(SSSDBG_TRACE_INTERNAL, "Found %zu items\n", state->sec_key_list_len);
         ret = sec_list_parse(outbuf, state,
                              &state->sec_key_list,
                              &state->sec_key_list_len);
@@ -215,6 +214,7 @@ static void sec_list_done(struct tevent_req *subreq)
             tevent_req_error(req, ret);
             return;
         }
+        DEBUG(SSSDBG_TRACE_INTERNAL, "Found %zu items\n", state->sec_key_list_len);
     } else {
         tevent_req_error(req, http2errno(http_code));
         return;
@@ -231,6 +231,7 @@ static errno_t sec_list_parse(struct sss_iobuf *outbuf,
 {
     json_t *root;
     uint8_t *sec_http_list;
+    size_t sec_http_list_len;
     json_error_t error;
     json_t *element;
     errno_t ret;
@@ -244,8 +245,10 @@ static errno_t sec_list_parse(struct sss_iobuf *outbuf,
         DEBUG(SSSDBG_CRIT_FAILURE, "No data in output buffer?\n");
         return EINVAL;
     }
+    sec_http_list_len = sss_iobuf_get_len(outbuf);
 
-    root = json_loads((const char *) sec_http_list, 0, &error);
+    root = json_loadb((const char *) sec_http_list,
+                      sec_http_list_len, 0, &error);
     if (root == NULL) {
         DEBUG(SSSDBG_CRIT_FAILURE,
                 "Failed to parse JSON payload on line %d: %s\n",
@@ -2004,7 +2007,7 @@ static void ccdb_sec_delete_list_done(struct tevent_req *subreq)
         return;
     }
 
-    if (sec_key_list == 0) {
+    if (state->sec_key_list_len == 0) {
         DEBUG(SSSDBG_MINOR_FAILURE, "No ccaches to delete\n");
         tevent_req_done(req);
         return;

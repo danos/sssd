@@ -836,6 +836,7 @@ sdap_ad_tokengroups_initgr_mapping_connect_done(struct tevent_req *subreq)
 }
 
 errno_t sdap_ad_save_group_membership_with_idmapping(const char *username,
+                                               struct sdap_options *opts,
                                                struct sss_domain_info *user_dom,
                                                struct sdap_idmap_ctx *idmap_ctx,
                                                size_t num_sids,
@@ -921,6 +922,19 @@ errno_t sdap_ad_save_group_membership_with_idmapping(const char *username,
 
             ret = sysdb_add_incomplete_group(domain, name, gid,
                                              NULL, sid, NULL, false, now);
+            if (ret == ERR_GID_DUPLICATED) {
+                /* In case o group id-collision, do:
+                 * - Delete the group from sysdb
+                 * - Add the new incomplete group
+                 * - Notify the NSS responder that the entry has also to be
+                 *   removed from the memory cache
+                 */
+                ret = sdap_handle_id_collision_for_incomplete_groups(
+                                            idmap_ctx->id_ctx->be->provider,
+                                            domain, name, gid, NULL, sid, NULL,
+                                            false, now);
+            }
+
             if (ret != EOK) {
                 DEBUG(SSSDBG_MINOR_FAILURE, "Could not create incomplete "
                                              "group: [%s]\n", strerror(ret));
@@ -992,6 +1006,7 @@ static void sdap_ad_tokengroups_initgr_mapping_done(struct tevent_req *subreq)
     }
 
     ret = sdap_ad_save_group_membership_with_idmapping(state->username,
+                                                       state->opts,
                                                        state->domain,
                                                        state->idmap_ctx,
                                                        num_sids,
@@ -1220,7 +1235,18 @@ sdap_ad_tokengroups_get_posix_members(TALLOC_CTX *mem_ctx,
 
         domain = sss_get_domain_by_sid_ldap_fallback(user_domain, sid);
         if (domain == NULL) {
-            DEBUG(SSSDBG_MINOR_FAILURE, "Domain not found for SID %s\n", sid);
+            const char *check_dom;
+            const char *check_name;
+
+            ret = well_known_sid_to_name(sid, &check_dom, &check_name);
+            if (ret == EOK) {
+                DEBUG(SSSDBG_TRACE_FUNC,
+                      "Skipping SID [%s][%s\\%s] which is "
+                      "currently not handled by SSSD.\n",
+                      sid, check_dom, check_name);
+            } else {
+                DEBUG(SSSDBG_MINOR_FAILURE, "Domain not found for SID %s\n", sid);
+            }
             continue;
         }
 

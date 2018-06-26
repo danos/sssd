@@ -146,6 +146,7 @@ struct tevent_req *ad_gpo_process_som_send(TALLOC_CTX *mem_ctx,
                                            struct ldb_context *ldb_ctx,
                                            struct sdap_id_op *sdap_op,
                                            struct sdap_options *opts,
+                                           struct dp_option *ad_options,
                                            int timeout,
                                            const char *target_dn,
                                            const char *domain_name);
@@ -298,7 +299,24 @@ ad_gpo_parse_map_option_helper(enum gpo_map_type gpo_map_type,
         } else {
             /* mapping for key exists for different map type; error! */
             DEBUG(SSSDBG_CRIT_FAILURE,
-                  "PAM service %s maps to both %s and %s\n", key.str,
+                  "Configuration error: PAM service %s maps to both %s and "
+                  "%s. If you are changing the default mappings of Group "
+                  "Policy rules to PAM services using one of the ad_gpo_map_*"
+                  " options make sure that the PAM service you add to one map "
+                  "using the '+service' syntax is not already present in "
+                  "another map by default (if it is then remove it from the "
+                  "other map by using the '-service' syntax. Check manual "
+                  "pages 'man sssd-ad' for details).\n", key.str,
+                  gpo_map_type_string(val.i), gpo_map_type_string(gpo_map_type));
+            sss_log(SSS_LOG_ERR,
+                  "Configuration error: PAM service %s maps to both %s and "
+                  "%s. If you are changing the default mappings of Group "
+                  "Policy rules to PAM services using one of the ad_gpo_map_*"
+                  " options make sure that the PAM service you add to one map "
+                  "using the '+service' syntax is not already present in "
+                  "another map by default (if it is then remove it from the "
+                  "other map by using the '-service' syntax. Check manual "
+                  "pages 'man sssd-ad' for details).\n", key.str,
                   gpo_map_type_string(val.i), gpo_map_type_string(gpo_map_type));
             ret = EINVAL;
         }
@@ -1131,6 +1149,7 @@ ad_gpo_store_policy_settings(struct sss_domain_info *domain,
     int i;
     char *allow_value = NULL;
     char *deny_value = NULL;
+    const char *empty_val = "NO_SID";
     const char *allow_key = NULL;
     const char *deny_key = NULL;
     TALLOC_CTX *tmp_ctx = NULL;
@@ -1235,7 +1254,10 @@ ad_gpo_store_policy_settings(struct sss_domain_info *domain,
     }
 
     for (i = 0; i < GPO_MAP_NUM_OPTS; i++) {
-
+        /* The NO_SID val is used as special SID value for the case when
+         * no SIDs are found in the rule, but we need to store some
+         * value (SID) with the key (rule name) so that it is clear
+         * that the rule is defined on the server. */
         struct gpo_map_option_entry entry = gpo_map_option_entries[i];
 
         allow_key = entry.allow_key;
@@ -1251,9 +1273,10 @@ ad_gpo_store_policy_settings(struct sss_domain_info *domain,
                       allow_key, ret, sss_strerror(ret));
                 goto done;
             } else if (ret != ENOENT) {
+                const char *value = allow_value ? allow_value : empty_val;
                 ret = sysdb_gpo_store_gpo_result_setting(domain,
                                                          allow_key,
-                                                         allow_value);
+                                                         value);
                 if (ret != EOK) {
                     DEBUG(SSSDBG_CRIT_FAILURE,
                           "sysdb_gpo_store_gpo_result_setting failed for key:"
@@ -1277,9 +1300,10 @@ ad_gpo_store_policy_settings(struct sss_domain_info *domain,
                       deny_key, ret, sss_strerror(ret));
                 goto done;
             } else if (ret != ENOENT) {
+                const char *value = deny_value ? deny_value : empty_val;
                 ret = sysdb_gpo_store_gpo_result_setting(domain,
                                                          deny_key,
-                                                         deny_value);
+                                                         value);
                 if (ret != EOK) {
                     DEBUG(SSSDBG_CRIT_FAILURE,
                           "sysdb_gpo_store_gpo_result_setting failed for key:"
@@ -1629,7 +1653,15 @@ ad_gpo_access_send(TALLOC_CTX *mem_ctx,
 
     /* if service isn't mapped, map it to value of ad_gpo_default_right option */
     if (hret == HASH_ERROR_KEY_NOT_FOUND) {
-        DEBUG(SSSDBG_TRACE_FUNC, "using default right\n");
+        DEBUG(SSSDBG_TRACE_FUNC,
+              "Configuration hint: PAM service '%s' is not mapped to any Group"
+              " Policy rule. If you plan to use this PAM service it is "
+              "recommended to use the ad_gpo_map_* family of options to map "
+              "this PAM service to a Group Policy rule. PAM services not "
+              "present in any map will fall back to value set in "
+              "ad_gpo_default_right, which is currently set to %s (see manual "
+              "pages 'man sssd-ad' for more details).\n", service,
+              gpo_map_type_string(ctx->gpo_default_right));
         gpo_map_type = ctx->gpo_default_right;
     } else {
         gpo_map_type = (enum gpo_map_type) val.i;
@@ -1975,6 +2007,7 @@ ad_gpo_target_dn_retrieval_done(struct tevent_req *subreq)
                                      state->ldb_ctx,
                                      state->sdap_op,
                                      state->opts,
+                                     state->access_ctx->ad_options,
                                      state->timeout,
                                      state->target_dn,
                                      state->host_domain->name);
@@ -2701,6 +2734,7 @@ struct ad_gpo_process_som_state {
     struct tevent_context *ev;
     struct sdap_id_op *sdap_op;
     struct sdap_options *opts;
+    struct dp_option *ad_options;
     int timeout;
     bool allow_enforced_only;
     char *site_name;
@@ -2734,6 +2768,7 @@ ad_gpo_process_som_send(TALLOC_CTX *mem_ctx,
                         struct ldb_context *ldb_ctx,
                         struct sdap_id_op *sdap_op,
                         struct sdap_options *opts,
+                        struct dp_option *ad_options,
                         int timeout,
                         const char *target_dn,
                         const char *domain_name)
@@ -2752,6 +2787,7 @@ ad_gpo_process_som_send(TALLOC_CTX *mem_ctx,
     state->ev = ev;
     state->sdap_op = sdap_op;
     state->opts = opts;
+    state->ad_options = ad_options;
     state->timeout = timeout;
     state->som_index = 0;
     state->allow_enforced_only = 0;
@@ -2801,7 +2837,8 @@ ad_gpo_site_name_retrieval_done(struct tevent_req *subreq)
     struct tevent_req *req;
     struct ad_gpo_process_som_state *state;
     int ret;
-    char *site;
+    char *site = NULL;
+    char *site_override = NULL;
     const char *attrs[] = {AD_AT_CONFIG_NC, NULL};
 
     req = tevent_req_callback_data(subreq, struct tevent_req);
@@ -2812,16 +2849,42 @@ ad_gpo_site_name_retrieval_done(struct tevent_req *subreq)
     talloc_zfree(subreq);
 
     if (ret != EOK || site == NULL) {
-        DEBUG(SSSDBG_OP_FAILURE, "Cannot retrieve master domain info\n");
+        DEBUG(SSSDBG_TRACE_FUNC,
+              "Could not autodiscover AD site. This is not fatal if "
+              "ad_site option was set.\n");
+    }
+
+    site_override = dp_opt_get_string(state->ad_options, AD_SITE);
+    if (site_override != NULL) {
+        DEBUG(SSSDBG_TRACE_FUNC,
+              "Overriding autodiscovered AD site value '%s' with '%s' from "
+              "configuration.\n", site ? site : "none", site_override);
+    }
+
+    if (site == NULL && site_override == NULL) {
+        sss_log(SSS_LOG_WARNING,
+                "Could not autodiscover AD site value using DNS and ad_site "
+                "option was not set in configuration. GPO will not work. "
+                "To work around this issue you can use ad_site option in SSSD "
+                "configuration.");
+        DEBUG(SSSDBG_OP_FAILURE,
+              "Could not autodiscover AD site value using DNS and ad_site "
+              "option was not set in configuration. GPO will not work. "
+              "To work around this issue you can use ad_site option in SSSD "
+              "configuration.\n");
         tevent_req_error(req, ENOENT);
         return;
     }
 
-    state->site_name = talloc_asprintf(state, "cn=%s", site);
+    state->site_name = talloc_asprintf(state, "cn=%s",
+                                       site_override ? site_override
+                                                     : site);
     if (state->site_name == NULL) {
         tevent_req_error(req, ENOMEM);
         return;
     }
+
+    DEBUG(SSSDBG_TRACE_FUNC, "Using AD site '%s'.\n", state->site_name);
 
     /*
      * note: the configNC attribute is being retrieved here from the rootDSE

@@ -57,6 +57,8 @@ struct sdap_id_conn_ctx {
     struct sdap_id_conn_ctx *prev, *next;
     /* do not go offline, try another connection */
     bool ignore_mark_offline;
+    /* do not fall back to user lookups for mpg domains on this connection */
+    bool no_mpg_user_fallback;
 };
 
 struct sdap_id_ctx {
@@ -193,6 +195,7 @@ int ldap_get_options(TALLOC_CTX *memctx,
                      struct sss_domain_info *dom,
                      struct confdb_ctx *cdb,
                      const char *conf_path,
+                     struct data_provider *dp,
                      struct sdap_options **_opts);
 
 int ldap_get_sudo_options(struct confdb_ctx *cdb,

@@ -21,7 +21,7 @@ if HAVE_MANPAGES
 SUBDIRS += src/man
 endif
 
-SUBDIRS += . src/tests/cwrap src/tests/intg
+SUBDIRS += . src/tests/cwrap src/tests/intg src/tests/test_CA
 
 # Some old versions of automake don't define builddir
 builddir ?= .
@@ -175,13 +175,11 @@ endif
 if BUILD_SEMANAGE
 sssdlibexec_PROGRAMS += selinux_child
 endif
-if HAVE_NSS
 sssdlibexec_PROGRAMS += p11_child
 if SSSD_USER
 if HAVE_POLKIT_RULES_D
 polkit_rulesdir = $(polkitdir)
 dist_polkit_rules_DATA = contrib/sssd-pcsc.rules
-endif
 endif
 endif
 if BUILD_SECRETS
@@ -275,6 +273,7 @@ if HAVE_CMOCKA
         test_sbus_opath \
         test_fo_srv \
         pam-srv-tests \
+        ssh-srv-tests \
         test_ipa_subdom_util \
         test_tools_colondb \
         test_krb5_wait_queue \
@@ -477,10 +476,6 @@ dist_noinst_DATA = \
     contrib/ci/distro.sh \
     contrib/ci/misc.sh \
     contrib/ci/sssd.supp \
-    src/tests/cmocka/p11_nssdb/cert9.db \
-    src/tests/cmocka/p11_nssdb/key4.db \
-    src/tests/cmocka/p11_nssdb_2certs/cert9.db \
-    src/tests/cmocka/p11_nssdb_2certs/key4.db \
     $(SYSTEMTAP_PROBES) \
     $(NULL)
 
@@ -501,7 +496,6 @@ AM_CPPFLAGS = \
     $(LDB_CFLAGS) \
     $(DBUS_CFLAGS) \
     $(PCRE_CFLAGS) \
-    $(COLLECTION_CFLAGS) \
     $(INI_CONFIG_CFLAGS) \
     $(DHASH_CFLAGS) \
     $(LIBNL_CFLAGS) \
@@ -616,11 +610,7 @@ SSSD_LIBS = \
     $(POPT_LIBS) \
     $(LDB_LIBS) \
     $(DBUS_LIBS) \
-    $(PCRE_LIBS) \
-    $(INI_CONFIG_LIBS) \
-    $(COLLECTION_LIBS) \
     $(DHASH_LIBS) \
-    $(OPENLDAP_LIBS) \
     $(SELINUX_LIBS) \
     $(TDB_LIBS)
 
@@ -637,11 +627,7 @@ TOOLS_LIBS = \
     $(POPT_LIBS) \
     $(LDB_LIBS) \
     $(DBUS_LIBS) \
-    $(PCRE_LIBS) \
-    $(INI_CONFIG_LIBS) \
-    $(COLLECTION_LIBS) \
     $(DHASH_LIBS) \
-    $(OPENLDAP_LIBS) \
     $(TDB_LIBS)
 
 if BUILD_SELINUX
@@ -855,6 +841,7 @@ dist_noinst_HEADERS = \
     src/shared/io.h \
     src/shared/murmurhash3.h \
     src/shared/safealign.h \
+    src/p11_child/p11_child.h \
     $(NULL)
 
 
@@ -925,6 +912,7 @@ if HAVE_NSS
 
     SSS_CERT_SOURCES = \
         src/util/cert/cert_common.c \
+        src/util/cert/cert_common_p11_child.c \
         src/util/cert/nss/cert.c \
         $(NULL)
     SSS_CERT_CFLAGS = \
@@ -947,6 +935,7 @@ else
 
     SSS_CERT_SOURCES = \
         src/util/cert/cert_common.c \
+        src/util/cert/cert_common_p11_child.c \
         src/util/cert/libcrypto/cert.c \
         $(NULL)
     SSS_CERT_CFLAGS = \
@@ -984,6 +973,7 @@ libsss_cert_la_CFLAGS = \
 libsss_cert_la_LIBADD = \
     $(SSS_CERT_LIBS) \
     $(TALLOC_LIBS) \
+    $(TEVENT_LIBS) \
     libsss_crypt.la \
     libsss_debug.la \
     libsss_certmap.la \
@@ -1070,6 +1060,8 @@ libsss_util_la_LIBADD = \
     $(SSSD_LIBS) \
     $(SYSTEMD_LOGIN_LIBS) \
     $(UNICODE_LIBS) \
+    $(PCRE_LIBS) \
+    $(INI_CONFIG_LIBS) \
     libsss_debug.la \
     libsss_child.la \
     libsss_crypt.la \
@@ -1179,7 +1171,7 @@ libsss_nss_idmap_la_LIBADD = \
     $(NULL)
 libsss_nss_idmap_la_LDFLAGS = \
     -Wl,--version-script,$(srcdir)/src/sss_client/idmap/sss_nss_idmap.exports \
-    -version-info 4:0:4
+    -version-info 5:0:5
 
 dist_noinst_DATA += src/sss_client/idmap/sss_nss_idmap.exports
 
@@ -1526,7 +1518,6 @@ sssd_secrets_LDADD = \
     $(TDB_LIBS) \
     $(SSSD_LIBS) \
     $(SYSTEMD_DAEMON_LIBS) \
-    $(CARES_LIBS) \
     $(SSSD_INTERNAL_LTLIBS) \
     $(CURL_LIBS) \
     $(NULL)
@@ -1721,11 +1712,10 @@ sss_seed_LDADD = \
 
 sss_signal_SOURCES = \
     src/tools/sss_signal.c \
-    $(SSSD_TOOLS_OBJ) \
+    src/tools/common/sss_process.c
     $(NULL)
 sss_signal_LDADD = \
-    $(TOOLS_LIBS) \
-    $(SSSD_INTERNAL_LTLIBS) \
+    libsss_debug.la \
     $(NULL)
 
 sss_override_SOURCES = \
@@ -1756,6 +1746,7 @@ sssctl_SOURCES = \
     $(NULL)
 sssctl_LDADD = \
     $(TOOLS_LIBS) \
+    $(INI_CONFIG_LIBS) \
     $(SSSD_INTERNAL_LTLIBS) \
     $(PAM_LIBS) \
     $(PAM_MISC_LIBS) \
@@ -2015,6 +2006,7 @@ krb5_utils_tests_LDADD = \
     $(CARES_LIBS) \
     $(KRB5_LIBS) \
     $(CHECK_LIBS) \
+    $(PCRE_LIBS) \
     $(SSSD_INTERNAL_LTLIBS) \
     libsss_test_common.la
 
@@ -2294,6 +2286,7 @@ krb5_child_test_LDADD = \
     $(CARES_LIBS) \
     $(KRB5_LIBS) \
     $(CHECK_LIBS) \
+    $(PCRE_LIBS) \
     $(SSSD_INTERNAL_LTLIBS) \
     libsss_test_common.la
 
@@ -2396,9 +2389,7 @@ nss_srv_tests_LDADD = \
 EXTRA_pam_srv_tests_DEPENDENCIES = \
     $(ldblib_LTLIBRARIES) \
     $(NULL)
-if HAVE_NSS
 EXTRA_pam_srv_tests_DEPENDENCIES += p11_child
-endif
 pam_srv_tests_SOURCES = \
     $(TEST_MOCK_RESP_OBJ) \
     src/tests/cmocka/test_pam_srv.c \
@@ -2411,6 +2402,7 @@ pam_srv_tests_SOURCES = \
     $(NULL)
 pam_srv_tests_CFLAGS = \
     -U SSSD_LIBEXEC_PATH -DSSSD_LIBEXEC_PATH=\"$(abs_builddir)\" \
+    -I$(abs_builddir)/src \
     $(AM_CFLAGS) \
     $(NULL)
 pam_srv_tests_LDFLAGS = \
@@ -2429,6 +2421,39 @@ pam_srv_tests_LDADD = \
     libsss_test_common.la \
     libsss_idmap.la \
     libsss_certmap.la \
+    $(NULL)
+
+EXTRA_ssh_srv_tests_DEPENDENCIES = \
+    $(ldblib_LTLIBRARIES) \
+    $(NULL)
+EXTRA_ssh_srv_tests_DEPENDENCIES += p11_child
+ssh_srv_tests_SOURCES = \
+    $(TEST_MOCK_RESP_OBJ) \
+    src/tests/cmocka/test_ssh_srv.c \
+    src/responder/ssh/ssh_cmd.c \
+    src/responder/ssh/ssh_known_hosts.c \
+    src/responder/ssh/ssh_protocol.c \
+    src/responder/ssh/ssh_reply.c \
+    src/util/cert/cert_common_p11_child.c \
+    $(NULL)
+ssh_srv_tests_CFLAGS = \
+    -U SSSD_LIBEXEC_PATH -DSSSD_LIBEXEC_PATH=\"$(abs_builddir)\" \
+    -I$(abs_builddir)/src \
+    $(AM_CFLAGS) \
+    $(NULL)
+ssh_srv_tests_LDFLAGS = \
+    -Wl,-wrap,sss_packet_get_body \
+    -Wl,-wrap,sss_packet_get_cmd \
+    -Wl,-wrap,sss_cmd_send_empty \
+    -Wl,-wrap,sss_cmd_done \
+    -Wl,-wrap,ssh_dp_send_req \
+    $(NULL)
+ssh_srv_tests_LDADD = \
+    $(CMOCKA_LIBS) \
+    $(SSSD_LIBS) \
+    $(SSSD_INTERNAL_LTLIBS) \
+    $(SYSTEMD_DAEMON_LIBS) \
+    libsss_test_common.la \
     $(NULL)
 
 EXTRA_responder_get_domains_tests_DEPENDENCIES = \
@@ -2606,6 +2631,7 @@ nestedgroups_tests_CFLAGS = \
     $(NULL)
 nestedgroups_tests_LDADD = \
     $(CMOCKA_LIBS) \
+    $(OPENLDAP_LIBS) \
     $(SSSD_LIBS) \
     $(SSSD_INTERNAL_LTLIBS) \
     libsss_idmap.la \
@@ -2743,6 +2769,7 @@ ad_gpo_tests_CFLAGS = \
     $(NULL)
 ad_gpo_tests_LDADD = \
     $(CMOCKA_LIBS) \
+    $(OPENLDAP_LIBS) \
     $(SSSD_LIBS) \
     $(SSSD_INTERNAL_LTLIBS) \
     $(NDR_NBT_LIBS) \
@@ -3283,9 +3310,12 @@ test_krb5_wait_queue_LDADD = \
 
 test_cert_utils_SOURCES = \
     src/tests/cmocka/test_cert_utils.c \
+    src/util/cert/cert_common_p11_child.c \
     $(NULL)
 test_cert_utils_CFLAGS = \
     $(AM_CFLAGS) \
+    -U SSSD_LIBEXEC_PATH -DSSSD_LIBEXEC_PATH=\"$(abs_builddir)\" \
+    -I$(abs_builddir)/src \
     $(CRYPTO_CFLAGS) \
     $(NULL)
 test_cert_utils_LDADD = \
@@ -3393,18 +3423,13 @@ test_ipa_dn_SOURCES = \
     src/providers/ipa/ipa_dn.c \
     src/tests/cmocka/test_ipa_dn.c \
     $(NULL)
-test_ipa_dn_CFLAGS = \
-    $(AM_CFLAGS) \
-    -DUNIT_TESTING \
-    $(NULL)
-test_ipa_dn_LDFLAGS = \
-    -Wl,-wrap,_tevent_add_timer \
-    $(NULL)
 test_ipa_dn_LDADD = \
     $(CMOCKA_LIBS) \
-    $(SSSD_LIBS) \
+    $(POPT_LIBS) \
+    $(LDB_LIBS) \
+    $(TEVENT_LIBS) \
+    $(TALLOC_LIBS) \
     $(SSSD_INTERNAL_LTLIBS) \
-    $(LIBADD_DL) \
     libsss_test_common.la \
     $(NULL)
 
@@ -3481,6 +3506,7 @@ sss_certmap_test_SOURCES = \
 sss_certmap_test_CFLAGS = \
     $(AM_CFLAGS) \
     $(NSS_CFLAGS) \
+    -I$(abs_builddir)/src \
     $(NULL)
 sss_certmap_test_LDADD = \
     $(CMOCKA_LIBS) \
@@ -4146,7 +4172,6 @@ krb5_child_CFLAGS = \
     $(AM_CFLAGS) \
     $(POPT_CFLAGS) \
     $(KRB5_CFLAGS) \
-    $(PCRE_CFLAGS) \
     $(SYSTEMD_LOGIN_CFLAGS) \
     $(NULL)
 krb5_child_LDADD = \
@@ -4156,7 +4181,6 @@ krb5_child_LDADD = \
     $(DHASH_LIBS) \
     $(KRB5_LIBS) \
     $(CLIENT_LIBS) \
-    $(PCRE_LIBS) \
     $(SYSTEMD_LOGIN_LIBS) \
     $(NULL)
 
@@ -4240,24 +4264,51 @@ proxy_child_LDADD = \
     $(SSSD_INTERNAL_LTLIBS)
 
 p11_child_SOURCES = \
-    src/p11_child/p11_child_nss.c \
+    src/p11_child/p11_child_common.c \
     src/util/atomic_io.c \
     src/util/util.c \
     src/util/util_ext.c \
     $(NULL)
+if HAVE_NSS
+p11_child_SOURCES += src/p11_child/p11_child_nss.c
+else
+p11_child_SOURCES += src/p11_child/p11_child_openssl.c
+endif
+
 p11_child_CFLAGS = \
     $(AM_CFLAGS) \
     $(POPT_CFLAGS) \
+    $(NULL)
+if HAVE_NSS
+p11_child_CFLAGS += \
     $(NSS_CFLAGS) \
     $(NULL)
+else
+p11_child_CFLAGS += \
+    $(P11_KIT_CFLAGS) \
+    $(CRYPTO_CFLAGS) \
+    $(SSL_CFLAGS) \
+    $(NULL)
+endif
+
 p11_child_LDADD = \
     libsss_debug.la \
     $(TALLOC_LIBS) \
     $(DHASH_LIBS) \
     $(POPT_LIBS) \
-    $(NSS_LIBS) \
     libsss_crypt.la \
     $(NULL)
+if HAVE_NSS
+p11_child_LDADD += \
+    $(NSS_LIBS) \
+    $(NULL)
+else
+p11_child_LDADD += \
+    $(P11_KIT_LIBS) \
+    $(CRYPTO_LIBS) \
+    $(SSL_LIBS) \
+    $(NULL)
+endif
 
 memberof_la_SOURCES = \
     src/ldb_modules/memberof.c \
@@ -4577,7 +4628,8 @@ dist_sssdapiplugin_DATA = \
     src/config/etc/sssd.api.d/sssd-ldap.conf \
     src/config/etc/sssd.api.d/sssd-local.conf \
     src/config/etc/sssd.api.d/sssd-proxy.conf \
-    src/config/etc/sssd.api.d/sssd-simple.conf
+    src/config/etc/sssd.api.d/sssd-simple.conf \
+    src/config/etc/sssd.api.d/sssd-files.conf
 
 edit_cmd = $(SED) \
         -e 's|@sbindir[@]|$(sbindir)|g' \
@@ -4749,6 +4801,7 @@ SSSD_USER_DIRS = \
     $(DESTDIR)$(gpocachepath) \
     $(DESTDIR)$(sssdconfdir) \
     $(DESTDIR)$(sssdconfdir)/conf.d \
+    $(DESTDIR)$(sssdconfdir)/pki \
     $(DESTDIR)$(sssddefaultconfdir) \
     $(DESTDIR)$(logpath) \
     $(DESTDIR)$(deskprofilepath) \
@@ -4786,7 +4839,8 @@ endif
             $(DESTDIR)$(pubconfpath) \
             $(DESTDIR)$(pubconfpath)/krb5.include.d $(DESTDIR)$(gpocachepath)
 	$(INSTALL) -d -m 0711 $(DESTDIR)$(sssdconfdir) \
-                          $(DESTDIR)$(sssdconfdir)/conf.d
+                          $(DESTDIR)$(sssdconfdir)/conf.d \
+                          $(DESTDIR)$(sssdconfdir)/pki
 if BUILD_SECRETS
 	$(MKDIR_P) $(DESTDIR)$(secdbpath)
 endif
@@ -4973,6 +5027,17 @@ endif
 	rm -f $(builddir)/src/tools/wrappers/sss_debuglevel
 
 CLEANFILES += *.X */*.X */*/*.X
+
+test_CA: test_CA.stamp
+
+test_CA.stamp: $(srcdir)/src/tests/test_CA/*
+	$(MAKE) -C src/tests/test_CA ca_all
+	touch $@
+
+if BUILD_TEST_CA
+BUILT_SOURCES += test_CA
+endif
+CLEANFILES += test_CA.stamp
 
 tests: all $(check_PROGRAMS)
 	(cd src/tests/cwrap && $(MAKE) $(AM_MAKEFLAGS) $@) || exit 1;

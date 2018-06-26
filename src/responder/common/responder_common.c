@@ -441,29 +441,7 @@ static void client_fd_handler(struct tevent_context *ev,
                               struct tevent_fd *fde,
                               uint16_t flags, void *ptr)
 {
-    errno_t ret;
-    struct cli_ctx *cctx = talloc_get_type(ptr, struct cli_ctx);
-
-    /* Always reset the idle timer on any activity */
-    cctx->rctx->last_request_time = time(NULL);
-
-    /* Always reset the idle timer on any activity */
-    ret = reset_client_idle_timer(cctx);
-    if (ret != EOK) {
-        DEBUG(SSSDBG_CRIT_FAILURE,
-              "Could not create idle timer for client. "
-               "This connection may not auto-terminate\n");
-        /* Non-fatal, continue */
-    }
-
-    if (flags & TEVENT_FD_READ) {
-        client_recv(cctx);
-        return;
-    }
-    if (flags & TEVENT_FD_WRITE) {
-        client_send(cctx);
-        return;
-    }
+    sss_client_fd_handler(ptr, client_recv, client_send, flags);
 }
 
 static errno_t setup_client_idle_timer(struct cli_ctx *cctx);
@@ -982,6 +960,37 @@ done:
     return ret;
 }
 
+void sss_client_fd_handler(void *ptr,
+                           void (*recv_fn) (struct cli_ctx *cctx),
+                           void (*send_fn) (struct cli_ctx *cctx),
+                           uint16_t flags)
+{
+    errno_t ret;
+    struct cli_ctx *cctx = talloc_get_type(ptr, struct cli_ctx);
+
+    /* Always reset the responder idle timer on any activity */
+    cctx->rctx->last_request_time = time(NULL);
+
+    /* Always reset the client idle timer on any activity */
+    ret = reset_client_idle_timer(cctx);
+    if (ret != EOK) {
+        DEBUG(SSSDBG_CRIT_FAILURE,
+              "Could not create idle timer for the client. "
+              "This connection may not auto-terminate.\n");
+        /* Non-fatal, continue */
+    }
+
+    if (flags & TEVENT_FD_READ) {
+        recv_fn(cctx);
+        return;
+    }
+
+    if (flags & TEVENT_FD_WRITE) {
+        send_fn(cctx);
+        return;
+    }
+}
+
 int sss_connection_setup(struct cli_ctx *cctx)
 {
     cctx->protocol_ctx = talloc_zero(cctx, struct cli_protocol);
@@ -1036,7 +1045,8 @@ static errno_t responder_init_ncache(TALLOC_CTX *mem_ctx,
     /* local_timeout */
     ret = confdb_get_int(cdb, CONFDB_NSS_CONF_ENTRY,
                          CONFDB_RESPONDER_LOCAL_NEG_TIMEOUT,
-                         0, &tmp_value);
+                         CONFDB_RESPONDER_LOCAL_NEG_TIMEOUT_DEFAULT,
+                         &tmp_value);
     if (ret != EOK) {
         DEBUG(SSSDBG_FATAL_FAILURE,
               "Fatal failure of setup negative cache timeout.\n");

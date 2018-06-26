@@ -165,21 +165,23 @@ static int sc_set_seuser(const char *login_name, const char *seuser_name,
     return ret;
 }
 
-static bool seuser_needs_update(struct input_buffer *ibuf)
+static bool seuser_needs_update(const char *username,
+                                const char *seuser,
+                                const char *mls_range)
 {
     bool needs_update = true;
     char *db_seuser = NULL;
     char *db_mls_range = NULL;
     errno_t ret;
 
-    ret = sss_get_seuser(ibuf->username, &db_seuser, &db_mls_range);
+    ret = sss_get_seuser(username, &db_seuser, &db_mls_range);
     DEBUG(SSSDBG_TRACE_INTERNAL,
           "getseuserbyname: ret: %d seuser: %s mls: %s\n",
           ret, db_seuser ? db_seuser : "unknown",
           db_mls_range ? db_mls_range : "unknown");
     if (ret == EOK && db_seuser && db_mls_range &&
-            strcmp(db_seuser, ibuf->seuser) == 0 &&
-            strcmp(db_mls_range, ibuf->mls_range) == 0) {
+            strcmp(db_seuser, seuser) == 0 &&
+            strcmp(db_mls_range, mls_range) == 0) {
         needs_update = false;
     }
     /* OR */
@@ -203,8 +205,10 @@ int main(int argc, const char *argv[])
     ssize_t len = 0;
     struct input_buffer *ibuf = NULL;
     struct response *resp = NULL;
+    struct passwd *passwd = NULL;
     ssize_t written;
     bool needs_update;
+    const char *username;
     const char *opt_logger = NULL;
 
     struct poptOption long_options[] = {
@@ -262,6 +266,22 @@ int main(int argc, const char *argv[])
     DEBUG(SSSDBG_TRACE_INTERNAL,
           "Running with effective IDs: [%"SPRIuid"][%"SPRIgid"].\n",
           geteuid(), getegid());
+
+    /* The functions semanage_genhomedircon and getseuserbyname use gepwnam_r
+     * and they might fail to return values if they are not in memory cache.
+     *   [main] (0x0400): performing selinux operations
+     *   [seuser_needs_update] (0x2000): getseuserbyname: ret: 0
+     *                                   seuser: unconfined_u mls: s0-s0:c0.c15
+     *   [libsemanage] (0x0020): semanage_genhomedircon returned error code -1.
+     *   [sss_set_seuser] (0x0020): Cannot commit SELinux transaction
+     *   [main] (0x0020): Cannot set SELinux login context.
+     *   [main] (0x0020): selinux_child failed!
+     */
+    if (unsetenv("_SSS_LOOPS") != 0) {
+        DEBUG(SSSDBG_CRIT_FAILURE,
+              "Failed to unset _SSS_LOOPS, some libsemanage functions might "
+              "fail.\n");
+    }
 
     /* libsemanage calls access(2) which works with real IDs, not effective.
      * We need to switch also the real ID to 0.
@@ -329,9 +349,28 @@ int main(int argc, const char *argv[])
 
     DEBUG(SSSDBG_TRACE_FUNC, "performing selinux operations\n");
 
-    needs_update = seuser_needs_update(ibuf);
+    /* When using domain_resolution_order the username will always be
+     * fully-qualified, what has been causing some SELinux issues as mappings
+     * for user 'admin' are not applied for 'admin@ipa.example'.
+     *
+     * In order to work this around we can take advantage that selinux_child
+     * queries SSSD since commit 92addd7ba and call getpwnam() in order to get
+     * the username in the correct format. */
+    passwd = getpwnam(ibuf->username);
+    if (passwd == NULL) {
+        username = ibuf->username;
+        DEBUG(SSSDBG_MINOR_FAILURE,
+              "getpwnam() failed to get info for the user \"%s\". SELinux label "
+              "setting might fail as well!\n",
+              ibuf->username);
+    } else {
+        username = passwd->pw_name;
+    }
+
+    needs_update = seuser_needs_update(username, ibuf->seuser,
+                                       ibuf->mls_range);
     if (needs_update == true) {
-        ret = sc_set_seuser(ibuf->username, ibuf->seuser, ibuf->mls_range);
+        ret = sc_set_seuser(username, ibuf->seuser, ibuf->mls_range);
         if (ret != EOK) {
             DEBUG(SSSDBG_CRIT_FAILURE, "Cannot set SELinux login context.\n");
             goto fail;

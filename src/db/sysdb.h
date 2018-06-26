@@ -258,6 +258,8 @@
                            SYSDB_OVERRIDE_OBJECT_DN, \
                            SYSDB_DEFAULT_OVERRIDE_NAME, \
                            SYSDB_UUID, \
+                           ORIGINALAD_PREFIX SYSDB_NAME, \
+                           ORIGINALAD_PREFIX SYSDB_GIDNUM, \
                            NULL}
 
 #define SYSDB_NETGR_ATTRS {SYSDB_NAME, SYSDB_NETGROUP_TRIPLE, \
@@ -779,6 +781,12 @@ int sysdb_getgrgid(TALLOC_CTX *mem_ctx,
                    gid_t gid,
                    struct ldb_result **res);
 
+int sysdb_getgrgid_attrs(TALLOC_CTX *mem_ctx,
+                         struct sss_domain_info *domain,
+                         gid_t gid,
+                         const char **attrs,
+                         struct ldb_result **res);
+
 int sysdb_enumgrent(TALLOC_CTX *mem_ctx,
                     struct sss_domain_info *domain,
                     struct ldb_result **res);
@@ -1219,7 +1227,8 @@ errno_t sysdb_attrs_to_list(TALLOC_CTX *mem_ctx,
 
 errno_t sysdb_netgr_to_entries(TALLOC_CTX *mem_ctx,
                                struct ldb_result *res,
-                               struct sysdb_netgroup_ctx ***entries);
+                               struct sysdb_netgroup_ctx ***entries,
+                               size_t *netgroup_count);
 
 errno_t sysdb_dn_sanitize(TALLOC_CTX *mem_ctx, const char *input,
                           char **sanitized);

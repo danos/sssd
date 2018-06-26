@@ -38,7 +38,7 @@
         </para>
 
         <para>
-            A line comment starts with a hash sign (<quote>#</quote>) or a
+            A comment line starts with a hash sign (<quote>#</quote>) or a
             semicolon (<quote>;</quote>).
             Inline comments are not supported.
         </para>
@@ -563,7 +563,8 @@
                                 Please, note that when this option is set the
                                 output format of all commands is always
                                 fully-qualified even when using short names
-                                for input.
+                                for input, for all users but the ones managed
+                                by the files provider.
                                 In case the administrator wants the output not
                                 fully-qualified, the full_name_format option
                                 can be used as shown below:
@@ -579,7 +580,7 @@
                                 qualified input (while trying to reach a user
                                 which exists in multiple domains) might
                                 re-route the login attempt into the domain
-                                which users shortnames, making this workaround
+                                which uses shortnames, making this workaround
                                 totally not recommended in cases where
                                 usernames may overlap between domains.
                             </para>
@@ -796,10 +797,11 @@
                         <para>
                             Specifies for how many seconds nss_sss should keep
                             local users and groups in negative cache before
-                            trying to look it up in the back end again.
+                            trying to look it up in the back end again. Setting
+                            the option to 0 disables this feature.
                         </para>
                         <para>
-                            Default: 0
+                            Default: 14400 (4 hours)
                         </para>
                     </listitem>
                 </varlistentry>
@@ -1344,7 +1346,22 @@ pam_account_locked_message = Account locked, please contact help desk.
                             the PKCS#11 modules to access the Smartcard.
                         </para>
                         <para>
-                            Default: /etc/pki/nssdb (NSS version)
+                            Default:
+                            <itemizedlist>
+                                <listitem><para>/etc/pki/nssdb (NSS version,
+                                                path to a NSS
+                                                database)</para></listitem>
+                                <listitem><para>/etc/sssd/pki/sssd_auth_ca_db.pem
+                                                (OpenSSL version, path to a file
+                                                with trusted CA certificates in
+                                                PEM format)</para></listitem>
+                            </itemizedlist>
+                        </para>
+                        <para condition="with_nss">
+                            This man page was generated for the NSS version.
+                        </para>
+                        <para condition="with_openssl">
+                            This man page was generated for the OpenSSL version.
                         </para>
                     </listitem>
                 </varlistentry>
@@ -1488,6 +1505,24 @@ pam_account_locked_message = Account locked, please contact help desk.
                     </listitem>
                 </varlistentry>
                 <varlistentry>
+                    <term>ssh_use_certificate_keys (bool)</term>
+                    <listitem>
+                        <para>
+                            If set to true the
+                            <command>sss_ssh_authorizedkeys</command> will
+                            return ssh keys derived from the public key of X.509
+                            certificates stored in the user entry as well. See
+                            <citerefentry>
+                                <refentrytitle>sss_ssh_authorizedkeys</refentrytitle>
+                                <manvolnum>1</manvolnum>
+                            </citerefentry> for details.
+                        </para>
+                        <para>
+                            Default: true
+                        </para>
+                    </listitem>
+                </varlistentry>
+                <varlistentry>
                     <term>ca_db (string)</term>
                     <listitem>
                         <para>
@@ -1496,7 +1531,22 @@ pam_account_locked_message = Account locked, please contact help desk.
                             deriving public ssh keys from them.
                         </para>
                         <para>
-                            Default: /etc/pki/nssdb
+                            Default:
+                            <itemizedlist>
+                                <listitem><para>/etc/pki/nssdb (NSS version,
+                                                path to a NSS
+                                                database)</para></listitem>
+                                <listitem><para>/etc/sssd/pki/sssd_auth_ca_db.pem
+                                                (OpenSSL version, path to a file
+                                                with trusted CA certificates in
+                                                PEM format)</para></listitem>
+                            </itemizedlist>
+                        </para>
+                        <para condition="with_nss">
+                            This man page was generated for the NSS version.
+                        </para>
+                        <para condition="with_openssl">
+                            This man page was generated for the OpenSSL version.
                         </para>
                     </listitem>
                 </varlistentry>
@@ -2053,11 +2103,19 @@ pam_account_locked_message = Account locked, please contact help desk.
                             Supported ID providers are:
                         </para>
                         <para>
-                            <quote>proxy</quote>: Support a legacy NSS provider
+                            <quote>proxy</quote>: Support a legacy NSS provider.
                         </para>
                         <para>
                             <quote>local</quote>: SSSD internal provider for
-                            local users
+                            local users (DEPRECATED).
+                        </para>
+                        <para>
+                            <quote>files</quote>: FILES provider. See
+                            <citerefentry>
+                                <refentrytitle>sssd-files</refentrytitle>
+                                <manvolnum>5</manvolnum>
+                            </citerefentry> for more information on
+                            how to mirror local users and groups into SSSD.
                         </para>
                         <para>
                             <quote>ldap</quote>:  LDAP provider. See

@@ -30,7 +30,8 @@ import config
 import ds_openldap
 import ldap_ent
 from util import unindent
-import sssd_netgroup
+from sssd_nss import NssReturnCode
+from sssd_netgroup import get_sssd_netgroups
 
 LDAP_BASE_DN = "dc=example,dc=com"
 
@@ -105,6 +106,8 @@ def format_basic_conf(ldap_conn, schema):
         domains             = LDAP
         services            = nss
         disable_netlink     = true
+
+        [nss]
 
         [domain/LDAP]
         {schema_conf}
@@ -208,8 +211,8 @@ def test_add_empty_netgroup(add_empty_netgroup):
     Adding empty netgroup.
     """
 
-    res, _, netgroups = sssd_netgroup.get_sssd_netgroups("empty_netgroup")
-    assert res == sssd_netgroup.NssReturnCode.SUCCESS
+    res, _, netgroups = get_sssd_netgroups("empty_netgroup")
+    assert res == NssReturnCode.SUCCESS
     assert netgroups == []
 
 
@@ -221,6 +224,14 @@ def add_tripled_netgroup(request, ldap_conn):
 
     ent_list.add_netgroup("adv_tripled_netgroup", ["(host1,user1,domain1)",
                                                    "(host2,user2,domain2)"])
+
+    ent_list.add_netgroup("tripled_netgroup_no_domain", ["(host,user,)"])
+
+    ent_list.add_netgroup("tripled_netgroup_no_user", ["(host,,domain)"])
+
+    ent_list.add_netgroup("tripled_netgroup_no_host", ["(,user,domain)"])
+
+    ent_list.add_netgroup("tripled_netgroup_none", ["(,,)"])
 
     create_ldap_fixture(request, ldap_conn, ent_list)
     conf = format_basic_conf(ldap_conn, SCHEMA_RFC2307_BIS)
@@ -234,14 +245,30 @@ def test_add_tripled_netgroup(add_tripled_netgroup):
     Adding netgroup with triplet.
     """
 
-    res, _, netgrps = sssd_netgroup.get_sssd_netgroups("tripled_netgroup")
-    assert res == sssd_netgroup.NssReturnCode.SUCCESS
+    res, _, netgrps = get_sssd_netgroups("tripled_netgroup")
+    assert res == NssReturnCode.SUCCESS
     assert netgrps == [("host", "user", "domain")]
 
-    res, _, netgrps = sssd_netgroup.get_sssd_netgroups("adv_tripled_netgroup")
-    assert res == sssd_netgroup.NssReturnCode.SUCCESS
+    res, _, netgrps = get_sssd_netgroups("adv_tripled_netgroup")
+    assert res == NssReturnCode.SUCCESS
     assert sorted(netgrps) == sorted([("host1", "user1", "domain1"),
                                       ("host2", "user2", "domain2")])
+
+    res, _, netgrps = get_sssd_netgroups("tripled_netgroup_no_domain")
+    assert res == NssReturnCode.SUCCESS
+    assert netgrps == [("host", "user", "")]
+
+    res, _, netgrps = get_sssd_netgroups("tripled_netgroup_no_user")
+    assert res == NssReturnCode.SUCCESS
+    assert netgrps == [("host", "", "domain")]
+
+    res, _, netgrps = get_sssd_netgroups("tripled_netgroup_no_host")
+    assert res == NssReturnCode.SUCCESS
+    assert netgrps == [("", "user", "domain")]
+
+    res, _, netgrps = get_sssd_netgroups("tripled_netgroup_none")
+    assert res == NssReturnCode.SUCCESS
+    assert netgrps == [("", "", "")]
 
 
 @pytest.fixture
@@ -282,43 +309,43 @@ def test_add_mixed_netgroup(add_mixed_netgroup):
     Adding many netgroups of different type.
     """
 
-    res, _, netgroups = sssd_netgroup.get_sssd_netgroups("mixed_netgroup1")
-    assert res == sssd_netgroup.NssReturnCode.SUCCESS
+    res, _, netgroups = get_sssd_netgroups("mixed_netgroup1")
+    assert res == NssReturnCode.SUCCESS
     assert netgroups == []
 
-    res, _, netgroups = sssd_netgroup.get_sssd_netgroups("mixed_netgroup2")
-    assert res == sssd_netgroup.NssReturnCode.SUCCESS
+    res, _, netgroups = get_sssd_netgroups("mixed_netgroup2")
+    assert res == NssReturnCode.SUCCESS
     assert netgroups == []
 
-    res, _, netgroups = sssd_netgroup.get_sssd_netgroups("mixed_netgroup3")
-    assert res == sssd_netgroup.NssReturnCode.SUCCESS
+    res, _, netgroups = get_sssd_netgroups("mixed_netgroup3")
+    assert res == NssReturnCode.SUCCESS
     assert netgroups == [("host1", "user1", "domain1")]
 
-    res, _, netgroups = sssd_netgroup.get_sssd_netgroups("mixed_netgroup4")
-    assert res == sssd_netgroup.NssReturnCode.SUCCESS
+    res, _, netgroups = get_sssd_netgroups("mixed_netgroup4")
+    assert res == NssReturnCode.SUCCESS
     assert sorted(netgroups) == sorted([("host2", "user2", "domain2"),
                                         ("host3", "user3", "domain3")])
 
-    res, _, netgroups = sssd_netgroup.get_sssd_netgroups("mixed_netgroup5")
-    assert res == sssd_netgroup.NssReturnCode.SUCCESS
+    res, _, netgroups = get_sssd_netgroups("mixed_netgroup5")
+    assert res == NssReturnCode.SUCCESS
     assert netgroups == [("host4", "user4", "domain4")]
 
-    res, _, netgroups = sssd_netgroup.get_sssd_netgroups("mixed_netgroup6")
-    assert res == sssd_netgroup.NssReturnCode.SUCCESS
+    res, _, netgroups = get_sssd_netgroups("mixed_netgroup6")
+    assert res == NssReturnCode.SUCCESS
     assert netgroups == [("host5", "user5", "domain5")]
 
-    res, _, netgroups = sssd_netgroup.get_sssd_netgroups("mixed_netgroup7")
-    assert res == sssd_netgroup.NssReturnCode.SUCCESS
+    res, _, netgroups = get_sssd_netgroups("mixed_netgroup7")
+    assert res == NssReturnCode.SUCCESS
     assert netgroups == [("host1", "user1", "domain1")]
 
-    res, _, netgroups = sssd_netgroup.get_sssd_netgroups("mixed_netgroup8")
-    assert res == sssd_netgroup.NssReturnCode.SUCCESS
+    res, _, netgroups = get_sssd_netgroups("mixed_netgroup8")
+    assert res == NssReturnCode.SUCCESS
     assert sorted(netgroups) == sorted([("host1", "user1", "domain1"),
                                         ("host2", "user2", "domain2"),
                                         ("host3", "user3", "domain3")])
 
-    res, _, netgroups = sssd_netgroup.get_sssd_netgroups("mixed_netgroup9")
-    assert res == sssd_netgroup.NssReturnCode.SUCCESS
+    res, _, netgroups = get_sssd_netgroups("mixed_netgroup9")
+    assert res == NssReturnCode.SUCCESS
     assert sorted(netgroups) == sorted([("host1", "user1", "domain1"),
                                         ("host2", "user2", "domain2"),
                                         ("host3", "user3", "domain3"),
@@ -348,12 +375,12 @@ def test_remove_step_by_step(remove_step_by_step, ldap_conn):
 
     ent_list = remove_step_by_step
 
-    res, _, netgroups = sssd_netgroup.get_sssd_netgroups("rm_empty_netgroup1")
-    assert res == sssd_netgroup.NssReturnCode.SUCCESS
+    res, _, netgroups = get_sssd_netgroups("rm_empty_netgroup1")
+    assert res == NssReturnCode.SUCCESS
     assert netgroups == [('host1', 'user1', 'domain1')]
 
-    res, _, netgroups = sssd_netgroup.get_sssd_netgroups("rm_empty_netgroup2")
-    assert res == sssd_netgroup.NssReturnCode.SUCCESS
+    res, _, netgroups = get_sssd_netgroups("rm_empty_netgroup2")
+    assert res == NssReturnCode.SUCCESS
     assert sorted(netgroups) == sorted([('host1', 'user1', 'domain1'),
                                         ('host2', 'user2', 'domain2')])
 
@@ -364,12 +391,12 @@ def test_remove_step_by_step(remove_step_by_step, ldap_conn):
     if subprocess.call(["sss_cache", "-N"]) != 0:
         raise Exception("sssd_cache failed")
 
-    res, _, netgroups = sssd_netgroup.get_sssd_netgroups("rm_empty_netgroup1")
-    assert res == sssd_netgroup.NssReturnCode.NOTFOUND
+    res, _, netgroups = get_sssd_netgroups("rm_empty_netgroup1")
+    assert res == NssReturnCode.NOTFOUND
     assert netgroups == []
 
-    res, _, netgroups = sssd_netgroup.get_sssd_netgroups("rm_empty_netgroup2")
-    assert res == sssd_netgroup.NssReturnCode.SUCCESS
+    res, _, netgroups = get_sssd_netgroups("rm_empty_netgroup2")
+    assert res == NssReturnCode.SUCCESS
     assert netgroups == [('host2', 'user2', 'domain2')]
 
     # removing of rm_empty_netgroup2
@@ -379,12 +406,12 @@ def test_remove_step_by_step(remove_step_by_step, ldap_conn):
     if subprocess.call(["sss_cache", "-N"]) != 0:
         raise Exception("sssd_cache failed")
 
-    res, _, netgroups = sssd_netgroup.get_sssd_netgroups("rm_empty_netgroup1")
-    assert res == sssd_netgroup.NssReturnCode.NOTFOUND
+    res, _, netgroups = get_sssd_netgroups("rm_empty_netgroup1")
+    assert res == NssReturnCode.NOTFOUND
     assert netgroups == []
 
-    res, _, netgroups = sssd_netgroup.get_sssd_netgroups("rm_empty_netgroup2")
-    assert res == sssd_netgroup.NssReturnCode.NOTFOUND
+    res, _, netgroups = get_sssd_netgroups("rm_empty_netgroup2")
+    assert res == NssReturnCode.NOTFOUND
     assert netgroups == []
 
 
@@ -412,16 +439,16 @@ def test_removing_nested_netgroups(removing_nested_netgroups, ldap_conn):
 
     netgrp_dn = 'cn=t2841_netgroup3,ou=Netgroups,' + ldap_conn.ds_inst.base_dn
 
-    res, _, netgroups = sssd_netgroup.get_sssd_netgroups("t2841_netgroup1")
-    assert res == sssd_netgroup.NssReturnCode.SUCCESS
+    res, _, netgroups = get_sssd_netgroups("t2841_netgroup1")
+    assert res == NssReturnCode.SUCCESS
     assert netgroups == [('host1', 'user1', 'domain1')]
 
-    res, _, netgroups = sssd_netgroup.get_sssd_netgroups("t2841_netgroup2")
-    assert res == sssd_netgroup.NssReturnCode.SUCCESS
+    res, _, netgroups = get_sssd_netgroups("t2841_netgroup2")
+    assert res == NssReturnCode.SUCCESS
     assert netgroups == [('host2', 'user2', 'domain2')]
 
-    res, _, netgroups = sssd_netgroup.get_sssd_netgroups("t2841_netgroup3")
-    assert res == sssd_netgroup.NssReturnCode.SUCCESS
+    res, _, netgroups = get_sssd_netgroups("t2841_netgroup3")
+    assert res == NssReturnCode.SUCCESS
     assert sorted(netgroups) == sorted([('host1', 'user1', 'domain1'),
                                         ('host2', 'user2', 'domain2')])
 
@@ -435,16 +462,16 @@ def test_removing_nested_netgroups(removing_nested_netgroups, ldap_conn):
     if subprocess.call(["sss_cache", "-N"]) != 0:
         raise Exception("sssd_cache failed")
 
-    res, _, netgroups = sssd_netgroup.get_sssd_netgroups("t2841_netgroup1")
-    assert res == sssd_netgroup.NssReturnCode.SUCCESS
+    res, _, netgroups = get_sssd_netgroups("t2841_netgroup1")
+    assert res == NssReturnCode.SUCCESS
     assert netgroups == [('host1', 'user1', 'domain1')]
 
-    res, _, netgroups = sssd_netgroup.get_sssd_netgroups("t2841_netgroup2")
-    assert res == sssd_netgroup.NssReturnCode.SUCCESS
+    res, _, netgroups = get_sssd_netgroups("t2841_netgroup2")
+    assert res == NssReturnCode.SUCCESS
     assert netgroups == [('host2', 'user2', 'domain2')]
 
-    res, _, netgroups = sssd_netgroup.get_sssd_netgroups("t2841_netgroup3")
-    assert res == sssd_netgroup.NssReturnCode.SUCCESS
+    res, _, netgroups = get_sssd_netgroups("t2841_netgroup3")
+    assert res == NssReturnCode.SUCCESS
     assert netgroups == [('host2', 'user2', 'domain2')]
 
     # removing of t2841_netgroup2 from t2841_netgroup3
@@ -457,28 +484,28 @@ def test_removing_nested_netgroups(removing_nested_netgroups, ldap_conn):
     if subprocess.call(["sss_cache", "-N"]) != 0:
         raise Exception("sssd_cache failed")
 
-    res, _, netgroups = sssd_netgroup.get_sssd_netgroups("t2841_netgroup1")
-    assert res == sssd_netgroup.NssReturnCode.SUCCESS
+    res, _, netgroups = get_sssd_netgroups("t2841_netgroup1")
+    assert res == NssReturnCode.SUCCESS
     assert netgroups == [('host1', 'user1', 'domain1')]
 
-    res, _, netgroups = sssd_netgroup.get_sssd_netgroups("t2841_netgroup2")
-    assert res == sssd_netgroup.NssReturnCode.SUCCESS
+    res, _, netgroups = get_sssd_netgroups("t2841_netgroup2")
+    assert res == NssReturnCode.SUCCESS
     assert netgroups == [('host2', 'user2', 'domain2')]
 
-    res, _, netgroups = sssd_netgroup.get_sssd_netgroups("t2841_netgroup3")
-    assert res == sssd_netgroup.NssReturnCode.SUCCESS
+    res, _, netgroups = get_sssd_netgroups("t2841_netgroup3")
+    assert res == NssReturnCode.SUCCESS
     assert netgroups == []
 
 
 def test_offline_netgroups(add_tripled_netgroup):
-    res, _, netgrps = sssd_netgroup.get_sssd_netgroups("tripled_netgroup")
-    assert res == sssd_netgroup.NssReturnCode.SUCCESS
+    res, _, netgrps = get_sssd_netgroups("tripled_netgroup")
+    assert res == NssReturnCode.SUCCESS
     assert netgrps == [("host", "user", "domain")]
 
     subprocess.check_call(["sss_cache", "-N"])
 
     simulate_offline()
 
-    res, _, netgrps = sssd_netgroup.get_sssd_netgroups("tripled_netgroup")
-    assert res == sssd_netgroup.NssReturnCode.SUCCESS
+    res, _, netgrps = get_sssd_netgroups("tripled_netgroup")
+    assert res == NssReturnCode.SUCCESS
     assert netgrps == [("host", "user", "domain")]

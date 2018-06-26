@@ -78,6 +78,10 @@
     %global with_initscript --with-initscript=sysv
 %endif
 
+%if (0%{?fedora} > 28 || 0%{?rhel} > 7)
+    %global use_openssl 1
+%endif
+
 %global enable_experimental 1
 
 %if (0%{?enable_experimental} == 1)
@@ -127,6 +131,14 @@
     %global with_gdm_pam_extensions 0
 %endif
 
+# Do not try to detect the idmap version on RHEL6 to avoid conflicts between
+# samba and samba4 package
+%if (0%{?fedora} || 0%{?rhel} >= 7)
+    %global detect_idmap_version 1
+%else
+    %global with_idmap_version --with-smb-idmap-interface-version=5
+%endif
+
 Name: @PACKAGE_NAME@
 Version: @PACKAGE_VERSION@
 Release: 0@PRERELEASE_VERSION@%{?dist}
@@ -170,6 +182,7 @@ BuildRequires: autoconf
 BuildRequires: automake
 BuildRequires: libtool
 BuildRequires: m4
+BuildRequires: gcc
 BuildRequires: popt-devel
 BuildRequires: libtalloc-devel
 BuildRequires: libtevent-devel
@@ -209,6 +222,26 @@ BuildRequires: selinux-policy-targeted
 BuildRequires: libcmocka-devel >= 1.0.0
 BuildRequires: uid_wrapper
 BuildRequires: nss_wrapper
+
+# Test CA requires openssl independent if SSSD is build with NSS or openssl,
+# openssh is needed for ssh-keygen and NSS builds need nss-tools for certutil.
+# Currently only cmocka based tests use the test CA. If it is used elsewhere
+# you might want to move the following requires out of the if-block.
+# If SSSD is build with OpenSSL instead of NSS p11tool from the gnutls-utils
+# package and softhsm2-util from the softhsm package are needed to prepare the
+# data needed for the p11_child Smartcard tests. Since p11_child only looks at
+# slots with are flagged as 'removable' softhsm version 2.1.0 or higher is
+# needed.
+%if (0%{?use_openssl} == 1)
+BuildRequires: p11-kit-devel
+BuildRequires: openssl-devel
+BuildRequires: gnutls-utils
+BuildRequires: softhsm >= 2.1.0
+%endif
+
+BuildRequires: openssl
+BuildRequires: openssh
+BuildRequires: nss-tools
 %endif
 BuildRequires: libnl3-devel
 %if (0%{?use_systemd} == 1)
@@ -226,6 +259,9 @@ BuildRequires: nfs-utils-lib-devel
 
 BuildRequires: samba4-devel
 BuildRequires: libsmbclient-devel
+%if (0%{?detect_idmap_version} == 1)
+BuildRequires: samba-winbind
+%endif
 
 %if (0%{?enable_systemtap} == 1)
 BuildRequires: systemtap-sdt-devel
@@ -736,6 +772,9 @@ autoreconf -ivf
     --enable-pammoddir=/%{_lib}/security \
     --enable-nfsidmaplibdir=%{_libdir}/libnfsidmap \
     --disable-static \
+%if (0%{?use_openssl} == 1)
+    --with-crypto=libcrypto \
+%endif
     --disable-rpath \
 %if %{with sssd_user}
     --with-sssd-user=sssd \
@@ -748,6 +787,7 @@ autoreconf -ivf
     %{?enable_systemtap_opt} \
     %{?with_secret_responder} \
     %{?with_kcm_option} \
+    %{?with_idmap_version} \
     %{?experimental}
 
 make %{?_smp_mflags} all
@@ -980,6 +1020,9 @@ done
 %attr(750,sssd,sssd) %dir %{_var}/log/%{name}
 %attr(711,sssd,sssd) %dir %{_sysconfdir}/sssd
 %attr(711,sssd,sssd) %dir %{_sysconfdir}/sssd/conf.d
+%if (0%{?use_openssl} == 1)
+%attr(711,sssd,sssd) %dir %{_sysconfdir}/sssd/pki
+%endif
 %ghost %attr(0600,sssd,sssd) %config(noreplace) %{_sysconfdir}/sssd/sssd.conf
 %dir %{_sysconfdir}/logrotate.d
 %config(noreplace) %{_sysconfdir}/logrotate.d/sssd

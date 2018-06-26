@@ -989,6 +989,50 @@ START_TEST (test_sysdb_add_incomplete_group)
 }
 END_TEST
 
+START_TEST (test_sysdb_incomplete_group_rename)
+{
+    struct sysdb_test_ctx *test_ctx;
+    int ret;
+
+    ret = setup_sysdb_tests(&test_ctx);
+    if (ret != EOK) {
+        fail("Could not set up the test");
+        return;
+    }
+
+    ret = sysdb_add_incomplete_group(test_ctx->domain, "incomplete_group",
+                                     20000, NULL,
+                                     "S-1-5-21-123-456-789-111",
+                                     NULL, true, 0);
+    fail_unless(ret == EOK,
+                "sysdb_add_incomplete_group error [%d][%s]",
+                ret, strerror(ret));
+
+    /* Adding a group with the same GID and all the other characteristics uknown should fail */
+    ret = sysdb_add_incomplete_group(test_ctx->domain, "incomplete_group_new",
+                                     20000, NULL, NULL, NULL, true, 0);
+    fail_unless(ret == EEXIST, "Did not caught a duplicate\n");
+
+    /* A different SID should also trigger a failure */
+    ret = sysdb_add_incomplete_group(test_ctx->domain, "incomplete_group_new",
+                                     20000, NULL,
+                                     "S-1-5-21-123-456-789-222",
+                                     NULL, true, 0);
+    fail_unless(ret == EEXIST, "Did not caught a duplicate\n");
+
+    /* But if we know based on a SID that the group is in fact the same,
+     * let's just change its name
+     */
+    ret = sysdb_add_incomplete_group(test_ctx->domain, "incomplete_group_new",
+                                     20000, NULL,
+                                     "S-1-5-21-123-456-789-111",
+                                     NULL, true, 0);
+    fail_unless(ret == ERR_GID_DUPLICATED,
+                "Did not catch a legitimate rename",
+                ret, strerror(ret));
+}
+END_TEST
+
 START_TEST (test_sysdb_getpwnam)
 {
     struct sysdb_test_ctx *test_ctx;
@@ -1047,6 +1091,11 @@ START_TEST(test_user_group_by_name)
         return;
     }
 
+    /* setup_sysdb_tests creates local provider and we need to handle
+     * ldap provider differently with auto_private_groups.
+     */
+    test_ctx->domain->provider = discard_const_p(char, "ldap");
+
     data = test_data_new_user(test_ctx, _i);
     fail_if(data == NULL);
 
@@ -1060,6 +1109,32 @@ START_TEST(test_user_group_by_name)
 
     groupname = ldb_msg_find_attr_as_string(msg, SYSDB_NAME, NULL);
     ck_assert_str_eq(groupname, data->username);
+}
+END_TEST
+
+START_TEST(test_user_group_by_name_local)
+{
+    struct sysdb_test_ctx *test_ctx;
+    struct test_data *data;
+    struct ldb_message *msg;
+    int ret;
+
+    /* Setup */
+    ret = setup_sysdb_tests(&test_ctx);
+    if (ret != EOK) {
+        fail("Could not set up the test");
+        return;
+    }
+
+    data = test_data_new_user(test_ctx, _i);
+    fail_if(data == NULL);
+
+    ret = sysdb_search_group_by_name(data,
+                                     data->ctx->domain,
+                                     data->username, /* we're searching for the private group */
+                                     NULL,
+                                     &msg);
+    fail_if(ret != ENOENT);
 }
 END_TEST
 
@@ -1140,6 +1215,42 @@ START_TEST (test_sysdb_getgrgid)
     fail_unless(strcmp(fqname, data->groupname) == 0,
                 "Did not find the expected groupname (found %s expected %s)",
                 fqname, data->groupname);
+done:
+    talloc_free(test_ctx);
+}
+END_TEST
+
+START_TEST (test_sysdb_getgrgid_attrs)
+{
+    struct sysdb_test_ctx *test_ctx;
+    struct test_data *data;
+    struct ldb_result *res;
+    int ret;
+    const char *attrs[] = { SYSDB_CREATE_TIME, NULL };
+    uint64_t ctime;
+
+    /* Setup */
+    ret = setup_sysdb_tests(&test_ctx);
+    if (ret != EOK) {
+        fail("Could not set up the test");
+        return;
+    }
+
+    data = test_data_new_group(test_ctx, _i);
+    fail_if(data == NULL, "OOM");
+
+    ret = sysdb_getgrgid_attrs(test_ctx,
+                               test_ctx->domain,
+                               data->gid, attrs, &res);
+    if (ret) {
+        fail("sysdb_getgrgid_attrs failed for gid %d (%d: %s)",
+             data->gid, ret, strerror(ret));
+        goto done;
+    }
+
+    ctime = ldb_msg_find_attr_as_uint64(res->msgs[0], SYSDB_CREATE_TIME, 0);
+    fail_unless(ctime != 0, "Missing create time");
+
 done:
     talloc_free(test_ctx);
 }
@@ -1508,6 +1619,53 @@ START_TEST (test_sysdb_add_nonposix_user)
 
     id = ldb_msg_find_attr_as_uint64(res->msgs[0], SYSDB_GIDNUM, 123);
     fail_unless(id == 0, "Wrong GID value");
+
+    talloc_free(test_ctx);
+}
+END_TEST
+
+static void add_nonposix_incomplete_group(struct sysdb_test_ctx *test_ctx,
+                                          const char *groupname)
+{
+    const char *get_attrs[] = { SYSDB_GIDNUM,
+                                SYSDB_POSIX,
+                                NULL };
+    struct ldb_message *msg;
+    const char *attrval;
+    const char *fq_name;
+    int ret;
+    uint64_t id;
+
+    /* Create group */
+    fq_name = sss_create_internal_fqname(test_ctx, groupname, test_ctx->domain->name);
+    fail_if(fq_name == NULL, "Failed to create fq name.");
+
+    ret = sysdb_add_incomplete_group(test_ctx->domain, fq_name, 0,
+                                     NULL, NULL, NULL, false, 0);
+    fail_if(ret != EOK, "sysdb_add_group failed.");
+
+    /* Test */
+    ret = sysdb_search_group_by_name(test_ctx, test_ctx->domain, fq_name, get_attrs, &msg);
+    fail_if(ret != EOK, "sysdb_search_group_by_name failed.");
+
+    attrval = ldb_msg_find_attr_as_string(msg, SYSDB_POSIX, NULL);
+    fail_if(strcasecmp(attrval, "false") != 0, "Got bad attribute value.");
+
+    id = ldb_msg_find_attr_as_uint64(msg, SYSDB_GIDNUM, 123);
+    fail_unless(id == 0, "Wrong GID value");
+}
+
+START_TEST (test_sysdb_add_nonposix_group)
+{
+    struct sysdb_test_ctx *test_ctx;
+    int ret;
+
+    /* Setup */
+    ret = setup_sysdb_tests(&test_ctx);
+    fail_if(ret != EOK, "Could not set up the test");
+
+    add_nonposix_incomplete_group(test_ctx, "nonposix1");
+    add_nonposix_incomplete_group(test_ctx, "nonposix2");
 
     talloc_free(test_ctx);
 }
@@ -5526,7 +5684,7 @@ START_TEST(test_sysdb_search_sid_str)
     ret = setup_sysdb_tests(&test_ctx);
     fail_if(ret != EOK, "Could not set up the test");
 
-    data = test_data_new_group(test_ctx, 2900);
+    data = test_data_new_group(test_ctx, 2902);
     fail_if(data == NULL);
     data->sid_str = "S-1-2-3-4";
 
@@ -7048,6 +7206,7 @@ Suite *create_sysdb_suite(void)
      * can be found. Regression test for ticket #3615
      */
     tcase_add_loop_test(tc_sysdb, test_user_group_by_name, 27000, 27010);
+    tcase_add_loop_test(tc_sysdb, test_user_group_by_name_local, 27000, 27010);
 
     /* Create a new group */
     tcase_add_loop_test(tc_sysdb, test_sysdb_add_group, 28000, 28010);
@@ -7108,6 +7267,7 @@ Suite *create_sysdb_suite(void)
 
     /* Verify the groups can be queried by GID */
     tcase_add_loop_test(tc_sysdb, test_sysdb_getgrgid, 28010, 28020);
+    tcase_add_loop_test(tc_sysdb, test_sysdb_getgrgid_attrs, 28010, 28020);
 
     /* Find the users by GID using a filter */
     tcase_add_loop_test(tc_sysdb, test_sysdb_search_groups, 28010, 28020);
@@ -7166,6 +7326,7 @@ Suite *create_sysdb_suite(void)
     tcase_add_loop_test(tc_sysdb,
                         test_sysdb_remove_local_group_by_gid,
                         28000, 28010);
+    tcase_add_test(tc_sysdb, test_sysdb_incomplete_group_rename);
 
     /* test custom operations */
     tcase_add_loop_test(tc_sysdb, test_sysdb_store_custom, 29010, 29020);
@@ -7223,8 +7384,9 @@ Suite *create_sysdb_suite(void)
     /* Test GetUserAttr with subdomain user */
     tcase_add_test(tc_sysdb, test_sysdb_get_user_attr_subdomain);
 
-    /* Test adding a non-POSIX user */
+    /* Test adding a non-POSIX user and group */
     tcase_add_test(tc_sysdb, test_sysdb_add_nonposix_user);
+    tcase_add_test(tc_sysdb, test_sysdb_add_nonposix_group);
 
 /* ===== NETGROUP TESTS ===== */
 

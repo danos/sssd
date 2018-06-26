@@ -85,7 +85,16 @@ static NTSTATUS idmap_sss_unixids_to_sids(struct idmap_domain *dom,
     }
 
     for (c = 0; map[c]; c++) {
-        ret = sss_nss_getsidbyid(map[c]->xid.id, &sid_str, &id_type);
+        switch (map[c]->xid.type) {
+        case ID_TYPE_UID:
+            ret = sss_nss_getsidbyuid(map[c]->xid.id, &sid_str, &id_type);
+            break;
+        case ID_TYPE_GID:
+            ret = sss_nss_getsidbygid(map[c]->xid.id, &sid_str, &id_type);
+            break;
+        default:
+            ret = sss_nss_getsidbyid(map[c]->xid.id, &sid_str, &id_type);
+        }
         if (ret != 0) {
             if (ret == ENOENT) {
                 map[c]->status = ID_UNMAPPED;
@@ -190,7 +199,13 @@ static struct idmap_methods sss_methods = {
     .sids_to_unixids = idmap_sss_sids_to_unixids,
 };
 
+#if SMB_IDMAP_INTERFACE_VERSION == 5
 NTSTATUS idmap_sss_init(void)
+#elif SMB_IDMAP_INTERFACE_VERSION == 6
+NTSTATUS idmap_sss_init(TALLOC_CTX *ctx)
+#else
+#error Unexpected Samba idmpa inferface version
+#endif
 {
     return smb_register_idmap(SMB_IDMAP_INTERFACE_VERSION, "sss", &sss_methods);
 }

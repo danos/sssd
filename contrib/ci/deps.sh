@@ -42,6 +42,7 @@ if [[ "$DISTRO_BRANCH" == -redhat-* ]]; then
         openldap-servers
         pytest
         python-ldap
+        python-psutil
         pyldb
         rpm-build
         uid_wrapper
@@ -50,6 +51,7 @@ if [[ "$DISTRO_BRANCH" == -redhat-* ]]; then
         krb5-server
         krb5-workstation
         dbus-python
+        python-pep8
     )
     _DEPS_LIST_SPEC=`
         sed -e 's/@PACKAGE_VERSION@/0/g' \
@@ -119,6 +121,7 @@ if [[ "$DISTRO_BRANCH" == -debian-* ]]; then
         python-ldap
         python-ldb
         python-requests
+        python-psutil
         ldap-utils
         slapd
         systemtap-sdt-dev
@@ -129,7 +132,13 @@ if [[ "$DISTRO_BRANCH" == -debian-* ]]; then
         krb5-admin-server
         krb5-user
         uuid-dev
+        dbus
         python-dbus
+        pep8
+        libssl-dev
+        gnutls-bin
+        softhsm2
+        libp11-kit-dev
     )
     DEPS_INTGCHECK_SATISFIED=true
 fi

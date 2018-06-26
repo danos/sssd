@@ -107,7 +107,6 @@ nss_protocol_fill_netgrent(struct nss_ctx *nss_ctx,
                            struct sss_packet *packet,
                            struct cache_req_result *result)
 {
-    TALLOC_CTX *tmp_ctx;
     struct sysdb_netgroup_ctx **entries;
     struct sysdb_netgroup_ctx *entry;
     struct nss_enum_index *idx;
@@ -118,13 +117,15 @@ nss_protocol_fill_netgrent(struct nss_ctx *nss_ctx,
     errno_t ret;
     unsigned int start;
 
-    tmp_ctx = talloc_new(NULL);
-    if (tmp_ctx == NULL) {
-        return ENOMEM;
-    }
-
     idx = cmd_ctx->enum_index;
     entries = cmd_ctx->enum_ctx->netgroup;
+
+    if (idx->result > cmd_ctx->enum_ctx->netgroup_count) {
+        DEBUG(SSSDBG_CRIT_FAILURE,
+              "Unconsistent state while processing netgroups.\n");
+        ret = EINVAL;
+        goto done;
+    }
 
     /* First two fields (length and reserved), filled up later. */
     ret = sss_packet_grow(packet, 2 * sizeof(uint32_t));
@@ -148,7 +149,6 @@ nss_protocol_fill_netgrent(struct nss_ctx *nss_ctx,
             break;
         }
 
-        talloc_free_children(tmp_ctx);
         entry = entries[idx->result];
 
         switch (entry->type) {
@@ -174,8 +174,6 @@ nss_protocol_fill_netgrent(struct nss_ctx *nss_ctx,
     ret = EOK;
 
 done:
-    talloc_free(tmp_ctx);
-
     if (ret != EOK) {
         sss_packet_set_size(packet, 0);
         return ret;
