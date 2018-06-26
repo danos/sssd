@@ -1,6 +1,7 @@
 sssd (1.16.2-1) UNRELEASED; urgency=medium
 
   * New upstream release. (LP: #1778554)
+  * control: Enable tests, add check and libcmocka-dev to build-depends.
 
  -- Timo Aaltonen <tjaalton@debian.org>  Tue, 26 Jun 2018 11:15:02 +0300
 

@@ -5,7 +5,7 @@ Maintainer: Debian SSSD Team <pkg-sssd-devel@lists.alioth.debian.org>
 Uploaders: Timo Aaltonen <tjaalton@debian.org>
 Build-Depends:
  autopoint,
-# check,
+ check,
  cifs-utils,
  debhelper (>= 10),
  dh-apparmor,
@@ -19,7 +19,7 @@ Build-Depends:
  krb5-config,
  libaugeas-dev,
  libc-ares-dev,
-# libcmocka-dev [amd64 armhf i386],
+ libcmocka-dev [amd64 armhf i386],
  libcollection-dev,
  libcurl4-gnutls-dev,
  libdbus-1-dev,
