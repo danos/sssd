@@ -38,6 +38,7 @@ override_dh_auto_configure:
 	--with-initscript=systemd \
 	--with-systemdunitdir=/lib/systemd/system \
 	--disable-files-domain \
+	--with-smb-idmap-interface-version=6 \
 	--with-sudo
 
 override_dh_auto_test:
