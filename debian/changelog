@@ -6,6 +6,7 @@ sssd (1.16.2-1) UNRELEASED; urgency=medium
   * disable-tests.diff: Disable three tests that are known to fail in
     sbuild.
   * control: Drop obsolete build-depends.
+  * control: Update VCS urls.
 
  -- Timo Aaltonen <tjaalton@debian.org>  Tue, 26 Jun 2018 11:15:02 +0300
 
