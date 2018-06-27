@@ -1,0 +1,26 @@
+--- a/Makefile.am
++++ b/Makefile.am
+@@ -201,7 +201,6 @@ endif
+ if HAVE_CHECK
+     non_interactive_check_based_tests = \
+         dlopen-tests \
+-        sysdb-tests \
+         strtonum-tests \
+         resolv-tests \
+         krb5-utils-tests \
+@@ -261,7 +260,6 @@ if HAVE_CMOCKA
+         test_sysdb_views \
+         test_sysdb_subdomains \
+         test_sysdb_certmap \
+-        test_sysdb_sudo \
+         test_sysdb_utils \
+         test_sysdb_domain_resolution_order \
+         test_wbc_calls \
+@@ -269,7 +267,6 @@ if HAVE_CMOCKA
+         test_copy_ccache \
+         test_copy_keytab \
+         test_child_common \
+-        responder_cache_req-tests \
+         test_sbus_opath \
+         test_fo_srv \
+         pam-srv-tests \
