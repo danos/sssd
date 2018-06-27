@@ -2,20 +2,6 @@
 
 set -e
 
-case "$1" in
-    configure)
-        ldconfig
-    ;;
-
-    abort-upgrade|abort-remove|abort-deconfigure)
-    ;;
-
-    *)
-        echo "postinst called with unknown argument \`$1'" >&2
-        exit 1
-    ;;
-esac
-
 #DEBHELPER#
 
 # This code was taken from libnss-myhostname, which got it from nss-mdns:
