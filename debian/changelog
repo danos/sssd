@@ -7,7 +7,7 @@ sssd (1.16.2-1) UNRELEASED; urgency=medium
     sbuild.
   * control: Drop obsolete build-depends.
   * control: Update VCS urls.
-  * control: Bump python versions.
+  * control: Drop specifying python versions.
   * control: Change priority to optional.
   * libsss-sudo.post*: Don't call ldconfig.
 
