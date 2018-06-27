@@ -1,4 +1,4 @@
-sssd (1.16.2-1) UNRELEASED; urgency=medium
+sssd (1.16.2-1) unstable; urgency=medium
 
   * New upstream release. (LP: #1778554)
   * control: Enable tests, add check and libcmocka-dev to build-depends.
@@ -11,7 +11,7 @@ sssd (1.16.2-1) UNRELEASED; urgency=medium
   * control: Change priority to optional.
   * libsss-sudo.post*: Don't call ldconfig.
 
- -- Timo Aaltonen <tjaalton@debian.org>  Tue, 26 Jun 2018 11:15:02 +0300
+ -- Timo Aaltonen <tjaalton@debian.org>  Wed, 27 Jun 2018 14:07:55 +0300
 
 sssd (1.16.1-1) unstable; urgency=medium
 
