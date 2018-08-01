@@ -1,3 +1,9 @@
+sssd (1.16.2-2) UNRELEASED; urgency=medium
+
+  * control: Add python-sss to sssd-tools depends. (Closes: #905220)
+
+ -- Timo Aaltonen <tjaalton@debian.org>  Wed, 01 Aug 2018 20:48:17 +0300
+
 sssd (1.16.2-1) unstable; urgency=medium
 
   * New upstream release. (LP: #1778554)

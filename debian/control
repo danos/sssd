@@ -233,6 +233,7 @@ Package: sssd-tools
 Architecture: any
 Depends:
  python,
+ python-sss,
  sssd-common (= ${binary:Version}),
  ${misc:Depends},
  ${shlibs:Depends}
