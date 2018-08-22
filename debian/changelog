@@ -5,6 +5,8 @@ sssd (1.16.3-1) UNRELEASED; urgency=medium
   * libsss-sudo: Add sss entry to nsswitch only on initial install.
     (Closes: #903917)
   * control: Update list address.
+  * disable-tests.diff: Dropped, all tests pass on a proper buildd setup
+    which should have /etc/{hosts,networks} populated.
 
  -- Timo Aaltonen <tjaalton@debian.org>  Wed, 01 Aug 2018 20:48:17 +0300
 
