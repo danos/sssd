@@ -1,6 +1,8 @@
 sssd (1.16.2-2) UNRELEASED; urgency=medium
 
   * control: Add python-sss to sssd-tools depends. (Closes: #905220)
+  * libsss-sudo: Add sss entry to nsswitch only on initial install.
+    (Closes: #903917)
 
  -- Timo Aaltonen <tjaalton@debian.org>  Wed, 01 Aug 2018 20:48:17 +0300
 

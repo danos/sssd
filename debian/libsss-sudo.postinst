@@ -33,7 +33,8 @@ insert_nss_entry() {
     fi
 }
 
-insert_nss_entry
-
+if [ "$1" = configure ] && [ -z "$2" ]; then
+    insert_nss_entry
+fi
 
 exit 0
