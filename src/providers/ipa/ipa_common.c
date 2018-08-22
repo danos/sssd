@@ -180,6 +180,7 @@ int ipa_get_id_options(struct ipa_options *ipa_opts,
     char *value;
     int ret;
     int i;
+    bool server_mode;
 
     tmpctx = talloc_new(ipa_opts);
     if (!tmpctx) {
@@ -292,6 +293,59 @@ int ipa_get_id_options(struct ipa_options *ipa_opts,
                                  SDAP_USER_SEARCH_BASE,
                                  &ipa_opts->id->sdom->user_search_bases);
     if (ret != EOK) goto done;
+
+    /* In server mode we need to search both cn=accounts,$SUFFIX and
+     * cn=trusts,$SUFFIX to allow trusted domain object accounts to be found.
+     * If cn=trusts,$SUFFIX is missing in the user search bases, add one
+     */
+    server_mode = dp_opt_get_bool(ipa_opts->basic, IPA_SERVER_MODE);
+    if (server_mode != false) {
+        /* bases is not NULL at this point already */
+        struct sdap_search_base **bases = ipa_opts->id->sdom->user_search_bases;
+        struct sdap_search_base *new_base = NULL;
+
+        for (i = 0; bases[i] != NULL; i++) {
+            if (strcasestr(bases[i]->basedn, "cn=trusts,") != NULL) {
+                break;
+            }
+        }
+        if (NULL == bases[i]) {
+            /* no cn=trusts in the base, add a new one */
+            char *new_dn = talloc_asprintf(bases,
+                                           "cn=trusts,%s",
+                                           basedn);
+            if (NULL == new_dn) {
+                ret = ENOMEM;
+                goto done;
+            }
+
+            ret = sdap_create_search_base(bases, new_dn,
+                                          LDAP_SCOPE_SUBTREE,
+                                          "(objectClass=ipaIDObject)",
+                                          &new_base);
+            if (ret != EOK) {
+                goto done;
+            }
+
+            bases = talloc_realloc(ipa_opts->id,
+                                   ipa_opts->id->sdom->user_search_bases,
+                                   struct sdap_search_base*,
+                                   i + 2);
+
+            if (NULL == bases) {
+                ret = ENOMEM;
+                goto done;
+            }
+
+            bases[i] = new_base;
+            bases[i+1] = NULL;
+            ipa_opts->id->sdom->user_search_bases = bases;
+
+            DEBUG(SSSDBG_TRACE_FUNC,
+                  "Option %s expanded to cover cn=trusts base\n",
+                  ipa_opts->id->basic[SDAP_USER_SEARCH_BASE].opt_name);
+        }
+    }
 
     if (NULL == dp_opt_get_string(ipa_opts->id->basic,
                                   SDAP_GROUP_SEARCH_BASE)) {
@@ -766,7 +820,7 @@ static void ipa_resolve_callback(void *private_data, struct fo_server *server)
     struct resolv_hostent *srvaddr;
     struct sockaddr_storage *sockaddr;
     char *address;
-    const char *safe_address;
+    char *safe_addr_list[2] = { NULL, NULL };
     char *new_uri;
     const char *srv_name;
     int ret;
@@ -829,16 +883,17 @@ static void ipa_resolve_callback(void *private_data, struct fo_server *server)
     service->sdap->sockaddr = talloc_steal(service, sockaddr);
 
     if (service->krb5_service->write_kdcinfo) {
-        safe_address = sss_escape_ip_address(tmp_ctx,
+        safe_addr_list[0] = sss_escape_ip_address(tmp_ctx,
                                              srvaddr->family,
                                              address);
-        if (safe_address == NULL) {
+        if (safe_addr_list[0] == NULL) {
             DEBUG(SSSDBG_CRIT_FAILURE, "sss_escape_ip_address failed.\n");
             talloc_free(tmp_ctx);
             return;
         }
 
-        ret = write_krb5info_file(service->krb5_service->realm, safe_address,
+        ret = write_krb5info_file(service->krb5_service,
+                                  safe_addr_list,
                                   SSS_KRB5KDC_FO_SRV);
         if (ret != EOK) {
             DEBUG(SSSDBG_OP_FAILURE,
@@ -964,6 +1019,13 @@ int ipa_service_init(TALLOC_CTX *memctx, struct be_ctx *ctx,
         return ENOMEM;
     }
 
+    realm = dp_opt_get_string(options->basic, IPA_KRB5_REALM);
+    if (!realm) {
+        DEBUG(SSSDBG_CRIT_FAILURE, "No Kerberos realm set\n");
+        ret = EINVAL;
+        goto done;
+    }
+
     service = talloc_zero(tmp_ctx, struct ipa_service);
     if (!service) {
         ret = ENOMEM;
@@ -974,7 +1036,13 @@ int ipa_service_init(TALLOC_CTX *memctx, struct be_ctx *ctx,
         ret = ENOMEM;
         goto done;
     }
-    service->krb5_service = talloc_zero(service, struct krb5_service);
+
+    service->krb5_service = krb5_service_new(service, ctx,
+                                             "IPA", realm,
+                                             true); /* The configured value
+                                                     * will be set later when
+                                                     * the auth provider is set up
+                                                     */
     if (!service->krb5_service) {
         ret = ENOMEM;
         goto done;
@@ -992,25 +1060,7 @@ int ipa_service_init(TALLOC_CTX *memctx, struct be_ctx *ctx,
         goto done;
     }
 
-    service->krb5_service->name = talloc_strdup(service, "IPA");
-    if (!service->krb5_service->name) {
-        ret = ENOMEM;
-        goto done;
-    }
     service->sdap->kinit_service_name = service->krb5_service->name;
-
-    realm = dp_opt_get_string(options->basic, IPA_KRB5_REALM);
-    if (!realm) {
-        DEBUG(SSSDBG_CRIT_FAILURE, "No Kerberos realm set\n");
-        ret = EINVAL;
-        goto done;
-    }
-    service->krb5_service->realm =
-        talloc_strdup(service->krb5_service, realm);
-    if (!service->krb5_service->realm) {
-        ret = ENOMEM;
-        goto done;
-    }
 
     if (!primary_servers) {
         DEBUG(SSSDBG_CONF_SETTINGS,

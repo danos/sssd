@@ -389,8 +389,86 @@ done:
     return ret;
 }
 
-errno_t write_krb5info_file(const char *realm, const char *server,
-                            const char *service)
+static int remove_info_files_destructor(void *p)
+{
+    int ret;
+    struct remove_info_files_ctx *ctx = talloc_get_type(p,
+                                                  struct remove_info_files_ctx);
+
+    ret = remove_krb5_info_files(ctx, ctx->realm);
+    if (ret != EOK) {
+        DEBUG(SSSDBG_CRIT_FAILURE, "remove_krb5_info_files failed.\n");
+    }
+    ctx->krb5_service->removal_callback_available = false;
+
+    return 0;
+}
+
+static errno_t
+krb5_add_krb5info_offline_callback(struct krb5_service *krb5_service)
+{
+    int ret;
+    struct remove_info_files_ctx *ctx = NULL;
+
+    if (krb5_service == NULL || krb5_service->name == NULL
+                             || krb5_service->realm == NULL
+                             || krb5_service->be_ctx == NULL) {
+        DEBUG(SSSDBG_CRIT_FAILURE, "Missing KDC service name or realm!\n");
+        return EINVAL;
+    }
+
+    if (krb5_service->removal_callback_available) {
+        DEBUG(SSSDBG_TRACE_ALL,
+              "Removal callback already available for service [%s].\n",
+              krb5_service->name);
+        return EOK;
+    }
+
+    ctx = talloc_zero(krb5_service->be_ctx, struct remove_info_files_ctx);
+    if (ctx == NULL) {
+        DEBUG(SSSDBG_CRIT_FAILURE, "talloc_zfree failed.\n");
+        return ENOMEM;
+    }
+
+    ctx->realm = talloc_strdup(ctx, krb5_service->realm);
+    if (ctx->realm == NULL) {
+        DEBUG(SSSDBG_CRIT_FAILURE, "talloc_strdup failed!\n");
+        ret = ENOMEM;
+        goto done;
+    }
+
+    ctx->be_ctx = krb5_service->be_ctx;
+    ctx->krb5_service = krb5_service;
+    ctx->kdc_service_name = talloc_strdup(ctx, krb5_service->name);
+    if (ctx->kdc_service_name == NULL) {
+        DEBUG(SSSDBG_CRIT_FAILURE, "talloc_strdup failed!\n");
+        ret = ENOMEM;
+        goto done;
+    }
+
+    ret = be_add_offline_cb(ctx, krb5_service->be_ctx,
+                            remove_krb5_info_files_callback, ctx, NULL);
+    if (ret != EOK) {
+        DEBUG(SSSDBG_CRIT_FAILURE, "be_add_offline_cb failed.\n");
+        goto done;
+    }
+
+    talloc_set_destructor((TALLOC_CTX *) ctx, remove_info_files_destructor);
+    krb5_service->removal_callback_available = true;
+
+    ret = EOK;
+
+done:
+    if (ret != EOK) {
+        talloc_zfree(ctx);
+    }
+
+    return ret;
+}
+
+static errno_t write_krb5info_file_contents(struct krb5_service *krb5_service,
+                                            const char *contents,
+                                            const char *service)
 {
     int ret;
     int fd = -1;
@@ -401,17 +479,19 @@ errno_t write_krb5info_file(const char *realm, const char *server,
     size_t server_len;
     ssize_t written;
 
-    if (realm == NULL || *realm == '\0' || server == NULL || *server == '\0' ||
-        service == NULL || *service == '\0') {
+    if (krb5_service == NULL || krb5_service->realm == NULL
+                             || *krb5_service->realm == '\0'
+                             || contents == NULL || *contents == '\0'
+                             || service == NULL || *service == '\0') {
         DEBUG(SSSDBG_CRIT_FAILURE,
               "Missing or empty realm, server or service.\n");
         return EINVAL;
     }
 
-    if (sss_krb5_realm_has_proxy(realm)) {
+    if (sss_krb5_realm_has_proxy(krb5_service->realm)) {
         DEBUG(SSSDBG_CONF_SETTINGS,
               "KDC Proxy available for realm [%s], no kdcinfo file created.\n",
-              realm);
+              krb5_service->realm);
         return EOK;
     }
 
@@ -424,7 +504,7 @@ errno_t write_krb5info_file(const char *realm, const char *server,
         return EINVAL;
     }
 
-    server_len = strlen(server);
+    server_len = strlen(contents);
 
     tmp_ctx = talloc_new(NULL);
     if (tmp_ctx == NULL) {
@@ -439,7 +519,7 @@ errno_t write_krb5info_file(const char *realm, const char *server,
         goto done;
     }
 
-    krb5info_name = talloc_asprintf(tmp_ctx, name_tmpl, realm);
+    krb5info_name = talloc_asprintf(tmp_ctx, name_tmpl, krb5_service->realm);
     if (krb5info_name == NULL) {
         DEBUG(SSSDBG_CRIT_FAILURE, "talloc_asprintf failed.\n");
         ret = ENOMEM;
@@ -454,7 +534,7 @@ errno_t write_krb5info_file(const char *realm, const char *server,
     }
 
     errno = 0;
-    written = sss_atomic_write_s(fd, discard_const(server), server_len);
+    written = sss_atomic_write_s(fd, discard_const(contents), server_len);
     if (written == -1) {
         ret = errno;
         DEBUG(SSSDBG_CRIT_FAILURE,
@@ -495,6 +575,12 @@ errno_t write_krb5info_file(const char *realm, const char *server,
         goto done;
     }
 
+    ret = krb5_add_krb5info_offline_callback(krb5_service);
+    if (ret != EOK) {
+        DEBUG(SSSDBG_OP_FAILURE, "Failed to add offline callback, krb5info "
+                                 "file might not be removed properly.\n");
+    }
+
     ret = EOK;
 done:
     if (fd != -1) {
@@ -505,12 +591,56 @@ done:
     return ret;
 }
 
+errno_t write_krb5info_file(struct krb5_service *krb5_service,
+                            char **server_list,
+                            const char *service)
+{
+    int i;
+    errno_t ret;
+    TALLOC_CTX *tmp_ctx = NULL;
+    char *contents = NULL;
+
+    if (krb5_service == NULL || server_list == NULL || service == NULL) {
+        return EINVAL;
+    }
+
+    if (server_list[0] == NULL) {
+        return EOK;
+    }
+
+    tmp_ctx = talloc_new(NULL);
+    if (tmp_ctx == NULL) {
+        return ENOMEM;
+    }
+
+    contents = talloc_strdup(tmp_ctx, "");
+    if (contents == NULL) {
+        ret = ENOMEM;
+        goto done;
+    }
+
+    i = 0;
+    do {
+        contents = talloc_asprintf_append(contents, "%s\n", server_list[i]);
+        if (contents == NULL) {
+            ret = ENOMEM;
+            goto done;
+        }
+        i++;
+    } while (server_list[i] != NULL);
+
+    ret = write_krb5info_file_contents(krb5_service, contents, service);
+done:
+    talloc_free(tmp_ctx);
+    return ret;
+}
+
 static void krb5_resolve_callback(void *private_data, struct fo_server *server)
 {
     struct krb5_service *krb5_service;
     struct resolv_hostent *srvaddr;
     char *address;
-    char *safe_address;
+    char *safe_addr_list[2] = { NULL, NULL };
     int ret;
     TALLOC_CTX *tmp_ctx = NULL;
 
@@ -543,25 +673,26 @@ static void krb5_resolve_callback(void *private_data, struct fo_server *server)
         return;
     }
 
-    safe_address = sss_escape_ip_address(tmp_ctx,
-                                         srvaddr->family,
-                                         address);
-    if (safe_address == NULL) {
+    safe_addr_list[0] = sss_escape_ip_address(tmp_ctx,
+                                              srvaddr->family,
+                                              address);
+    if (safe_addr_list[0] == NULL) {
         DEBUG(SSSDBG_CRIT_FAILURE, "sss_escape_ip_address failed.\n");
         talloc_free(tmp_ctx);
         return;
     }
 
     if (krb5_service->write_kdcinfo) {
-        safe_address = talloc_asprintf_append(safe_address, ":%d",
-                                            fo_get_server_port(server));
-        if (safe_address == NULL) {
+        safe_addr_list[0] = talloc_asprintf_append(safe_addr_list[0], ":%d",
+                                                   fo_get_server_port(server));
+        if (safe_addr_list[0] == NULL) {
             DEBUG(SSSDBG_CRIT_FAILURE, "talloc_asprintf_append failed.\n");
             talloc_free(tmp_ctx);
             return;
         }
 
-        ret = write_krb5info_file(krb5_service->realm, safe_address,
+        ret = write_krb5info_file(krb5_service,
+                                  safe_addr_list,
                                   krb5_service->name);
         if (ret != EOK) {
             DEBUG(SSSDBG_OP_FAILURE,
@@ -719,6 +850,40 @@ static int krb5_user_data_cmp(void *ud1, void *ud2)
     return strcasecmp((char*) ud1, (char*) ud2);
 }
 
+struct krb5_service *krb5_service_new(TALLOC_CTX *mem_ctx,
+                                      struct be_ctx *be_ctx,
+                                      const char *service_name,
+                                      const char *realm,
+                                      bool use_kdcinfo)
+{
+    struct krb5_service *service;
+
+    service = talloc_zero(mem_ctx, struct krb5_service);
+    if (service == NULL) {
+        return NULL;
+    }
+
+    service->name = talloc_strdup(service, service_name);
+    if (service->name == NULL) {
+        talloc_free(service);
+        return NULL;
+    }
+
+    service->realm = talloc_strdup(service, realm);
+    if (service->realm == NULL) {
+        talloc_free(service);
+        return NULL;
+    }
+
+    DEBUG(SSSDBG_CONF_SETTINGS,
+          "write_kdcinfo for realm %s set to %s\n",
+          realm,
+          use_kdcinfo ? "true" : "false");
+    service->write_kdcinfo = use_kdcinfo;
+    service->be_ctx = be_ctx;
+    return service;
+}
+
 int krb5_service_init(TALLOC_CTX *memctx, struct be_ctx *ctx,
                       const char *service_name,
                       const char *primary_servers,
@@ -736,7 +901,7 @@ int krb5_service_init(TALLOC_CTX *memctx, struct be_ctx *ctx,
         return ENOMEM;
     }
 
-    service = talloc_zero(tmp_ctx, struct krb5_service);
+    service = krb5_service_new(tmp_ctx, ctx, service_name, realm, use_kdcinfo);
     if (!service) {
         ret = ENOMEM;
         goto done;
@@ -747,20 +912,6 @@ int krb5_service_init(TALLOC_CTX *memctx, struct be_ctx *ctx,
         DEBUG(SSSDBG_CRIT_FAILURE, "Failed to create failover service!\n");
         goto done;
     }
-
-    service->name = talloc_strdup(service, service_name);
-    if (!service->name) {
-        ret = ENOMEM;
-        goto done;
-    }
-
-    service->realm = talloc_strdup(service, realm);
-    if (!service->realm) {
-        ret = ENOMEM;
-        goto done;
-    }
-
-    service->write_kdcinfo = use_kdcinfo;
 
     if (!primary_servers) {
         DEBUG(SSSDBG_CONF_SETTINGS,
@@ -839,7 +990,6 @@ errno_t remove_krb5_info_files(TALLOC_CTX *mem_ctx, const char *realm)
 void remove_krb5_info_files_callback(void *pvt)
 {
     int ret;
-    TALLOC_CTX *tmp_ctx = NULL;
     struct remove_info_files_ctx *ctx = talloc_get_type(pvt,
                                                   struct remove_info_files_ctx);
 
@@ -864,19 +1014,10 @@ void remove_krb5_info_files_callback(void *pvt)
         }
     }
 
-    tmp_ctx = talloc_new(NULL);
-    if (tmp_ctx == NULL) {
-        DEBUG(SSSDBG_CRIT_FAILURE,
-              "talloc_new failed, cannot remove krb5 info files.\n");
-        return;
-    }
-
-    ret = remove_krb5_info_files(tmp_ctx, ctx->realm);
-    if (ret != EOK) {
-        DEBUG(SSSDBG_CRIT_FAILURE, "remove_krb5_info_files failed.\n");
-    }
-
-    talloc_zfree(tmp_ctx);
+    /* Freeing the remove_info_files_ctx will remove the related krb5info
+     * file. Additionally the callback from the list of callbacks is removed,
+     * it will be added again when a new krb5info file is created. */
+    talloc_free(ctx);
 }
 
 void krb5_finalize(struct tevent_context *ev,
@@ -886,72 +1027,7 @@ void krb5_finalize(struct tevent_context *ev,
                    void *siginfo,
                    void *private_data)
 {
-    char *realm = (char *)private_data;
-    int ret;
-
-    ret = remove_krb5_info_files(se, realm);
-    if (ret != EOK) {
-        DEBUG(SSSDBG_CRIT_FAILURE, "remove_krb5_info_files failed.\n");
-    }
-
     orderly_shutdown(0);
-}
-
-errno_t krb5_install_offline_callback(struct be_ctx *be_ctx,
-                                      struct krb5_ctx *krb5_ctx)
-{
-    int ret;
-    struct remove_info_files_ctx *ctx;
-    const char *krb5_realm;
-
-    if (krb5_ctx->service == NULL || krb5_ctx->service->name == NULL) {
-        DEBUG(SSSDBG_CRIT_FAILURE, "Missing KDC service name!\n");
-        return EINVAL;
-    }
-
-    ctx = talloc_zero(krb5_ctx, struct remove_info_files_ctx);
-    if (ctx == NULL) {
-        DEBUG(SSSDBG_CRIT_FAILURE, "talloc_zfree failed.\n");
-        return ENOMEM;
-    }
-
-    krb5_realm = dp_opt_get_cstring(krb5_ctx->opts, KRB5_REALM);
-    if (krb5_realm == NULL) {
-        DEBUG(SSSDBG_CRIT_FAILURE, "Missing krb5_realm option!\n");
-        ret = EINVAL;
-        goto done;
-    }
-
-    ctx->realm = talloc_strdup(ctx, krb5_realm);
-    if (ctx->realm == NULL) {
-        DEBUG(SSSDBG_CRIT_FAILURE, "talloc_strdup failed!\n");
-        ret = ENOMEM;
-        goto done;
-    }
-
-    ctx->be_ctx = be_ctx;
-    ctx->kdc_service_name = krb5_ctx->service->name;
-    if (krb5_ctx->kpasswd_service == NULL) {
-        ctx->kpasswd_service_name =NULL;
-    } else {
-        ctx->kpasswd_service_name = krb5_ctx->kpasswd_service->name;
-    }
-
-    ret = be_add_offline_cb(ctx, be_ctx, remove_krb5_info_files_callback, ctx,
-                            NULL);
-    if (ret != EOK) {
-        DEBUG(SSSDBG_CRIT_FAILURE, "be_add_offline_cb failed.\n");
-        goto done;
-    }
-
-    ret = EOK;
-
-done:
-    if (ret != EOK) {
-        talloc_zfree(ctx);
-    }
-
-    return ret;
 }
 
 errno_t krb5_install_sigterm_handler(struct tevent_context *ev,

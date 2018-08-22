@@ -96,7 +96,7 @@ enum deskprofile_name {
  * - permuts's matrix;
  * - vals array;
  */
-static errno_t
+errno_t
 ipa_deskprofile_get_filename_path(TALLOC_CTX *mem_ctx,
                                   uint16_t config_priority,
                                   const char *rules_dir,
@@ -122,7 +122,7 @@ ipa_deskprofile_get_filename_path(TALLOC_CTX *mem_ctx,
         {RULES_DIR, DOMAIN, USERNAME, PRIORITY, GROUP, USER, HOST, HOSTGROUP, RULE_NAME, EXTENSION},
         {RULES_DIR, DOMAIN, USERNAME, PRIORITY, GROUP, USER, HOSTGROUP, HOST, RULE_NAME, EXTENSION},
         {RULES_DIR, DOMAIN, USERNAME, PRIORITY, GROUP, HOST, USER, HOSTGROUP, RULE_NAME, EXTENSION},
-        {RULES_DIR, DOMAIN, USERNAME, PRIORITY, GROUP, HOST, HOSTGROUP, HOST, RULE_NAME, EXTENSION},
+        {RULES_DIR, DOMAIN, USERNAME, PRIORITY, GROUP, HOST, HOSTGROUP, USER, RULE_NAME, EXTENSION},
         {RULES_DIR, DOMAIN, USERNAME, PRIORITY, GROUP, HOSTGROUP, USER, HOST, RULE_NAME, EXTENSION},
         {RULES_DIR, DOMAIN, USERNAME, PRIORITY, GROUP, HOSTGROUP, HOST, USER, RULE_NAME, EXTENSION},
         {RULES_DIR, DOMAIN, USERNAME, PRIORITY, HOST, USER, GROUP, HOSTGROUP, RULE_NAME, EXTENSION},

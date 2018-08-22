@@ -21,6 +21,7 @@
 #include <stdio.h>
 #include <talloc.h>
 #include <popt.h>
+#include <signal.h>
 
 #include "util/util.h"
 #include "util/crypto/sss_crypto.h"
@@ -45,7 +46,6 @@ int main(int argc, const char **argv)
     poptContext pc = NULL;
     struct sss_ssh_ent *ent;
     size_t i;
-    char *repr;
     int ret;
 
     debug_prg_name = argv[0];
@@ -99,17 +99,21 @@ int main(int argc, const char **argv)
         goto fini;
     }
 
+    /* if sshd closes its end of the pipe, we don't want sss_ssh_authorizedkeys
+     * to exit abruptly, but to finish gracefully instead because the valid
+     * key can be present in the data already written
+     */
+    signal(SIGPIPE, SIG_IGN);
+
     /* print results */
     for (i = 0; i < ent->num_pubkeys; i++) {
-        ret = sss_ssh_format_pubkey(mem_ctx, &ent->pubkeys[i], &repr);
-        if (ret != EOK) {
-            DEBUG(SSSDBG_OP_FAILURE,
-                  "sss_ssh_format_pubkey() failed (%d): %s\n",
-                    ret, strerror(ret));
-            continue;
+        ret = sss_ssh_print_pubkey(&ent->pubkeys[i]);
+        if (ret != EOK && ret != EINVAL) {
+            DEBUG(SSSDBG_CRIT_FAILURE,
+                  "ssh_ssh_print_pubkey() failed (%d): %s\n",
+                  ret, strerror(ret));
+            goto fini;
         }
-
-        printf("%s\n", repr);
     }
 
     ret = EXIT_SUCCESS;

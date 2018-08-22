@@ -241,7 +241,9 @@ if HAVE_CMOCKA
         test-negcache \
         test-authtok \
         sss_nss_idmap-tests \
+        deskprofile_utils-tests \
         dyndns-tests \
+        domain_resolution_order-tests \
         fqnames-tests \
         nestedgroups-tests \
         test_sss_idmap \
@@ -288,6 +290,7 @@ if HAVE_CMOCKA
         krb5_common_test \
         test_iobuf \
         sss_certmap_test \
+        test_sssd_krb5_locator_plugin \
         $(NULL)
 
 
@@ -330,6 +333,7 @@ endif   # HAVE_CMOCKA
 check_PROGRAMS = \
     stress-tests \
     krb5-child-test \
+    test_ssh_client \
     $(non_interactive_cmocka_based_tests) \
     $(non_interactive_check_based_tests)
 
@@ -970,11 +974,17 @@ libsss_cert_la_CFLAGS = \
     $(AM_CFLAGS) \
     $(SSS_CERT_CFLAGS) \
     $(NULL)
+# NOTE:
+# There is a dependency between libsss_cert and libsss_child which should
+# always be declared explicitly and if missing might cause issue in some
+# environments (e.g. Gentoo or OpenSUSE build service), even if it is
+# resolved otherwise while linking the binaries.
 libsss_cert_la_LIBADD = \
     $(SSS_CERT_LIBS) \
     $(TALLOC_LIBS) \
     $(TEVENT_LIBS) \
     libsss_crypt.la \
+    libsss_child.la \
     libsss_debug.la \
     libsss_certmap.la \
     $(NULL)
@@ -1019,6 +1029,7 @@ libsss_util_la_SOURCES = \
     src/sbus/sssd_dbus_utils.c \
     src/util/util.c \
     src/util/util_ext.c \
+    src/util/util_preauth.c \
     src/util/memory.c \
     src/util/safe-format-string.c \
     src/util/server.c \
@@ -1892,8 +1903,14 @@ check_LTLIBRARIES += \
     $(NULL)
 endif
 
+# libdlopen_test_providers is a helper library to provide missing symbols for
+# dlopen_tests. It is mainly used for the backend modules but is used as well
+# to provide __wrap_sss_nss_make_request_timeout needed make make dlopen_tests
+# pass for libsss_nss_idmap_tests.
 libdlopen_test_providers_la_SOURCES = \
-    $(sssd_be_SOURCES)
+    $(sssd_be_SOURCES) \
+    src/tests/cmocka/wrap_sss_nss_make_request_timeout.c \
+    $(NULL)
 libdlopen_test_providers_la_CFLAGS = \
     $(AM_CFLAGS) \
     $(CHECK_CFLAGS) \
@@ -1921,6 +1938,7 @@ libsss_nss_idmap_tests_la_LDFLAGS = \
     $(libsss_nss_idmap_la_LDFLAGS) \
     -shared \
     -rpath $(libdir) \
+    -Wl,-wrap,sss_nss_make_request_timeout \
     -Wl,--version-script,$(srcdir)/src/sss_client/idmap/sss_nss_idmap.unit_tests
 
 dist_noinst_DATA += src/sss_client/idmap/sss_nss_idmap.unit_tests
@@ -2290,6 +2308,18 @@ krb5_child_test_LDADD = \
     $(SSSD_INTERNAL_LTLIBS) \
     libsss_test_common.la
 
+test_ssh_client_SOURCES = \
+    src/tests/test_ssh_client.c \
+    $(NULL)
+test_ssh_client_CFLAGS = \
+    $(AM_CFLAGS) \
+    -DSSH_CLIENT_DIR=\"$(abs_top_builddir)\" \
+    $(NULL)
+test_ssh_client_LDADD = \
+    $(SSSD_INTERNAL_LTLIBS) \
+    $(SSSD_LIBS) \
+    $(NULL)
+
 if BUILD_DBUS_TESTS
 
 sbus_tests_SOURCES = \
@@ -2585,6 +2615,17 @@ sss_nss_idmap_tests_LDADD = \
     libsss_nss_idmap_tests.la \
     $(NULL)
 
+deskprofile_utils_tests_SOURCES = \
+    src/tests/cmocka/test_deskprofile_utils.c \
+    src/providers/ipa/ipa_deskprofile_rules_util.c \
+    src/providers/ipa/ipa_rules_common.c
+deskprofile_utils_tests_CFLAGS = \
+    $(AM_CFLAGS)
+deskprofile_utils_tests_LDADD = \
+    $(CMOCKA_LIBS) \
+    $(SSSD_INTERNAL_LTLIBS) \
+    libsss_test_common.la
+
 EXTRA_dyndns_tests_DEPENDENCIES = \
      $(ldblib_LTLIBRARIES)
 dyndns_tests_SOURCES = \
@@ -2605,6 +2646,16 @@ dyndns_tests_LDADD = \
     $(SSSD_LIBS) \
     $(SSSD_INTERNAL_LTLIBS) \
     libsss_test_common.la
+
+domain_resolution_order_tests_SOURCES = \
+	src/tests/cmocka/test_domain_resolution_order.c \
+	src/responder/common/cache_req/cache_req_domain.c
+domain_resolution_order_tests_CFLAGS = \
+	$(AM_CFLAGS)
+domain_resolution_order_tests_LDADD = \
+	$(CMOCKA_LIBS) \
+	$(SSSD_INTERNAL_LTLIBS) \
+	libsss_test_common.la
 
 fqnames_tests_SOURCES = \
     src/tests/cmocka/test_fqnames.c
@@ -3445,7 +3496,6 @@ test_iobuf_LDADD = \
     $(SSSD_LIBS) \
     $(NULL)
 
-
 EXTRA_simple_access_tests_DEPENDENCIES = \
     $(ldblib_LTLIBRARIES)
 simple_access_tests_SOURCES = \
@@ -3516,6 +3566,25 @@ sss_certmap_test_LDADD = \
     $(SSSD_INTERNAL_LTLIBS) \
     libsss_test_common.la \
     libsss_certmap.la \
+    $(NULL)
+
+test_sssd_krb5_locator_plugin_SOURCES = \
+    src/tests/cmocka/test_sssd_krb5_locator_plugin.c \
+    src/krb5_plugin/sssd_krb5_locator_plugin.c \
+    $(NULL)
+test_sssd_krb5_locator_plugin_CFLAGS = \
+    $(AM_CFLAGS) \
+    $(POPT_CFLAGS) \
+    $(TALLOC_CFLAGS) \
+    $(KRB5_CFLAGS) \
+    -DTEST_PUBCONF_PATH=\"$(abs_builddir)/src/tests/cmocka/pubconf\" \
+    $(NULL)
+test_sssd_krb5_locator_plugin_LDADD = \
+    $(CMOCKA_LIBS) \
+    $(POPT_LIBS) \
+    $(TALLOC_LIBS) \
+    $(KRB5_LIBS) \
+    libsss_test_common.la \
     $(NULL)
 
 if BUILD_KCM
@@ -3635,6 +3704,7 @@ intgcheck-prepare:
 	    $(INTGCHECK_CONFIGURE_FLAGS) \
 	    CFLAGS="-O2 -g $$CFLAGS -DKCM_PEER_UID=$$(id -u)"; \
 	$(MAKE) $(AM_MAKEFLAGS) ; \
+	$(MAKE) $(AM_MAKEFLAGS) test_ssh_client; \
 	: Force single-thread install to workaround concurrency issues; \
 	$(MAKE) $(AM_MAKEFLAGS) -j1 install; \
 	: Remove .la files from LDB module directory to avoid loader warnings; \
@@ -4635,6 +4705,7 @@ edit_cmd = $(SED) \
         -e 's|@sbindir[@]|$(sbindir)|g' \
         -e 's|@environment_file[@]|$(environment_file)|g' \
         -e 's|@localstatedir[@]|$(localstatedir)|g' \
+        -e 's|@runstatedir[@]|$(runstatedir)|g' \
         -e 's|@logpath[@]|$(logpath)|g' \
         -e 's|@libexecdir[@]|$(libexecdir)|g' \
         -e 's|@pipepath[@]|$(pipepath)|g' \

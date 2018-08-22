@@ -727,6 +727,7 @@ ad_failover_init(TALLOC_CTX *mem_ctx, struct be_ctx *bectx,
                  const char *ad_service,
                  const char *ad_gc_service,
                  const char *ad_domain,
+                 bool use_kdcinfo,
                  struct ad_service **_service)
 {
     errno_t ret;
@@ -756,7 +757,9 @@ ad_failover_init(TALLOC_CTX *mem_ctx, struct be_ctx *bectx,
         goto done;
     }
 
-    service->krb5_service = talloc_zero(service, struct krb5_service);
+    service->krb5_service = krb5_service_new(service, bectx,
+                                             ad_service, krb5_realm,
+                                             use_kdcinfo);
     if (!service->krb5_service) {
         ret = ENOMEM;
         goto done;
@@ -774,24 +777,12 @@ ad_failover_init(TALLOC_CTX *mem_ctx, struct be_ctx *bectx,
         goto done;
     }
 
-    service->krb5_service->name = talloc_strdup(service->krb5_service,
-                                                ad_service);
-    if (!service->krb5_service->name) {
-        ret = ENOMEM;
-        goto done;
-    }
     service->sdap->kinit_service_name = service->krb5_service->name;
     service->gc->kinit_service_name = service->krb5_service->name;
 
     if (!krb5_realm) {
         DEBUG(SSSDBG_CRIT_FAILURE, "No Kerberos realm set\n");
         ret = EINVAL;
-        goto done;
-    }
-    service->krb5_service->realm =
-        talloc_strdup(service->krb5_service, krb5_realm);
-    if (!service->krb5_service->realm) {
-        ret = ENOMEM;
         goto done;
     }
 
@@ -857,7 +848,7 @@ ad_resolve_callback(void *private_data, struct fo_server *server)
     struct resolv_hostent *srvaddr;
     struct sockaddr_storage *sockaddr;
     char *address;
-    const char *safe_address;
+    char *safe_addr_list[2] = { NULL, NULL };
     char *new_uri;
     int new_port;
     const char *srv_name;
@@ -966,17 +957,18 @@ ad_resolve_callback(void *private_data, struct fo_server *server)
     if ((sdata == NULL || sdata->gc == false) &&
         service->krb5_service->write_kdcinfo) {
         /* Write krb5 info files */
-        safe_address = sss_escape_ip_address(tmp_ctx,
-                                            srvaddr->family,
-                                            address);
-        if (safe_address == NULL) {
+        safe_addr_list[0] = sss_escape_ip_address(tmp_ctx,
+                                                  srvaddr->family,
+                                                  address);
+        if (safe_addr_list[0] == NULL) {
             DEBUG(SSSDBG_CRIT_FAILURE, "sss_escape_ip_address failed.\n");
             ret = ENOMEM;
             goto done;
         }
 
-        ret = write_krb5info_file(service->krb5_service->realm, safe_address,
-                                SSS_KRB5KDC_FO_SRV);
+        ret = write_krb5info_file(service->krb5_service,
+                                  safe_addr_list,
+                                  SSS_KRB5KDC_FO_SRV);
         if (ret != EOK) {
             DEBUG(SSSDBG_MINOR_FAILURE,
                 "write_krb5info_file failed, authentication might fail.\n");

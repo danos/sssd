@@ -365,11 +365,10 @@ nss_protocol_fill_initgr(struct nss_ctx *nss_ctx,
             if (posix != NULL && strcmp(posix, "FALSE") == 0) {
                 continue;
             } else {
-                DEBUG(SSSDBG_CRIT_FAILURE,
+                DEBUG(SSSDBG_MINOR_FAILURE,
                       "Incomplete group object [%s] for initgroups! "
-                      "Aborting.\n", ldb_dn_get_linearized(msg->dn));
-                ret = EINVAL;
-                goto done;
+                      "Skipping.\n", ldb_dn_get_linearized(msg->dn));
+                continue;
             }
         }
 
@@ -404,13 +403,9 @@ nss_protocol_fill_initgr(struct nss_ctx *nss_ctx,
             DEBUG(SSSDBG_MINOR_FAILURE,
                   "Failed to store initgroups %s (%s) in mem-cache [%d]: %s!\n",
                   rawname.str, domain->name, ret, sss_strerror(ret));
+            sss_packet_set_size(packet, 0);
+            return ret;
         }
-    }
-
-done:
-    if (ret != EOK) {
-        sss_packet_set_size(packet, 0);
-        return ret;
     }
 
     sss_packet_get_body(packet, &body, &body_len);

@@ -34,8 +34,12 @@ dist_noinst_DATA = \
     test_pac_responder.py \
     data/ad_data.ldif \
     data/ad_schema.ldif \
+    data/sudo_schema.ldif \
     test_pysss_nss_idmap.py \
     test_infopipe.py \
+    test_ssh_pubkey.py \
+    test_pam_responder.py \
+    test_sudo.py \
     $(NULL)
 
 EXTRA_DIST = data/cwrap-dbus-system.conf.in
@@ -73,7 +77,9 @@ cwrap-dbus-system.conf: data/cwrap-dbus-system.conf.in Makefile
 config.py: config.py.m4
 	m4 -D "prefix=\`$(prefix)'" \
 	   -D "sysconfdir=\`$(sysconfdir)'" \
+	   -D "nsslibdir=\`$(nsslibdir)'" \
 	   -D "dbpath=\`$(dbpath)'" \
+	   -D "pubconfpath=\`$(pubconfpath)'" \
 	   -D "pidpath=\`$(pidpath)'" \
 	   -D "logpath=\`$(logpath)'" \
 	   -D "mcpath=\`$(mcpath)'" \

@@ -107,12 +107,18 @@
     %global with_python3_option --without-python3-bindings
 %endif
 
+%if (0%{?fedora} > 28 || 0%{?rhel} > 7)
+    %global with_python2_option --without-python2-bindings
+%else
+    %global with_python2 1
+%endif
+
 %global enable_systemtap 1
 %if (0%{?enable_systemtap} == 1)
     %global enable_systemtap_opt --enable-systemtap
 %endif
 
-%if (0%{?fedora} || (0%{?rhel} >= 7 && 0%{rhel7_minor} >= 4))
+%if (0%{?fedora} || 0%{?rhel} >= 7)
     %global with_secrets 1
 %else
     %global with_secret_responder --without-secrets
@@ -125,7 +131,7 @@
     %global with_kcm_option --without-kcm
 %endif
 
-%if (0%{?fedora} >= 27 || (0%{?rhel} >= 7 && 0%{?rhel7_minor} > 4))
+%if (0%{?fedora} >= 27 || 0%{?rhel} >= 7)
     %global with_gdm_pam_extensions 1
 %else
     %global with_gdm_pam_extensions 0
@@ -195,6 +201,10 @@ BuildRequires: dbus-devel
 BuildRequires: dbus-libs
 BuildRequires: openldap-devel
 BuildRequires: pam-devel
+%if (0%{?use_openssl} == 1)
+BuildRequires: p11-kit-devel
+BuildRequires: openssl-devel
+%endif
 BuildRequires: nss-devel
 BuildRequires: nspr-devel
 BuildRequires: pcre-devel
@@ -203,7 +213,9 @@ BuildRequires: libxml2
 BuildRequires: docbook-style-xsl
 BuildRequires: krb5-devel
 BuildRequires: c-ares-devel
+%if (0%{?with_python2} == 1)
 BuildRequires: python2-devel
+%endif
 %if (0%{?with_python3} == 1)
 BuildRequires: python3-devel
 %endif
@@ -233,8 +245,6 @@ BuildRequires: nss_wrapper
 # slots with are flagged as 'removable' softhsm version 2.1.0 or higher is
 # needed.
 %if (0%{?use_openssl} == 1)
-BuildRequires: p11-kit-devel
-BuildRequires: openssl-devel
 BuildRequires: gnutls-utils
 BuildRequires: softhsm >= 2.1.0
 %endif
@@ -372,6 +382,7 @@ Also provides several other administrative tools:
     * sss_obfuscate for generating an obfuscated LDAP password
     * sssctl -- an sssd status and control utility
 
+%if (0%{?with_python2} == 1)
 %package -n python2-sssdconfig
 Summary: SSSD and IPA configuration file manipulation classes and functions
 Group: Applications/System
@@ -381,6 +392,7 @@ BuildArch: noarch
 
 %description -n python2-sssdconfig
 Provides python2 files for manipulation SSSD and IPA configuration files.
+%endif
 
 %if (0%{?with_python3} == 1)
 %package -n python3-sssdconfig
@@ -394,6 +406,7 @@ BuildArch: noarch
 Provides python3 files for manipulation SSSD and IPA configuration files.
 %endif
 
+%if (0%{?with_python2} == 1)
 %package -n python2-sss
 Summary: Python2 bindings for sssd
 Group: Development/Libraries
@@ -408,6 +421,7 @@ SSSD when using id_provider = local in /etc/sssd/sssd.conf.
 Also provides several other useful python2 bindings:
     * function for retrieving list of groups user belongs to.
     * class for obfuscation of passwords
+%endif
 
 %if (0%{?with_python3} == 1)
 %package -n python3-sss
@@ -426,6 +440,7 @@ Also provides several other useful python3 bindings:
     * class for obfuscation of passwords
 %endif
 
+%if (0%{?with_python2} == 1)
 %package -n python2-sss-murmur
 Summary: Python2 bindings for murmur hash function
 Group: Development/Libraries
@@ -434,6 +449,7 @@ License: LGPLv3+
 
 %description -n python2-sss-murmur
 Provides python2 module for calculating the murmur hash version 3
+%endif
 
 %if (0%{?with_python3} == 1)
 %package -n python3-sss-murmur
@@ -570,6 +586,7 @@ Requires: libipa_hbac = %{version}-%{release}
 %description -n libipa_hbac-devel
 Utility library to validate FreeIPA HBAC rules for authorization requests
 
+%if (0%{?with_python2} == 1)
 %package -n python2-libipa_hbac
 Summary: Python2 bindings for the FreeIPA HBAC Evaluator library
 Group: Development/Libraries
@@ -582,6 +599,7 @@ Obsoletes: libipa_hbac-python < 1.12.90
 %description -n python2-libipa_hbac
 The python2-libipa_hbac contains the bindings so that libipa_hbac can be
 used by Python applications.
+%endif
 
 %if (0%{?with_python3} == 1)
 %package -n python3-libipa_hbac
@@ -615,6 +633,7 @@ Requires: libsss_nss_idmap = %{version}-%{release}
 %description -n libsss_nss_idmap-devel
 Utility library for SID and certificate based lookups
 
+%if (0%{?with_python2} == 1)
 %package -n python2-libsss_nss_idmap
 Summary: Python2 bindings for libsss_nss_idmap
 Group: Development/Libraries
@@ -627,6 +646,7 @@ Obsoletes: libsss_nss_idmap-python < 1.12.90
 %description -n python2-libsss_nss_idmap
 The python2-libsss_nss_idmap contains the bindings so that libsss_nss_idmap can
 be used by Python applications.
+%endif
 
 %if (0%{?with_python3} == 1)
 %package -n python3-libsss_nss_idmap
@@ -782,6 +802,7 @@ autoreconf -ivf
     %{with_initscript} \
     %{?with_syslog} \
     %{?with_cifs_utils_plugin_option} \
+    %{?with_python2_option} \
     %{?with_python3_option} \
     %{?enable_polkit_rules_option} \
     %{?enable_systemtap_opt} \
@@ -832,10 +853,12 @@ rm -Rf ${RPM_BUILD_ROOT}/%{_docdir}/%{name}
 
 # Older versions of rpmbuild can only handle one -f option
 # So we need to append to the sssd*.lang file
+%if (0%{?with_python2} == 1)
 for file in `ls $RPM_BUILD_ROOT/%{python2_sitelib}/*.egg-info 2> /dev/null`
 do
     echo %{python2_sitelib}/`basename $file` >> python2_sssdconfig.lang
 done
+%endif
 
 %if (0%{?with_python3} == 1)
 for file in `ls $RPM_BUILD_ROOT/%{python3_sitelib}/*.egg-info 2> /dev/null`
@@ -914,8 +937,10 @@ done
 echo "sssd.lang:"
 cat sssd.lang
 
+%if (0%{?with_python2} == 1)
 echo "python2_sssdconfig.lang:"
 cat python2_sssdconfig.lang
+%endif
 
 %if (0%{?with_python3} == 1)
 echo "python3_sssdconfig.lang:"
@@ -960,8 +985,6 @@ done
 %{_unitdir}/sssd-ssh.service
 %{_unitdir}/sssd-sudo.socket
 %{_unitdir}/sssd-sudo.service
-%{_unitdir}/sssd-secrets.socket
-%{_unitdir}/sssd-secrets.service
 %else
 %{_initrddir}/%{name}
 %endif
@@ -971,9 +994,6 @@ done
 %{_libexecdir}/%{servicename}/sssd_nss
 %{_libexecdir}/%{servicename}/sssd_pam
 %{_libexecdir}/%{servicename}/sssd_autofs
-%if (0%{?with_secrets} == 1)
-%{_libexecdir}/%{servicename}/sssd_secrets
-%endif
 %{_libexecdir}/%{servicename}/sssd_ssh
 %{_libexecdir}/%{servicename}/sssd_sudo
 %{_libexecdir}/%{servicename}/p11_child
@@ -1006,9 +1026,6 @@ done
 %dir %{_localstatedir}/cache/krb5rcache
 %attr(700,sssd,sssd) %dir %{dbpath}
 %attr(755,sssd,sssd) %dir %{mcpath}
-%if (0%{?with_secrets} == 1)
-%attr(700,root,root) %dir %{secdbpath}
-%endif
 %attr(751,sssd,sssd) %dir %{deskprofilepath}
 %ghost %attr(0644,sssd,sssd) %verify(not md5 size mtime) %{mcpath}/passwd
 %ghost %attr(0644,sssd,sssd) %verify(not md5 size mtime) %{mcpath}/group
@@ -1043,9 +1060,6 @@ done
 %{_mandir}/man5/sssd-simple.5*
 %{_mandir}/man5/sssd-sudo.5*
 %{_mandir}/man5/sssd-session-recording.5*
-%if (0%{?with_secrets} == 1)
-%{_mandir}/man5/sssd-secrets.5*
-%endif
 %{_mandir}/man8/sssd.8*
 %{_mandir}/man8/sss_cache.8*
 %if (0%{?enable_systemtap} == 1)
@@ -1192,10 +1206,12 @@ done
 %{_mandir}/man8/sss_seed.8*
 %{_mandir}/man8/sssctl.8*
 
+%if (0%{?with_python2} == 1)
 %files -n python2-sssdconfig -f python2_sssdconfig.lang
 %defattr(-,root,root,-)
 %dir %{python2_sitelib}/SSSDConfig
 %{python2_sitelib}/SSSDConfig/*.py*
+%endif
 
 %if (0%{?with_python3} == 1)
 %files -n python3-sssdconfig -f python3_sssdconfig.lang
@@ -1206,9 +1222,11 @@ done
 %{python3_sitelib}/SSSDConfig/__pycache__/*.py*
 %endif
 
+%if (0%{?with_python2} == 1)
 %files -n python2-sss
 %defattr(-,root,root,-)
 %{python2_sitearch}/pysss.so
+%endif
 
 %if (0%{?with_python3} == 1)
 %files -n python3-sss
@@ -1216,9 +1234,11 @@ done
 %{python3_sitearch}/pysss.so
 %endif
 
+%if (0%{?with_python2} == 1)
 %files -n python2-sss-murmur
 %defattr(-,root,root,-)
 %{python2_sitearch}/pysss_murmur.so
+%endif
 
 %if (0%{?with_python3} == 1)
 %files -n python3-sss-murmur
@@ -1262,9 +1282,11 @@ done
 %{_libdir}/libsss_nss_idmap.so
 %{_libdir}/pkgconfig/sss_nss_idmap.pc
 
+%if (0%{?with_python2} == 1)
 %files -n python2-libsss_nss_idmap
 %defattr(-,root,root,-)
 %{python2_sitearch}/pysss_nss_idmap.so
+%endif
 
 %if (0%{?with_python3} == 1)
 %files -n python3-libsss_nss_idmap
@@ -1272,9 +1294,11 @@ done
 %{python3_sitearch}/pysss_nss_idmap.so
 %endif
 
+%if (0%{?with_python2} == 1)
 %files -n python2-libipa_hbac
 %defattr(-,root,root,-)
 %{python2_sitearch}/pyhbac.so
+%endif
 
 %if (0%{?with_python3} == 1)
 %files -n python3-libipa_hbac
@@ -1318,12 +1342,23 @@ done
 
 %if (0%{?with_kcm} == 1)
 %files kcm -f sssd_kcm.lang
+%if (0%{?with_secrets} == 1)
+%attr(700,root,root) %dir %{secdbpath}
+%endif
 %{_libexecdir}/%{servicename}/sssd_kcm
+%if (0%{?with_secrets} == 1)
+%{_libexecdir}/%{servicename}/sssd_secrets
+%endif
 %dir %{_datadir}/sssd-kcm
 %{_datadir}/sssd-kcm/kcm_default_ccache
 %{_unitdir}/sssd-kcm.socket
 %{_unitdir}/sssd-kcm.service
+%{_unitdir}/sssd-secrets.socket
+%{_unitdir}/sssd-secrets.service
 %{_mandir}/man8/sssd-kcm.8*
+%if (0%{?with_secrets} == 1)
+%{_mandir}/man5/sssd-secrets.5*
+%endif
 %endif
 
 %pre common

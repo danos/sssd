@@ -33,6 +33,7 @@
  */
 #define LSA_TRUST_DIRECTION_INBOUND  0x00000001
 #define LSA_TRUST_DIRECTION_OUTBOUND 0x00000002
+#define LSA_TRUST_DIRECTION_MASK (LSA_TRUST_DIRECTION_INBOUND | LSA_TRUST_DIRECTION_OUTBOUND)
 
 static char *forest_keytab(TALLOC_CTX *mem_ctx, const char *forest)
 {
@@ -183,16 +184,11 @@ static struct ad_options *ipa_ad_options_new(struct be_ctx *be_ctx,
         return NULL;
     }
 
-    if (direction & LSA_TRUST_DIRECTION_OUTBOUND) {
-        ad_options = ad_create_2way_trust_options(id_ctx,
-                                                  be_ctx->cdb,
-                                                  subdom_conf_path,
-                                                  be_ctx->provider,
-                                                  id_ctx->server_mode->realm,
-                                                  subdom,
-                                                  id_ctx->server_mode->hostname,
-                                                  NULL);
-    } else if (direction & LSA_TRUST_DIRECTION_INBOUND) {
+    /* In both inbound and outbound trust cases we should be
+     * using trusted domain object in a trusted domain space,
+     * thus we always should be initializing principals/keytabs
+     * as if we are running one-way trust */
+    if (direction & LSA_TRUST_DIRECTION_MASK) {
         ad_options = ipa_create_1way_trust_ctx(id_ctx, be_ctx,
                                                subdom_conf_path, forest,
                                                forest_realm, subdom);
@@ -228,6 +224,7 @@ ipa_ad_ctx_new(struct be_ctx *be_ctx,
     struct sdap_domain *sdom;
     errno_t ret;
     const char *extra_attrs;
+    bool use_kdcinfo = false;
 
     ad_domain = subdom->name;
     DEBUG(SSSDBG_TRACE_LIBS, "Setting up AD subdomain %s\n", subdom->name);
@@ -284,12 +281,23 @@ ipa_ad_ctx_new(struct be_ctx *be_ctx,
     ad_servers = dp_opt_get_string(ad_options->basic, AD_SERVER);
     ad_backup_servers = dp_opt_get_string(ad_options->basic, AD_BACKUP_SERVER);
 
+    if (id_ctx->ipa_options != NULL && id_ctx->ipa_options->auth != NULL) {
+        use_kdcinfo = dp_opt_get_bool(id_ctx->ipa_options->auth,
+                                      KRB5_USE_KDCINFO);
+    }
+
+    DEBUG(SSSDBG_TRACE_ALL,
+          "Init failover for [%s][%s] with use_kdcinfo [%s].\n",
+          subdom->name, subdom->realm, use_kdcinfo ? "true" : "false");
+
     /* Set KRB5 realm to same as the one of IPA when IPA
      * is able to attach PAC. For testing, use hardcoded. */
+    /* Why? */
     ret = ad_failover_init(ad_options, be_ctx, ad_servers, ad_backup_servers,
-                           id_ctx->server_mode->realm,
+                           subdom->realm,
                            service_name, gc_service_name,
-                           subdom->name, &ad_options->service);
+                           subdom->name, use_kdcinfo,
+                           &ad_options->service);
     if (ret != EOK) {
         DEBUG(SSSDBG_OP_FAILURE, "Cannot initialize AD failover\n");
         talloc_free(ad_options);
@@ -665,11 +673,10 @@ ipa_server_trusted_dom_setup_send(TALLOC_CTX *mem_ctx,
           subdom->name, state->forest,
           ipa_trust_dir2str(state->direction));
 
-    if (state->direction & LSA_TRUST_DIRECTION_OUTBOUND) {
-        /* Use system keytab, nothing to do here */
-        ret = EOK;
-        goto immediate;
-    } else if (state->direction & LSA_TRUST_DIRECTION_INBOUND) {
+    /* For both inbound and outbound trusts use a special keytab
+     * as this allows us to reuse the same logic in FreeIPA for
+     * both Microsoft AD and Samba AD */
+    if (state->direction & LSA_TRUST_DIRECTION_MASK) {
         /* Need special keytab */
         ret = ipa_server_trusted_dom_setup_1way(req);
         if (ret == EAGAIN) {

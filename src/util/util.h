@@ -539,7 +539,6 @@ struct sss_domain_info *find_domain_by_sid(struct sss_domain_info *domain,
 enum sss_domain_state sss_domain_get_state(struct sss_domain_info *dom);
 void sss_domain_set_state(struct sss_domain_info *dom,
                           enum sss_domain_state state);
-bool is_email_from_domain(const char *email, struct sss_domain_info *dom);
 bool sss_domain_is_forest_root(struct sss_domain_info *dom);
 const char *sss_domain_type_str(struct sss_domain_info *dom);
 
@@ -593,6 +592,10 @@ errno_t get_dom_names(TALLOC_CTX *mem_ctx,
                       struct sss_domain_info *start_dom,
                       char ***_dom_names,
                       int *_dom_names_count);
+
+/* Returns true if the provider used for the passed domain is the "files"
+ * one. Otherwise returns false. */
+bool is_files_provider(struct sss_domain_info *domain);
 
 /* from util_lock.c */
 errno_t sss_br_lock_file(int fd, size_t start, size_t len,
@@ -709,6 +712,9 @@ int sss_create_dir(const char *parent_dir_path,
 /* from selinux.c */
 int selinux_file_context(const char *dst_name);
 int reset_selinux_file_context(void);
+
+/* from util_preauth.c */
+errno_t create_preauth_indicator(void);
 
 #ifdef SSSD_LIBEXEC_PATH
 #define P11_CHILD_LOG_FILE "p11_child"

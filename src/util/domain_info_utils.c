@@ -889,33 +889,6 @@ bool sss_domain_is_forest_root(struct sss_domain_info *dom)
     return (dom->forest_root == dom);
 }
 
-bool is_email_from_domain(const char *email, struct sss_domain_info *dom)
-{
-    const char *p;
-
-    if (email == NULL || dom == NULL) {
-        return false;
-    }
-
-    p = strchr(email, '@');
-    if (p == NULL) {
-        DEBUG(SSSDBG_TRACE_ALL,
-              "Input [%s] does not look like an email address.\n", email);
-        return false;
-    }
-
-    if (strcasecmp(p+1, dom->name) == 0) {
-        DEBUG(SSSDBG_TRACE_ALL, "Email [%s] is from domain [%s].\n", email,
-                                                                     dom->name);
-        return true;
-    }
-
-    DEBUG(SSSDBG_TRACE_ALL, "Email [%s] is not from domain [%s].\n", email,
-                                                                     dom->name);
-
-    return false;
-}
-
 char *subdomain_create_conf_path(TALLOC_CTX *mem_ctx,
                                  struct sss_domain_info *subdomain)
 {
@@ -954,4 +927,10 @@ void sss_domain_info_set_output_fqnames(struct sss_domain_info *domain,
 bool sss_domain_info_get_output_fqnames(struct sss_domain_info *domain)
 {
     return domain->output_fqnames;
+}
+
+bool is_files_provider(struct sss_domain_info *domain)
+{
+    return domain->provider != NULL &&
+           strcasecmp(domain->provider, "files") == 0;
 }
