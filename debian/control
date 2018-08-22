@@ -1,7 +1,7 @@
 Source: sssd
 Section: utils
 Priority: optional
-Maintainer: Debian SSSD Team <pkg-sssd-devel@lists.alioth.debian.org>
+Maintainer: Debian SSSD Team <pkg-sssd-devel@alioth-lists.debian.net>
 Uploaders: Timo Aaltonen <tjaalton@debian.org>
 Build-Depends:
  autopoint,
