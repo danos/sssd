@@ -1,0 +1,4 @@
+Tests: ldap-user-group-ldap-auth
+Depends: @, slapd, ldap-utils, openssl, expect, lsb-release
+Restrictions: isolation-container, needs-root, allow-stderr
+
