@@ -3,6 +3,7 @@
 set timeout 10
 set user [lindex $argv 0]
 set password [lindex $argv 1]
+set principal [lindex $argv 2]
 
 set distribution [exec "lsb_release" "-is"]
 
@@ -49,6 +50,25 @@ expect {
     exit 1
   }
   "$user"
+}
+expect {
+  timeout
+  {
+    puts "Expect error: timeout waiting for prompt\r\r"
+    exit 1
+  }
+  "$ "
+}
+if { $principal != "" } {
+  send "klist\r"
+  expect {
+    timeout
+    {
+      puts "Expect error: timeout waiting for klist output\r\r"
+      exit 1
+    }
+    "Default principal: $principal"
+  }
 }
 send "logout\r"
 exit 0

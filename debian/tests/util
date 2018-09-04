@@ -126,6 +126,26 @@ EOF
     } | ldapadd -x -D "${admin_dn}" -w "${admin_pw}"
 }
 
+configure_sssd_ldap_rfc2307_krb5_auth() {
+    cat > /etc/sssd/sssd.conf <<EOF
+[sssd]
+config_file_version = 2
+services = nss, pam
+domains = LDAP
+
+[domain/LDAP]
+id_provider = ldap
+ldap_uri = ldap://${myhostname}
+auth_provider = krb5
+krb5_server = ${myhostname}
+krb5_realm = ${myrealm}
+cache_credentials = True
+ldap_search_base = ${mysuffix}
+EOF
+    chmod 0600 /etc/sssd/sssd.conf
+    systemctl restart sssd
+}
+
 configure_sssd_ldap_rfc2307() {
     cat > /etc/sssd/sssd.conf <<EOF
 [sssd]
@@ -178,3 +198,62 @@ check_getent_group() {
         die "${getent_group} not found via getent group"
     fi
 }
+
+create_realm() {
+    local realm_name="$1"
+    local kerberos_server="$2"
+
+    # start fresh
+    rm -rf /var/lib/krb5kdc/*
+    rm -rf /etc/krb5kdc/*
+    rm -f /etc/krb5.keytab
+
+    # setup some defaults
+    cat > /etc/krb5kdc/kdc.conf <<EOF
+[kdcdefaults]
+    kdc_ports = 750,88
+[realms]
+    ${realm_name} = {
+	    database_name = /var/lib/krb5kdc/principal
+	    admin_keytab = FILE:/etc/krb5kdc/kadm5.keytab
+	    acl_file = /etc/krb5kdc/kadm5.acl
+	    key_stash_file = /etc/krb5kdc/stash
+	    kdc_ports = 750,88
+	    max_life = 10h 0m 0s
+	    max_renewable_life = 7d 0h 0m 0s
+	    master_key_type = des3-hmac-sha1
+	    #supported_enctypes = aes256-cts:normal aes128-cts:normal
+	    default_principal_flags = +preauth
+    }
+EOF
+
+    cat > /etc/krb5.conf <<EOF
+[libdefaults]
+    default_realm = ${realm_name}
+    kdc_timesync = 1
+    ccache_type = 4
+    forwardable = true
+    proxiable = true
+    fcc-mit-ticketflags = true
+[realms]
+	${realm_name} = {
+		kdc = ${kerberos_server}
+		admin_server = ${kerberos_server}
+	}
+EOF
+    echo "# */admin *" > /etc/krb5kdc/kadm5.acl
+
+    # create the realm
+    kdb5_util create -s -P secretpassword
+
+    # restart services
+    systemctl restart krb5-kdc.service krb5-admin-server.service
+}
+
+create_krb_principal() {
+    local principal="$1"
+    local password="$2"
+
+    kadmin.local -q "addprinc -pw ${password} ${principal}"
+}
+
