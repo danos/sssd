@@ -1,3 +1,16 @@
+sssd (1.16.3-2) unstable; urgency=medium
+
+  [ Jeremy Bicha ]
+  * Don't require libgdm-dev on s390x or non-Linux architectures
+    (Closes: #913030)
+
+  [ Andreas Hasenack ]
+  * d/t/{ldap-user-group-ldap-auth,control,login.exp,util,common-tests}: add
+    LDAP DEP8 test
+  * d/t/{util,login.exp,ldap-user-group-krb5-auth,control}: add krb5 DEP8 test
+
+ -- Timo Aaltonen <tjaalton@debian.org>  Tue, 06 Nov 2018 16:55:34 +0200
+
 sssd (1.16.3-1) unstable; urgency=medium
 
   * New upstream release.
