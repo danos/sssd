@@ -1,8 +1,9 @@
-sssd (1.16.3-3) UNRELEASED; urgency=medium
+sssd (1.16.3-3) unstable; urgency=medium
 
   * fix-curl-ftbfs.diff: Fix build with current curl. (Closes: #913403)
+  * Rebuild with python3.7. (Closes: #915199, #915168)
 
- -- Timo Aaltonen <tjaalton@debian.org>  Fri, 23 Nov 2018 15:00:30 +0200
+ -- Timo Aaltonen <tjaalton@debian.org>  Sun, 02 Dec 2018 11:16:57 +0200
 
 sssd (1.16.3-2) unstable; urgency=medium
 
