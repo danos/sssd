@@ -52,8 +52,6 @@ Build-Depends:
  libuid-wrapper,
  libxml2-utils,
  lsb-release,
- python-dev (>= 2.6.6-3~),
- python-setuptools,
  python3-dev,
  python3-setuptools,
  quilt,
@@ -232,8 +230,8 @@ Description: System Security Services Daemon -- proxy back end
 Package: sssd-tools
 Architecture: any
 Depends:
- python,
- python-sss,
+ python3,
+ python3-sss,
  sssd-common (= ${binary:Version}),
  ${misc:Depends},
  ${shlibs:Depends}
@@ -391,51 +389,6 @@ Description: SSSD libwbclient implementation -- development files
  .
  This package contains header files and symlinks to develop programs which will
  use the libwbclient-sssd library.
-
-Package: python-libipa-hbac
-Section: python
-Architecture: any
-Depends:
- libipa-hbac0 (= ${binary:Version}),
- ${misc:Depends},
- ${python:Depends},
- ${shlibs:Depends}
-Description: Python bindings for the FreeIPA HBAC Evaluator library
- The libipa_hbac-python contains the bindings so that libipa_hbac can be
- used by Python applications.
- .
- This package installs the library for Python 2.
-
-Package: python-libsss-nss-idmap
-Section: python
-Architecture: any
-Depends:
- libsss-nss-idmap0 (= ${binary:Version}),
- ${misc:Depends},
- ${python:Depends},
- ${shlibs:Depends}
-Description: Python bindings for the SID lookups library
- This package contains the bindings for libnss_sss_idmap to be used by
- Python applications.
- .
- This package installs the library for Python 2.
-
-Package: python-sss
-Section: python
-Architecture: any
-Depends: ${misc:Depends}, ${python:Depends}, ${shlibs:Depends}
-Provides: ${python:Provides}
-Recommends: sssd
-Description: Python module for the System Security Services Daemon
- Provides a set of daemons to manage access to remote directories and
- authentication mechanisms. It provides an NSS and PAM interface toward
- the system and a pluggable backend system to connect to multiple different
- account sources. It is also the basis to provide client auditing and policy
- services for projects like FreeIPA.
- .
- This package provide a module to access the configuration of the sssd daemon.
- .
- This package installs the library for Python 2.
 
 Package: python3-libipa-hbac
 Section: python

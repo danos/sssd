@@ -1,6 +1,6 @@
 #!/usr/bin/make -f
 %:
-	dh $@ --with quilt,autoreconf,python2,python3,systemd \
+	dh $@ --with quilt,autoreconf,python3,systemd \
 		--builddirectory=build
 
 DPKG_EXPORT_BUILDFLAGS = 1
@@ -39,6 +39,7 @@ override_dh_auto_configure:
 	--with-systemdunitdir=/lib/systemd/system \
 	--disable-files-domain \
 	--with-smb-idmap-interface-version=6 \
+	--without-python2-bindings \
 	--with-sudo
 
 override_dh_auto_test:
@@ -78,13 +79,13 @@ override_dh_install:
 		      $(CURDIR)/debian/tmp/lib/systemd/system/sssd-$$responder.socket; \
 	done
 
+	# change the shebang
+	sed -i -e 's:/usr/bin/python:/usr/bin/python3:' $(CURDIR)/debian/tmp/usr/sbin/sss_obfuscate
+
 	dh_install
 
 override_dh_missing:
 	dh_missing --fail-missing
-
-override_dh_python2:
-	dh_python2 --no-guessing-versions
 
 override_dh_installinit:
 	dh_apparmor -psssd-common --profile-name=usr.sbin.sssd
