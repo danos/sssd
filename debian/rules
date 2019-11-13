@@ -25,6 +25,15 @@ ifeq ($(DISTRIBUTION), Ubuntu)
 	INIT = upstart
 endif
 
+DANOS_EXTRA_ARGS = --with-tacplus
+
+# To avoid Debian version conditional *.install files
+DANOS_EXTRA_ARGS += --disable-cifs-idmap-plugin
+DANOS_EXTRA_ARGS += --without-samba
+DANOS_EXTRA_ARGS += --without-semanage
+DANOS_EXTRA_ARGS += --disable-config-lib
+DANOS_EXTRA_ARGS += --disable-krb5-locator-plugin
+
 override_dh_auto_configure:
 	dh_auto_configure -- --enable-krb5-locator-plugin \
 	--datadir=/usr/share/ \
@@ -37,7 +46,8 @@ override_dh_auto_configure:
 	--with-autofs \
 	--with-ssh \
 	--with-initscript=systemd --with-systemdunitdir=/lib/systemd/system \
-	--with-sudo
+	--with-sudo \
+	$(DANOS_EXTRA_ARGS)
 
 override_dh_auto_test:
 	export CK_TIMEOUT_MULTIPLIER=10

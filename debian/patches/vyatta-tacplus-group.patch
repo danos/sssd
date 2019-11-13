@@ -1,0 +1,15 @@
+--- a/src/providers/tacplus/tacplus_id.c
++++ b/src/providers/tacplus/tacplus_id.c
+@@ -211,6 +211,12 @@ static int get_vyatta_groups(TALLOC_CTX
+ 		return ret;
+ 	num_groups++;
+ 
++	/* Add the vyatta.system.user.tacplus group */
++	ret = add_string_to_list(tmpctx, "vyatta.system.user.tacplus", &groups);
++	if (ret)
++		return ret;
++	num_groups++;
++
+ 	*_groups = groups;
+ 	return ret;
+ }

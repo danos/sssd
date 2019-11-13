@@ -1,0 +1,507 @@
+Subject: tacplus-available-prop
+
+---
+ src/providers/data_provider_be.c       |   7 +
+ src/providers/dp_backend.h             |   1 +
+ src/providers/tacplus/tacplus_common.c | 290 +++++++++++++++++++++++++++++++--
+ src/providers/tacplus/tacplus_common.h |  18 +-
+ src/providers/tacplus/tacplus_init.c   |  46 +++++-
+ 5 files changed, 347 insertions(+), 15 deletions(-)
+
+--- a/src/providers/data_provider_be.c
++++ b/src/providers/data_provider_be.c
+@@ -547,6 +547,13 @@
+     be_run_online_cb(ctx);
+ }
+ 
++void be_mark_online_iff_offline(struct be_ctx *ctx)
++{
++    if (be_is_offline(ctx))
++        be_reset_offline(ctx);
++}
++
++
+ static char *dp_pam_err_to_string(TALLOC_CTX *memctx, int dp_err_type, int errnum)
+ {
+     switch (dp_err_type) {
+--- a/src/providers/dp_backend.h
++++ b/src/providers/dp_backend.h
+@@ -190,6 +190,7 @@
+ 
+ bool be_is_offline(struct be_ctx *ctx);
+ void be_mark_offline(struct be_ctx *ctx);
++void be_mark_online_iff_offline(struct be_ctx *ctx);
+ 
+ int be_add_reconnect_cb(TALLOC_CTX *mem_ctx,
+                         struct be_ctx *ctx,
+--- a/src/providers/tacplus/tacplus_common.c
++++ b/src/providers/tacplus/tacplus_common.c
+@@ -22,6 +22,8 @@
+ 
+ #include "providers/tacplus/tacplus_common.h"
+ 
++struct tacplus_global_ctx *tac_glob;
++
+ struct dp_option default_basic_opts[] = {
+     { "tacplus_shell", DP_OPT_STRING, { "/bin/bash" }, NULL_STRING },
+     { "tacplus_service", DP_OPT_STRING, { "shell" }, NULL_STRING },
+@@ -37,6 +39,82 @@
+     be_req_terminate(req, dp_err, error, errstr);
+ }
+ 
++static DBusMessage *dbus_property_get(DBusConnection *conn,
++                                      const char *destination,
++                                      const char *path,
++                                      const char *interface,
++                                      const char *property,
++                                      DBusMessageIter *ret)
++{
++    DBusError derr;
++    DBusMessage *dmsg, *dmsg_reply;
++    DBusMessageIter iter;
++
++    dmsg = dbus_message_new_method_call(
++                destination, path, DBUS_INTERFACE_PROPERTIES, "Get");
++    if(dmsg == NULL) {
++        DEBUG(SSSDBG_OP_FAILURE, "Failed to create Get(%s) method call\n", property);
++        return NULL;
++    }
++
++    dbus_message_iter_init_append(dmsg, &iter);
++    dbus_message_iter_append_basic(&iter, DBUS_TYPE_STRING, &interface);
++    dbus_message_iter_append_basic(&iter, DBUS_TYPE_STRING, &property);
++
++    dbus_error_init(&derr);
++
++    dmsg_reply = dbus_connection_send_with_reply_and_block(
++                    conn, dmsg, TACPLUS_DAEMON_TIMEOUT_MS, &derr);
++    if((tacplus_validate_reply_msg(&derr)) < 0) {
++        DEBUG(SSSDBG_OP_FAILURE, "Failed to get online status of TACACS+ provider\n");
++        goto finish;
++    }
++
++    if (! dbus_message_iter_init(dmsg_reply, &iter)) {
++        dbus_message_unref(dmsg_reply);
++        dmsg_reply = NULL;
++        goto finish;
++    }
++
++    dbus_message_iter_recurse(&iter, ret);
++
++finish:
++    dbus_message_unref(dmsg);
++    /* Caller is required to unref dmsg_reply */
++    return dmsg_reply;
++}
++
++int tacplus_get_offline(void)
++{
++    DBusConnection *conn;
++    DBusMessage *reply;
++    DBusMessageIter iter;
++    DBusBasicValue offline;
++
++    DEBUG(SSSDBG_TRACE_FUNC, "Getting offline status of "TACPLUS_DAEMON"\n");
++
++    conn = tacplus_connect_daemon();
++    if (! conn)
++        return -1;
++
++    reply = dbus_property_get(conn, TACPLUS_DAEMON,
++                              TACPLUS_DAEMON_PATH, TACPLUS_DAEMON_IFACE,
++                              TACPLUS_DAEMON_PROP_OFFLINE, &iter);
++    if (! reply)
++        return -1;
++
++    if (dbus_message_iter_get_arg_type(&iter) == DBUS_TYPE_BOOLEAN) {
++        dbus_message_iter_get_basic(&iter, &offline);
++        dbus_message_unref(reply);
++        return offline.bool_val ? 1 : 0;
++    }
++
++    DEBUG(SSSDBG_TRACE_FUNC,
++        "Unexpected type for "TACPLUS_DAEMON" "TACPLUS_DAEMON_PROP_OFFLINE" property");
++    dbus_message_unref(reply);
++    return -1;
++}
++
+ int tacplus_author(const char *user, const char *service, const char *proto,
+                    const char *secrets, const char *tty, const char *rhost,
+                    char **level, char **local_account, int *delete_user,
+@@ -259,31 +337,218 @@
+     return ret;
+ }
+ 
+-DBusConnection * tacplus_connect_daemon(void)
++static DBusHandlerResult props_changed_handler(DBusConnection *connection,
++                                               DBusMessage *message, void *user)
++{
++    struct tacplus_global_ctx *ctx = user;
++    DBusMessageIter parentIter, dictIter, dictEntryIter, variantIter;
++    const char *name;
++
++    if (! dbus_message_is_signal(message, DBUS_INTERFACE_PROPERTIES, TACPLUS_DAEMON_PROP_CHG_SIG))
++        return DBUS_HANDLER_RESULT_NOT_YET_HANDLED;
++
++    if (! dbus_message_iter_init(message, &parentIter) ||
++            dbus_message_iter_get_arg_type(&parentIter) != DBUS_TYPE_STRING)
++        return DBUS_HANDLER_RESULT_NOT_YET_HANDLED;
++
++    dbus_message_iter_get_basic(&parentIter, &name);
++
++    if (strcmp(name, TACPLUS_DAEMON) || !dbus_message_iter_next(&parentIter))
++        return DBUS_HANDLER_RESULT_NOT_YET_HANDLED;
++
++    DEBUG(SSSDBG_TRACE_FUNC,
++          "Received "TACPLUS_DAEMON_PROP_CHG_SIG" signal from "TACPLUS_DAEMON"\n");
++
++    dbus_message_iter_recurse(&parentIter, &dictIter);
++
++    while ((dbus_message_iter_get_arg_type(&dictIter) == DBUS_TYPE_DICT_ENTRY)) {
++        dbus_message_iter_recurse(&dictIter, &dictEntryIter);
++
++        while ((dbus_message_iter_get_arg_type(&dictEntryIter)) == DBUS_TYPE_STRING) {
++            const char *key;
++            dbus_message_iter_get_basic(&dictEntryIter, &key);
++            dbus_message_iter_next(&dictEntryIter);
++            if (dbus_message_iter_get_arg_type(&dictEntryIter) != DBUS_TYPE_VARIANT)
++                continue;
++
++            if (strcmp(key, TACPLUS_DAEMON_PROP_OFFLINE) == 0) {
++                dbus_message_iter_recurse(&dictEntryIter, &variantIter);
++                if((dbus_message_iter_get_arg_type(&variantIter)) != DBUS_TYPE_BOOLEAN)
++                    continue;
++
++                DBusBasicValue offline;
++                dbus_message_iter_get_basic(&variantIter, &offline);
++                DEBUG(SSSDBG_TRACE_FUNC, TACPLUS_DAEMON" signals it has gone %s\n",
++                    offline.bool_val ? "offline" : "online");
++
++                if (offline.bool_val)
++                    be_mark_offline(ctx->be);
++                else
++                    be_mark_online_iff_offline(ctx->be);
++            }
++
++            dbus_message_iter_next(&dictEntryIter);
++        }
++        dbus_message_iter_next(&dictIter);
++    }
++
++    return DBUS_HANDLER_RESULT_HANDLED;
++}
++
++static void tacplus_reconnect_cb(struct tevent_context *,
++                                 struct tevent_timer *,
++                                 struct timeval,
++                                 void *);
++
++static int tacplus_start_reconnect_timer(uint32_t secs)
++{
++    struct timeval exp = tevent_timeval_current_ofs(secs, 0);
++    if (! tevent_add_timer(tac_glob->be->ev, tac_glob->be, exp,
++                           tacplus_reconnect_cb, NULL)) {
++        DEBUG(SSSDBG_OP_FAILURE, "Failure scheduling DBus reconnect\n");
++        return -1;
++    }
++    return 0;
++}
++
++static void tacplus_reconnect_cb(struct tevent_context *ev,
++                                 struct tevent_timer *t,
++                                 struct timeval curr_time,
++                                 void *user)
++{
++    DEBUG(SSSDBG_TRACE_FUNC, "Attempting DBus reconnect\n");
++
++    if (tac_glob->sconn) {
++        sbus_disconnect(tac_glob->sconn);
++        /* sbus_disconnect() unref'd tac_glob->conn */
++        tac_glob->conn = NULL;
++        tac_glob->sconn = NULL;
++    }
++
++    if (tacplus_setup_connection() == 0) {
++        DEBUG(SSSDBG_TRACE_FUNC, "DBus reconnect succeeded\n");
++        return;
++    }
++
++    if (tacplus_start_reconnect_timer(TACPLUS_BUS_RECONNECT_START) == 0)
++        DEBUG(SSSDBG_TRACE_FUNC, "DBus reconnect failed - retry in %us\n",
++              TACPLUS_BUS_RECONNECT_START);
++
++    return;
++}
++
++void tacplus_reconnect(struct sbus_connection *sconn, int status, void *data)
++{
++    DEBUG(SSSDBG_TRACE_FUNC, "Scheduling DBus reconnect\n");
++
++    if (sconn != tac_glob->sconn) {
++        DEBUG(SSSDBG_TRACE_FUNC, "DBus reconnect attempt on stale connection\n");
++        return;
++    }
++
++    tacplus_start_reconnect_timer(TACPLUS_BUS_RECONNECT_START);
++}
++
++int tacplus_setup_connection()
+ {
+-    DBusConnection *dconn;
+     DBusError derr;
+ 
+-    dbus_error_init(&derr);
++    /* Connection is already setup */
++    if (tac_glob->conn)
++        return 0;
+ 
+-    dconn = dbus_bus_get(DBUS_BUS_SYSTEM, &derr);
++    dbus_error_init(&derr);
++    tac_glob->conn = dbus_bus_get_private(DBUS_BUS_SYSTEM, &derr);
++    if (dbus_error_is_set(&derr)) {
++        DEBUG(SSSDBG_OP_FAILURE,
++              "Failed to connect to system bus: %s\n", derr.message);
++        dbus_error_free(&derr);
++        tac_glob->conn = NULL;
++        return -1;
++    }
++    dbus_connection_set_exit_on_disconnect(tac_glob->conn, false);
+ 
++    /* Add match so we receive PropertiesChanged signals from tacplusd */
++    dbus_bus_add_match(tac_glob->conn,
++        "type='signal',"
++        "sender='"TACPLUS_DAEMON"',"
++        "interface='"DBUS_INTERFACE_PROPERTIES"',"
++        "member='"TACPLUS_DAEMON_PROP_CHG_SIG"'",
++        &derr);
+     if (dbus_error_is_set(&derr)) {
+         DEBUG(SSSDBG_OP_FAILURE,
+-              "Failed to connect to system bus: %s",
+-                          derr.message);
++              "Add "TACPLUS_DAEMON_PROP_CHG_SIG" match failure: %s\n", derr.message);
++        goto fail;
++    }
++
++    /* Add filter to handle signal receipt */
++    if (! dbus_connection_add_filter(tac_glob->conn, props_changed_handler, tac_glob, NULL)) {
++        DEBUG(SSSDBG_OP_FAILURE,
++              "dbus_connection_add_filter(props_changed_handler) fail\n");
++        goto fail;
++    }
++
++    /* Init sbus connection in order to hook into the event loop */
++    int ret = sbus_init_connection(
++        tac_glob, tac_glob->be->ev, tac_glob->conn, SBUS_CONN_TYPE_SYSBUS, &tac_glob->sconn);
++    if (ret != EOK) {
++        DEBUG(SSSDBG_OP_FAILURE, "sbus_init_connection() fail: %d\n", ret);
++        goto fail;
++    }
++
++    /*
++     * Set a reconnect callback to detect errors on the connection and re-connect.
++     * A max retries value of 1 will cause our callback to be called immediately
++     * on each reconnect attempt, rather than using the "automatic" sbus_reconnect().
++     */
++    sbus_reconnect_init(tac_glob->sconn, 1, tacplus_reconnect, NULL);
++    DEBUG(SSSDBG_TRACE_FUNC, "DBus connection successfully setup\n");
++
++    int offline = tacplus_get_offline();
++
++    /*
++     * If we could not determine the offline status of tacplusd then
++     * leave the offline state of the provider unchanged.
++     */
++    if (offline < 0)
++        return 0;
++
++    /* Otherwise adjust the offline state of the provider */
++    DEBUG(SSSDBG_TRACE_FUNC, "tacplusd is currently %s\n", offline ? "offline" : "online");
++    if (offline)
++        be_mark_offline(tac_glob->be);
++    else
++        be_mark_online_iff_offline(tac_glob->be);
++
++    return 0;
++
++fail:
++    if (dbus_error_is_set(&derr))
+         dbus_error_free(&derr);
+-        return NULL;
++
++    if (tac_glob->sconn) {
++        sbus_disconnect(tac_glob->sconn);
++        TALLOC_FREE(tac_glob->sconn);
++    } else {
++        dbus_connection_unref(tac_glob->conn);
+     }
+ 
+-    return dconn;
++    tac_glob->conn = NULL;
++    return -1;
+ }
+ 
++DBusConnection * tacplus_connect_daemon(void)
++{
++    tacplus_setup_connection();
++    return tac_glob->conn;
++}
++
++
+ int tacplus_validate_reply_msg(DBusError *derr)
+ {
+     if (dbus_error_is_set(derr)) {
+         DEBUG(SSSDBG_OP_FAILURE,
+-              "failed to receive a reply: %s",
++              "failed to receive a reply: %s\n",
+                derr->message);
+         dbus_error_free(derr);
+         return -1;
+@@ -295,11 +560,10 @@
+ {
+     if (dbus_error_is_set(derr)) {
+         DEBUG(SSSDBG_OP_FAILURE,
+-              "failed to retrieve basic type argument: %s",
++              "failed to retrieve basic type argument: %s\n",
+                derr->message);
+         dbus_error_free(derr);
+         return -1;
+     }
+     return 0;
+ }
+-
+--- a/src/providers/tacplus/tacplus_common.h
++++ b/src/providers/tacplus/tacplus_common.h
+@@ -36,9 +36,15 @@
+ #define TACPLUS_DAEMON_AUTHEN  "authen_send"
+ #define TACPLUS_DAEMON_AUTHOR  "author_send"
+ #define TACPLUS_DAEMON_ACCT    "account_send"
++
++#define TACPLUS_DAEMON_PROP_OFFLINE "offline"
++#define TACPLUS_DAEMON_PROP_CHG_SIG "PropertiesChanged"
++
+ /* how long should we wait on a reply from the daemon?*/
+ #define TACPLUS_DAEMON_TIMEOUT_MS 10000
+ 
++#define TACPLUS_BUS_RECONNECT_START 1
++
+ /* authorization status codes */
+ #define TAC_PLUS_AUTHOR_STATUS_PASS_ADD  0x01
+ #define TAC_PLUS_AUTHOR_STATUS_PASS_REPL 0x02
+@@ -66,6 +72,13 @@
+ #define TAC_PLUS_ACCT_FLAG_STOP     0x04
+ 
+ 
++struct tacplus_global_ctx {
++    struct be_ctx *be;
++    DBusConnection *conn;
++    struct sbus_connection *sconn;
++};
++
++extern struct tacplus_global_ctx *tac_glob;
+ 
+ struct tacplus_options {
+     struct dp_option *basic;
+@@ -85,7 +98,6 @@
+ struct tacplus_ctx {
+     struct be_ctx *be;
+     struct tacplus_options *opts;
+-    struct tac_server *srv;
+     struct pam_data *pd;
+ };
+ 
+@@ -106,8 +118,11 @@
+                    const char *tty, const char *rhost, char **level,
+                    char **local_account, int *delete_user, bool *secrets_group);
+ 
++int tacplus_setup_connection(void);
+ DBusConnection * tacplus_connect_daemon(void);
+ int tacplus_validate_reply_msg(DBusError *);
+ int tacplus_validate_basic_reply_args(DBusError *);
+ 
++int tacplus_get_offline(void);
++
+ #endif /* _TACPLUS_COMMON_H_ */
+--- a/src/providers/tacplus/tacplus_init.c
++++ b/src/providers/tacplus/tacplus_init.c
+@@ -23,8 +23,36 @@
+ #include "providers/tacplus/tacplus_auth.h"
+ #include "providers/tacplus/tacplus_common.h"
+ 
++static int tacplus_global_init(struct be_ctx *bectx)
++{
++    if (tac_glob) {
++        if (tac_glob->be != bectx) {
++            DEBUG(SSSDBG_OP_FAILURE,
++                "tacplus_global_ctx already allocated with a different be_ctx!\n");
++            return EINVAL;
++        }
++        return EOK;
++    }
++
++    tac_glob = talloc_zero(bectx, struct tacplus_global_ctx);
++    if (! tac_glob)
++        return ENOMEM;
++
++    tac_glob->be = bectx;
++    return EOK;
++}
++
++static void tacplus_check_online(struct be_req *req)
++{
++    int offline = tacplus_get_offline();
++    be_req_terminate(req, !offline ? DP_ERR_OK : DP_ERR_OFFLINE, offline, NULL);
++}
++
+ static void tacplus_shutdown(struct be_req *req)
+ {
++    sbus_disconnect(tac_glob->sconn);
++    TALLOC_FREE(tac_glob);
++
+     be_req_terminate(req, DP_ERR_OK, EOK, NULL);
+ }
+ 
+@@ -32,7 +60,7 @@
+ struct bet_ops tacplus_id_ops = {
+     .handler = tacplus_account_info_handler,
+     .finalize = tacplus_shutdown,
+-    .check_online = NULL
++    .check_online = tacplus_check_online
+ };
+ 
+ /* Auth Handler */
+@@ -56,6 +84,11 @@
+     struct tacplus_ctx *ctx;
+     int ret;
+ 
++    if ((ret = tacplus_global_init(bectx)) != EOK)
++        return ret;
++
++    tacplus_setup_connection();
++
+     ctx = talloc_zero(bectx, struct tacplus_ctx);
+     if (!ctx) {
+         return ENOMEM;
+@@ -86,6 +119,11 @@
+     struct tacplus_ctx *ctx;
+     int ret;
+ 
++    if ((ret = tacplus_global_init(bectx)) != EOK)
++        return ret;
++
++    tacplus_setup_connection();
++
+     ctx = talloc_zero(bectx, struct tacplus_ctx);
+     if (!ctx) {
+         return ENOMEM;
+@@ -116,6 +154,11 @@
+     struct tacplus_ctx *ctx;
+     int ret;
+ 
++    if ((ret = tacplus_global_init(bectx)) != EOK)
++        return ret;
++
++    tacplus_setup_connection();
++
+     ctx = talloc_zero(bectx, struct tacplus_ctx);
+     if (!ctx) {
+         return ENOMEM;

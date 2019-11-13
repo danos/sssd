@@ -1,0 +1,94 @@
+--- a/src/confdb/confdb.h
++++ b/src/confdb/confdb.h
+@@ -151,6 +151,7 @@
+ #define CONFDB_DOMAIN_SUDO_PROVIDER "sudo_provider"
+ #define CONFDB_DOMAIN_AUTOFS_PROVIDER "autofs_provider"
+ #define CONFDB_DOMAIN_SELINUX_PROVIDER "selinux_provider"
++#define CONFDB_DOMAIN_SESSION_PROVIDER "session_provider"
+ #define CONFDB_DOMAIN_HOSTID_PROVIDER "hostid_provider"
+ #define CONFDB_DOMAIN_SUBDOMAINS_PROVIDER "subdomains_provider"
+ #define CONFDB_DOMAIN_COMMAND "command"
+--- a/src/man/sssd.conf.5.xml
++++ b/src/man/sssd.conf.5.xml
+@@ -1780,6 +1780,27 @@
+                     </listitem>
+                 </varlistentry>
+                 <varlistentry>
++                    <term>session_provider (string)</term>
++                    <listitem>
++                        <para>
++                            The provider which should handle loading of session
++                            settings. Note that this provider will be called right
++                            after access provider ends.
++                            Supported session providers are:
++                        </para>
++                        <para>
++                            <quote>tacplus</quote> to do session accounting.
++                        </para>
++                        <para>
++                            <quote>none</quote> disallows fetching session settings explicitly.
++                        </para>
++                        <para>
++                            Default: <quote>id_provider</quote> is used if it
++                            is set and can handle session loading requests.
++                        </para>
++                    </listitem>
++                </varlistentry>
++                <varlistentry>
+                     <term>subdomains_provider (string)</term>
+                     <listitem>
+                         <para>
+--- a/src/providers/data_provider_be.c
++++ b/src/providers/data_provider_be.c
+@@ -100,6 +100,7 @@
+     {BET_SUDO, CONFDB_DOMAIN_SUDO_PROVIDER, "sssm_%s_sudo_init"},
+     {BET_AUTOFS, CONFDB_DOMAIN_AUTOFS_PROVIDER, "sssm_%s_autofs_init"},
+     {BET_SELINUX, CONFDB_DOMAIN_SELINUX_PROVIDER, "sssm_%s_selinux_init"},
++    {BET_SESSION, CONFDB_DOMAIN_SESSION_PROVIDER, "sssm_%s_session_init"},
+     {BET_HOSTID, CONFDB_DOMAIN_HOSTID_PROVIDER, "sssm_%s_hostid_init"},
+     {BET_SUBDOMAINS, CONFDB_DOMAIN_SUBDOMAINS_PROVIDER, "sssm_%s_subdomains_init"},
+     {BET_MAX, NULL, NULL}
+@@ -1385,8 +1386,10 @@
+             target = BET_CHPASS;
+             break;
+         case SSS_PAM_OPEN_SESSION:
+-        case SSS_PAM_SETCRED:
+         case SSS_PAM_CLOSE_SESSION:
++            target = BET_SESSION;
++            break;
++        case SSS_PAM_SETCRED:
+             pd->pam_status = PAM_SUCCESS;
+             goto done;
+             break;
+@@ -2760,6 +2763,21 @@
+                   "from provider [%s].\n", ctx->bet_info[BET_SELINUX].mod_name);
+     }
+ 
++    ret = load_backend_module(ctx, BET_SESSION,
++                              &ctx->bet_info[BET_SESSION],
++                              ctx->bet_info[BET_ID].mod_name);
++    if (ret != EOK) {
++        if (ret != ENOENT) {
++            DEBUG(SSSDBG_FATAL_FAILURE, "fatal error initializing data providers\n");
++            goto fail;
++        }
++        DEBUG(SSSDBG_CRIT_FAILURE, "No session module provided for [%s] !!\n",
++                  be_domain);
++    } else {
++        DEBUG(SSSDBG_TRACE_ALL, "session backend target successfully loaded "
++                  "from provider [%s].\n", ctx->bet_info[BET_SESSION].mod_name);
++    }
++
+     ret = load_backend_module(ctx, BET_HOSTID,
+                               &ctx->bet_info[BET_HOSTID],
+                               ctx->bet_info[BET_ID].mod_name);
+--- a/src/providers/dp_backend.h
++++ b/src/providers/dp_backend.h
+@@ -53,6 +53,7 @@
+     BET_SUDO,
+     BET_AUTOFS,
+     BET_SELINUX,
++    BET_SESSION,
+     BET_HOSTID,
+     BET_SUBDOMAINS,
+     BET_MAX

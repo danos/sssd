@@ -1,2 +1,27 @@
+# Backported fixes from upstream
+SDAP-Remove-user-from-cache-for-missing-user-in-LDAP.patch
+sss_client-Update-integrity-check-of-records-in-mmap.patch
+BUILD-Repair-dependecies-on-deprecated-libraries.patch
+0001-MONITOR-Do-not-use-two-configuration-databases.patch
+
+vyatta-werror.patch
 fix-obsolete-target.diff
-libsystemd.diff
+discard_const_krb5_get_init_creds_password.patch
+SIFP-fix-warning-format-security.patch
+
+# required for tacplus
+stay_offline_except_link_changes.patch
+reintroduce_session_handler.patch
+tacplus/propagate_pam_error_via_initgroup_failure.patch
+offline-timeout-backoff-toggle.patch
+
+# tacplus provider
+tacplus/Initial-support-for-tacplus-id-and-auth-provider.patch
+workaround_deadlock_robust_thread_regression.patch
+vyatta-tacplus-group.patch
+tacplus-warn-on-unknown-mandatory-attributes.patch
+local-user-name-deprecation-log.patch
+secrets-group.patch
+track-tacplusd-offline-state.patch
+
+Fix-gcc8-compiler-error.patch

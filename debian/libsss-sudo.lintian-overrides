@@ -1,1 +1,3 @@
 shlib-without-versioned-soname usr/lib/*/libsss_sudo.so libsss_sudo.so
+postrm-should-call-ldconfig usr/lib/*/libsss_sudo.so
+postinst-must-call-ldconfig usr/lib/*/libsss_sudo.so

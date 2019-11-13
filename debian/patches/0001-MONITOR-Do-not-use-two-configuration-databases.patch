@@ -1,0 +1,64 @@
+From a887e33fbd02bc9ef987fc1bd2a487a04aff9980 Mon Sep 17 00:00:00 2001
+From: Lukas Slebodnik <lslebodn@redhat.com>
+Date: Wed, 30 May 2018 22:17:16 +0200
+Subject: [PATCH] MONITOR: Do not use two configuration databases
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+confdb was initialized twice in monitor. The 1st time in
+load_configuration and the 2nd time in server_setup.
+
+libldb-1.4.0 contains stricter checking of PID which created db.
+    ldb_tdb: Prevent ldb_tdb reuse after a fork()
+
+    We may relax this restriction in the future, but for now do not assume
+    that the caller has done a tdb_reopen_all() at the right time.
+
+    Signed-off-by: Andrew Bartlett <abartlet@samba.org>
+
+It did not cause any problem when sssd was stared in interactive mode
+(used by systemd) But it causes failures in daemon mode which is used
+in cwrap integration
+
+[sssd] [ldb] (0x4000): Destroying timer event 0x5555557b1d30 "ltdb_timeout"
+[sssd] [ldb] (0x4000): Ending timer event 0x5555557cbdd0 "ltdb_callback"
+[sssd] [server_setup] (0x0400): CONFDB: /var/lib/sss/db/config.ldb
+[sssd] [ldb] (0x0010): Failed to unlock db: ../ldb_tdb/ldb_tdb.c:147: Reusing ldb opend by pid 28889 in process 28893
+ / Protocol error
+[sssd] [confdb_get_param] (0x0020): Failed to get [krb5_rcache_dir] from [config/sssd], error [5] (Input/output error)
+[sssd] [confdb_get_string] (0x0020): Failed to get [krb5_rcache_dir] from [config/sssd], error [5] (Input/output error)
+
+Reviewed-by: Fabiano Fidêncio <fidencio@redhat.com>
+---
+ src/monitor/monitor.c | 14 ++++++++++++++
+ 1 file changed, 14 insertions(+)
+
+diff --git a/src/monitor/monitor.c b/src/monitor/monitor.c
+index a08087038..ca5c79924 100644
+--- a/src/monitor/monitor.c
++++ b/src/monitor/monitor.c
+@@ -2663,6 +2663,20 @@ int main(int argc, const char *argv[])
+                        monitor->conf_path, &main_ctx);
+     if (ret != EOK) return 2;
+ 
++    /* Use confd initialized in server_setup. ldb_tdb module (1.4.0) check PID
++     * of process which initialized db for locking purposes.
++     * Failed to unlock db: ../ldb_tdb/ldb_tdb.c:147:
++     *    Reusing ldb opened by pid 28889 in process 28893
++     */
++    talloc_zfree(monitor->cdb);
++    monitor->cdb = main_ctx->confdb_ctx;
++
++    ret = confdb_get_domains(monitor->cdb, &monitor->domains);
++    if (ret != EOK) {
++        DEBUG(SSSDBG_FATAL_FAILURE, "No domains configured.\n");
++        return 4;
++    }
++
+     monitor->is_daemon = !opt_interactive;
+     monitor->parent_pid = main_ctx->parent_pid;
+     monitor->ev = main_ctx->event_ctx;
+-- 
+2.20.1
+

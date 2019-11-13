@@ -1,0 +1,10 @@
+--- a/Makefile.am
++++ b/Makefile.am
+@@ -87,6 +87,7 @@
+     AM_CFLAGS += -aux-info $@.X
+ endif
+ if HAVE_GCC
++    AM_CFLAGS += -Werror
+     AM_CFLAGS += -Wall -Wshadow -Wstrict-prototypes -Wpointer-arith \
+                  -Wcast-qual -Wcast-align -Wwrite-strings -Wundef \
+                  -Werror-implicit-function-declaration -Winit-self \

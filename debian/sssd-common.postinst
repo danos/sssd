@@ -19,6 +19,10 @@ set -e
 
 case "$1" in
     configure)
+        # from old packaging, delete the dupe
+        if [ -f /etc/logrotate.d/sssd ]; then
+            rm -f /etc/logrotate.d/sssd
+        fi
     ;;
 
     abort-upgrade|abort-remove|abort-deconfigure)

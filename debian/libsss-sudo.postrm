@@ -32,7 +32,7 @@ remove_nss_entry() {
 case "$1" in
     remove|purge)
         remove_nss_entry
-        ldconfig
+        #ldconfig # Use activate-noawait ldconfig in libsss-sudo.triggers
     ;;
     upgrade|failed-upgrade|abort-install|abort-upgrade|disappear)
     ;;

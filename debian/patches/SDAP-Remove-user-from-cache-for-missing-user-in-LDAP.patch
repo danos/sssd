@@ -1,0 +1,88 @@
+From d0d6956c3748ba670448edd548b8edd37c5f5c1a Mon Sep 17 00:00:00 2001
+From: Lukas Slebodnik <lslebodn@redhat.com>
+Date: Wed, 17 Jun 2015 21:35:22 +0200
+Subject: [PATCH] SDAP: Remove user from cache for missing user in LDAP
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Function sysdb_get_real_name overrode reurned code LDAP
+and thus user was not removed from cache after removing it from LDAP.
+This patch also do not try to set initgroups flag if user
+does not exist. It reduce some error message.
+
+Resolves:
+https://fedorahosted.org/sssd/ticket/2681
+
+Reviewed-by: Michal Židek <mzidek@redhat.com>
+(cherry picked from commit 9fc96a4a2b07b92585b02dba161ab1eb2dbdad98)
+---
+ src/providers/ldap/ldap_id.c | 47 ++++++++++++++++++++++++--------------------
+ 1 file changed, 26 insertions(+), 21 deletions(-)
+
+diff --git a/src/providers/ldap/ldap_id.c b/src/providers/ldap/ldap_id.c
+index a53a7d7b1..4ebcd516b 100644
+--- a/src/providers/ldap/ldap_id.c
++++ b/src/providers/ldap/ldap_id.c
+@@ -1142,32 +1142,37 @@ static void groups_by_user_done(struct tevent_req *subreq)
+     }
+     state->sdap_ret = ret;
+ 
+-    if (ret && ret != ENOENT) {
+-        state->dp_error = dp_error;
+-        tevent_req_error(req, ret);
+-        return;
+-    }
+-
+-    /* state->name is still the name used for the original request. The cached
+-     * object might have a different name, e.g. a fully-qualified name. */
+-    ret = sysdb_get_real_name(state, state->domain, state->name, &cname);
+-    if (ret != EOK) {
+-        cname = state->name;
+-        DEBUG(SSSDBG_OP_FAILURE, "Failed to canonicalize name, using [%s].\n",
+-                                 cname);
++    if (ret == EOK || ret == ENOENT) {
++        /* state->name is still the name used for the original req. The cached
++         * object might have a different name, e.g. a fully-qualified name. */
++        ret = sysdb_get_real_name(state, state->domain, state->name, &cname);
++        if (ret != EOK) {
++            cname = state->name;
++            DEBUG(SSSDBG_OP_FAILURE,
++                  "Failed to canonicalize name, using [%s].\n", cname);
++        }
+     }
+ 
+-    if (ret == ENOENT && state->noexist_delete == true) {
+-        ret = sysdb_delete_user(state->domain, cname, 0);
+-        if (ret != EOK && ret != ENOENT) {
++    switch (state->sdap_ret) {
++    case ENOENT:
++        if (state->noexist_delete == true) {
++            ret = sysdb_delete_user(state->domain, cname, 0);
++            if (ret != EOK && ret != ENOENT) {
++                tevent_req_error(req, ret);
++                return;
++            }
++        }
++        break;
++    case EOK:
++        ret = set_initgroups_expire_attribute(state->domain, cname);
++        if (ret != EOK) {
++            state->dp_error = DP_ERR_FATAL;
+             tevent_req_error(req, ret);
+             return;
+         }
+-    }
+-
+-    ret = set_initgroups_expire_attribute(state->domain, cname);
+-    if (ret != EOK) {
+-        state->dp_error = DP_ERR_FATAL;
++        break;
++    default:
++        state->dp_error = dp_error;
+         tevent_req_error(req, ret);
+         return;
+     }
+-- 
+2.11.0
+

@@ -1,0 +1,26 @@
+---
+ src/responder/pam/pamsrv_cmd.c |    5 +++++
+ 1 file changed, 5 insertions(+)
+
+--- a/src/responder/pam/pamsrv_cmd.c
++++ b/src/responder/pam/pamsrv_cmd.c
+@@ -1343,6 +1343,11 @@
+                   (unsigned int)err_maj, (unsigned int)err_min, err_msg);
+     }
+ 
++    if (err_min == ENXIO || err_min == EIO || err_min == ENOMEM) {
++        ret = err_min;
++        goto done;
++    }
++
+     ret = pam_check_user_search(preq);
+     if (ret == EOK) {
+         /* Make sure we don't go to the ID provider too often */
+@@ -1362,6 +1367,7 @@
+ 
+     ret = pam_check_user_done(preq, ret);
+ 
++done:
+     if (ret) {
+         preq->pd->pam_status = PAM_SYSTEM_ERR;
+         pam_reply(preq);

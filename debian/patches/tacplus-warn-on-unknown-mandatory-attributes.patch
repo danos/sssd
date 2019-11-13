@@ -1,0 +1,44 @@
+--- a/src/providers/tacplus/tacplus_common.c
++++ b/src/providers/tacplus/tacplus_common.c
+@@ -125,14 +125,14 @@ int tacplus_author(const char *user, con
+         dbus_message_iter_recurse(&dictIter, &dictEntryIter);
+         while( (dbus_message_iter_get_arg_type(&dictEntryIter)) != DBUS_TYPE_INVALID) {
+             dbus_message_iter_get_basic(&dictEntryIter, &key);
+-            if (strcmp("level", key) == 0) {
++            if (strcmp("level=", key) == 0) {
+                 dbus_message_iter_next(&dictEntryIter);
+                 if (level) {
+                     dbus_message_iter_get_basic(&dictEntryIter, &tmp);
+                     *level = strdup(tmp);
+                 }
+             }
+-            else if (strcmp("local-user-name", key) == 0) {
++            else if (strcmp("local-user-name=", key) == 0) {
+                 dbus_message_iter_next(&dictEntryIter);
+                 if (local_account) {
+                     dbus_message_iter_get_basic(&dictEntryIter, &tmp);
+@@ -140,7 +140,23 @@ int tacplus_author(const char *user, con
+                 }
+             }
+             else {
+-                DEBUG(SSSDBG_TRACE_FUNC, "Ignoring unsupported attribute-key: %s", key);
++                char *key_nosep = NULL;
++                if (strlen(key) > 1)
++                    key_nosep = strndup(key, strlen(key)-1);
++
++                if strchr(key, '=') {
++                    sss_log(SSS_LOG_WARNING, "Unsupported mandatory TACACS+ attribute '%s'",
++                            key_nosep ? key_nosep : key);
++                    status = TAC_PLUS_AUTHOR_STATUS_FAIL;
++                    free(key_nosep);
++                    break;
++                }
++                else {
++                    DEBUG(SSSDBG_TRACE_FUNC, "Ignoring unsupported attribute-key: "
++                                             "%s", key_nosep ? key_nosep : key);
++                }
++
++                free(key_nosep);
+             }
+             dbus_message_iter_next(&dictEntryIter);
+         }

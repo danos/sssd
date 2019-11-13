@@ -4,7 +4,7 @@ set -e
 
 case "$1" in
     configure)
-        ldconfig
+        #ldconfig # Use activate-noawait ldconfig in libsss-sudo.triggers
     ;;
 
     abort-upgrade|abort-remove|abort-deconfigure)

@@ -1,0 +1,95 @@
+From 4b5c6ec89b74f5d37164f4e2544a36a32abcd075 Mon Sep 17 00:00:00 2001
+From: Petr Cech <pcech@redhat.com>
+Date: Mon, 27 Jul 2015 12:52:49 -0400
+Subject: [PATCH] BUILD: Repair dependecies on deprecated libraries
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Modules libsystemd-journal and libsystemd-login are
+deprecated and "libsystemd" should be used instead
+of them.
+
+Resolves:
+https://fedorahosted.org/sssd/ticket/2733
+
+Reviewed-by: Lukáš Slebodník <lslebodn@redhat.com>
+---
+ contrib/ci/deps.sh      |  2 +-
+ src/external/systemd.m4 | 40 ++++++++++++++++++++++++++++------------
+ 2 files changed, 29 insertions(+), 13 deletions(-)
+
+diff --git a/contrib/ci/deps.sh b/contrib/ci/deps.sh
+index 0cdb99629..50e4f44c6 100644
+--- a/contrib/ci/deps.sh
++++ b/contrib/ci/deps.sh
+@@ -84,7 +84,7 @@ if [[ "$DISTRO_BRANCH" == -debian-* ]]; then
+         libselinux1-dev
+         libsemanage1-dev
+         libsmbclient-dev
+-        libsystemd-journal-dev
++        libsystemd-dev
+         libtalloc-dev
+         libtdb-dev
+         libtevent-dev
+diff --git a/src/external/systemd.m4 b/src/external/systemd.m4
+index dbced0d66..4c2844596 100644
+--- a/src/external/systemd.m4
++++ b/src/external/systemd.m4
+@@ -1,25 +1,41 @@
++dnl There are no module libsystemd-journal and libsystem-login
++dnl up systemd version 209
++PKG_CHECK_EXISTS([libsystemd],
++                 [HAVE_LIBSYSTEMD=yes],
++                 [HAVE_LIBSYSTEMD=no])
++
+ dnl A macro to check presence of systemd on the system
+ AC_DEFUN([AM_CHECK_SYSTEMD],
+ [
+     PKG_CHECK_EXISTS(systemd,
+                      [ HAVE_SYSTEMD=1, AC_SUBST(HAVE_SYSTEMD) ],
+-                     [AC_MSG_ERROR([Could not detect systemd presence])]
+-                    )
++                     [AC_MSG_ERROR([Could not detect systemd presence])])
+ ])
+ 
++AS_IF([test x$HAVE_LIBSYSTEMD = xyes],
++      [login_lib_name=libsystemd],
++      [login_lib_name=libsystemd-login])
++
+ AM_COND_IF([HAVE_SYSTEMD],
+-           [PKG_CHECK_MODULES([SYSTEMD_LOGIN], [libsystemd-login],
+-            [AC_DEFINE_UNQUOTED(HAVE_SYSTEMD_LOGIN, 1, [Build with libsystemdlogin support])],
+-            [AC_MSG_NOTICE([Build without libsystemd-login support])])])
++           [PKG_CHECK_MODULES([SYSTEMD_LOGIN],
++                              [$login_lib_name],
++                              [AC_DEFINE_UNQUOTED([HAVE_SYSTEMD_LOGIN], 1,
++                                          [Build with libsystemdlogin support])
++                              ],
++           [AC_MSG_NOTICE([Build without libsystemd-login support])])])
+ 
+ dnl A macro to check presence of journald on the system
+ AC_DEFUN([AM_CHECK_JOURNALD],
+ [
+-       PKG_CHECK_MODULES(JOURNALD,
+-                         libsystemd-journal,
+-                         [AC_DEFINE_UNQUOTED([WITH_JOURNALD], 1, [journald is available])])
+-       dnl Some older versions of pkg-config might not set these automatically
+-       dnl while setting CFLAGS and LIBS manually twice doesn't hurt.
+-       AC_SUBST([JOURNALD_CFLAGS])
+-       AC_SUBST([JOURNALD_LIBS])
++    AS_IF([test x$HAVE_LIBSYSTEMD = xyes],
++          [journal_lib_name=libsystemd],
++          [journal_lib_name=libsystemd-journal])
++
++    PKG_CHECK_MODULES(JOURNALD, [$journal_lib_name],
++                      [AC_DEFINE_UNQUOTED([WITH_JOURNALD], 1,
++                                          [journald is available])])
++    dnl Some older versions of pkg-config might not set these automatically
++    dnl while setting CFLAGS and LIBS manually twice doesn't hurt.
++    AC_SUBST([JOURNALD_CFLAGS])
++    AC_SUBST([JOURNALD_LIBS])
+ ])
+-- 
+2.11.0
+
