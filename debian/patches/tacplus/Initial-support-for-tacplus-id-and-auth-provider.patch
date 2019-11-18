@@ -1419,23 +1419,23 @@ Subject: Initial support for tacplus id and auth provider
 +
 +    /* Create the required local groups in the SYSDB on-the-fly */
 +    if (level_groups) {
-+       for (i=0; level_groups[i]; i++) {
-+           ret = add_group(dom, level_groups[i]);
-+           if (ret) {
++        for (i=0; level_groups[i]; i++) {
++            ret = add_group(dom, level_groups[i]);
++            if (ret) {
 +                DEBUG(SSSDBG_OP_FAILURE, "Could not create local groups in sysdb\n");
 +                talloc_zfree(attrs);
-+           	return ret;
-+	   }
-+       }
++                return ret;
++            }
++        }
 +
-+       /* override original configured primary group. Required for non-configd releases. */
-+       if (level && (strncmp(level, "superuser", 9) == 0 || strncmp(level, "admin", 5) == 0)) {
-+          /* get primary group ID */
-+          struct group *grp = getgrnam("vyattacfg");
-+          if (grp) {
-+             gid = grp->gr_gid;
-+          }
-+       }
++        /* override original configured primary group. Required for non-configd releases. */
++        if (level && (strncmp(level, "superuser", 9) == 0 || strncmp(level, "admin", 5) == 0)) {
++            /* get primary group ID */
++            struct group *grp = getgrnam("vyattacfg");
++            if (grp) {
++                gid = grp->gr_gid;
++            }
++        }
 +    }
 +
 +
