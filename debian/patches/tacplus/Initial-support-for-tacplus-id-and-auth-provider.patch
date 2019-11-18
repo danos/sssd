@@ -1133,7 +1133,7 @@ Subject: Initial support for tacplus id and auth provider
 +#endif /* _TACPLUS_COMMON_H_ */
 --- /dev/null
 +++ b/src/providers/tacplus/tacplus_id.c
-@@ -0,0 +1,531 @@
+@@ -0,0 +1,532 @@
 +/*
 +    SSSD
 +
@@ -1415,8 +1415,6 @@ Subject: Initial support for tacplus id and auth provider
 +       return ret;
 +    }
 +
-+    talloc_zfree(tmpctx);
-+
 +    /* Create the required local groups in the SYSDB on-the-fly */
 +    if (level_groups) {
 +        for (i=0; level_groups[i]; i++) {
@@ -1424,6 +1422,7 @@ Subject: Initial support for tacplus id and auth provider
 +            if (ret) {
 +                DEBUG(SSSDBG_OP_FAILURE, "Could not create local groups in sysdb\n");
 +                talloc_zfree(attrs);
++                talloc_zfree(tmpctx);
 +                return ret;
 +            }
 +        }
@@ -1455,6 +1454,7 @@ Subject: Initial support for tacplus id and auth provider
 +    if (ret) {
 +        DEBUG(SSSDBG_OP_FAILURE, "Could not store user \"%s\" in sysdb\n", name);
 +        talloc_zfree(attrs);
++        talloc_zfree(tmpctx);
 +        return ret;
 +    }
 +
@@ -1463,6 +1463,7 @@ Subject: Initial support for tacplus id and auth provider
 +    ret = sysdb_update_members(dom, name, SYSDB_MEMBER_USER,
 +                         (const char *const *)level_groups,
 +                         (const char *const *)delete_groups);
++    talloc_zfree(tmpctx);
 +    if (ret) {
 +        DEBUG(SSSDBG_OP_FAILURE, "Could not update group memberships for \"%s\" in sysdb\n", name);
 +        return ret;
