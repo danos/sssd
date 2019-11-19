@@ -23,5 +23,3 @@ tacplus-warn-on-unknown-mandatory-attributes.patch
 local-user-name-deprecation-log.patch
 secrets-group.patch
 track-tacplusd-offline-state.patch
-
-Fix-gcc8-compiler-error.patch
