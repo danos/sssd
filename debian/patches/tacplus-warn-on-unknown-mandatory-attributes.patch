@@ -1,6 +1,6 @@
 --- a/src/providers/tacplus/tacplus_common.c
 +++ b/src/providers/tacplus/tacplus_common.c
-@@ -123,14 +123,14 @@
+@@ -123,7 +123,7 @@
          dbus_message_iter_recurse(&dictIter, &dictEntryIter);
          while( (dbus_message_iter_get_arg_type(&dictEntryIter)) != DBUS_TYPE_INVALID) {
              dbus_message_iter_get_basic(&dictEntryIter, &key);
@@ -9,15 +9,7 @@
                  dbus_message_iter_next(&dictEntryIter);
                  if (level) {
                      dbus_message_iter_get_basic(&dictEntryIter, &tmp);
-                     *level = strdup(tmp);
-                 }
-             }
--            else if (strcmp("local-user-name", key) == 0) {
-+            else if (strcmp("local-user-name=", key) == 0) {
-                 dbus_message_iter_next(&dictEntryIter);
-                 if (local_account) {
-                     dbus_message_iter_get_basic(&dictEntryIter, &tmp);
-@@ -138,7 +138,23 @@
+@@ -131,7 +131,23 @@
                  }
              }
              else {

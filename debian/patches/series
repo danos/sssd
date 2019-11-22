@@ -20,6 +20,5 @@ tacplus/Initial-support-for-tacplus-id-and-auth-provider.patch
 workaround_deadlock_robust_thread_regression.patch
 vyatta-tacplus-group.patch
 tacplus-warn-on-unknown-mandatory-attributes.patch
-local-user-name-deprecation-log.patch
 secrets-group.patch
 track-tacplusd-offline-state.patch
