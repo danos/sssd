@@ -1,3 +1,11 @@
+sssd (1.12.5-3danos3) unstable; urgency=medium
+
+  [ Duncan Eastoe ]
+  * Squash Fix-gcc8-compiler-error.patch
+  * Remove support for local-user-name authz attr
+
+ -- David Stapleton <dstaplet@mail.eng.vyatta.net>  Mon, 25 Nov 2019 11:11:38 +0000
+
 sssd (1.12.5-3danos2) unstable; urgency=medium
 
   [ Duncan Eastoe ]
