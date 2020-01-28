@@ -4,17 +4,18 @@ Subject: Initial support for tacplus id and auth provider
  Makefile.am                                 |   26 +
  configure.ac                                |    2 
  src/conf_macros.m4                          |   22 +
+ src/config/SSSDConfigTest.py                |    1 
  src/config/etc/sssd.api.d/sssd-tacplus.conf |   10 
  src/db/sysdb.h                              |   17 
  src/db/sysdb_ops.c                          |   35 +
  src/db/sysdb_search.c                       |   44 ++
- src/providers/tacplus/tacplus_auth.c        |  472 +++++++++++++++++++++++++
- src/providers/tacplus/tacplus_auth.h        |   29 +
- src/providers/tacplus/tacplus_common.c      |  259 ++++++++++++++
- src/providers/tacplus/tacplus_common.h      |  114 ++++++
- src/providers/tacplus/tacplus_id.c          |  516 ++++++++++++++++++++++++++++
+ src/providers/tacplus/tacplus_auth.c        |  467 ++++++++++++++++++++++++
+ src/providers/tacplus/tacplus_auth.h        |   30 +
+ src/providers/tacplus/tacplus_common.c      |  240 ++++++++++++
+ src/providers/tacplus/tacplus_common.h      |  110 +++++
+ src/providers/tacplus/tacplus_id.c          |  528 ++++++++++++++++++++++++++++
  src/providers/tacplus/tacplus_init.c        |  142 +++++++
- 13 files changed, 1688 insertions(+)
+ 14 files changed, 1674 insertions(+)
  create mode 100644 src/config/etc/sssd.api.d/sssd-tacplus.conf
  create mode 100644 src/providers/tacplus/tacplus_auth.c
  create mode 100644 src/providers/tacplus/tacplus_auth.h
@@ -118,6 +119,16 @@ Subject: Initial support for tacplus id and auth provider
 +    fi
 +    AM_CONDITIONAL([BUILD_TACPLUS], [test x"$with_tacplus" = xyes])
 +  ])
+--- a/src/config/SSSDConfigTest.py
++++ b/src/config/SSSDConfigTest.py
+@@ -738,6 +738,7 @@
+             'ipa': ['id', 'auth', 'access', 'chpass', 'sudo', 'autofs',
+                     'session', 'hostid', 'subdomains'],
+             'ad': ['id', 'auth', 'access', 'chpass', 'sudo', 'subdomains'],
++            'tacplus': ['id', 'auth'],
+             'local': ['id', 'auth', 'chpass'],
+             'ldap': ['id', 'auth', 'access', 'chpass', 'sudo', 'autofs'],
+             'krb5': ['auth', 'access', 'chpass'],
 --- /dev/null
 +++ b/src/config/etc/sssd.api.d/sssd-tacplus.conf
 @@ -0,0 +1,10 @@
@@ -1126,7 +1137,7 @@ Subject: Initial support for tacplus id and auth provider
 +#endif /* _TACPLUS_COMMON_H_ */
 --- /dev/null
 +++ b/src/providers/tacplus/tacplus_id.c
-@@ -0,0 +1,499 @@
+@@ -0,0 +1,528 @@
 +/*
 +    SSSD
 +
@@ -1136,7 +1147,7 @@ Subject: Initial support for tacplus id and auth provider
 +
 +    Copyright (C) 2010 Red Hat
 +    Copyright (c) 2014-2017 Brocade Communications Systems, Inc.
-+    Copyright (c) 2018-2019 AT&T Intellectual Property.
++    Copyright (c) 2018-2020 AT&T Intellectual Property.
 +
 +
 +    This program is free software; you can redistribute it and/or modify
@@ -1564,6 +1575,31 @@ Subject: Initial support for tacplus id and auth provider
 +    return ret;
 +}
 +
++static bool handle_request_for_user(struct be_acct_req *ar,
++                                    const char *name)
++{
++    if ((ar->entry_type & 0xFFF) != BE_REQ_INITGROUPS)
++        return true;
++
++    /*
++     * We are likely to receive an initgroups request for local users
++     * since the default NSS configuration for initgroups queries all
++     * services configured for the groups database - it does not return
++     * after the first successful query.
++     *
++     * Therefore before we issue a TACACS+ session authorization request
++     * check whether the user already exists in another database (most
++     * likely a local one ie. /etc/passwd).
++     */
++    if (getpwnam(name)) {
++        DEBUG(SSSDBG_TRACE_FUNC,
++          "User %s already exists - ignoring initgroups request.\n", name);
++        return false;
++    }
++
++    return true;
++}
++
 +void tacplus_account_info_handler(struct be_req *breq)
 +{
 +    struct be_acct_req *ar;
@@ -1590,16 +1626,20 @@ Subject: Initial support for tacplus id and auth provider
 +    case BE_REQ_INITGROUPS:
 +        switch (ar->filter_type) {
 +        case BE_FILTER_NAME:
-+            ret = get_pw_name(breq, ctx, domain, ar->filter_value);
-+        if (ret) {
-+            if (ret == ENXIO) {
-+                DEBUG(SSSDBG_TRACE_FUNC,
-+                      "get_pw_name returned UNAVAIL error, going offline!\n");
-+                be_mark_offline(be_ctx);
++            if (handle_request_for_user(ar, ar->filter_value))
++                ret = get_pw_name(breq, ctx, domain, ar->filter_value);
++            else
++                ret = EOK;
++
++            if (ret) {
++                if (ret == ENXIO) {
++                    DEBUG(SSSDBG_TRACE_FUNC,
++                          "get_pw_name returned UNAVAIL error, going offline!\n");
++                    be_mark_offline(be_ctx);
++                }
++                return tacplus_reply(breq, DP_ERR_FATAL, ret,
++                        "TACACS+ id provider lookup failed");
 +            }
-+            return tacplus_reply(breq, DP_ERR_FATAL, ret,
-+                    "TACACS+ id provider lookup failed");
-+        }
 +            break;
 +
 +        case BE_FILTER_IDNUM:
@@ -1771,13 +1811,3 @@ Subject: Initial support for tacplus id and auth provider
 +}
 +
 +
---- a/src/config/SSSDConfigTest.py
-+++ b/src/config/SSSDConfigTest.py
-@@ -738,6 +738,7 @@
-             'ipa': ['id', 'auth', 'access', 'chpass', 'sudo', 'autofs',
-                     'session', 'hostid', 'subdomains'],
-             'ad': ['id', 'auth', 'access', 'chpass', 'sudo', 'subdomains'],
-+            'tacplus': ['id', 'auth'],
-             'local': ['id', 'auth', 'chpass'],
-             'ldap': ['id', 'auth', 'access', 'chpass', 'sudo', 'autofs'],
-             'krb5': ['auth', 'access', 'chpass'],
