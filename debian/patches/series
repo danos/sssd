@@ -1,1 +1,3 @@
 fix-curl-ftbfs.diff
+fix_copy_ccache_test.diff
+fix_authdata_krb5_1.17.diff

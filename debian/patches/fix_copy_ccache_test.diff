@@ -1,0 +1,25 @@
+From: Sumit Bose <sbose@redhat.com>
+Date: Thu, 22 Nov 2018 11:36:57 +0100
+Subject: tests: fix mocking krb5_creds in test_copy_ccache
+ To just test some ccache related functionality without talking to an
+ actual KDC to get the tickets some needed libkrb5 structs were mocked
+ based on tests from the MIT Kerberos source code. One struct member
+ (is_skey) was so far not regarded by libkrb5 for out test case. But a
+ recent fix for http://krbdev.mit.edu/rt/Ticket/Display.html?id=8718
+ changed this and we have to change the mocking.
+Bug-Debian: https://bugs.debian.org/cgi-bin/bugreport.cgi?bug=921761
+Origin: https://github.com/SSSD/sssd/commit/08bba3a6e3e4e21f2e20b71cca463d50420aa9ee.patch
+Reviewed-by: Jakub Hrozek <jhrozek@redhat.com>
+diff --git a/src/tests/cmocka/test_copy_ccache.c b/src/tests/cmocka/test_copy_ccache.c
+index 84225b6bff..7c76c00e8f 100644
+--- a/src/tests/cmocka/test_copy_ccache.c
++++ b/src/tests/cmocka/test_copy_ccache.c
+@@ -88,7 +88,7 @@ static int setup_ccache(void **state)
+     test_creds.times.starttime = 2222;
+     test_creds.times.endtime = 3333;
+     test_creds.times.renew_till = 4444;
+-    test_creds.is_skey = 1;
++    test_creds.is_skey = 0;
+     test_creds.ticket_flags = 5555;
+     test_creds.addresses = addrs;
+ 
