@@ -1,3 +1,9 @@
+sssd (1.12.5-3danos4) unstable; urgency=medium
+
+  * Suppress initgroups reqs for non-TACACS+ users
+
+ -- Duncan Eastoe <duncan.eastoe@att.com>  Mon, 10 Feb 2020 15:06:50 +0000
+
 sssd (1.12.5-3danos3) unstable; urgency=medium
 
   [ Duncan Eastoe ]
