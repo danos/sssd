@@ -22,6 +22,12 @@ PKGDATE = $(shell dpkg-parsechangelog | \
 CURDATE = $(shell date +%m/%d/%Y | sed 's/\//\\\//g')
 export CK_VERBOSITY=verbose
 
+# To avoid Debian version conditional *.install files
+DANOS_EXTRA_ARGS = --disable-cifs-idmap-plugin
+DANOS_EXTRA_ARGS += --without-samba
+DANOS_EXTRA_ARGS += --without-semanage
+DANOS_EXTRA_ARGS += --disable-krb5-locator-plugin
+
 override_dh_auto_configure:
 	dh_auto_configure -- --enable-krb5-locator-plugin \
 	--datadir=/usr/share/ \
@@ -40,7 +46,8 @@ override_dh_auto_configure:
 	--disable-files-domain \
 	--with-smb-idmap-interface-version=6 \
 	--without-python2-bindings \
-	--with-sudo
+	--with-sudo \
+	${DANOS_EXTRA_ARGS}
 
 override_dh_auto_test:
 	export CK_TIMEOUT_MULTIPLIER=10

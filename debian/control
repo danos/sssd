@@ -1,8 +1,7 @@
 Source: sssd
 Section: utils
 Priority: optional
-Maintainer: Debian SSSD Team <pkg-sssd-devel@alioth-lists.debian.net>
-Uploaders: Timo Aaltonen <tjaalton@debian.org>
+Maintainer: Vyatta Package Maintainers <DL-vyatta-help@att.com>
 Build-Depends:
  autopoint,
  check,
@@ -55,7 +54,8 @@ Build-Depends:
  python3-dev,
  python3-setuptools,
  quilt,
- samba-dev (>= 2:4.1.13),
+# DANOS: disable samba support.
+# samba-dev (>= 2:4.1.13),
  systemd,
  systemtap-sdt-dev,
  uuid-dev,
@@ -73,9 +73,11 @@ Multi-Arch: foreign
 Pre-Depends: ${misc:Pre-Depends}
 Depends:
  python3-sss (= ${binary:Version}),
- sssd-ad (= ${binary:Version}),
+# DANOS: disable ad support.
+# sssd-ad (= ${binary:Version}),
  sssd-common (= ${binary:Version}),
- sssd-ipa (= ${binary:Version}),
+# DANOS: disable ipa support.
+# sssd-ipa (= ${binary:Version}),
  sssd-krb5 (= ${binary:Version}),
  sssd-ldap (= ${binary:Version}),
  sssd-proxy (= ${binary:Version}),
@@ -120,31 +122,32 @@ Description: System Security Services Daemon -- common files
  This package provides the daemon and other common files needed by the
  authentication back ends.
 
-Package: sssd-ad
-Architecture: any
-Depends:
- libsss-idmap0 (= ${binary:Version}),
- sssd-ad-common (= ${binary:Version}),
- sssd-common (= ${binary:Version}),
- sssd-krb5-common (= ${binary:Version}),
- ${misc:Depends},
- ${shlibs:Depends}
-Suggests:
- adcli,
-Breaks: sssd (<< 1.10.0~beta2-1)
-Replaces: sssd (<< 1.10.0~beta2-1)
-Description: System Security Services Daemon -- Active Directory back end
- Provides the Active Directory back end that the SSSD can utilize to fetch
- identity data from and authenticate against an Active Directory server.
+# DANOS: disable ad support.
+#Package: sssd-ad
+#Architecture: any
+#Depends:
+# libsss-idmap0 (= ${binary:Version}),
+# sssd-ad-common (= ${binary:Version}),
+# sssd-common (= ${binary:Version}),
+# sssd-krb5-common (= ${binary:Version}),
+# ${misc:Depends},
+# ${shlibs:Depends}
+#Suggests:
+# adcli,
+#Breaks: sssd (<< 1.10.0~beta2-1)
+#Replaces: sssd (<< 1.10.0~beta2-1)
+#Description: System Security Services Daemon -- Active Directory back end
+# Provides the Active Directory back end that the SSSD can utilize to fetch
+# identity data from and authenticate against an Active Directory server.
 
-Package: sssd-ad-common
-Architecture: any
-Depends: sssd-common (= ${binary:Version}), ${misc:Depends}, ${shlibs:Depends}
-Breaks: sssd (<< 1.10.0~beta2-1)
-Replaces: sssd (<< 1.10.0~beta2-1)
-Description: System Security Services Daemon -- PAC responder
- Provides the PAC responder that the AD and IPA backends can use for
- fetching additional attributes from the kerberos ticket.
+#Package: sssd-ad-common
+#Architecture: any
+#Depends: sssd-common (= ${binary:Version}), ${misc:Depends}, ${shlibs:Depends}
+#Breaks: sssd (<< 1.10.0~beta2-1)
+#Replaces: sssd (<< 1.10.0~beta2-1)
+#Description: System Security Services Daemon -- PAC responder
+# Provides the PAC responder that the AD and IPA backends can use for
+# fetching additional attributes from the kerberos ticket.
 
 Package: sssd-dbus
 Architecture: any
@@ -153,21 +156,22 @@ Description: System Security Services Daemon -- D-Bus responder
  Provides the D-Bus responder called InfoPipe, that allows the information
  from the SSSD to be transmitted over the system bus.
 
-Package: sssd-ipa
-Architecture: any
-Depends:
- libipa-hbac0 (= ${binary:Version}),
- libsss-idmap0 (= ${binary:Version}),
- sssd-ad-common (= ${binary:Version}),
- sssd-common (= ${binary:Version}),
- sssd-krb5-common (= ${binary:Version}),
- ${misc:Depends},
- ${shlibs:Depends}
-Breaks: sssd (<< 1.10.0~beta2-1)
-Replaces: sssd (<< 1.10.0~beta2-1)
-Description: System Security Services Daemon -- IPA back end
- Provides the IPA back end that the SSSD can utilize to fetch identity data
- from and authenticate against an IPA server.
+# DANOS: disable ipa support.
+#Package: sssd-ipa
+#Architecture: any
+#Depends:
+# libipa-hbac0 (= ${binary:Version}),
+# libsss-idmap0 (= ${binary:Version}),
+# sssd-ad-common (= ${binary:Version}),
+# sssd-common (= ${binary:Version}),
+# sssd-krb5-common (= ${binary:Version}),
+# ${misc:Depends},
+# ${shlibs:Depends}
+#Breaks: sssd (<< 1.10.0~beta2-1)
+#Replaces: sssd (<< 1.10.0~beta2-1)
+#Description: System Security Services Daemon -- IPA back end
+# Provides the IPA back end that the SSSD can utilize to fetch identity data
+# from and authenticate against an IPA server.
 
 Package: sssd-kcm
 Architecture: any

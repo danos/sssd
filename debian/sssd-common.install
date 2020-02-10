@@ -15,12 +15,8 @@ lib/systemd/system/sssd-secrets.socket
 #lib/systemd/system/sssd-nss.socket
 usr/bin/sss_ssh_authorizedkeys
 usr/bin/sss_ssh_knownhostsproxy
-usr/lib/*/cifs-utils/cifs_idmap_sss.so
-usr/lib/*/krb5/plugins/authdata/sssd_pac_plugin.so
-usr/lib/*/krb5/plugins/libkrb5/sssd_krb5_locator_plugin.so
 usr/lib/*/ldb/modules/ldb/memberof.so
 usr/lib/*/libnfsidmap/sss.so
-usr/lib/*/samba/idmap/sss.so
 usr/lib/*/sssd/conf/sssd.conf
 usr/lib/*/sssd/libsss_cert.so
 usr/lib/*/sssd/libsss_child.so

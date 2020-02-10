@@ -1,3 +1,9 @@
+sssd (1.16.3-3danos1) UNRELEASED; urgency=medium
+
+  * 
+
+ -- Duncan Eastoe <duncan.eastoe@att.com>  Fri, 06 Mar 2020 18:31:48 +0000
+
 sssd (1.16.3-3) unstable; urgency=medium
 
   * fix-curl-ftbfs.diff: Fix build with current curl. (Closes: #913403)
@@ -273,6 +279,48 @@ sssd (1.13.1-1) unstable; urgency=medium
   * common: Add depends on adduser.
 
  -- Timo Aaltonen <tjaalton@debian.org>  Sat, 03 Oct 2015 08:38:29 +0300
+
+sssd (1.12.5-3danos5) unstable; urgency=medium
+
+  * tacplus: Check UID in range for initgroups req
+  * Don't signal tacplus provider on netlink changes
+  * tacplus: use can_connect in check_online callback
+  * tacplus: conn check on local user initgroups req
+  * Revert removal of local-user-name authz attr
+  * tacplus: fix memory leaks
+  * Refresh TACACS+ patches
+
+ -- Duncan Eastoe <duncan.eastoe@att.com>  Wed, 04 Mar 2020 11:18:40 +0000
+
+sssd (1.12.5-3danos4) unstable; urgency=medium
+
+  * Suppress initgroups reqs for non-TACACS+ users
+
+ -- Duncan Eastoe <duncan.eastoe@att.com>  Mon, 10 Feb 2020 15:06:50 +0000
+
+sssd (1.12.5-3danos3) unstable; urgency=medium
+
+  [ Duncan Eastoe ]
+  * Squash Fix-gcc8-compiler-error.patch
+  * Remove support for local-user-name authz attr
+
+ -- David Stapleton <dstaplet@mail.eng.vyatta.net>  Mon, 25 Nov 2019 11:11:38 +0000
+
+sssd (1.12.5-3danos2) unstable; urgency=medium
+
+  [ Duncan Eastoe ]
+  * vyatta_extension() indent re-formatting
+  * vyatta_extension() tmpctx freed before last use
+
+  [ Daniel Gollub ]
+
+ -- Daniel Gollub <dgollub@att.com>  Tue, 19 Nov 2019 11:58:20 +0100
+
+sssd (1.12.5-3danos1) unstable; urgency=medium
+
+  * DANOS Import
+
+ -- Vyatta Package Maintainers <DL-vyatta-help@att.com>  Tue, 12 Nov 2019 10:52:59 +0100
 
 sssd (1.12.5-3) unstable; urgency=medium
 
