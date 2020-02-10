@@ -1,0 +1,44 @@
+From: Mikhail Novosyolov <m.novosyolov@rosalinux.ru>
+Date: Thu, 18 Apr 2019 22:08:07 +0300
+Subject: Fix pidpath in systemd unit
+MIME-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+
+Most systems with systemd now use /run instead of /var/run,
+this fixes setting correct path in systemd service when built with
+--with-pid-path=/run
+
+If --with-pid-path is not defined, than pidpath=$localstatedir/run
+
+Reviewed-by: Pavel Březina <pbrezina@redhat.com>
+---
+ Makefile.am                      | 1 +
+ src/sysv/systemd/sssd.service.in | 2 +-
+ 2 files changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/Makefile.am b/Makefile.am
+index 484b449..89c32c4 100644
+--- a/Makefile.am
++++ b/Makefile.am
+@@ -4706,6 +4706,7 @@ edit_cmd = $(SED) \
+         -e 's|@environment_file[@]|$(environment_file)|g' \
+         -e 's|@localstatedir[@]|$(localstatedir)|g' \
+         -e 's|@runstatedir[@]|$(runstatedir)|g' \
++        -e 's|@pidpath[@]|$(pidpath)|g' \
+         -e 's|@logpath[@]|$(logpath)|g' \
+         -e 's|@libexecdir[@]|$(libexecdir)|g' \
+         -e 's|@pipepath[@]|$(pipepath)|g' \
+diff --git a/src/sysv/systemd/sssd.service.in b/src/sysv/systemd/sssd.service.in
+index 0c515d3..2cb7cad 100644
+--- a/src/sysv/systemd/sssd.service.in
++++ b/src/sysv/systemd/sssd.service.in
+@@ -10,7 +10,7 @@ EnvironmentFile=-@environment_file@
+ ExecStart=@sbindir@/sssd -i ${DEBUG_LOGGER}
+ Type=notify
+ NotifyAccess=main
+-PIDFile=@localstatedir@/run/sssd.pid
++PIDFile=@pidpath@/sssd.pid
+ 
+ [Install]
+ WantedBy=multi-user.target
