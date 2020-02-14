@@ -22,3 +22,4 @@ vyatta-tacplus-group.patch
 tacplus-warn-on-unknown-mandatory-attributes.patch
 secrets-group.patch
 track-tacplusd-offline-state.patch
+check-online-call-tacplusd-can-connect.patch
