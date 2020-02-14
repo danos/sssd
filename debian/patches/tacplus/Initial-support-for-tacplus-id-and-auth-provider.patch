@@ -1137,7 +1137,7 @@ Subject: Initial support for tacplus id and auth provider
 +#endif /* _TACPLUS_COMMON_H_ */
 --- /dev/null
 +++ b/src/providers/tacplus/tacplus_id.c
-@@ -0,0 +1,528 @@
+@@ -0,0 +1,532 @@
 +/*
 +    SSSD
 +
@@ -1576,8 +1576,11 @@ Subject: Initial support for tacplus id and auth provider
 +}
 +
 +static bool handle_request_for_user(struct be_acct_req *ar,
++                                    struct sss_domain_info *dom,
 +                                    const char *name)
 +{
++    struct passwd *pw;
++
 +    if ((ar->entry_type & 0xFFF) != BE_REQ_INITGROUPS)
 +        return true;
 +
@@ -1588,12 +1591,13 @@ Subject: Initial support for tacplus id and auth provider
 +     * after the first successful query.
 +     *
 +     * Therefore before we issue a TACACS+ session authorization request
-+     * check whether the user already exists in another database (most
-+     * likely a local one ie. /etc/passwd).
++     * check that if the user exists then it is part of our domain (UID
++     * is in range).
 +     */
-+    if (getpwnam(name)) {
-+        DEBUG(SSSDBG_TRACE_FUNC,
-+          "User %s already exists - ignoring initgroups request.\n", name);
++    pw = getpwnam(name);
++    if (pw && OUT_OF_ID_RANGE(pw->pw_uid, dom->id_min, dom->id_max)) {
++        DEBUG(SSSDBG_TRACE_FUNC, "User %s (UID %u) already exists outside "
++              "this domain - ignoring initgroups request.\n", name, pw->pw_uid);
 +        return false;
 +    }
 +
@@ -1626,7 +1630,7 @@ Subject: Initial support for tacplus id and auth provider
 +    case BE_REQ_INITGROUPS:
 +        switch (ar->filter_type) {
 +        case BE_FILTER_NAME:
-+            if (handle_request_for_user(ar, ar->filter_value))
++            if (handle_request_for_user(ar, domain, ar->filter_value))
 +                ret = get_pw_name(breq, ctx, domain, ar->filter_value);
 +            else
 +                ret = EOK;
