@@ -24,3 +24,4 @@ local-user-name-deprecation-log.patch
 secrets-group.patch
 track-tacplusd-offline-state.patch
 check-online-call-tacplusd-can-connect.patch
+tacacs-uid-persistence.patch
