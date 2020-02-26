@@ -1,0 +1,95 @@
+From: Vyatta Package Maintainers <DL-vyatta-help@att.com>
+Date: Tue, 11 Feb 2020 13:24:16 +0000
+Subject: offline-timeout-backoff-toggle
+
+---
+ src/confdb/confdb.h              |  1 +
+ src/config/SSSDConfigTest.py     |  2 ++
+ src/config/cfg_rules.ini         |  1 +
+ src/config/etc/sssd.api.conf     |  1 +
+ src/providers/data_provider_be.c | 15 ++++++++++++++-
+ 5 files changed, 19 insertions(+), 1 deletion(-)
+
+--- a/src/confdb/confdb.h
++++ b/src/confdb/confdb.h
+@@ -226,6 +226,7 @@
+ #define CONFDB_DOMAIN_PWD_EXPIRATION_WARNING "pwd_expiration_warning"
+ #define CONFDB_DOMAIN_REFRESH_EXPIRED_INTERVAL "refresh_expired_interval"
+ #define CONFDB_DOMAIN_OFFLINE_TIMEOUT "offline_timeout"
++#define CONFDB_DOMAIN_OFFLINE_TIMEOUT_BACKOFF "offline_timeout_backoff"
+ #define CONFDB_DOMAIN_SUBDOMAIN_INHERIT "subdomain_inherit"
+ #define CONFDB_DOMAIN_CACHED_AUTH_TIMEOUT "cached_auth_timeout"
+ #define CONFDB_DOMAIN_TYPE "domain_type"
+--- a/src/config/SSSDConfigTest.py
++++ b/src/config/SSSDConfigTest.py
+@@ -569,6 +569,7 @@
+             'max_id',
+             'timeout',
+             'offline_timeout',
++            'offline_timeout_backoff',
+             'command',
+             'enumerate',
+             'cache_credentials',
+@@ -940,6 +941,7 @@
+             'max_id',
+             'timeout',
+             'offline_timeout',
++            'offline_timeout_backoff',
+             'command',
+             'enumerate',
+             'cache_credentials',
+--- a/src/config/cfg_rules.ini
++++ b/src/config/cfg_rules.ini
+@@ -353,6 +353,7 @@
+ option = enumerate
+ option = subdomain_enumerate
+ option = offline_timeout
++option = offline_timeout_backoff
+ option = cache_credentials
+ option = cache_credentials_minimal_first_factor_length
+ option = store_legacy_passwords
+--- a/src/config/etc/sssd.api.conf
++++ b/src/config/etc/sssd.api.conf
+@@ -157,6 +157,7 @@
+ enumerate = bool, None, false
+ subdomain_enumerate = str, None, false
+ offline_timeout = int, None, false
++offline_timeout_backoff = bool, None, false
+ cache_credentials = bool, None, false
+ cache_credentials_minimal_first_factor_length = int, None, false
+ store_legacy_passwords = bool, None, false
+--- a/src/providers/data_provider_be.c
++++ b/src/providers/data_provider_be.c
+@@ -107,6 +107,8 @@
+ void be_mark_offline(struct be_ctx *ctx)
+ {
+     int offline_timeout;
++    bool offline_timeout_backoff;
++    time_t max_backoff;
+     errno_t ret;
+ 
+     DEBUG(SSSDBG_TRACE_INTERNAL, "Going offline!\n");
+@@ -122,11 +124,22 @@
+ 
+         offline_timeout = get_offline_timeout(ctx);
+ 
++        ret = confdb_get_bool(ctx->cdb, ctx->conf_path,
++                              CONFDB_DOMAIN_OFFLINE_TIMEOUT_BACKOFF, true,
++                              &offline_timeout_backoff);
++        if (ret != EOK) {
++            DEBUG(SSSDBG_CONF_SETTINGS,
++                  "Failed to get offline_timeout_backoff from confdb. "
++                  "Will use true.\n");
++            offline_timeout_backoff = true;
++        }
++        max_backoff = offline_timeout_backoff ? 3600 : 0;
++
+         ret = be_ptask_create_sync(ctx, ctx,
+                                    offline_timeout, offline_timeout,
+                                    offline_timeout, 30, offline_timeout,
+                                    BE_PTASK_OFFLINE_EXECUTE,
+-                                   3600 /* max_backoff */,
++                                   max_backoff,
+                                    try_to_go_online,
+                                    ctx, "Check if online (periodic)",
+                                    &ctx->check_if_online_ptask);

@@ -1,4 +1,14 @@
+# Patches applied by Debian
 fix-curl-ftbfs.diff
 fix_copy_ccache_test.diff
 fix_authdata_krb5_1.17.diff
+
+# Backported fixes from upstream
 fix-pidpath-in-systemd-unit.patch
+
+# General fixes/enhancements
+vyatta-werror.patch
+stay_offline_except_link_changes.patch
+
+# Required to support tacplus provider, but not specific to it
+offline-timeout-backoff-toggle.patch

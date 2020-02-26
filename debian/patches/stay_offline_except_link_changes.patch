@@ -1,0 +1,12 @@
+--- a/src/monitor/monitor_netlink.c
++++ b/src/monitor/monitor_netlink.c
+@@ -792,8 +792,7 @@
+     int ret;
+     int nlfd;
+     unsigned flags;
+-    int groups[] = { RTNLGRP_LINK, RTNLGRP_IPV4_ROUTE, RTNLGRP_IPV6_ROUTE,
+-                     RTNLGRP_IPV4_IFADDR, RTNLGRP_IPV6_IFADDR, 0 };
++    int groups[] = { RTNLGRP_LINK, RTNLGRP_IPV4_IFADDR, RTNLGRP_IPV6_IFADDR, 0 };
+ 
+     nlctx = talloc_zero(mem_ctx, struct netlink_ctx);
+     if (!nlctx) return ENOMEM;
