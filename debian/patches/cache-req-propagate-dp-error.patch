@@ -1,0 +1,174 @@
+--- a/src/responder/common/cache_req/cache_req_search.c
++++ b/src/responder/common/cache_req/cache_req_search.c
+@@ -440,7 +440,27 @@
+     state = tevent_req_data(req, struct cache_req_search_state);
+ 
+     state->dp_success = state->cr->plugin->dp_recv_fn(subreq, state->cr);
+-    talloc_zfree(subreq);
++
++    if (state->cr->propagate_dp_err && state->cr->domain->propagate_provider_err) {
++        dbus_uint16_t dp_err = 0;
++        dbus_uint32_t dp_ret = 0;
++
++        ret = sss_dp_req_get_error(subreq, &dp_err, &dp_ret);
++        talloc_zfree(subreq);
++
++        if (ret == EOK && dp_ret)
++            ret = dp_ret;
++
++        if (ret) {
++            CACHE_REQ_DEBUG(SSSDBG_TRACE_FUNC, state->cr,
++                            "Propagating DP error %d: %s\n",
++                            ret, sss_strerror(ret));
++            goto done;
++        }
++    }
++    else {
++        talloc_zfree(subreq);
++    }
+ 
+     /* Get result from cache again. */
+     ret = cache_req_search_cache(state, state->cr, &state->result);
+--- a/src/responder/common/cache_req/cache_req.h
++++ b/src/responder/common/cache_req/cache_req.h
+@@ -130,6 +130,10 @@
+ void
+ cache_req_data_set_bypass_dp(struct cache_req_data *data,
+                              bool bypass_dp);
++
++void
++cache_req_data_set_propagate_dp_err(struct cache_req_data *data,
++                                    bool propagate_err);
+ /* Output data. */
+ 
+ struct cache_req_result {
+--- a/src/responder/common/cache_req/cache_req_private.h
++++ b/src/responder/common/cache_req/cache_req_private.h
+@@ -43,6 +43,7 @@
+     bool cache_first;
+     bool bypass_cache;
+     bool bypass_dp;
++    bool propagate_dp_err;
+     /* Only contact domains with this type */
+     enum cache_req_dom_type req_dom_type;
+ 
+@@ -92,6 +93,7 @@
+ 
+     bool bypass_cache;
+     bool bypass_dp;
++    bool propagate_dp_err;
+ };
+ 
+ struct tevent_req *
+--- a/src/responder/common/cache_req/cache_req_data.c
++++ b/src/responder/common/cache_req/cache_req_data.c
+@@ -377,3 +377,15 @@
+ 
+     data->bypass_dp = bypass_dp;
+ }
++
++void
++cache_req_data_set_propagate_dp_err(struct cache_req_data *data,
++                                    bool propagate_err)
++{
++    if (data == NULL) {
++        DEBUG(SSSDBG_CRIT_FAILURE, "cache_req_data should never be NULL\n");
++        return;
++    }
++
++    data->propagate_dp_err = propagate_err;
++}
+--- a/src/responder/common/cache_req/cache_req.c
++++ b/src/responder/common/cache_req/cache_req.c
+@@ -130,6 +130,7 @@
+     cr->midpoint = midpoint;
+     cr->req_dom_type = req_dom_type;
+     cr->req_start = time(NULL);
++    cr->propagate_dp_err = data->propagate_dp_err;
+ 
+     /* It is perfectly fine to just overflow here. */
+     cr->reqid = rctx->cache_req_num++;
+--- a/src/responder/common/responder_dp.c
++++ b/src/responder/common/responder_dp.c
+@@ -419,23 +419,14 @@
+ }
+ 
+ errno_t
+-sss_dp_req_recv(TALLOC_CTX *mem_ctx,
+-                struct tevent_req *sidereq,
+-                dbus_uint16_t *dp_err,
+-                dbus_uint32_t *dp_ret,
+-                char **err_msg)
++sss_dp_req_get_error(struct tevent_req *sidereq,
++                     dbus_uint16_t *dp_err,
++                     dbus_uint32_t *dp_ret)
+ {
+-    struct sss_dp_req_state *state =
+-            tevent_req_data(sidereq, struct sss_dp_req_state);
+-
+     enum tevent_req_state TRROEstate;
+     uint64_t TRROEuint64;
+     errno_t TRROEerr;
+ 
+-    *dp_err = state->dp_err;
+-    *dp_ret = state->dp_ret;
+-    *err_msg = talloc_steal(mem_ctx, state->err_msg);
+-
+     if (tevent_req_is_error(sidereq, &TRROEstate, &TRROEuint64)) {
+         TRROEerr = (errno_t)TRROEuint64;
+ 
+@@ -453,6 +444,23 @@
+     return EOK;
+ }
+ 
++errno_t
++sss_dp_req_recv(TALLOC_CTX *mem_ctx,
++                struct tevent_req *sidereq,
++                dbus_uint16_t *dp_err,
++                dbus_uint32_t *dp_ret,
++                char **err_msg)
++{
++    struct sss_dp_req_state *state =
++            tevent_req_data(sidereq, struct sss_dp_req_state);
++
++    *dp_err = state->dp_err;
++    *dp_ret = state->dp_ret;
++    *err_msg = talloc_steal(mem_ctx, state->err_msg);
++
++    return sss_dp_req_get_error(sidereq, dp_err, dp_ret);
++}
++
+ /* Send a request to the data provider
+  * Once this function is called, the communication
+  * with the data provider will always run to
+--- a/src/responder/common/responder.h
++++ b/src/responder/common/responder.h
+@@ -301,6 +301,11 @@
+     char *err_msg;
+ };
+ 
++errno_t
++sss_dp_req_get_error(struct tevent_req *sidereq,
++                     dbus_uint16_t *dp_err,
++                     dbus_uint32_t *dp_ret);
++
+ /* The _recv functions of provider specific requests usually need to
+  * only call sss_dp_req_recv() to get return codes from back end
+  */
+--- a/src/tests/cmocka/common_mock_resp_dp.c
++++ b/src/tests/cmocka/common_mock_resp_dp.c
+@@ -96,6 +96,14 @@
+ }
+ 
+ errno_t
++sss_dp_req_get_error(struct tevent_req *sidereq,
++                     dbus_uint16_t *dp_err,
++                     dbus_uint32_t *dp_ret)
++{
++    return EOK;
++}
++
++errno_t
+ sss_dp_req_recv(TALLOC_CTX *mem_ctx,
+                 struct tevent_req *req,
+                 dbus_uint16_t *dp_err,

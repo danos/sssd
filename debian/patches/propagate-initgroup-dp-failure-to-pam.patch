@@ -1,0 +1,33 @@
+--- a/src/responder/pam/pamsrv_cmd.c
++++ b/src/responder/pam/pamsrv_cmd.c
+@@ -1820,6 +1820,8 @@
+         return EIO;
+     }
+ 
++    cache_req_data_set_propagate_dp_err(data, true);
++
+     dpreq = cache_req_send(preq,
+                            preq->cctx->rctx->ev,
+                            preq->cctx->rctx,
+@@ -1853,10 +1855,9 @@
+     ret = cache_req_single_domain_recv(preq, req, &result);
+     talloc_zfree(req);
+     if (ret != EOK && ret != ENOENT) {
+-        DEBUG(SSSDBG_CRIT_FAILURE,
+-              "Fatal error, killing connection!\n");
+-        talloc_zfree(preq->cctx);
+-        return;
++        DEBUG(SSSDBG_TRACE_FUNC,
++              "cache_req_single_domain_recv() ret %i\n", ret);
++        goto reply_error;
+     }
+ 
+     if (ret == EOK) {
+@@ -1879,6 +1880,7 @@
+ 
+     ret = pam_check_user_done(preq, ret);
+     if (ret != EOK) {
++reply_error:
+         preq->pd->pam_status = PAM_SYSTEM_ERR;
+         pam_reply(preq);
+     }

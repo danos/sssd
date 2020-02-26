@@ -13,3 +13,6 @@ stay_offline_except_link_changes.patch
 # Required to support tacplus provider, but not specific to it
 offline-timeout-max.patch
 pam-close-session-dp-method-support.patch
+propagate-provider-error.patch
+cache-req-propagate-dp-error.patch
+propagate-initgroup-dp-failure-to-pam.patch

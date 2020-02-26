@@ -1,0 +1,84 @@
+--- a/src/confdb/confdb.h
++++ b/src/confdb/confdb.h
+@@ -191,6 +191,7 @@
+ #define CONFDB_DOMAIN_HOSTID_PROVIDER "hostid_provider"
+ #define CONFDB_DOMAIN_SUBDOMAINS_PROVIDER "subdomains_provider"
+ #define CONFDB_DOMAIN_SESSION_PROVIDER "session_provider"
++#define CONFDB_DOMAIN_PROPAGATE_PROVIDER_ERR "propagate_provider_error"
+ #define CONFDB_DOMAIN_COMMAND "command"
+ #define CONFDB_DOMAIN_TIMEOUT "timeout"
+ #define CONFDB_DOMAIN_ATTR "cn"
+@@ -310,6 +311,7 @@
+     char *name;
+     char *conn_name;
+     char *provider;
++    bool propagate_provider_err;
+     int timeout;
+     bool enumerate;
+     char **sd_enumerate;
+--- a/src/config/SSSDConfigTest.py
++++ b/src/config/SSSDConfigTest.py
+@@ -619,6 +619,7 @@
+             'subdomains_provider',
+             'selinux_provider',
+             'session_provider',
++            'propagate_provider_error',
+             'realmd_tags',
+             'subdomain_refresh_interval',
+             'subdomain_inherit',
+@@ -991,6 +992,7 @@
+             'subdomains_provider',
+             'selinux_provider',
+             'session_provider',
++            'propagate_provider_error',
+             'realmd_tags',
+             'subdomain_refresh_interval',
+             'subdomain_inherit',
+--- a/src/config/cfg_rules.ini
++++ b/src/config/cfg_rules.ini
+@@ -384,6 +384,7 @@
+ option = full_name_format
+ option = re_expression
+ option = auto_private_groups
++option = propagate_provider_error
+ 
+ #Entry cache timeouts
+ option = entry_cache_user_timeout
+--- a/src/config/etc/sssd.api.conf
++++ b/src/config/etc/sssd.api.conf
+@@ -187,6 +187,7 @@
+ full_name_format = str, None, false
+ re_expression = str, None, false
+ auto_private_groups = str, None, false
++propagate_provider_error = bool, None, false
+ 
+ #Entry cache timeouts
+ entry_cache_user_timeout = int, None, false
+--- a/src/confdb/confdb.c
++++ b/src/confdb/confdb.c
+@@ -936,6 +936,14 @@
+         goto done;
+     }
+ 
++    ret = get_entry_as_bool(res->msgs[0], &domain->propagate_provider_err,
++                            CONFDB_DOMAIN_PROPAGATE_PROVIDER_ERR, 0);
++    if (ret != EOK) {
++        DEBUG(SSSDBG_FATAL_FAILURE,
++              "Invalid value for %s\n", CONFDB_DOMAIN_PROPAGATE_PROVIDER_ERR);
++        goto done;
++    }
++
+     ret = get_entry_as_bool(res->msgs[0], &domain->mpg,
+                             CONFDB_DOMAIN_AUTO_UPG, 0);
+     if (ret != EOK) {
+--- a/src/config/SSSDConfig/__init__.py.in
++++ b/src/config/SSSDConfig/__init__.py.in
+@@ -1255,7 +1255,7 @@
+ 
+         # Check whether we're adding a provider entry.
+         is_provider = option.rfind('_provider')
+-        if (is_provider > 0):
++        if is_provider > 0 and option[is_provider:] == '_provider':
+             provider = option[:is_provider]
+             try:
+                 self.add_provider(value, provider)
