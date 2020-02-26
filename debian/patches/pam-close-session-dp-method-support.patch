@@ -1,0 +1,40 @@
+--- a/src/providers/data_provider/dp_target_auth.c
++++ b/src/providers/data_provider/dp_target_auth.c
+@@ -126,7 +126,9 @@
+             name = "PAM Chpass 2nd";
+             break;
+         case SSS_PAM_OPEN_SESSION:
+-            name = "PAM Open Session";
++        case SSS_PAM_CLOSE_SESSION:
++            name = pd->cmd == SSS_PAM_OPEN_SESSION ? "PAM Open Session"
++                                                   : "PAM Close Session";
+             if (dp_method_enabled(provider, DPT_SESSION, DPM_SESSION_HANDLER)) {
+                 target = DPT_SESSION;
+                 method = DPM_SESSION_HANDLER;
+@@ -143,12 +145,6 @@
+             name = "PAM Set Credentials";
+             pd->pam_status = PAM_SUCCESS;
+             break;
+-        case SSS_PAM_CLOSE_SESSION:
+-            target = DP_TARGET_SENTINEL;
+-            method = DP_METHOD_SENTINEL;
+-            name = "PAM Close Session";
+-            pd->pam_status = PAM_SUCCESS;
+-            break;
+         default:
+             DEBUG(SSSDBG_TRACE_LIBS, "Unsupported PAM command [%d].\n",
+                   pd->cmd);
+--- a/src/providers/ipa/ipa_session.c
++++ b/src/providers/ipa/ipa_session.c
+@@ -495,6 +495,11 @@
+         return NULL;
+     }
+ 
++    if (pd->cmd != SSS_PAM_OPEN_SESSION) {
++        ret = EOK;
++        goto done;
++    }
++
+     state->pd = pd;
+     state->ev = params->ev;
+     state->be_ctx = params->be_ctx;
