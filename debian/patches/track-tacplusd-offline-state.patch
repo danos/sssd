@@ -127,8 +127,8 @@ Subject: tacplus-available-prop
 +
  int tacplus_author(const char *user, const char *service, const char *proto,
                     const char *secrets, const char *tty, const char *rhost,
-                    char **level, char **local_account, int *delete_user,
-@@ -259,31 +337,218 @@
+                    char **level, int *delete_user, bool *secrets_group) {
+@@ -249,31 +327,218 @@
      return ret;
  }
  
@@ -356,7 +356,7 @@ Subject: tacplus-available-prop
                 derr->message);
          dbus_error_free(derr);
          return -1;
-@@ -295,11 +560,10 @@
+@@ -285,11 +550,10 @@
  {
      if (dbus_error_is_set(derr)) {
          DEBUG(SSSDBG_OP_FAILURE,
@@ -411,7 +411,7 @@ Subject: tacplus-available-prop
  
 @@ -106,8 +118,11 @@
                     const char *tty, const char *rhost, char **level,
-                    char **local_account, int *delete_user, bool *secrets_group);
+                    int *delete_user, bool *secrets_group);
  
 +int tacplus_setup_connection(void);
  DBusConnection * tacplus_connect_daemon(void);
@@ -505,3 +505,18 @@ Subject: tacplus-available-prop
      ctx = talloc_zero(bectx, struct tacplus_ctx);
      if (!ctx) {
          return ENOMEM;
+--- a/src/monitor/monitor.c
++++ b/src/monitor/monitor.c
+@@ -214,7 +214,11 @@
+     for (iter = ctx->svc_list; iter; iter = iter->next) {
+         /* Don't signal services, only providers */
+         if (iter->provider) {
+-            service_signal_reset_offline(iter);
++            if (strcasecmp(iter->provider, "tacplus") == 0)
++                DEBUG(SSSDBG_TRACE_INTERNAL, "Not signalling tacplus "
++                      "provider on network status change\n");
++            else
++                service_signal_reset_offline(iter);
+         }
+     }
+ }
