@@ -18,6 +18,7 @@ cache-req-propagate-dp-error.patch
 propagate-initgroup-dp-failure-to-pam.patch
 
 # tacplus provider implementation/specific patches
+tacplus/allow-tacplus-id-gen.patch
 tacplus/tacplus-id-auth-session-provider.patch
 tacplus/track-tacplusd-offline-state.patch
 tacplus/check-online-call-tacplusd-can-connect.patch

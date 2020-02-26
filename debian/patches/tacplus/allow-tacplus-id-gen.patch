@@ -1,0 +1,12 @@
+--- a/src/db/sysdb_ops.c
++++ b/src/db/sysdb_ops.c
+@@ -1530,7 +1530,8 @@
+         return ENOMEM;
+     }
+ 
+-    if (strcasecmp(domain->provider, "local") != 0) {
++    if (strcasecmp(domain->provider, "local") != 0 &&
++        strcasecmp(domain->provider, "tacplus") != 0) {
+         DEBUG(SSSDBG_CRIT_FAILURE,
+               "Generating new ID is only supported in the local domain!\n");
+         return ENOTSUP;
