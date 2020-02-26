@@ -27,6 +27,7 @@ usr/lib/*/sssd/libsss_krb5_common.so
 usr/lib/*/sssd/libsss_ldap_common.so
 usr/lib/*/sssd/libsss_semanage.so
 usr/lib/*/sssd/libsss_simple.so
+usr/lib/*/sssd/libsss_tacplus.so
 usr/lib/*/sssd/libsss_util.so
 usr/lib/*/sssd/modules/libsss_autofs.so
 usr/lib/*/sssd/modules/sssd_krb5_localauth_plugin.so

@@ -1,0 +1,1724 @@
+--- a/Makefile.am
++++ b/Makefile.am
+@@ -385,6 +385,10 @@
+     $(NULL)
+ endif # HAVE_INOTIFY
+ 
++if BUILD_TACPLUS
++sssdlib_LTLIBRARIES += libsss_tacplus.la
++endif
++
+ ldblib_LTLIBRARIES = \
+     memberof.la
+ 
+@@ -761,6 +765,7 @@
+     src/util/child_common.h \
+     src/providers/simple/simple_access.h \
+     src/providers/simple/simple_access_pvt.h \
++    src/providers/tacplus/tacplus_common.h \
+     src/providers/krb5/krb5_auth.h \
+     src/providers/krb5/krb5_common.h \
+     src/providers/krb5/krb5_utils.h \
+@@ -4052,6 +4057,23 @@
+     -avoid-version \
+     -module
+ 
++if BUILD_TACPLUS
++libsss_tacplus_la_SOURCES = \
++    src/providers/tacplus/tacplus_init.c \
++    src/providers/tacplus/tacplus_id.c \
++    src/providers/tacplus/tacplus_auth.c \
++    src/providers/tacplus/tacplus_session.c \
++    src/providers/tacplus/tacplus_common.c
++libsss_tacplus_la_CFLAGS = \
++    $(AM_CFLAGS)
++libsss_tacplus_la_LIBADD = \
++    $(PAM_LIBS) \
++    libsss_util.la
++libsss_tacplus_la_LDFLAGS = \
++    -avoid-version \
++    -module
++endif
++
+ libsss_krb5_la_SOURCES = \
+     src/providers/krb5/krb5_init.c
+ libsss_krb5_la_CFLAGS = \
+@@ -4880,6 +4902,10 @@
+     $(DESTDIR)$(deskprofilepath) \
+     $(NULL)
+ 
++if BUILD_TACPLUS
++dist_sssdapiplugin_DATA += src/config/etc/sssd.api.d/sssd-tacplus.conf
++endif
++
+ installsssddirs::
+ 	$(MKDIR_P) \
+     $(DESTDIR)$(includedir) \
+--- a/configure.ac
++++ b/configure.ac
+@@ -254,6 +254,8 @@
+     CHECK_SERVICE_EXECUTABLE
+ fi
+ 
++WITH_TACPLUS
++
+ PKG_CHECK_MODULES([DBUS],[dbus-1])
+ dnl if test -n "`$PKG_CONFIG --modversion dbus-1 | grep '^0\.'`" ; then
+ if ! $PKG_CONFIG --atleast-version 1.0.0 dbus-1; then
+--- a/src/conf_macros.m4
++++ b/src/conf_macros.m4
+@@ -948,3 +948,18 @@
+       AC_DEFINE_UNQUOTED([ADD_FILES_DOMAIN], [1],
+           [whether to build unconditionally enable files domain]))
+ AM_CONDITIONAL([ADD_FILES_DOMAIN], [test x$enable_files_domain = xyes])
++
++AC_DEFUN([WITH_TACPLUS],
++  [ AC_ARG_WITH([tacplus],
++                [AC_HELP_STRING([--with-tacplus],
++                                [Whether to build with tacplus/TACACS+ support [no]]
++                               )
++                ],
++                [with_tacplus=$withval],
++               )
++
++    if test x"$with_tacplus" = xyes; then
++        AC_DEFINE(BUILD_TACPLUS, 1, [whether to build with tacplus/TACACS+ support])
++    fi
++    AM_CONDITIONAL([BUILD_TACPLUS], [test x"$with_tacplus" = xyes])
++  ])
+--- a/src/config/SSSDConfigTest.py
++++ b/src/config/SSSDConfigTest.py
+@@ -826,6 +826,7 @@
+                     'session', 'hostid', 'subdomains'],
+             'ad': ['id', 'auth', 'access', 'chpass', 'sudo', 'autofs',
+                    'subdomains'],
++            'tacplus': ['id', 'auth'],
+             'local': ['id', 'auth', 'chpass'],
+             'ldap': ['id', 'auth', 'access', 'chpass', 'sudo', 'autofs'],
+             'krb5': ['auth', 'access', 'chpass'],
+--- a/src/config/cfg_rules.ini
++++ b/src/config/cfg_rules.ini
+@@ -731,6 +731,14 @@
+ option = ldap_user_uuid
+ option = ldap_use_tokengroups
+ 
++# tacplus provider specific options
++option = tacplus_homedir
++option = tacplus_proto
++option = tacplus_service
++option = tacplus_secrets
++option = tacplus_shell
++option = tacplus_user_gid
++
+ # For application domains
+ option = inherit_from
+ 
+--- /dev/null
++++ b/src/config/etc/sssd.api.d/sssd-tacplus.conf
+@@ -0,0 +1,11 @@
++[provider/tacplus]
++
++[provider/tacplus/id]
++tacplus_shell = str, None, false
++tacplus_user_gid = int, None, false
++tacplus_homedir = str, None, false
++
++[provider/tacplus/auth]
++tacplus_service = str, None, false
++tacplus_proto = str, None, false
++tacplus_secrets = str, None, false
+--- /dev/null
++++ b/src/providers/tacplus/tacplus_auth.c
+@@ -0,0 +1,256 @@
++/*
++    SSSD
++
++    TACACS+ Authentication Backend Module
++
++    Based on: RADIUS Backend module - auth file
++
++    Copyright (C) 2013 Ondrej Hujnak
++    Copyright (c) 2014-2017 Brocade Communications Systems, Inc.
++    Copyright (c) 2018-2020 AT&T Intellectual Property.
++
++    This program is free software; you can redistribute it and/or modify
++    it under the terms of the GNU General Public License as published by
++    the Free Software Foundation; either version 3 of the License, or
++    (at your option) any later version.
++
++    This program is distributed in the hope that it will be useful,
++    but WITHOUT ANY WARRANTY; without even the implied warranty of
++    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++    GNU General Public License for more details.
++
++    You should have received a copy of the GNU General Public License
++    along with this program.  If not, see <http://www.gnu.org/licenses/>.
++*/
++
++#include <errno.h>
++#include <time.h>
++#include <sys/time.h>
++
++#include <stdio.h>
++#include <sys/types.h>
++#include <sys/stat.h>
++#include <fcntl.h>
++
++#include <security/pam_modules.h>
++#include <security/pam_ext.h>
++#include <security/pam_modutil.h>
++
++
++
++#include "util/util.h"
++#include "util/strtonum.h"
++#include "db/sysdb.h"
++#include "providers/tacplus/tacplus_common.h"
++
++struct tacplus_auth_handler_ctx {
++    struct tacplus_ctx *ctx;
++    struct pam_data *pd;
++};
++
++static int tacplus_server_send(struct tacplus_auth_handler_ctx *ctx)
++{
++    int reply, ret;
++    struct pam_data *pd = ctx->pd;
++    const char *pw = NULL;
++    const char *tty = pd->tty;
++    const char *rhost = pd->rhost;
++    char *username;
++    dbus_bool_t dret;
++    DBusConnection *dconn;
++    DBusError derr;
++    DBusMessage *dmsg = NULL, *dmsg_reply = NULL;
++
++    ret = sss_parse_internal_fqname(ctx, pd->user, &username, NULL);
++    if (ret)
++        return ret;
++
++    /* Methods for newer SSSD versions */
++    if (sss_authtok_get_password(pd->authtok, &pw, NULL) != EOK) {
++       return ERR_AUTH_FAILED;
++    }
++
++    ret = EOK;
++
++    /* Connect to DBus system bus and send TACACS+ authentication request to daemon */
++    if ((dconn = tacplus_connect_daemon(ctx->ctx)) == NULL) {
++        DEBUG(SSSDBG_TRACE_FUNC,
++                 "failed to connect to daemon\n");
++        pd->pam_status = PAM_AUTHINFO_UNAVAIL;
++        ret = ENXIO;
++        goto done;
++    }
++
++    dmsg = dbus_message_new_method_call(TACPLUS_DAEMON,
++	                                    TACPLUS_DAEMON_PATH,
++	                                    TACPLUS_DAEMON_IFACE,
++	                                    TACPLUS_DAEMON_AUTHEN);
++
++    if(dmsg == NULL) {
++        DEBUG(SSSDBG_TRACE_FUNC,
++                 "failed to instantiate method call");
++        pd->pam_status = PAM_AUTHINFO_UNAVAIL;
++        ret = ENOMEM;
++        goto done;
++    }
++
++    dret = dbus_message_append_args(dmsg, DBUS_TYPE_STRING, &username,
++	                                      DBUS_TYPE_STRING, &pw,
++	                                      DBUS_TYPE_STRING, &tty,
++	                                      DBUS_TYPE_STRING, &rhost,
++	                                      DBUS_TYPE_INVALID);
++
++    if(dret == FALSE) {
++        pd->pam_status = PAM_AUTHINFO_UNAVAIL;
++        ret = ENOMEM;
++        goto done;
++    }
++
++    dbus_error_init(&derr);
++
++    dmsg_reply = dbus_connection_send_with_reply_and_block(dconn, dmsg,
++                                    TACPLUS_DAEMON_TIMEOUT_MS, &derr);
++
++    if (tacplus_validate_reply_msg(&derr) < 0) {
++        DEBUG(SSSDBG_TRACE_FUNC,
++                 "failed to receive authentication response\n");
++        pd->pam_status = PAM_AUTHINFO_UNAVAIL;
++        ret = ENXIO;
++        goto done;
++    }
++
++    dbus_message_get_args(dmsg_reply, &derr, DBUS_TYPE_INT32, &reply,
++						  DBUS_TYPE_INVALID);
++
++    if (tacplus_validate_basic_reply_args(&derr) < 0) {
++        ret = ENXIO;
++        goto done;
++    }
++
++    DEBUG(SSSDBG_TRACE_FUNC,
++          "TACPLUS tac_authen_send: user:%s pw:%s tty:%s rhost:%s.\n",
++          username, pw, pd->tty, pd->rhost);
++
++    switch (reply) {
++        case TAC_PLUS_AUTHEN_STATUS_PASS:
++            pd->pam_status = PAM_SUCCESS;
++            break;
++
++        case TAC_PLUS_AUTHEN_STATUS_FAIL:
++            pd->pam_status = PAM_AUTH_ERR;
++            break;
++
++        case TAC_PLUS_AUTHEN_STATUS_GETDATA:
++        case TAC_PLUS_AUTHEN_STATUS_GETUSER:
++
++        case TAC_PLUS_AUTHEN_STATUS_RESTART:
++        case TAC_PLUS_AUTHEN_STATUS_FOLLOW:
++            /* not implemented */
++            break;
++            /*
++             * Receiving this from daemon means it failed to send the
++             * password to server in tac_cont_send(...) call.
++             */
++        case TAC_PLUS_AUTHEN_STATUS_GETPASS:
++            ret = EIO;
++            break;
++
++        case TAC_PLUS_AUTHEN_STATUS_ERROR:
++            break;
++
++        default:
++            break;
++    }
++
++done:
++    if (dmsg)
++        dbus_message_unref(dmsg);
++    if (dmsg_reply)
++        dbus_message_unref(dmsg_reply);
++
++    return ret;
++}
++
++static struct tevent_req *
++tacplus_auth_handler_send(TALLOC_CTX *mem_ctx,
++                          struct tacplus_ctx *mod_ctx,
++                          struct pam_data *pd,
++                          struct dp_req_params *params)
++{
++    struct tevent_req *req;
++    struct tacplus_auth_handler_ctx *ctx;
++    int ret;
++
++    req = tevent_req_create(mem_ctx, &ctx, struct tacplus_auth_handler_ctx);
++    if (!req) {
++        DEBUG(SSSDBG_CRIT_FAILURE, "tevent_req_create() failure\n");
++        return NULL;
++    }
++
++    ctx->ctx = mod_ctx;
++    ctx->pd = pd;
++    pd->pam_status = PAM_SYSTEM_ERR;
++
++    if (be_is_offline(mod_ctx->be)) {
++        ret = ERR_OFFLINE;
++        goto done;
++    }
++
++    if (pd->cmd != SSS_PAM_AUTHENTICATE) {
++        DEBUG(SSSDBG_OP_FAILURE, "Unsupported PAM task %i\n", pd->cmd);
++        ret = EINVAL;
++        goto done;
++    }
++
++    ret = tacplus_server_send(ctx);
++    switch (ret) {
++        case EOK:
++            break;
++        case ENXIO:
++            be_mark_offline(mod_ctx->be);
++            ret = ERR_OFFLINE;
++            /* fallthrough */
++        default:
++            DEBUG(SSSDBG_OP_FAILURE, "tacplus_server_send failed: %i\n", ret);
++    }
++
++done:
++    if (ret)
++        tevent_req_error(req, ret);
++    else
++        tevent_req_done(req);
++
++    tevent_req_post(req, params->ev);
++    return req;
++}
++
++static errno_t
++tacplus_auth_handler_recv(TALLOC_CTX *mem_ctx,
++                          struct tevent_req *req,
++                          struct pam_data **data)
++{
++    struct tacplus_auth_handler_ctx *ctx = NULL;
++
++    ctx = tevent_req_data(req, struct tacplus_auth_handler_ctx);
++
++    TEVENT_REQ_RETURN_ON_ERROR(req);
++
++    *data = talloc_steal(mem_ctx, ctx->pd);
++    return EOK;
++}
++
++errno_t
++sssm_tacplus_auth_init(TALLOC_CTX *mem_ctx,
++                       struct be_ctx *bectx,
++                       void *module_data,
++                       struct dp_method *dp_methods)
++{
++    struct tacplus_ctx *ctx;
++
++    ctx = talloc_get_type(module_data, struct tacplus_ctx);
++
++    dp_set_method(dp_methods, DPM_AUTH_HANDLER,
++                  tacplus_auth_handler_send, tacplus_auth_handler_recv,
++                  ctx, struct tacplus_ctx, struct pam_data, struct pam_data *);
++    return EOK;
++}
+--- /dev/null
++++ b/src/providers/tacplus/tacplus_common.c
+@@ -0,0 +1,105 @@
++/*
++    SSSD
++
++    TACACS+ Provider Common Functions
++
++    Copyright (c) 2014-2017 Brocade Communications Systems, Inc.
++    Copyright (c) 2018-2020 AT&T Intellectual Property.
++
++    This program is free software; you can redistribute it and/or modify
++    it under the terms of the GNU General Public License as published by
++    the Free Software Foundation; either version 3 of the License, or
++    (at your option) any later version.
++
++    This program is distributed in the hope that it will be useful,
++    but WITHOUT ANY WARRANTY; without even the implied warranty of
++    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++    GNU General Public License for more details.
++
++    You should have received a copy of the GNU General Public License
++    along with this program.  If not, see <http://www.gnu.org/licenses/>.
++*/
++
++#include "providers/tacplus/tacplus_common.h"
++
++struct dp_option default_basic_opts[] = {
++    { "tacplus_shell", DP_OPT_STRING, { "/bin/bash" }, NULL_STRING },
++    { "tacplus_service", DP_OPT_STRING, { "shell" }, NULL_STRING },
++    { "tacplus_proto", DP_OPT_STRING, { "login" }, NULL_STRING },
++    { "tacplus_secrets", DP_OPT_STRING, NULL_STRING, NULL_STRING },
++    { "tacplus_user_gid", DP_OPT_NUMBER, { .number = 100 }, NULL_NUMBER },
++    { "tacplus_homedir", DP_OPT_STRING, { "/home/%u" }, NULL_STRING },
++};
++
++int tacplus_get_options(TALLOC_CTX *memctx,
++                     struct confdb_ctx *cdb,
++                     const char *conf_path,
++                     struct tacplus_options **_opts)
++{
++    int ret;
++    struct tacplus_options *opts;
++
++    opts = talloc_zero(memctx, struct tacplus_options);
++    if (!opts) {
++        return ENOMEM;
++    }
++
++    ret = dp_get_options(opts, cdb, conf_path,
++                         default_basic_opts,
++                         TACPLUS_OPTS_BASIC,
++                         &opts->basic);
++    if (ret != EOK) {
++        talloc_zfree(opts);
++    }
++    else {
++        ret = EOK;
++        *_opts = opts;
++    }
++
++    return ret;
++}
++
++DBusConnection *tacplus_connect_daemon(struct tacplus_ctx *ctx)
++{
++    DBusConnection *dconn;
++    DBusError derr;
++
++    dbus_error_init(&derr);
++
++    dconn = dbus_bus_get(DBUS_BUS_SYSTEM, &derr);
++
++    if (dbus_error_is_set(&derr)) {
++        DEBUG(SSSDBG_OP_FAILURE,
++              "Failed to connect to system bus: %s",
++                          derr.message);
++        dbus_error_free(&derr);
++        return NULL;
++    }
++
++    return dconn;
++}
++
++int tacplus_validate_reply_msg(DBusError *derr)
++{
++    if (dbus_error_is_set(derr)) {
++        DEBUG(SSSDBG_OP_FAILURE,
++              "failed to receive a reply: %s",
++               derr->message);
++        dbus_error_free(derr);
++        return -1;
++    }
++    return 0;
++}
++
++int tacplus_validate_basic_reply_args(DBusError *derr)
++{
++    if (dbus_error_is_set(derr)) {
++        DEBUG(SSSDBG_OP_FAILURE,
++              "failed to retrieve basic type argument: %s",
++               derr->message);
++        dbus_error_free(derr);
++        return -1;
++    }
++    return 0;
++}
++
+--- /dev/null
++++ b/src/providers/tacplus/tacplus_common.h
+@@ -0,0 +1,96 @@
++/*
++    SSSD
++
++    TACACS+ Common utility code
++
++    Copyright (c) 2014-2017 Brocade Communications Systems, Inc.
++    Copyright (c) 2018-2020 AT&T Intellectual Property.
++
++    This program is free software; you can redistribute it and/or modify
++    it under the terms of the GNU General Public License as published by
++    the Free Software Foundation; either version 3 of the License, or
++    (at your option) any later version.
++
++    This program is distributed in the hope that it will be useful,
++    but WITHOUT ANY WARRANTY; without even the implied warranty of
++    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++    GNU General Public License for more details.
++
++    You should have received a copy of the GNU General Public License
++    along with this program.  If not, see <http://www.gnu.org/licenses/>.
++*/
++
++#ifndef _TACPLUS_COMMON_H_
++#define _TACPLUS_COMMON_H_
++
++#include <sys/types.h>
++#include "providers/backend.h"
++
++#define TACPLUS_DAEMON         "net.vyatta.tacplus"
++#define TACPLUS_DAEMON_PATH    "/net/vyatta/tacplus"
++#define TACPLUS_DAEMON_IFACE   "net.vyatta.tacplus"
++#define TACPLUS_DAEMON_AUTHEN  "authen_send"
++#define TACPLUS_DAEMON_AUTHOR  "author_send"
++#define TACPLUS_DAEMON_ACCT    "account_send"
++/* how long should we wait on a reply from the daemon?*/
++#define TACPLUS_DAEMON_TIMEOUT_MS 10000
++
++/* authorization status codes */
++#define TAC_PLUS_AUTHOR_STATUS_PASS_ADD  0x01
++#define TAC_PLUS_AUTHOR_STATUS_PASS_REPL 0x02
++#define TAC_PLUS_AUTHOR_STATUS_FAIL      0x10
++#define TAC_PLUS_AUTHOR_STATUS_ERROR     0x11
++#define TAC_PLUS_AUTHOR_STATUS_FOLLOW    0x21
++
++/* authentication status codes */
++#define TAC_PLUS_AUTHEN_STATUS_PASS    0x01
++#define TAC_PLUS_AUTHEN_STATUS_FAIL    0x02
++#define TAC_PLUS_AUTHEN_STATUS_GETDATA 0x03
++#define TAC_PLUS_AUTHEN_STATUS_GETUSER 0x04
++#define TAC_PLUS_AUTHEN_STATUS_GETPASS 0x05
++#define TAC_PLUS_AUTHEN_STATUS_RESTART 0x06
++#define TAC_PLUS_AUTHEN_STATUS_ERROR   0x07
++#define TAC_PLUS_AUTHEN_STATUS_FOLLOW  0x21
++
++/* accounting status codes */
++#define TAC_PLUS_ACCT_STATUS_SUCCESS 0x1
++#define TAC_PLUS_ACCT_STATUS_ERROR   0x2
++#define TAC_PLUS_ACCT_STATUS_FOLLOW  0x21
++
++/* accounting flags */
++#define TAC_PLUS_ACCT_FLAG_START    0x02
++#define TAC_PLUS_ACCT_FLAG_STOP     0x04
++
++
++
++struct tacplus_options {
++    struct dp_option *basic;
++};
++
++enum tacplus_basic_opt {
++    TACPLUS_SHELL,
++    TACPLUS_SERVICE,
++    TACPLUS_PROTO,
++    TACPLUS_SECRETS,
++    TACPLUS_USER_GID,
++    TACPLUS_HOMEDIR,
++
++    TACPLUS_OPTS_BASIC /* opts counter */
++};
++
++struct tacplus_ctx {
++    struct be_ctx *be;
++    struct tacplus_options *opts;
++};
++
++/* options parser */
++int tacplus_get_options(TALLOC_CTX *memctx,
++                     struct confdb_ctx *cdb,
++                     const char *conf_path,
++                     struct tacplus_options **_opts);
++
++DBusConnection * tacplus_connect_daemon(struct tacplus_ctx *);
++int tacplus_validate_reply_msg(DBusError *);
++int tacplus_validate_basic_reply_args(DBusError *);
++
++#endif /* _TACPLUS_COMMON_H_ */
+--- /dev/null
++++ b/src/providers/tacplus/tacplus_id.c
+@@ -0,0 +1,811 @@
++/*
++    SSSD
++
++    TACACS+ Identity Backend Module
++
++    Based on: proxy_id.c
++
++    Copyright (C) 2010 Red Hat
++    Copyright (c) 2014-2017 Brocade Communications Systems, Inc.
++    Copyright (c) 2018-2020 AT&T Intellectual Property.
++
++
++    This program is free software; you can redistribute it and/or modify
++    it under the terms of the GNU General Public License as published by
++    the Free Software Foundation; either version 3 of the License, or
++    (at your option) any later version.
++
++    This program is distributed in the hope that it will be useful,
++    but WITHOUT ANY WARRANTY; without even the implied warranty of
++    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++    GNU General Public License for more details.
++
++    You should have received a copy of the GNU General Public License
++    along with this program.  If not, see <http://www.gnu.org/licenses/>.
++*/
++
++#include <errno.h>
++#include <time.h>
++#include <sys/time.h>
++
++#include <stdio.h>
++#include <sys/types.h>
++#include <sys/stat.h>
++#include <fcntl.h>
++
++
++#include "util/util.h"
++#include "util/strtonum.h"
++#include "util/sss_nss.h"
++#include "db/sysdb.h"
++#include "providers/tacplus/tacplus_common.h"
++
++
++struct tacplus_id_handler_ctx {
++    struct tacplus_ctx *ctx;
++    struct dp_reply_std reply;
++    const char *fq_username;
++    char *username;
++};
++
++/* NOOP.
++ * SSSD itself makes a getpwuid call during authentication - we need to ACK it,
++ * otherwise the authentication fails. */
++static int get_pw_uid(TALLOC_CTX *mem_ctx,
++                      struct tacplus_id_handler_ctx *ctx,
++                      struct sysdb_ctx *sysdb,
++                      struct sss_domain_info *dom,
++                      uid_t uid)
++{
++    DEBUG(SSSDBG_TRACE_FUNC,
++          "Searching user by uid (%d) -> NOOP: EOK\n", uid);
++    return EOK;
++}
++
++/* Helper to create a group on the fly. Required for access-level handling*/
++static int add_group(struct sss_domain_info *dom, const char *group)
++{
++    struct group *g = getgrnam(group);
++    if (!g)
++        return ENOENT;
++
++    return sysdb_store_group(dom,
++                             group,
++                             g->gr_gid,
++                             NULL, /* attrs */
++                             0,
++                             0);
++}
++
++/* Remove duplicate elements from the list */
++errno_t remove_dupli_from_list(TALLOC_CTX *memctx, char ***list)
++{
++    int error;
++    errno_t ret;
++    long unsigned int i;
++    hash_table_t *table;
++    hash_key_t key;
++    hash_value_t value;
++    char **old_list = NULL;
++    char **new_list = NULL;
++    long unsigned int count;
++    hash_key_t *keys;
++
++    TALLOC_CTX *tmp_ctx = talloc_new(memctx);
++    if (!tmp_ctx) {
++        return ENOMEM;
++    }
++
++    if (!list)
++        return EINVAL;
++    old_list = *list;
++
++    error = hash_create(10, &table, NULL, NULL);
++    if (error != HASH_SUCCESS) {
++        talloc_free(tmp_ctx);
++        return EIO;
++    }
++
++    key.type = HASH_KEY_STRING;
++    value.type = HASH_VALUE_UNDEF;
++
++    /* Add all entries from list into a hash table */
++    i = 0;
++    while (old_list[i]) {
++        key.str = talloc_strdup(tmp_ctx, old_list[i]);
++        error = hash_enter(table, &key, &value);
++        if (error != HASH_SUCCESS) {
++            ret = EIO;
++            goto done;
++        }
++        i++;
++    }
++    error = hash_keys(table, &count, &keys);
++    if (error != HASH_SUCCESS) {
++        ret = EIO;
++        goto done;
++    }
++
++    new_list = talloc_array(tmp_ctx, char *, count+1);
++    if (!new_list) {
++        ret = ENOMEM;
++        goto done;
++    }
++
++    for (i = 0; i < count; i++) {
++        new_list[i] = talloc_strdup(new_list, keys[i].str);
++        if (!new_list[i]) {
++            ret = ENOMEM;
++            goto done;
++        }
++    }
++    new_list[count] = NULL;
++    *list = talloc_steal(memctx, new_list);
++    free(keys);
++
++    ret = EOK;
++
++    done:
++        hash_destroy(table);
++        talloc_free(tmp_ctx);
++        return ret;
++}
++
++#define VYATTA_LEVEL_FILE "/opt/vyatta/etc/level"
++static int get_vyatta_groups(TALLOC_CTX *tmpctx, const char *level,
++                             char ***_groups, char ***_delete_groups)
++{
++	FILE *fp;
++	size_t len;
++	size_t level_len;
++	char *line = NULL, *val = NULL;
++	char **groups = NULL;
++	char **delete_groups = NULL;
++	char *other_groups = NULL;
++	int num_groups = 0;
++	int ret = EOK;
++
++	if (!level || !_groups)
++		return EINVAL;
++
++	level_len = strlen(level);
++
++	other_groups = talloc_strdup(tmpctx, "");
++	if (!other_groups)
++		return ENOMEM;
++
++	fp = fopen(VYATTA_LEVEL_FILE, "r");
++	if (!fp) {
++		return errno;
++	}
++
++	while (getline(&line, &len, fp) != -1) {
++		val = strchr(line, ':') + 1;
++
++		/* looking for $level:$group1,#group2 */
++		if (strncmp(line, level, level_len)) {
++			other_groups = talloc_asprintf_append(other_groups, ",%s", val);
++			continue;
++		}
++
++		ret = split_on_separator(tmpctx, val, ',', true, true,
++                                 &groups, &num_groups);
++		if (ret) {
++			free(line);
++			fclose(fp);
++			return ret;
++		}
++	}
++	free(line);
++	fclose(fp);
++
++	ret = split_on_separator(tmpctx, other_groups, ',', true, true,
++                             &delete_groups, NULL);
++	if (ret)
++		return ret;
++
++	/* Remove duplicates that might be in delete_groups */
++	ret = remove_dupli_from_list(tmpctx, &delete_groups);
++	if (ret)
++		return ret;
++
++	ret = diff_string_lists(tmpctx, groups, delete_groups, NULL, _delete_groups, NULL);
++	if (ret)
++		return ret;
++
++	/* Add the default group "users" as well */
++	ret = add_string_to_list(tmpctx, "users", &groups);
++	if (ret)
++		return ret;
++	num_groups++;
++
++	/* Add the vyatta.system.user.tacplus group */
++	ret = add_string_to_list(tmpctx, "vyatta.system.user.tacplus", &groups);
++	if (ret)
++		return ret;
++	num_groups++;
++
++	*_groups = groups;
++	return ret;
++}
++
++/* Vyatta specific bits for "vyatta-exec" service handling.
++ * The vyatta-exec service handles following vendor specific
++ * attributes: level=
++ *
++ * TODO: make those configurable via SSSD so we no longer need
++ * to maintain this as vyatta specific code piece.
++ */
++static int vyatta_extension(struct sss_domain_info *dom,
++                            const char *name, int uid, int gid,
++                            const char *shell, const char *homedir,
++                            const char *level, bool secrets_group) {
++
++    int i, ret;
++    struct sysdb_attrs *attrs = NULL;
++    TALLOC_CTX *tmpctx;
++    char **level_groups = NULL;
++    char **delete_groups = NULL;
++
++    attrs = sysdb_new_attrs(NULL);
++    if (!attrs) {
++        DEBUG(SSSDBG_CRIT_FAILURE, "Allocation error ?!\n");
++        return ENOMEM;
++    }
++
++    ret = sysdb_attrs_add_time_t(attrs, SYSDB_INITGR_EXPIRE,
++                                 (dom->user_timeout ?
++                                  (time(NULL) + dom->user_timeout) : 0));
++    if (ret) {
++          DEBUG(SSSDBG_OP_FAILURE, "Could not add user timeout\n");
++          talloc_zfree(attrs);
++          return ret;
++    }
++
++    tmpctx = talloc_new(NULL);
++    if (!tmpctx) {
++       talloc_zfree(attrs);
++       return ENOMEM;
++    }
++
++    ret = get_vyatta_groups(tmpctx, level ? level : "operator", &level_groups, &delete_groups);
++    if (ret) {
++       talloc_zfree(tmpctx);
++       talloc_zfree(attrs);
++       return ret;
++    }
++
++    if (secrets_group)
++        ret = add_string_to_list(tmpctx, "secrets", &level_groups);
++    else
++        ret = add_string_to_list(tmpctx, "secrets", &delete_groups);
++
++    if (ret) {
++        talloc_zfree(tmpctx);
++        talloc_zfree(attrs);
++        return ret;
++    }
++
++    /* Create the required local groups in the SYSDB on-the-fly */
++    if (level_groups) {
++        for (i=0; level_groups[i]; i++) {
++            ret = add_group(dom, level_groups[i]);
++            if (ret) {
++                DEBUG(SSSDBG_OP_FAILURE, "Could not create local groups in sysdb\n");
++                talloc_zfree(attrs);
++                talloc_zfree(tmpctx);
++                return ret;
++            }
++        }
++
++        /* override original configured primary group. Required for non-configd releases. */
++        if (level && (strncmp(level, "superuser", 9) == 0 || strncmp(level, "admin", 5) == 0)) {
++            /* get primary group ID */
++            struct group *grp = getgrnam("vyattacfg");
++            if (grp) {
++                gid = grp->gr_gid;
++            }
++        }
++    }
++
++
++    ret = sysdb_store_user(dom,
++                           name,
++                           NULL, /* pwd */
++                           uid, /* uid */
++                           gid, /* gid */
++                           NULL, /* gecos */
++                           homedir, /* homedir */
++                           shell,
++                           NULL,
++                           attrs,
++                           NULL, /* remove_attrs */
++                           dom->user_timeout, /* entry_cache_user_timeout */
++                           0);
++    if (ret) {
++        DEBUG(SSSDBG_OP_FAILURE, "Could not store user \"%s\" in sysdb\n", name);
++        talloc_zfree(attrs);
++        talloc_zfree(tmpctx);
++        return ret;
++    }
++
++    talloc_zfree(attrs);
++
++    ret = sysdb_update_members(dom, name, SYSDB_MEMBER_USER,
++                         (const char *const *)level_groups,
++                         (const char *const *)delete_groups);
++    talloc_zfree(tmpctx);
++    if (ret) {
++        DEBUG(SSSDBG_OP_FAILURE, "Could not update group memberships for \"%s\" in sysdb\n", name);
++        return ret;
++    }
++
++    return EOK;
++}
++
++int tacplus_author(struct tacplus_id_handler_ctx *ctx, const char *service,
++                   const char *proto, const char *secrets,
++                   const char *tty, const char *rhost, char **level,
++                   int *delete_user, bool *secrets_group)
++{
++    int ret = TAC_PLUS_AUTHOR_STATUS_ERROR;
++    DBusConnection *dconn;
++    DBusError derr;
++    DBusMessage *dmsg = NULL, *dmsg_reply = NULL;
++    DBusMessageIter iter, array, dict;
++    DBusMessageIter parentIter;
++    DBusMessageIter dictIter, dictEntryIter;
++    const char *protocol = "protocol";
++    const char *serv = "service";
++    const char *secr = "secrets";
++    int status;
++    const char *key;
++    const char *sig = "{ss}";
++    char *tmp;
++
++   if (delete_user)
++     *delete_user = false;
++
++   /* Connect to the TACACS+ daemon and send authorization request */
++
++    if ((dconn = tacplus_connect_daemon(ctx->ctx)) == NULL) {
++        DEBUG(SSSDBG_TRACE_FUNC,
++                 "failed to connect to tacplus daemon\n");
++        ret = ENXIO;
++        goto done;
++    }
++
++    dmsg = dbus_message_new_method_call(TACPLUS_DAEMON,
++                                        TACPLUS_DAEMON_PATH,
++                                        TACPLUS_DAEMON_IFACE,
++                                        TACPLUS_DAEMON_AUTHOR);
++
++    if(dmsg == NULL) {
++        ret = ENXIO;
++        DEBUG(SSSDBG_TRACE_FUNC,
++                 "failed to create method call\n");
++        goto done;
++    }
++
++    dbus_message_iter_init_append(dmsg, &iter);
++    dbus_message_iter_append_basic(&iter, DBUS_TYPE_STRING, &ctx->username);
++    dbus_message_iter_append_basic(&iter, DBUS_TYPE_STRING, &tty);
++    dbus_message_iter_append_basic(&iter, DBUS_TYPE_STRING, &rhost);
++
++    dbus_message_iter_open_container (&iter, DBUS_TYPE_ARRAY, sig, &array);
++
++    /* append our two attributes, firstly protocol... */
++    dbus_message_iter_open_container (&array, DBUS_TYPE_DICT_ENTRY, NULL, &dict);
++    dbus_message_iter_append_basic (&dict, DBUS_TYPE_STRING, &protocol);
++    dbus_message_iter_append_basic (&dict, DBUS_TYPE_STRING, &proto);
++    dbus_message_iter_close_container(&array, &dict);
++
++    /* ...and now service...*/
++    dbus_message_iter_open_container (&array, DBUS_TYPE_DICT_ENTRY, NULL, &dict);
++    dbus_message_iter_append_basic (&dict, DBUS_TYPE_STRING, &serv);
++    dbus_message_iter_append_basic (&dict, DBUS_TYPE_STRING, &service);
++    dbus_message_iter_close_container(&array, &dict);
++
++    /* ...and now secrets...*/
++    if (secrets) {
++        dbus_message_iter_open_container (&array, DBUS_TYPE_DICT_ENTRY,
++                                          NULL, &dict);
++        dbus_message_iter_append_basic (&dict, DBUS_TYPE_STRING, &secr);
++        dbus_message_iter_append_basic (&dict, DBUS_TYPE_STRING, &secrets);
++        dbus_message_iter_close_container(&array, &dict);
++    }
++
++    /* ...done. */
++    dbus_message_iter_close_container(&iter, &array);
++
++    dbus_error_init(&derr);
++
++    dmsg_reply = dbus_connection_send_with_reply_and_block(dconn, dmsg,
++                                      TACPLUS_DAEMON_TIMEOUT_MS, &derr);
++
++    if((tacplus_validate_reply_msg(&derr)) < 0) {
++        DEBUG(SSSDBG_TRACE_FUNC,
++                 "failed to receive authorization response\n");
++        ret = ENXIO;
++        goto done;
++    }
++
++    dbus_message_iter_init(dmsg_reply, &parentIter);
++
++    /* arg[1] contains authorization status reply */
++    dbus_message_iter_get_basic(&parentIter, &status);
++
++    dbus_message_iter_next(&parentIter);
++    dbus_message_iter_recurse(&parentIter, &dictIter);
++
++    while ( (dbus_message_iter_get_arg_type(&dictIter) == DBUS_TYPE_DICT_ENTRY) ) {
++        dbus_message_iter_recurse(&dictIter, &dictEntryIter);
++        while( (dbus_message_iter_get_arg_type(&dictEntryIter)) != DBUS_TYPE_INVALID) {
++            dbus_message_iter_get_basic(&dictEntryIter, &key);
++            if (strcmp("level=", key) == 0) {
++                dbus_message_iter_next(&dictEntryIter);
++                if (level) {
++                    dbus_message_iter_get_basic(&dictEntryIter, &tmp);
++                    *level = strdup(tmp);
++                }
++            }
++            else if (strcmp("secrets*", key) == 0) {
++                dbus_message_iter_next(&dictEntryIter);
++                dbus_message_iter_get_basic(&dictEntryIter, &tmp);
++                if (secrets_group)
++                    *secrets_group = !strcmp(tmp, "true");
++            }
++            else if ((strcmp("protocol=", key) == 0) ||
++                     strcmp("service=", key) == 0) {
++                /*
++                 * When request contains optional attributes, the server may
++                 * return all of our original supplied mandatory attributes.
++                 * Ignore them if their values are identical to those we
++                 * provided on the request.
++                 */
++                const char *input_val = (key[0] == 'p') ?
++                    proto : service;
++                dbus_message_iter_next(&dictEntryIter);
++                dbus_message_iter_get_basic(&dictEntryIter, &tmp);
++                if (strcmp(tmp, input_val) != 0) {
++                    sss_log(SSS_LOG_WARNING,
++                            "Unsupported value for mandatory TACACS+ "
++                            "attribute '%s:%s'",
++                            key, tmp);
++                    status = TAC_PLUS_AUTHOR_STATUS_FAIL;
++                    break;
++                }
++            }
++            else {
++                char *key_nosep = NULL;
++                if (strlen(key) > 1)
++                    key_nosep = strndup(key, strlen(key)-1);
++
++                if (strchr(key, '=')) {
++                    sss_log(SSS_LOG_WARNING, "Unsupported mandatory TACACS+ attribute '%s'",
++                            key_nosep ? key_nosep : key);
++                    status = TAC_PLUS_AUTHOR_STATUS_FAIL;
++                    free(key_nosep);
++                    break;
++                }
++                else {
++                    DEBUG(SSSDBG_TRACE_FUNC, "Ignoring unsupported attribute-key: "
++                                             "%s\n", key_nosep ? key_nosep : key);
++                }
++
++                free(key_nosep);
++            }
++            dbus_message_iter_next(&dictEntryIter);
++        }
++        dbus_message_iter_next(&dictIter);
++    }
++
++    switch (status) {
++        case TAC_PLUS_AUTHOR_STATUS_ERROR:
++            DEBUG(SSSDBG_CRIT_FAILURE,
++               "tacplus authorization received error for user: %s\n",
++                ctx->username);
++             ret = ENXIO;
++             break;
++        case TAC_PLUS_AUTHOR_STATUS_PASS_ADD:
++        case TAC_PLUS_AUTHOR_STATUS_PASS_REPL:
++            ret = EOK;
++            DEBUG(SSSDBG_TRACE_FUNC, "tacplus authorization pass\n");
++            break;
++        case TAC_PLUS_AUTHOR_STATUS_FAIL:
++            if (delete_user)
++                *delete_user = true;
++        case TAC_PLUS_AUTHOR_STATUS_FOLLOW:
++        default:
++            DEBUG(SSSDBG_CRIT_FAILURE,
++               "tacplus authorization got rejected for user: %s <%d>\n",
++                ctx->username, status);
++            ret = EPERM;
++            break;
++    }
++
++done:
++    if (dmsg)
++        dbus_message_unref(dmsg);
++    if (dmsg_reply)
++        dbus_message_unref(dmsg_reply);
++
++    return ret;
++}
++
++static int get_pw_name(TALLOC_CTX *mem_ctx,
++                       struct tacplus_id_handler_ctx *ctx,
++                       struct sss_domain_info *dom)
++{
++    struct tacplus_ctx *mod_ctx;
++    int ret;
++    char *service, *proto, *homedir_template, *homedir, *shell, *secrets;
++    char *level = NULL;
++    TALLOC_CTX *tmpctx;
++    struct sysdb_attrs *attrs = NULL;
++    int gid, uid = 0;
++    int delete_user;
++    bool secrets_group = false;
++    struct sss_nss_homedir_ctx homedir_ctx;
++
++    DEBUG(SSSDBG_TRACE_FUNC,
++          "Searching user by name (%s) dom: %s\n",
++          ctx->username, dom ? dom->name : "(none)");
++
++    mod_ctx = ctx->ctx;
++
++    tmpctx = talloc_new(NULL);
++    if (!tmpctx) {
++       return ENOMEM;
++    }
++
++    shell = dp_opt_get_string(mod_ctx->opts->basic, TACPLUS_SHELL);
++    service = dp_opt_get_string(mod_ctx->opts->basic, TACPLUS_SERVICE);
++    proto = dp_opt_get_string(mod_ctx->opts->basic, TACPLUS_PROTO);
++    secrets = dp_opt_get_string(mod_ctx->opts->basic, TACPLUS_SECRETS);
++    gid = dp_opt_get_int(mod_ctx->opts->basic, TACPLUS_USER_GID);
++    homedir_template = dp_opt_get_string(mod_ctx->opts->basic, TACPLUS_HOMEDIR);
++
++    homedir_ctx.username = ctx->fq_username;
++    homedir_ctx.uid = uid;
++    homedir_ctx.domain = dom->name;
++    homedir_ctx.flatname = dom->flat_name;
++    homedir_ctx.config_homedir_substr = dom->homedir_substr;
++
++    homedir = expand_homedir_template(tmpctx, homedir_template, true, &homedir_ctx);
++    if (!homedir) {
++        DEBUG(SSSDBG_OP_FAILURE, "Expanding home directory template failed\n");
++        ret = ENOMEM;
++        goto done;
++    }
++
++    ret = tacplus_author(ctx, service, proto, secrets, "" /*tty*/, "" /*rhost*/,
++                         &level, &delete_user, &secrets_group);
++
++    DEBUG(SSSDBG_TRACE_FUNC,
++          "tacplus -> authorization for '%s' status: <%d>\n",
++          ctx->username, ret);
++
++    if (ret == EPERM) {
++        if (delete_user)
++            ret = sysdb_delete_user(dom, ctx->fq_username, uid);
++
++        /* tolerate if user doesn't exist yet */
++        if (ret == ENOENT)
++            ret = EOK;
++
++        goto done;
++    }
++
++    if (ret)
++	    goto done;
++
++
++#ifndef NO_VYATTA_EXTENSION
++    ret = vyatta_extension(dom, ctx->fq_username, uid, gid,
++                           shell, homedir, level, secrets_group);
++#else
++    attrs = sysdb_new_attrs(NULL);
++    if (!attrs) {
++        DEBUG(SSSDBG_CRIT_FAILURE, "Allocation of new sysdb attribute failed\n");
++        ret =  ENOMEM;
++        goto error;
++    }
++
++    ret = sysdb_attrs_add_time_t(attrs, SYSDB_INITGR_EXPIRE,
++                                 (dom->user_timeout ?
++                                  (time(NULL) + dom->user_timeout) : 0));
++    if (ret) {
++        DEBUG(SSSDBG_OP_FAILURE, "Could not add user timeout\n");
++        goto done;
++    }
++
++    ret = sysdb_store_user(sysdb,
++                           ctx->fq_username,
++                           NULL, /* pwd */
++                           uid, /* uid */
++                           gid, /* gid */
++                           NULL, /* gecos */
++                           homedir, /* homedir */
++                           shell,
++                           attrs,
++                           NULL, /* remove_attrs */
++                           dom->user_timeout, /* entry_cache_user_timeout */
++                           0);
++    if (ret) {
++        DEBUG(SSSDBG_OP_FAILURE, "Could not create user \"%s\" in sysdb\n", name);
++        goto done;
++    }
++
++#endif
++
++done:
++    if (attrs)
++        talloc_zfree(attrs);
++
++    if (level)
++        free(level);
++
++    if (ret != EOK) {
++        DEBUG(SSSDBG_OP_FAILURE,
++              "tacplus -> getpwnam_r failed for '%s' <%d>\n",
++              ctx->username, ret);
++    }
++
++    talloc_zfree(tmpctx);
++
++    return ret;
++}
++
++static bool handle_request_for_user(const struct dp_id_data *data,
++                                    const struct sss_domain_info *dom,
++                                    const struct tacplus_id_handler_ctx *ctx)
++{
++    struct passwd *pw;
++
++    if (data->entry_type != BE_REQ_INITGROUPS)
++        return true;
++
++    /*
++     * We are likely to receive an initgroups request for local users
++     * since the default NSS configuration for initgroups queries all
++     * services configured for the groups database - it does not return
++     * after the first successful query.
++     *
++     * Therefore before we issue a TACACS+ session authorization request
++     * check that if the user exists then it is part of our domain (UID
++     * is in range).
++     */
++    pw = getpwnam(ctx->username);
++    if (pw && OUT_OF_ID_RANGE(pw->pw_uid, dom->id_min, dom->id_max)) {
++        DEBUG(SSSDBG_TRACE_FUNC, "User %s (UID %u) already exists outside this "
++              "domain - ignoring initgroups request.\n", ctx->username, pw->pw_uid);
++        return false;
++    }
++
++    return true;
++}
++
++static struct tevent_req *
++tacplus_id_handler_send(TALLOC_CTX *mem_ctx,
++                        struct tacplus_ctx *mod_ctx,
++                        struct dp_id_data *data,
++                        struct dp_req_params *params)
++{
++    struct tevent_req *req;
++    struct tacplus_id_handler_ctx *ctx;
++    uid_t uid;
++    int ret;
++    char *endptr;
++
++    req = tevent_req_create(mem_ctx, &ctx, struct tacplus_id_handler_ctx);
++    if (!req) {
++        DEBUG(SSSDBG_CRIT_FAILURE, "tevent_req_create() failure\n");
++        return NULL;
++    }
++
++    ctx->ctx = mod_ctx;
++
++    if (be_is_offline(params->be_ctx)) {
++        dp_reply_std_set(&ctx->reply, DP_ERR_OFFLINE, ENXIO, "Offline");
++        goto done;
++    }
++
++    switch (data->entry_type) {
++    case BE_REQ_USER:
++    case BE_REQ_INITGROUPS:
++        switch (data->filter_type) {
++        case BE_FILTER_NAME:
++            ctx->fq_username = data->filter_value;
++            ret = sss_parse_internal_fqname(mem_ctx, ctx->fq_username,
++                                            &ctx->username, NULL);
++            if (ret)
++                break;
++
++            if (handle_request_for_user(data, params->domain, ctx))
++                ret = get_pw_name(req, ctx, params->domain);
++            else
++                ret = EOK;
++
++            if (ret) {
++                if (ret == ENXIO) {
++                    DEBUG(SSSDBG_TRACE_FUNC,
++                          "get_pw_name returned UNAVAIL error, going offline!\n");
++                    be_mark_offline(params->be_ctx);
++                    dp_reply_std_set(&ctx->reply, DP_ERR_OFFLINE,
++                                     ret, "Going offline");
++                    goto done;
++                }
++                dp_reply_std_set(&ctx->reply, DP_ERR_FATAL, ret,
++                                 "TACACS+ id provider lookup failed");
++                goto done;
++            }
++            break;
++
++        case BE_FILTER_IDNUM:
++            uid = (uid_t) strtouint32(data->filter_value, &endptr, 10);
++            if (errno || *endptr || (data->filter_value == endptr)) {
++                dp_reply_std_set(&ctx->reply, DP_ERR_FATAL,
++                                   EINVAL, "Invalid attr type");
++                goto done;
++            }
++            ret = get_pw_uid(req, ctx, NULL, params->domain, uid);
++            break;
++        default:
++            dp_reply_std_set(&ctx->reply, DP_ERR_FATAL,
++                             EINVAL, "Invalid filter type");
++            goto done;
++        }
++        break;
++    default:
++        dp_reply_std_set(&ctx->reply, DP_ERR_FATAL,
++                         EINVAL, "Invalid request type");
++        goto done;
++    }
++
++    if (ret)
++        dp_reply_std_set(&ctx->reply, DP_ERR_FATAL, ret, NULL);
++    else
++        dp_reply_std_set(&ctx->reply, DP_ERR_OK, EOK, NULL);
++
++done:
++    tevent_req_done(req);
++    tevent_req_post(req, params->ev);
++    return req;
++}
++
++static errno_t
++tacplus_id_handler_recv(TALLOC_CTX *mem_ctx,
++                        struct tevent_req *req,
++                        struct dp_reply_std *data)
++{
++    struct tacplus_id_handler_ctx *ctx;
++
++    ctx = tevent_req_data(req, struct tacplus_id_handler_ctx);
++
++    TEVENT_REQ_RETURN_ON_ERROR(req);
++
++    *data = ctx->reply;
++    return EOK;
++}
++
++errno_t
++sssm_tacplus_id_init(TALLOC_CTX *mem_ctx,
++                     struct be_ctx *bectx,
++                     void *module_data,
++                     struct dp_method *dp_methods)
++{
++    struct tacplus_ctx *ctx;
++
++    ctx = talloc_get_type(module_data, struct tacplus_ctx);
++
++    dp_set_method(dp_methods, DPM_ACCOUNT_HANDLER,
++                  tacplus_id_handler_send, tacplus_id_handler_recv,
++                  ctx, struct tacplus_ctx,
++                  struct dp_id_data, struct dp_reply_std);
++
++    dp_set_method(dp_methods, DPM_ACCT_DOMAIN_HANDLER,
++                  default_account_domain_send, default_account_domain_recv,
++                  NULL, void, struct dp_get_acct_domain_data, struct dp_reply_std);
++    return EOK;
++}
+--- /dev/null
++++ b/src/providers/tacplus/tacplus_init.c
+@@ -0,0 +1,54 @@
++/*
++    SSSD
++
++    TACACS+ Provider Initialization functions
++
++    Copyright (c) 2014-2017 Brocade Communications Systems, Inc.
++    Copyright (c) 2018-2020 AT&T Intellectual Property.
++
++    This program is free software; you can redistribute it and/or modify
++    it under the terms of the GNU General Public License as published by
++    the Free Software Foundation; either version 3 of the License, or
++    (at your option) any later version.
++
++    This program is distributed in the hope that it will be useful,
++    but WITHOUT ANY WARRANTY; without even the implied warranty of
++    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++    GNU General Public License for more details.
++
++    You should have received a copy of the GNU General Public License
++    along with this program.  If not, see <http://www.gnu.org/licenses/>.
++*/
++
++#include "providers/tacplus/tacplus_common.h"
++
++int sssm_tacplus_init(TALLOC_CTX *mem_ctx,
++                      struct be_ctx *bectx,
++                      struct data_provider *provider,
++                      const char *name,
++                      void **data)
++{
++    struct tacplus_ctx *ctx;
++    int ret;
++
++    ctx = talloc_zero(mem_ctx, struct tacplus_ctx);
++    if (!ctx) {
++        return ENOMEM;
++    }
++    ctx->be = bectx;
++
++    ret = tacplus_get_options(ctx, bectx->cdb,
++                              bectx->conf_path, &ctx->opts);
++    if (ret != EOK) {
++        goto done;
++    }
++
++    *data = ctx;
++    return EOK;
++
++done:
++    if (ret != EOK) {
++        talloc_free(ctx);
++    }
++    return ret;
++}
+--- /dev/null
++++ b/src/providers/tacplus/tacplus_session.c
+@@ -0,0 +1,242 @@
++/*
++    Copyright (c) 2014-2017 Brocade Communications Systems, Inc.
++    Copyright (c) 2018-2020 AT&T Intellectual Property.
++
++    This program is free software; you can redistribute it and/or modify
++    it under the terms of the GNU General Public License as published by
++    the Free Software Foundation; either version 3 of the License, or
++    (at your option) any later version.
++
++    This program is distributed in the hope that it will be useful,
++    but WITHOUT ANY WARRANTY; without even the implied warranty of
++    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++    GNU General Public License for more details.
++
++    You should have received a copy of the GNU General Public License
++    along with this program.  If not, see <http://www.gnu.org/licenses/>.
++*/
++
++#include <errno.h>
++#include <time.h>
++#include <sys/time.h>
++
++#include <stdio.h>
++#include <sys/types.h>
++#include <sys/stat.h>
++#include <fcntl.h>
++
++#include <security/pam_modules.h>
++#include <security/pam_ext.h>
++#include <security/pam_modutil.h>
++
++
++
++#include "util/util.h"
++#include "util/strtonum.h"
++#include "db/sysdb.h"
++#include "providers/tacplus/tacplus_common.h"
++
++struct tacplus_session_handler_ctx {
++    struct tacplus_ctx *ctx;
++    struct pam_data *pd;
++};
++
++#define TIMESTAMP_LEN 11
++static int tacplus_session(struct tacplus_session_handler_ctx *ctx)
++{
++    int type, reply, start;
++    int ret = EOK;
++    char timestamp[TIMESTAMP_LEN];
++    struct pam_data *pd = ctx->pd;
++    const char *tty = pd->tty;
++    const char *rhost = pd->rhost;
++    const char *sig = "{ss}";
++    const char *start_time_k = "start_time";
++    const char *stop_time_k = "stop_time";
++    const char *time_v = timestamp;
++    char *username;
++    DBusConnection *dconn;
++    DBusError derr;
++    DBusMessage *dmsg = NULL, *dmsg_reply = NULL;
++    DBusMessageIter iter, array, dict;
++
++    if (!pd) {
++        return EINVAL;
++    }
++
++    ret = sss_parse_internal_fqname(ctx, pd->user, &username, NULL);
++    if (ret)
++        return ret;
++
++    snprintf(timestamp, TIMESTAMP_LEN, "%lu", time(NULL));
++
++    switch(pd->cmd) {
++        case SSS_PAM_OPEN_SESSION:
++            type = TAC_PLUS_ACCT_FLAG_START;
++            start = 1;
++            break;
++        case SSS_PAM_CLOSE_SESSION:
++            type = TAC_PLUS_ACCT_FLAG_STOP;
++            start = 0;
++            break;
++        default:
++            return EINVAL;
++    }
++
++    if ((dconn = tacplus_connect_daemon(ctx->ctx)) == NULL) {
++        DEBUG(SSSDBG_TRACE_FUNC,
++                 "failed to connect to tacplus daemon\n");
++        ret = ENXIO;
++        goto done;
++    }
++
++    dmsg = dbus_message_new_method_call(TACPLUS_DAEMON,
++	                                    TACPLUS_DAEMON_PATH,
++	                                    TACPLUS_DAEMON_IFACE,
++	                                    TACPLUS_DAEMON_ACCT);
++
++    if(dmsg == NULL) {
++        DEBUG(SSSDBG_TRACE_FUNC,
++                 "failed to instantiate method call");
++        pd->pam_status = PAM_AUTHINFO_UNAVAIL;
++        ret = ENOMEM;
++        goto done;
++    }
++
++    dbus_message_iter_init_append(dmsg, &iter);
++    dbus_message_iter_append_basic(&iter, DBUS_TYPE_INT32, &type);
++    dbus_message_iter_append_basic(&iter, DBUS_TYPE_STRING, &username);
++    dbus_message_iter_append_basic(&iter, DBUS_TYPE_STRING, &tty);
++    dbus_message_iter_append_basic(&iter, DBUS_TYPE_STRING, &rhost);
++
++    dbus_message_iter_open_container (&iter, DBUS_TYPE_ARRAY, sig, &array);
++
++    /* append our one attribute, (start|stop)_time... */
++    dbus_message_iter_open_container (&array, DBUS_TYPE_DICT_ENTRY, NULL, &dict);
++    if (start)
++        dbus_message_iter_append_basic (&dict, DBUS_TYPE_STRING, &start_time_k);
++    else
++        dbus_message_iter_append_basic (&dict, DBUS_TYPE_STRING, &stop_time_k);
++    dbus_message_iter_append_basic (&dict, DBUS_TYPE_STRING, &time_v);
++    dbus_message_iter_close_container(&array, &dict);
++
++    /* ...done. */
++    dbus_message_iter_close_container(&iter, &array);
++
++    dbus_error_init(&derr);
++
++    dmsg_reply = dbus_connection_send_with_reply_and_block(dconn, dmsg,
++                                      TACPLUS_DAEMON_TIMEOUT_MS, &derr);
++
++    if((tacplus_validate_reply_msg(&derr)) < 0) {
++        DEBUG(SSSDBG_TRACE_FUNC,
++                 "failed to receive accounting response\n");
++        ret = ENXIO;
++        goto done;
++    }
++
++    dbus_message_get_args(dmsg_reply, &derr, DBUS_TYPE_INT32, &reply,
++						  DBUS_TYPE_INVALID);
++
++    if((tacplus_validate_basic_reply_args(&derr)) < 0) {
++        ret = -1;
++        goto done;
++    }
++
++    switch (reply) {
++        case TAC_PLUS_ACCT_STATUS_SUCCESS:
++            ret = EOK;
++            break;
++
++        case TAC_PLUS_ACCT_STATUS_ERROR:
++        /* not implemented */
++        case TAC_PLUS_ACCT_STATUS_FOLLOW:
++        default:
++            ret = -1;
++            break;
++     }
++
++done:
++    if (dmsg)
++        dbus_message_unref(dmsg);
++    if (dmsg_reply)
++        dbus_message_unref(dmsg_reply);
++
++    return ret;
++}
++
++static struct tevent_req *
++tacplus_session_handler_send(TALLOC_CTX *mem_ctx,
++                             struct tacplus_ctx *mod_ctx,
++                             struct pam_data *pd,
++                             struct dp_req_params *params)
++{
++    struct tevent_req *req;
++    struct tacplus_session_handler_ctx *ctx;
++    int ret;
++
++    req = tevent_req_create(mem_ctx, &ctx, struct tacplus_session_handler_ctx);
++    if (!req) {
++        DEBUG(SSSDBG_CRIT_FAILURE, "tevent_req_create() failure\n");
++        return NULL;
++    }
++
++    ctx->ctx = mod_ctx;
++    ctx->pd = pd;
++    pd->pam_status = PAM_SYSTEM_ERR;
++
++    switch (pd->cmd) {
++        case SSS_PAM_OPEN_SESSION:
++        case SSS_PAM_CLOSE_SESSION:
++            ret = tacplus_session(ctx);
++            if (ret) {
++                DEBUG(SSSDBG_OP_FAILURE, "Session accounting failed: %i\n", ret);
++                break;
++            }
++            pd->pam_status = PAM_SUCCESS;
++            break;
++        default:
++            DEBUG(SSSDBG_OP_FAILURE, "Unsupported PAM task %i.\n", pd->cmd);
++            ret = EINVAL;
++            break;
++     }
++
++    if (ret)
++        tevent_req_error(req, ret);
++    else
++        tevent_req_done(req);
++
++    tevent_req_post(req, params->ev);
++    return req;
++}
++
++static errno_t
++tacplus_session_handler_recv(TALLOC_CTX *mem_ctx,
++                             struct tevent_req *req,
++                             struct pam_data **data)
++{
++    struct tacplus_session_handler_ctx *ctx;
++
++    ctx = tevent_req_data(req, struct tacplus_session_handler_ctx);
++
++    TEVENT_REQ_RETURN_ON_ERROR(req);
++
++    *data = talloc_steal(mem_ctx, ctx->pd);
++    return EOK;
++}
++
++errno_t
++sssm_tacplus_session_init(TALLOC_CTX *mem_ctx,
++                          struct be_ctx *bectx,
++                          void *module_data,
++                          struct dp_method *dp_methods)
++{
++    struct tacplus_ctx *ctx;
++
++    ctx = talloc_get_type(module_data, struct tacplus_ctx);
++
++    dp_set_method(dp_methods, DPM_SESSION_HANDLER,
++                  tacplus_session_handler_send, tacplus_session_handler_recv,
++                  ctx, struct tacplus_ctx, struct pam_data, struct pam_data *);
++    return EOK;
++}
+--- a/src/tests/dlopen-tests.c
++++ b/src/tests/dlopen-tests.c
+@@ -129,6 +129,10 @@
+     { "libsss_ad_tests.so", { LIBPFX"libdlopen_test_providers.so",
+                               LIBPFX"libsss_ad_tests.so", NULL } },
+ #endif
++#ifdef BUILD_TACPLUS
++    { "libsss_tacplus.so", { LIBPFX"libdlopen_test_providers.so",
++                             LIBPFX"libsss_tacplus.so", NULL } },
++#endif
+     { NULL }
+ };
+ 

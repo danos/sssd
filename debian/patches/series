@@ -16,3 +16,8 @@ pam-close-session-dp-method-support.patch
 propagate-provider-error.patch
 cache-req-propagate-dp-error.patch
 propagate-initgroup-dp-failure-to-pam.patch
+
+# tacplus provider implementation/specific patches
+tacplus/tacplus-id-auth-session-provider.patch
+tacplus/track-tacplusd-offline-state.patch
+tacplus/check-online-call-tacplusd-can-connect.patch

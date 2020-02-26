@@ -1,0 +1,257 @@
+--- a/src/providers/backend.h
++++ b/src/providers/backend.h
+@@ -126,6 +126,8 @@
+ void be_mark_dom_offline(struct sss_domain_info *dom, struct be_ctx *ctx);
+ void be_mark_online_iff_offline(struct be_ctx *ctx);
+ 
++void check_if_online(struct be_ctx *be_ctx);
++
+ int be_add_reconnect_cb(TALLOC_CTX *mem_ctx,
+                         struct be_ctx *ctx,
+                         be_callback_t cb,
+--- a/src/providers/data_provider_be.c
++++ b/src/providers/data_provider_be.c
+@@ -71,8 +71,6 @@
+     return ctx->offstat.offline;
+ }
+ 
+-static void check_if_online(struct be_ctx *be_ctx);
+-
+ static errno_t
+ try_to_go_online(TALLOC_CTX *mem_ctx,
+                  struct tevent_context *ev,
+@@ -319,7 +317,7 @@
+     }
+ }
+ 
+-static void check_if_online(struct be_ctx *be_ctx)
++void check_if_online(struct be_ctx *be_ctx)
+ {
+     errno_t ret;
+ 
+--- a/src/providers/tacplus/tacplus_common.c
++++ b/src/providers/tacplus/tacplus_common.c
+@@ -59,6 +59,60 @@
+     return ret;
+ }
+ 
++int tacplus_can_connect(struct tacplus_ctx *ctx)
++{
++    DBusConnection *dconn;
++    DBusError derr;
++    DBusMessage *dmsg, *dmsg_reply = NULL;
++    DBusMessageIter iter;
++    DBusBasicValue can_connect;
++    int ret = -1;
++
++    dconn = tacplus_connect_daemon(ctx);
++    if (!dconn) {
++        DEBUG(SSSDBG_TRACE_FUNC, "Failed to connect to tacplus daemon\n");
++        return -1;
++    }
++
++    dmsg = dbus_message_new_method_call(TACPLUS_DAEMON,
++                                        TACPLUS_DAEMON_PATH,
++                                        TACPLUS_DAEMON_IFACE,
++                                        TACPLUS_DAEMON_CAN_CONNECT);
++    if(!dmsg) {
++        DEBUG(SSSDBG_OP_FAILURE,
++              "Failed to create "TACPLUS_DAEMON_CAN_CONNECT"() method call\n");
++        return -1;
++    }
++
++    dbus_error_init(&derr);
++
++    dmsg_reply = dbus_connection_send_with_reply_and_block(
++                    dconn, dmsg, TACPLUS_DAEMON_TIMEOUT_MS, &derr);
++    if((tacplus_validate_reply_msg(&derr)) < 0) {
++        DEBUG(SSSDBG_OP_FAILURE, "Failed to do TACACS+ connectivity check\n");
++        goto finish;
++    }
++
++    if (! dbus_message_iter_init(dmsg_reply, &iter))
++        goto finish;
++
++    if (dbus_message_iter_get_arg_type(&iter) == DBUS_TYPE_BOOLEAN) {
++        dbus_message_iter_get_basic(&iter, &can_connect);
++        ret = can_connect.bool_val ? 1 : 0;
++    }
++    else {
++        DEBUG(SSSDBG_TRACE_FUNC,
++              "Unexpected return type for "TACPLUS_DAEMON_CAN_CONNECT"()\n");
++    }
++
++finish:
++    dbus_message_unref(dmsg);
++    if (dmsg_reply)
++        dbus_message_unref(dmsg_reply);
++
++    return ret;
++}
++
+ static DBusMessage *dbus_property_get(DBusConnection *conn,
+                                       const char *destination,
+                                       const char *path,
+@@ -182,7 +236,7 @@
+                 if (offline.bool_val)
+                     be_mark_offline(ctx->be);
+                 else
+-                    be_mark_online_iff_offline(ctx->be);
++                    check_if_online(ctx->be);
+             }
+ 
+             dbus_message_iter_next(&dictEntryIter);
+@@ -321,7 +375,7 @@
+     if (offline)
+         be_mark_offline(ctx->be);
+     else
+-        be_mark_online_iff_offline(ctx->be);
++        check_if_online(ctx->be);
+ 
+     return 0;
+ 
+--- a/src/providers/tacplus/tacplus_common.h
++++ b/src/providers/tacplus/tacplus_common.h
+@@ -26,12 +26,13 @@
+ #include <sys/types.h>
+ #include "providers/backend.h"
+ 
+-#define TACPLUS_DAEMON         "net.vyatta.tacplus"
+-#define TACPLUS_DAEMON_PATH    "/net/vyatta/tacplus"
+-#define TACPLUS_DAEMON_IFACE   "net.vyatta.tacplus"
+-#define TACPLUS_DAEMON_AUTHEN  "authen_send"
+-#define TACPLUS_DAEMON_AUTHOR  "author_send"
+-#define TACPLUS_DAEMON_ACCT    "account_send"
++#define TACPLUS_DAEMON              "net.vyatta.tacplus"
++#define TACPLUS_DAEMON_PATH         "/net/vyatta/tacplus"
++#define TACPLUS_DAEMON_IFACE        "net.vyatta.tacplus"
++#define TACPLUS_DAEMON_AUTHEN       "authen_send"
++#define TACPLUS_DAEMON_AUTHOR       "author_send"
++#define TACPLUS_DAEMON_ACCT         "account_send"
++#define TACPLUS_DAEMON_CAN_CONNECT  "can_connect"
+ 
+ #define TACPLUS_DAEMON_PROP_OFFLINE "offline"
+ #define TACPLUS_DAEMON_PROP_CHG_SIG "PropertiesChanged"
+@@ -101,6 +102,7 @@
+ int tacplus_validate_reply_msg(DBusError *);
+ int tacplus_validate_basic_reply_args(DBusError *);
+ 
++int tacplus_can_connect(struct tacplus_ctx *);
+ int tacplus_get_offline(struct tacplus_ctx *);
+ 
+ #endif /* _TACPLUS_COMMON_H_ */
+--- a/src/providers/tacplus/tacplus_id.c
++++ b/src/providers/tacplus/tacplus_id.c
+@@ -657,14 +657,21 @@
+     return ret;
+ }
+ 
+-static bool handle_request_for_user(const struct dp_id_data *data,
+-                                    const struct sss_domain_info *dom,
+-                                    const struct tacplus_id_handler_ctx *ctx)
++/*
++ * Determines how to handle the request for a given user, indicated by
++ * return value:
++ *     1 handle request normally
++ *    -1 ignore the request (respond EOK)
++ *     0 perform a connection check only (no TACACS+ transaction)
++ */
++static int handle_request_for_user(const struct dp_id_data *data,
++                                   const struct sss_domain_info *dom,
++                                   const struct tacplus_id_handler_ctx *ctx)
+ {
+     struct passwd *pw;
+ 
+     if (data->entry_type != BE_REQ_INITGROUPS)
+-        return true;
++        return 1;
+ 
+     /*
+      * We are likely to receive an initgroups request for local users
+@@ -678,12 +685,30 @@
+      */
+     pw = getpwnam(ctx->username);
+     if (pw && OUT_OF_ID_RANGE(pw->pw_uid, dom->id_min, dom->id_max)) {
+-        DEBUG(SSSDBG_TRACE_FUNC, "User %s (UID %u) already exists outside this "
+-              "domain - ignoring initgroups request.\n", ctx->username, pw->pw_uid);
+-        return false;
++
++        /*
++         * If the user exists and is a system user, we ignore it.
++         */
++        if (pw->pw_uid < 1000) {
++            DEBUG(SSSDBG_TRACE_FUNC, "User %s (UID %u) already exists "
++                  "outside this domain - ignoring initgroups request.\n",
++                  ctx->username, pw->pw_uid);
++            return -1;
++        }
++
++        /*
++         * Otherwise we perform a "connection check" rather than a TACACS+
++         * transaction; if the check fails then we take ourselves offline.
++         * This allows local user fallback to work when TACACS+ is unavailable
++         * simply by attempting to log in as a local user, but avoids performing
++         * a TACACS+ transaction which will likely fail.
++         */
++        DEBUG(SSSDBG_TRACE_FUNC, "Doing TACACS+ connection check for non-domain "
++              "user %s (UID %u)\n", ctx->username, pw->pw_uid);
++        return 0;
+     }
+ 
+-    return true;
++    return 1;
+ }
+ 
+ static struct tevent_req *
+@@ -722,10 +747,15 @@
+             if (ret)
+                 break;
+ 
+-            if (handle_request_for_user(data, params->domain, ctx))
+-                ret = get_pw_name(req, ctx, params->domain);
+-            else
++            ret = handle_request_for_user(data, params->domain, ctx);
++            if (ret < 0)
+                 ret = EOK;
++            else if (ret)
++                ret = get_pw_name(req, ctx, params->domain);
++            else {
++                if (tacplus_can_connect(mod_ctx) <= 0)
++                    ret = ENXIO;
++            }
+ 
+             if (ret) {
+                 if (ret == ENXIO) {
+@@ -790,7 +820,7 @@
+ }
+ 
+ struct tacplus_check_online_ctx {
+-    int offline;
++    int can_connect;
+ };
+ 
+ static struct tevent_req *
+@@ -808,7 +838,7 @@
+         return NULL;
+     }
+ 
+-    ctx->offline = tacplus_get_offline(mod_ctx);
++    ctx->can_connect = tacplus_can_connect(mod_ctx);
+ 
+     tevent_req_done(req);
+     tevent_req_post(req, params->ev);
+@@ -826,8 +856,12 @@
+ 
+     TEVENT_REQ_RETURN_ON_ERROR(req);
+ 
+-    dp_reply_std_set(data, ctx->offline ? DP_ERR_OFFLINE : DP_ERR_OK,
+-                     ctx->offline, NULL);
++    if (ctx->can_connect <= 0)
++        dp_reply_std_set(data, DP_ERR_OFFLINE, ENXIO,
++                         "TACACS+ server connection check failed");
++    else
++        dp_reply_std_set(data, DP_ERR_OK, EOK, NULL);
++
+     return EOK;
+ }
+ 
