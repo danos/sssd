@@ -128,7 +128,7 @@ Subject: tacplus-available-prop
  int tacplus_author(const char *user, const char *service, const char *proto,
                     const char *secrets, const char *tty, const char *rhost,
                     char **level, char **local_account,
-@@ -259,31 +337,218 @@
+@@ -264,31 +342,218 @@
      return ret;
  }
  
@@ -356,7 +356,7 @@ Subject: tacplus-available-prop
                 derr->message);
          dbus_error_free(derr);
          return -1;
-@@ -295,11 +560,10 @@
+@@ -300,11 +565,10 @@
  {
      if (dbus_error_is_set(derr)) {
          DEBUG(SSSDBG_OP_FAILURE,
@@ -410,8 +410,8 @@ Subject: tacplus-available-prop
  };
  
 @@ -106,8 +118,11 @@
-                    const char *tty, const char *rhost, char **level,
-                    char **local_account, int *delete_user, bool *secrets_group);
+                    char **level, char **local_account,
+                    int *delete_user, bool *secrets_group);
  
 +int tacplus_setup_connection(void);
  DBusConnection * tacplus_connect_daemon(void);

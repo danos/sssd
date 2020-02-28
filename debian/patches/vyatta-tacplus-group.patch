@@ -1,6 +1,6 @@
 --- a/src/providers/tacplus/tacplus_id.c
 +++ b/src/providers/tacplus/tacplus_id.c
-@@ -211,6 +211,12 @@ static int get_vyatta_groups(TALLOC_CTX
+@@ -212,6 +212,12 @@
  		return ret;
  	num_groups++;
  

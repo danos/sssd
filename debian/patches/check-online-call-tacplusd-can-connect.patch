@@ -70,7 +70,7 @@
  static DBusMessage *dbus_property_get(DBusConnection *conn,
                                        const char *destination,
                                        const char *path,
-@@ -374,7 +428,7 @@
+@@ -389,7 +443,7 @@
                  if (offline.bool_val)
                      be_mark_offline(ctx->be);
                  else
@@ -79,7 +79,7 @@
              }
  
              dbus_message_iter_next(&dictEntryIter);
-@@ -508,7 +562,7 @@
+@@ -523,7 +577,7 @@
      if (offline)
          be_mark_offline(tac_glob->be);
      else
@@ -164,7 +164,7 @@
                          struct be_ctx *ctx,
 --- a/src/providers/tacplus/tacplus_id.c
 +++ b/src/providers/tacplus/tacplus_id.c
-@@ -453,14 +453,21 @@
+@@ -494,14 +494,21 @@
      return ret;
  }
  
@@ -190,7 +190,7 @@
  
      /*
       * We are likely to receive an initgroups request for local users
-@@ -474,12 +481,29 @@
+@@ -515,12 +522,29 @@
       */
      pw = getpwnam(name);
      if (pw && OUT_OF_ID_RANGE(pw->pw_uid, dom->id_min, dom->id_max)) {
@@ -224,7 +224,7 @@
  }
  
  void tacplus_account_info_handler(struct be_req *breq)
-@@ -508,16 +532,23 @@
+@@ -549,16 +573,23 @@
      case BE_REQ_INITGROUPS:
          switch (ar->filter_type) {
          case BE_FILTER_NAME:
@@ -251,7 +251,7 @@
                  }
                  return tacplus_reply(breq, DP_ERR_FATAL, ret,
                          "TACACS+ id provider lookup failed");
-@@ -546,5 +577,7 @@
+@@ -587,5 +618,7 @@
          tacplus_reply(breq, DP_ERR_FATAL, ret, NULL);
          return;
      }
