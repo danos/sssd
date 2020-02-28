@@ -278,7 +278,7 @@ Subject: Initial support for tacplus id and auth provider
                     uid_t uid,
 --- /dev/null
 +++ b/src/providers/tacplus/tacplus_auth.c
-@@ -0,0 +1,467 @@
+@@ -0,0 +1,479 @@
 +/*
 +    SSSD
 +
@@ -357,7 +357,7 @@ Subject: Initial support for tacplus id and auth provider
 +    dbus_bool_t dret;
 +    DBusConnection *dconn;
 +    DBusError derr;
-+    DBusMessage *dmsg, *dmsg_reply;
++    DBusMessage *dmsg = NULL, *dmsg_reply = NULL;
 +
 +    be_ctx = be_req_get_be_ctx(tacplus_req->be_req);
 +    dom = be_ctx->domain;
@@ -382,6 +382,8 @@ Subject: Initial support for tacplus id and auth provider
 +        if (real_name)
 +            user = real_name;
 +    }
++
++    ret = EOK;
 +
 +    /* Connect to DBus system bus and send TACACS+ authentication request to daemon */
 +    if ((dconn = tacplus_connect_daemon()) == NULL) {
@@ -461,6 +463,7 @@ Subject: Initial support for tacplus id and auth provider
 +             * password to server in tac_cont_send(...) call.
 +             */
 +        case TAC_PLUS_AUTHEN_STATUS_GETPASS:
++            ret = EIO;
 +            break;
 +
 +       case TAC_PLUS_AUTHEN_STATUS_ERROR:
@@ -470,13 +473,17 @@ Subject: Initial support for tacplus id and auth provider
 +            break;
 +    }
 +
-+    if (reply == TAC_PLUS_AUTHEN_STATUS_GETPASS)
-+        return EIO;
-+
 +done:
-+    tevent_req_done(state->req);
++    if (ret == EOK)
++        tevent_req_done(state->req);
 +
-+    return EOK;
++    if (dmsg)
++        dbus_message_unref(dmsg);
++    if (dmsg_reply)
++        dbus_message_unref(dmsg_reply);
++
++    talloc_zfree(tmpctx);
++    return ret;
 +}
 +
 +static void tacplus_auth_wakeup(struct tevent_req *req)
@@ -579,7 +586,7 @@ Subject: Initial support for tacplus id and auth provider
 +    const char *time_v = timestamp;
 +    DBusConnection *dconn;
 +    DBusError derr;
-+    DBusMessage *dmsg, *dmsg_reply;
++    DBusMessage *dmsg = NULL, *dmsg_reply = NULL;
 +    DBusMessageIter iter, array, dict;
 +
 +    if (!pd) {
@@ -675,6 +682,11 @@ Subject: Initial support for tacplus id and auth provider
 +     }
 +
 +done:
++    if (dmsg)
++        dbus_message_unref(dmsg);
++    if (dmsg_reply)
++        dbus_message_unref(dmsg_reply);
++
 +    return ret;
 +}
 +
@@ -781,7 +793,7 @@ Subject: Initial support for tacplus id and auth provider
 +#endif /* _TACPLUS_AUTH_H_ */
 --- /dev/null
 +++ b/src/providers/tacplus/tacplus_common.c
-@@ -0,0 +1,247 @@
+@@ -0,0 +1,252 @@
 +/*
 +    SSSD
 +
@@ -826,7 +838,7 @@ Subject: Initial support for tacplus id and auth provider
 +   int ret = TAC_PLUS_AUTHOR_STATUS_ERROR;
 +    DBusConnection *dconn;
 +    DBusError derr;
-+    DBusMessage *dmsg, *dmsg_reply;
++    DBusMessage *dmsg = NULL, *dmsg_reply = NULL;
 +    DBusMessageIter iter, array, dict;
 +    DBusMessageIter parentIter;
 +    DBusMessageIter dictIter, dictEntryIter;
@@ -954,6 +966,11 @@ Subject: Initial support for tacplus id and auth provider
 +    }
 +
 +done:
++    if (dmsg)
++        dbus_message_unref(dmsg);
++    if (dmsg_reply)
++        dbus_message_unref(dmsg_reply);
++
 +    return ret;
 +}
 +
@@ -1145,7 +1162,7 @@ Subject: Initial support for tacplus id and auth provider
 +#endif /* _TACPLUS_COMMON_H_ */
 --- /dev/null
 +++ b/src/providers/tacplus/tacplus_id.c
-@@ -0,0 +1,567 @@
+@@ -0,0 +1,571 @@
 +/*
 +    SSSD
 +
@@ -1311,7 +1328,9 @@ Subject: Initial support for tacplus id and auth provider
 +
 +	level_len = strlen(level);
 +
-+        other_groups = talloc_strdup(tmpctx, "");
++	other_groups = talloc_strdup(tmpctx, "");
++	if (!other_groups)
++		return ENOMEM;
 +
 +	fp = fopen(VYATTA_LEVEL_FILE, "r");
 +	if (!fp) {
@@ -1330,10 +1349,12 @@ Subject: Initial support for tacplus id and auth provider
 +		ret = split_on_separator(tmpctx, val, ',', true, true,
 +                                 &groups, &num_groups);
 +		if (ret) {
++			free(line);
 +			fclose(fp);
 +			return ret;
 +		}
 +	}
++	free(line);
 +	fclose(fp);
 +
 +	ret = split_on_separator(tmpctx, other_groups, ',', true, true,
