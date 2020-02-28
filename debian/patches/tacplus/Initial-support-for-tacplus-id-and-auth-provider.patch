@@ -781,7 +781,7 @@ Subject: Initial support for tacplus id and auth provider
 +#endif /* _TACPLUS_AUTH_H_ */
 --- /dev/null
 +++ b/src/providers/tacplus/tacplus_common.c
-@@ -0,0 +1,240 @@
+@@ -0,0 +1,247 @@
 +/*
 +    SSSD
 +
@@ -821,7 +821,7 @@ Subject: Initial support for tacplus id and auth provider
 +}
 +
 +int tacplus_author(const char *user, const char *service, const char *proto, const char *tty, const char *rhost,
-+                   char **level, int *delete_user) {
++                   char **level, char **local_account, int *delete_user) {
 +
 +   int ret = TAC_PLUS_AUTHOR_STATUS_ERROR;
 +    DBusConnection *dconn;
@@ -912,6 +912,13 @@ Subject: Initial support for tacplus id and auth provider
 +                if (level) {
 +                    dbus_message_iter_get_basic(&dictEntryIter, &tmp);
 +                    *level = strdup(tmp);
++                }
++            }
++            else if (strcmp("local-user-name", key) == 0) {
++                dbus_message_iter_next(&dictEntryIter);
++                if (local_account) {
++                    dbus_message_iter_get_basic(&dictEntryIter, &tmp);
++                    *local_account = strdup(tmp);
 +                }
 +            }
 +            else {
@@ -1024,14 +1031,14 @@ Subject: Initial support for tacplus id and auth provider
 +
 --- /dev/null
 +++ b/src/providers/tacplus/tacplus_common.h
-@@ -0,0 +1,110 @@
+@@ -0,0 +1,111 @@
 +/*
 +    SSSD
 +
 +    TACACS+ Common utility code
 +
 +    Copyright (c) 2014-2017 Brocade Communications Systems, Inc.
-+    Copyright (c) 2018-2019 AT&T Intellectual Property.
++    Copyright (c) 2018-2020 AT&T Intellectual Property.
 +
 +    This program is free software; you can redistribute it and/or modify
 +    it under the terms of the GNU General Public License as published by
@@ -1128,7 +1135,8 @@ Subject: Initial support for tacplus id and auth provider
 +
 +/* tacplus AAA */
 +int tacplus_author(const char *user, const char *service, const char *proto,
-+               const char *tty, const char *rhost, char **level, int *delete_user);
++                   const char *tty, const char *rhost, char **level,
++                   char **local_account, int *delete_user);
 +
 +DBusConnection * tacplus_connect_daemon(void);
 +int tacplus_validate_reply_msg(DBusError *);
@@ -1137,7 +1145,7 @@ Subject: Initial support for tacplus id and auth provider
 +#endif /* _TACPLUS_COMMON_H_ */
 --- /dev/null
 +++ b/src/providers/tacplus/tacplus_id.c
-@@ -0,0 +1,532 @@
+@@ -0,0 +1,567 @@
 +/*
 +    SSSD
 +
@@ -1358,13 +1366,21 @@ Subject: Initial support for tacplus id and auth provider
 + *
 + * TODO: make those configurable via SSSD so we no longer need
 + * to maintain this as vyatta specific code piece.
++ *
++ * TODO: We are starting deprecation
++ * of local-user-name as it's not very useful and causes some
++ * weird corner cases.  The parsing below of local-user-name
++ * should be replaced with a logging message (LOG_INFO, not
++ * higher) that the attribute is being ignored...  Look for
++ * the tag RETIREME below.
 + */
 +static int vyatta_extension(struct sss_domain_info *dom,
 +                            const char *name, int uid, int gid,
 +                            const char *shell, const char *homedir,
-+                            const char *level) {
++                            const char *level, const char *local_account) {
 +
 +    int i, ret;
++    struct passwd *local_pw = NULL;		/* RETIREME */
 +    struct sysdb_attrs *attrs = NULL;
 +    TALLOC_CTX *tmpctx;
 +    char **level_groups = NULL;
@@ -1374,6 +1390,19 @@ Subject: Initial support for tacplus id and auth provider
 +    if (!attrs) {
 +        DEBUG(SSSDBG_CRIT_FAILURE, "Allocation error ?!\n");
 +        return ENOMEM;
++    }
++
++
++    /* RETIREME */
++    if (local_account && (local_pw = getpwnam(local_account))) {
++      ret = sysdb_attrs_add_string(attrs, SYSDB_NAME_ALIAS, name);
++      if (ret) {
++          DEBUG(SSSDBG_OP_FAILURE, "Could not add name alias\n");
++          talloc_zfree(attrs);
++          return ret;
++      }
++      uid = local_pw->pw_uid;
++      homedir = local_pw->pw_dir;
 +    }
 +
 +    ret = sysdb_attrs_add_time_t(attrs, SYSDB_INITGR_EXPIRE,
@@ -1452,6 +1481,15 @@ Subject: Initial support for tacplus id and auth provider
 +        return ret;
 +    }
 +
++    /* RETIREME */
++    if (local_account && local_pw) {
++        ret = sysdb_mod_name(dom, name, local_account, LDB_FLAG_MOD_REPLACE);
++        if (ret) {
++            DEBUG(SSSDBG_OP_FAILURE, "Could not apply local-user-name update for \"%s\"/\"%s\" in sysdb\n", name, local_account);
++            return ret;
++        }
++    }
++
 +    return EOK;
 +}
 +
@@ -1463,7 +1501,7 @@ Subject: Initial support for tacplus id and auth provider
 +{
 +    int ret;
 +    char *service, *proto, *homedir_template, *homedir, *shell;
-+    char *level = NULL;
++    char *level = NULL, *local_account = NULL;
 +    TALLOC_CTX *tmpctx;
 +    struct sysdb_attrs *attrs = NULL;
 +    int gid, uid = 0;
@@ -1499,7 +1537,8 @@ Subject: Initial support for tacplus id and auth provider
 +        goto done;
 +    }
 +
-+    ret = tacplus_author(name, service, proto, "" /*tty*/, "" /*rhost*/, &level, &delete_user);
++    ret = tacplus_author(name, service, proto, "" /*tty*/, "" /*rhost*/,
++                         &level, &local_account, &delete_user);
 +
 +    DEBUG(SSSDBG_TRACE_FUNC,
 +          "tacplus -> authorization for '%s' status: <%d>",
@@ -1521,7 +1560,8 @@ Subject: Initial support for tacplus id and auth provider
 +
 +
 +#ifndef NO_VYATTA_EXTENSION
-+    ret = vyatta_extension(dom, name, uid, gid, shell, homedir, level);
++    ret = vyatta_extension(dom, name, uid, gid, shell,
++                           homedir, level, local_account);
 +#else
 +    attrs = sysdb_new_attrs(NULL);
 +    if (!attrs) {
@@ -1563,6 +1603,9 @@ Subject: Initial support for tacplus id and auth provider
 +
 +    if (level)
 +        free(level);
++
++    if (local_account)
++        free(local_account);
 +
 +    if (ret != EOK) {
 +        DEBUG(SSSDBG_OP_FAILURE,
