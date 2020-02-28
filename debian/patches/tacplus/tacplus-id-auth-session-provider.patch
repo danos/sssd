@@ -595,7 +595,7 @@
 +#endif /* _TACPLUS_COMMON_H_ */
 --- /dev/null
 +++ b/src/providers/tacplus/tacplus_id.c
-@@ -0,0 +1,811 @@
+@@ -0,0 +1,802 @@
 +/*
 +    SSSD
 +
@@ -893,15 +893,6 @@
 +                talloc_zfree(attrs);
 +                talloc_zfree(tmpctx);
 +                return ret;
-+            }
-+        }
-+
-+        /* override original configured primary group. Required for non-configd releases. */
-+        if (level && (strncmp(level, "superuser", 9) == 0 || strncmp(level, "admin", 5) == 0)) {
-+            /* get primary group ID */
-+            struct group *grp = getgrnam("vyattacfg");
-+            if (grp) {
-+                gid = grp->gr_gid;
 +            }
 +        }
 +    }

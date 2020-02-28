@@ -404,7 +404,7 @@
   *
   * TODO: make those configurable via SSSD so we no longer need
   * to maintain this as vyatta specific code piece.
-@@ -789,6 +789,48 @@
+@@ -780,6 +780,48 @@
      return EOK;
  }
  
@@ -453,7 +453,7 @@
  errno_t
  sssm_tacplus_id_init(TALLOC_CTX *mem_ctx,
                       struct be_ctx *bectx,
-@@ -807,5 +849,10 @@
+@@ -798,5 +840,10 @@
      dp_set_method(dp_methods, DPM_ACCT_DOMAIN_HANDLER,
                    default_account_domain_send, default_account_domain_recv,
                    NULL, void, struct dp_get_acct_domain_data, struct dp_reply_std);
