@@ -1,0 +1,236 @@
+--- a/src/providers/tacplus/tacplus_common.h
++++ b/src/providers/tacplus/tacplus_common.h
+@@ -26,6 +26,8 @@
+ #include <sys/types.h>
+ #include "providers/backend.h"
+ 
++#define SYSDB_TACPLUS_UID_ALLOCATION "tacplus_uid_allocation"
++
+ #define TACPLUS_DAEMON              "net.vyatta.tacplus"
+ #define TACPLUS_DAEMON_PATH         "/net/vyatta/tacplus"
+ #define TACPLUS_DAEMON_IFACE        "net.vyatta.tacplus"
+--- a/src/providers/tacplus/tacplus_id.c
++++ b/src/providers/tacplus/tacplus_id.c
+@@ -48,20 +48,6 @@
+     char *username;
+ };
+ 
+-/* NOOP.
+- * SSSD itself makes a getpwuid call during authentication - we need to ACK it,
+- * otherwise the authentication fails. */
+-static int get_pw_uid(TALLOC_CTX *mem_ctx,
+-                      struct tacplus_id_handler_ctx *ctx,
+-                      struct sysdb_ctx *sysdb,
+-                      struct sss_domain_info *dom,
+-                      uid_t uid)
+-{
+-    DEBUG(SSSDBG_TRACE_FUNC,
+-          "Searching user by uid (%d) -> NOOP: EOK\n", uid);
+-    return EOK;
+-}
+-
+ /* Helper to create a group on the fly. Required for access-level handling*/
+ static int add_group(struct sss_domain_info *dom, const char *group)
+ {
+@@ -229,6 +215,77 @@
+ 	return ret;
+ }
+ 
++static int tacplus_alloc_new_id(TALLOC_CTX *mem_ctx,
++                                struct sss_domain_info *dom,
++                                const char *name,
++                                uint32_t *uid_ret)
++{
++    struct sysdb_attrs *attrs;
++    int ret;
++    uint32_t uid;
++
++    DEBUG(SSSDBG_TRACE_FUNC, "Allocating new ID for user %s\n", name);
++
++    ret = sysdb_get_new_id(dom, &uid);
++    if (ret)
++        return ret;
++
++    attrs = sysdb_new_attrs(mem_ctx);
++    if (!attrs)
++        return ENOMEM;
++
++    ret = sysdb_attrs_add_uint32(attrs, SYSDB_UIDNUM, uid);
++    if (ret)
++        return ret;
++
++    ret = sysdb_attrs_add_string(attrs, SYSDB_NAME, name);
++    if (ret)
++        return ret;
++
++    ret = sysdb_store_custom(dom, name, SYSDB_TACPLUS_UID_ALLOCATION, attrs);
++    if (ret)
++        return ret;
++
++    DEBUG(SSSDBG_TRACE_FUNC, "Allocated UID %u for user %s\n", uid, name);
++
++    *uid_ret = uid;
++    return EOK;
++}
++
++static int tacplus_get_allocated_id(TALLOC_CTX *mem_ctx,
++                                    struct sss_domain_info *dom,
++                                    const char *name,
++                                    uint32_t *uid_ret)
++{
++    const char *get_attrs[] = { SYSDB_UIDNUM, NULL };
++    struct ldb_message **res;
++    size_t res_count = 0;
++    uint32_t uid;
++    int ret;
++
++    DEBUG(SSSDBG_TRACE_FUNC, "Looking up allocated UID for user %s\n", name);
++
++    ret = sysdb_search_custom_by_name(mem_ctx, dom,
++                                      name, SYSDB_TACPLUS_UID_ALLOCATION,
++                                      get_attrs, &res_count, &res);
++    if (ret != EOK)
++        return ret;
++
++    uid = ldb_msg_find_attr_as_uint(res[0], SYSDB_UIDNUM, 0);
++    if (!uid) {
++        DEBUG(SSSDBG_OP_FAILURE,
++              "User \"%s\" has a UID allocation entry with no UID!\n",
++              name);
++        return ENOENT;
++    }
++
++    DEBUG(SSSDBG_TRACE_FUNC,
++          "User \"%s\" has an existing UID allocation %u\n", name, uid);
++
++    *uid_ret = uid;
++    return EOK;
++}
++
+ /* Vyatta specific bits for "vyatta-exec" service handling.
+  * The vyatta-exec service handles following vendor specific
+  * attributes: level= and secrets*
+@@ -237,7 +294,7 @@
+  * to maintain this as vyatta specific code piece.
+  */
+ static int vyatta_extension(struct sss_domain_info *dom,
+-                            const char *name, int uid, int gid,
++                            const char *name, uint32_t uid, uint32_t gid,
+                             const char *shell, const char *homedir,
+                             const char *level, bool secrets_group) {
+ 
+@@ -299,6 +356,19 @@
+         }
+     }
+ 
++    if (!uid) {
++        ret = tacplus_get_allocated_id(tmpctx, dom, name, &uid);
++        if (ret == ENOENT)
++            ret = tacplus_alloc_new_id(tmpctx, dom, name, &uid);
++
++        if (ret != EOK) {
++            DEBUG(SSSDBG_OP_FAILURE,
++                  "Unable to determine a UID for user \"%s\": %d\n", name, ret);
++            talloc_zfree(attrs);
++            talloc_zfree(tmpctx);
++            return ret;
++        }
++    }
+ 
+     ret = sysdb_store_user(dom,
+                            name,
+@@ -534,7 +604,7 @@
+     char *level = NULL;
+     TALLOC_CTX *tmpctx;
+     struct sysdb_attrs *attrs = NULL;
+-    int gid, uid = 0;
++    uint32_t gid, uid = 0;
+     int delete_user;
+     bool secrets_group = false;
+     struct sss_nss_homedir_ctx homedir_ctx;
+@@ -671,6 +741,85 @@
+     tevent_req_done(req);
+ }
+ 
++static int tacplus_get_user_by_allocated_id(TALLOC_CTX *mem_ctx,
++                                            struct sss_domain_info *dom,
++                                            uint32_t uid,
++                                            const char **name_ret)
++{
++    const char *get_attrs[] = { SYSDB_NAME, NULL };
++    struct ldb_message **res;
++    size_t res_count = 0;
++    const char *name;
++    int ret;
++    char *filter;
++
++    DEBUG(SSSDBG_TRACE_FUNC, "Looking up user with allocated UID %u\n", uid);
++
++    filter = talloc_asprintf(mem_ctx, "("SYSDB_UIDNUM"=%u)", uid);
++    if (!filter)
++        return ENOMEM;
++
++    ret = sysdb_search_custom(mem_ctx, dom, filter, SYSDB_TACPLUS_UID_ALLOCATION,
++                              get_attrs, &res_count, &res);
++    if (ret != EOK)
++        return ret;
++
++    name = ldb_msg_find_attr_as_string(res[0], SYSDB_NAME, 0);
++    if (!name) {
++        DEBUG(SSSDBG_OP_FAILURE, "UID %u is allocated with no name!\n", uid);
++        return ENOENT;
++    }
++
++    DEBUG(SSSDBG_TRACE_FUNC, "UID %u was allocated to user \"%s\"\n", uid, name);
++
++    *name_ret = name;
++    return EOK;
++}
++
++static int get_pw_uid(TALLOC_CTX *mem_ctx,
++                      struct tacplus_id_handler_ctx *ctx,
++                      struct sysdb_ctx *sysdb,
++                      struct sss_domain_info *dom,
++                      uid_t uid)
++{
++    struct ldb_message *user_res;
++    const char *name;
++    int ret;
++
++    DEBUG(SSSDBG_TRACE_FUNC, "Searching user by uid (%d)\n", uid);
++
++    ret = tacplus_get_user_by_allocated_id(mem_ctx, dom, uid, &name);
++    if (ret)
++        return ret;
++
++    /*
++     * SSSD itself makes a getpwuid call during authentication - we need to ACK it,
++     * otherwise the authentication fails. There is no need to call get_pw_name(),
++     * and issue an authorization request, if the user already exists in the
++     * sysdb. Let us handle that case on BE_FILTER_NAME requests.
++     */
++    ret = sysdb_search_user_by_name(mem_ctx, dom, name, NULL, &user_res);
++    if (ret == EOK) {
++        DEBUG(SSSDBG_TRACE_FUNC, "NOOP -> EOK\n");
++        return EOK;
++    }
++
++    ctx->fq_username = name;
++    ret = sss_parse_internal_fqname(mem_ctx, ctx->fq_username,
++                                    &ctx->username, NULL);
++    if (ret)
++        return ret;
++
++    /*
++     * User was previously allocated a UID but was since removed from the sysdb.
++     * Most likely this would be due to failing a subsequent authorization request.
++     * Therefore call get_pw_name() to issue a session authorization request. If
++     * this succeeds then the user will be placed in the sysdb once again with
++     * their existing UID.
++     */
++    return get_pw_name(mem_ctx, ctx, dom);
++}
++
+ /*
+  * Determines how to handle the request for a given user, indicated by
+  * return value:
