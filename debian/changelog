@@ -1,3 +1,15 @@
+sssd (1.12.5-3danos5) unstable; urgency=medium
+
+  * tacplus: Check UID in range for initgroups req
+  * Don't signal tacplus provider on netlink changes
+  * tacplus: use can_connect in check_online callback
+  * tacplus: conn check on local user initgroups req
+  * Revert removal of local-user-name authz attr
+  * tacplus: fix memory leaks
+  * Refresh TACACS+ patches
+
+ -- Duncan Eastoe <duncan.eastoe@att.com>  Wed, 04 Mar 2020 11:18:40 +0000
+
 sssd (1.12.5-3danos4) unstable; urgency=medium
 
   * Suppress initgroups reqs for non-TACACS+ users
