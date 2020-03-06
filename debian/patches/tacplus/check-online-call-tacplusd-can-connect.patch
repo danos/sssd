@@ -31,23 +31,77 @@
  
 --- a/src/providers/tacplus/tacplus_common.c
 +++ b/src/providers/tacplus/tacplus_common.c
-@@ -59,6 +59,60 @@
+@@ -59,6 +59,99 @@
      return ret;
  }
  
-+int tacplus_can_connect(struct tacplus_ctx *ctx)
++static void
++tacplus_can_connect_done(DBusPendingCall *pending, void *user)
 +{
-+    DBusConnection *dconn;
-+    DBusError derr;
-+    DBusMessage *dmsg, *dmsg_reply = NULL;
++    struct tevent_req *req = user;
++    struct tacplus_can_connect_ctx *ctx;
++    DBusMessage *dmsg = NULL;
 +    DBusMessageIter iter;
 +    DBusBasicValue can_connect;
-+    int ret = -1;
++    int msg_type;
 +
-+    dconn = tacplus_connect_daemon(ctx);
-+    if (!dconn) {
++    ctx = tevent_req_data(req, struct tacplus_can_connect_ctx);
++    ctx->can_connect = -1;
++
++    dmsg = dbus_pending_call_steal_reply(pending);
++    if (!dmsg) {
++        DEBUG(SSSDBG_TRACE_FUNC, "Method reply callback with no message\n");
++        tevent_req_error(req, ENOENT);
++        return;
++    }
++
++    msg_type = dbus_message_get_type(dmsg);
++    switch (msg_type) {
++    case DBUS_MESSAGE_TYPE_METHOD_RETURN:
++        if (! dbus_message_iter_init(dmsg, &iter))
++            break;
++
++        if (dbus_message_iter_get_arg_type(&iter) == DBUS_TYPE_BOOLEAN) {
++            dbus_message_iter_get_basic(&iter, &can_connect);
++            ctx->can_connect = can_connect.bool_val ? 1 : 0;
++        }
++        else {
++            DEBUG(SSSDBG_TRACE_FUNC,
++                  "Unexpected return type for "TACPLUS_DAEMON_CAN_CONNECT"()\n");
++        }
++        break;
++    case DBUS_MESSAGE_TYPE_ERROR:
++        DEBUG(SSSDBG_TRACE_FUNC,
++              TACPLUS_DAEMON_CAN_CONNECT"() error: %s\n",
++              dbus_message_get_error_name(dmsg));
++        break;
++    default:
++        break;
++    }
++
++    dbus_message_unref(dmsg);
++    tevent_req_done(req);
++}
++
++struct tevent_req *
++tacplus_can_connect(TALLOC_CTX *mem_ctx, struct tacplus_ctx *mod_ctx)
++{
++    struct tevent_req *req;
++    struct tacplus_can_connect_ctx *ctx;
++    DBusMessage *dmsg;
++    int ret;
++
++    req = tevent_req_create(mem_ctx, &ctx, struct tacplus_can_connect_ctx);
++    if (!req) {
++        DEBUG(SSSDBG_CRIT_FAILURE, "tevent_req_create() failure\n");
++        return NULL;
++    }
++
++    tacplus_connect_daemon(mod_ctx);
++    if (!mod_ctx->sconn) {
 +        DEBUG(SSSDBG_TRACE_FUNC, "Failed to connect to tacplus daemon\n");
-+        return -1;
++        tevent_req_error(req, EIO);
++        return req;
 +    }
 +
 +    dmsg = dbus_message_new_method_call(TACPLUS_DAEMON,
@@ -57,42 +111,27 @@
 +    if(!dmsg) {
 +        DEBUG(SSSDBG_OP_FAILURE,
 +              "Failed to create "TACPLUS_DAEMON_CAN_CONNECT"() method call\n");
-+        return -1;
++        tevent_req_error(req, ENOMEM);
++        return req;
 +    }
 +
-+    dbus_error_init(&derr);
-+
-+    dmsg_reply = dbus_connection_send_with_reply_and_block(
-+                    dconn, dmsg, TACPLUS_DAEMON_TIMEOUT_MS, &derr);
-+    if((tacplus_validate_reply_msg(&derr)) < 0) {
-+        DEBUG(SSSDBG_OP_FAILURE, "Failed to do TACACS+ connectivity check\n");
-+        goto finish;
-+    }
-+
-+    if (! dbus_message_iter_init(dmsg_reply, &iter))
-+        goto finish;
-+
-+    if (dbus_message_iter_get_arg_type(&iter) == DBUS_TYPE_BOOLEAN) {
-+        dbus_message_iter_get_basic(&iter, &can_connect);
-+        ret = can_connect.bool_val ? 1 : 0;
-+    }
-+    else {
-+        DEBUG(SSSDBG_TRACE_FUNC,
-+              "Unexpected return type for "TACPLUS_DAEMON_CAN_CONNECT"()\n");
-+    }
-+
-+finish:
++    ret = sbus_conn_send(mod_ctx->sconn, dmsg, TACPLUS_DAEMON_TIMEOUT_MS,
++                         tacplus_can_connect_done, req, NULL);
 +    dbus_message_unref(dmsg);
-+    if (dmsg_reply)
-+        dbus_message_unref(dmsg_reply);
++    if (ret) {
++        DEBUG(SSSDBG_OP_FAILURE,
++              "Failed to dispatch "TACPLUS_DAEMON_CAN_CONNECT"() "
++              "method call: %d (%s)\n", ret, sss_strerror(ret));
++        tevent_req_error(req, ret);
++    }
 +
-+    return ret;
++    return req;
 +}
 +
  static DBusMessage *dbus_property_get(DBusConnection *conn,
                                        const char *destination,
                                        const char *path,
-@@ -182,7 +236,7 @@
+@@ -182,7 +275,7 @@
                  if (offline.bool_val)
                      be_mark_offline(ctx->be);
                  else
@@ -101,7 +140,7 @@
              }
  
              dbus_message_iter_next(&dictEntryIter);
-@@ -321,7 +375,7 @@
+@@ -321,7 +414,7 @@
      if (offline)
          be_mark_offline(ctx->be);
      else
@@ -132,23 +171,50 @@
  
  #define TACPLUS_DAEMON_PROP_OFFLINE "offline"
  #define TACPLUS_DAEMON_PROP_CHG_SIG "PropertiesChanged"
-@@ -101,6 +102,7 @@
- int tacplus_validate_reply_msg(DBusError *);
- int tacplus_validate_basic_reply_args(DBusError *);
+@@ -103,4 +104,11 @@
  
-+int tacplus_can_connect(struct tacplus_ctx *);
  int tacplus_get_offline(struct tacplus_ctx *);
  
++struct tacplus_can_connect_ctx {
++    int can_connect;
++};
++
++struct tevent_req *tacplus_can_connect(TALLOC_CTX *mem_ctx,
++                                       struct tacplus_ctx *ctx);
++
  #endif /* _TACPLUS_COMMON_H_ */
 --- a/src/providers/tacplus/tacplus_id.c
 +++ b/src/providers/tacplus/tacplus_id.c
-@@ -657,14 +657,21 @@
+@@ -648,14 +648,44 @@
      return ret;
  }
  
 -static bool handle_request_for_user(const struct dp_id_data *data,
 -                                    const struct sss_domain_info *dom,
 -                                    const struct tacplus_id_handler_ctx *ctx)
++static void
++tacplus_id_handler_can_connect_done(struct tevent_req *subreq)
++{
++    struct tevent_req *req;
++    struct tacplus_can_connect_ctx *cc_ctx;
++    struct tacplus_id_handler_ctx *id_ctx;
++
++    req = tevent_req_callback_data(subreq, struct tevent_req);
++    cc_ctx = tevent_req_data(subreq, struct tacplus_can_connect_ctx);
++    id_ctx = tevent_req_data(req, struct tacplus_id_handler_ctx);
++
++    if (cc_ctx->can_connect <= 0) {
++        be_mark_offline(id_ctx->ctx->be);
++        dp_reply_std_set(&id_ctx->reply, DP_ERR_OFFLINE, ENXIO, "Going offline");
++    }
++    else {
++        dp_reply_std_set(&id_ctx->reply, DP_ERR_OK, EOK, NULL);
++    }
++
++    talloc_zfree(subreq);
++    tevent_req_done(req);
++}
++
 +/*
 + * Determines how to handle the request for a given user, indicated by
 + * return value:
@@ -168,7 +234,7 @@
  
      /*
       * We are likely to receive an initgroups request for local users
-@@ -678,12 +685,30 @@
+@@ -669,12 +699,30 @@
       */
      pw = getpwnam(ctx->username);
      if (pw && OUT_OF_ID_RANGE(pw->pw_uid, dom->id_min, dom->id_max)) {
@@ -203,7 +269,15 @@
  }
  
  static struct tevent_req *
-@@ -722,10 +747,15 @@
+@@ -685,6 +733,7 @@
+ {
+     struct tevent_req *req;
+     struct tacplus_id_handler_ctx *ctx;
++    struct tevent_req *can_connect_req;
+     uid_t uid;
+     int ret;
+     char *endptr;
+@@ -713,10 +762,23 @@
              if (ret)
                  break;
  
@@ -216,42 +290,105 @@
 +            else if (ret)
 +                ret = get_pw_name(req, ctx, params->domain);
 +            else {
-+                if (tacplus_can_connect(mod_ctx) <= 0)
-+                    ret = ENXIO;
++                can_connect_req = tacplus_can_connect(req, mod_ctx);
++                if (!can_connect_req) {
++                    tevent_req_error(req, ENOMEM);
++                    goto post;
++                }
++
++                tevent_req_set_callback(
++                    can_connect_req, tacplus_id_handler_can_connect_done, req);
++
++                return req;
 +            }
  
              if (ret) {
                  if (ret == ENXIO) {
-@@ -790,7 +820,7 @@
+@@ -759,8 +821,10 @@
+     else
+         dp_reply_std_set(&ctx->reply, DP_ERR_OK, EOK, NULL);
+ 
++    /* no deferred operations in progress */
+ done:
+     tevent_req_done(req);
++post:
+     tevent_req_post(req, params->ev);
+     return req;
+ }
+@@ -780,9 +844,26 @@
+     return EOK;
  }
  
- struct tacplus_check_online_ctx {
+-struct tacplus_check_online_ctx {
 -    int offline;
-+    int can_connect;
- };
+-};
++static void
++tacplus_check_online_done(struct tevent_req *subreq)
++{
++    struct tevent_req *req;
++    struct tacplus_can_connect_ctx *ctx;
++    struct dp_reply_std *reply;
++
++    req = tevent_req_callback_data(subreq, struct tevent_req);
++    ctx = tevent_req_data(subreq, struct tacplus_can_connect_ctx);
++    reply = tevent_req_data(req, struct dp_reply_std);
++
++    if (ctx->can_connect <= 0)
++        dp_reply_std_set(reply, DP_ERR_OFFLINE, ENXIO,
++                         "TACACS+ server connection check failed");
++    else
++        dp_reply_std_set(reply, DP_ERR_OK, EOK, NULL);
++
++    talloc_zfree(subreq);
++    tevent_req_done(req);
++}
  
  static struct tevent_req *
-@@ -808,7 +838,7 @@
+ tacplus_check_online_handler_send(TALLOC_CTX *mem_ctx,
+@@ -790,19 +871,23 @@
+                                   void *data,
+                                   struct dp_req_params *params)
+ {
+-    struct tevent_req *req;
+-    struct tacplus_check_online_ctx *ctx;
++    struct tevent_req *req, *subreq;
++    struct dp_reply_std *reply;
+ 
+-    req = tevent_req_create(mem_ctx, &ctx, struct tacplus_check_online_ctx);
++    req = tevent_req_create(mem_ctx, &reply, struct dp_reply_std);
+     if (!req) {
+         DEBUG(SSSDBG_CRIT_FAILURE, "tevent_req_create() failure\n");
          return NULL;
      }
  
 -    ctx->offline = tacplus_get_offline(mod_ctx);
-+    ctx->can_connect = tacplus_can_connect(mod_ctx);
+-
+-    tevent_req_done(req);
+-    tevent_req_post(req, params->ev);
++    subreq = tacplus_can_connect(req, mod_ctx);
++    if (!subreq) {
++        tevent_req_error(req, ENOMEM);
++        tevent_req_post(req, params->ev);
++    }
++    else {
++        tevent_req_set_callback(subreq, tacplus_check_online_done, req);
++    }
+     return req;
+ }
  
-     tevent_req_done(req);
-     tevent_req_post(req, params->ev);
-@@ -826,8 +856,12 @@
- 
+@@ -811,14 +896,9 @@
+                                   struct tevent_req *req,
+                                   struct dp_reply_std *data)
+ {
+-    struct tacplus_check_online_ctx *ctx;
+-
+-    ctx = tevent_req_data(req, struct tacplus_check_online_ctx);
+-
      TEVENT_REQ_RETURN_ON_ERROR(req);
  
 -    dp_reply_std_set(data, ctx->offline ? DP_ERR_OFFLINE : DP_ERR_OK,
 -                     ctx->offline, NULL);
-+    if (ctx->can_connect <= 0)
-+        dp_reply_std_set(data, DP_ERR_OFFLINE, ENXIO,
-+                         "TACACS+ server connection check failed");
-+    else
-+        dp_reply_std_set(data, DP_ERR_OK, EOK, NULL);
-+
++    *data = *(tevent_req_data(req, struct dp_reply_std));
      return EOK;
  }
  
