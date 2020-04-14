@@ -303,7 +303,7 @@
 +            }
  
              if (ret) {
-                 if (ret == ENXIO) {
+                 if (ret == ENXIO || ret == EIO || ret == EFAULT) {
 @@ -759,8 +821,10 @@
      else
          dp_reply_std_set(&ctx->reply, DP_ERR_OK, EOK, NULL);

@@ -1317,7 +1317,7 @@
 +                ret = EOK;
 +
 +            if (ret) {
-+                if (ret == ENXIO) {
++                if (ret == ENXIO || ret == EIO || ret == EFAULT) {
 +                    DEBUG(SSSDBG_TRACE_FUNC,
 +                          "get_pw_name returned UNAVAIL error, going offline!\n");
 +                    be_mark_offline(params->be_ctx);
