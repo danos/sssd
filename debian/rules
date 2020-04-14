@@ -25,6 +25,17 @@ ifeq ($(DISTRIBUTION), Ubuntu)
 	INIT = upstart
 endif
 
+# A Debian 10 build environment implies the 2005 release or later.
+# On those releases raise the level of the local-user-name deprecation
+# log from NOTICE to WARNING.
+ifeq ($(shell [ `lsb_release -rs | cut -f 1 -d .` -ge 10 ] && echo true), true)
+	LOCAL_USER_LOG_LVL = SSS_LOG_WARNING
+else
+	LOCAL_USER_LOG_LVL = SSS_LOG_NOTICE
+endif
+
+CFLAGS += -DDANOS_LOCAL_USER_LOG_LVL=$(LOCAL_USER_LOG_LVL)
+
 DANOS_EXTRA_ARGS = --with-tacplus
 
 # To avoid Debian version conditional *.install files

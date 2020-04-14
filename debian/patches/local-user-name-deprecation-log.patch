@@ -4,7 +4,7 @@
                  }
              }
              else if (strcmp("local-user-name=", key) == 0) {
-+                sss_log(SSS_LOG_NOTICE, "Support for the 'local-user-name' TACACS+ "
++                sss_log(DANOS_LOCAL_USER_LOG_LVL, "Support for the 'local-user-name' TACACS+ "
 +                        "attribute is deprecated and will be removed in a future release");
                  dbus_message_iter_next(&dictEntryIter);
                  if (local_account) {
