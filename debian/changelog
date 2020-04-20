@@ -1,3 +1,10 @@
+sssd (1.12.5-3danos7) unstable; urgency=medium
+
+  * Log local-user-name deprecation at warning level
+  * tacplus: go offline on sysdb update errors
+
+ -- Duncan Eastoe <duncan.eastoe@att.com>  Mon, 20 Apr 2020 12:19:11 +0100
+
 sssd (1.12.5-3danos6) unstable; urgency=medium
 
   * tacplus: allocate persistent UIDs
