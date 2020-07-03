@@ -1,3 +1,19 @@
+---
+ Makefile.am                                 |   26 
+ configure.ac                                |    2 
+ src/conf_macros.m4                          |   15 
+ src/config/SSSDConfigTest.py                |    1 
+ src/config/cfg_rules.ini                    |    8 
+ src/config/etc/sssd.api.d/sssd-tacplus.conf |   11 
+ src/providers/tacplus/tacplus_auth.c        |  256 ++++++++
+ src/providers/tacplus/tacplus_common.c      |  105 +++
+ src/providers/tacplus/tacplus_common.h      |   96 +++
+ src/providers/tacplus/tacplus_id.c          |  802 ++++++++++++++++++++++++++++
+ src/providers/tacplus/tacplus_init.c        |   54 +
+ src/providers/tacplus/tacplus_session.c     |  250 ++++++++
+ src/tests/dlopen-tests.c                    |    4 
+ 13 files changed, 1630 insertions(+)
+
 --- a/Makefile.am
 +++ b/Makefile.am
 @@ -385,6 +385,10 @@
@@ -1457,7 +1473,7 @@
 +}
 --- /dev/null
 +++ b/src/providers/tacplus/tacplus_session.c
-@@ -0,0 +1,242 @@
+@@ -0,0 +1,250 @@
 +/*
 +    Copyright (c) 2014-2017 Brocade Communications Systems, Inc.
 +    Copyright (c) 2018-2020 AT&T Intellectual Property.
@@ -1514,6 +1530,8 @@
 +    const char *start_time_k = "start_time";
 +    const char *stop_time_k = "stop_time";
 +    const char *time_v = timestamp;
++    const char *timezone_k = "timezone";
++    const char *timezone_v = "UTC";
 +    char *username;
 +    DBusConnection *dconn;
 +    DBusError derr;
@@ -1571,13 +1589,19 @@
 +
 +    dbus_message_iter_open_container (&iter, DBUS_TYPE_ARRAY, sig, &array);
 +
-+    /* append our one attribute, (start|stop)_time... */
++    /* append (start|stop)_time... */
 +    dbus_message_iter_open_container (&array, DBUS_TYPE_DICT_ENTRY, NULL, &dict);
 +    if (start)
 +        dbus_message_iter_append_basic (&dict, DBUS_TYPE_STRING, &start_time_k);
 +    else
 +        dbus_message_iter_append_basic (&dict, DBUS_TYPE_STRING, &stop_time_k);
 +    dbus_message_iter_append_basic (&dict, DBUS_TYPE_STRING, &time_v);
++    dbus_message_iter_close_container(&array, &dict);
++
++    /* append timezone (currently always UTC) */
++    dbus_message_iter_open_container (&array, DBUS_TYPE_DICT_ENTRY, NULL, &dict);
++    dbus_message_iter_append_basic (&dict, DBUS_TYPE_STRING, &timezone_k);
++    dbus_message_iter_append_basic (&dict, DBUS_TYPE_STRING, &timezone_v);
 +    dbus_message_iter_close_container(&array, &dict);
 +
 +    /* ...done. */
