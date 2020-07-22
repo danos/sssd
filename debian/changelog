@@ -1,8 +1,19 @@
-sssd (1.16.3-3danos1) UNRELEASED; urgency=medium
+sssd (1.16.3-3danos1) unstable; urgency=medium
 
-  * 
+  * Use pidpath substitution in sssd.service.in
+  * Port base patches from 1.12.5-3danos5
+  * offline_timeout_backoff -> offline_timeout_max
+  * Call data provider on pam_close_session()
+  * Propagate provider error to PAM
+  * Add tacplus data provider
+  * tacplus: Don't change admin/super primary group
+  * Allow UIDs to be generated for tacplus domains
+  * Install sssd-ifp.service
+  * Make tacplus_can_connect() non-blocking
+  * tacplus: allocate persistent UIDs
+  * tacplus: go offline on sysdb update errors
 
- -- Duncan Eastoe <duncan.eastoe@att.com>  Fri, 06 Mar 2020 18:31:48 +0000
+ -- Duncan Eastoe <duncan.eastoe@att.com>  Wed, 22 Jul 2020 10:05:37 +0100
 
 sssd (1.16.3-3) unstable; urgency=medium
 
