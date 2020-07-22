@@ -31,11 +31,7 @@ case "$1" in
                 sssd > $OUT
         fi
         chown sssd:sssd \
-            $HOME/db \
             $HOME/gpo_cache \
-            $HOME/mc \
-            $HOME/pipes \
-            $HOME/pipes/private \
             $HOME/pubconf \
             $HOME/secrets \
             /etc/sssd \
@@ -43,11 +39,11 @@ case "$1" in
         chown root:sssd $LIBDIR/p11_child
 
         chmod 4754 $LIBDIR/p11_child
-        chmod 755 $HOME/gpo_cache $HOME/mc $HOME/pipes $HOME/pubconf
+        chmod 755 $HOME/gpo_cache $HOME/pubconf
 	chmod 751 $HOME/deskprofile
         chmod 750 /var/log/sssd
         chmod 711 /etc/sssd
-        chmod 700 $HOME/db $HOME/pipes/private $HOME/secrets
+        chmod 700 $HOME/secrets
         if [ -f /etc/sssd/sssd.conf ]; then
             chown root:root /etc/sssd/sssd.conf
             chmod 0600 /etc/sssd/sssd.conf

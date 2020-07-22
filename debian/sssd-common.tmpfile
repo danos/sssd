@@ -1,0 +1,5 @@
+d /run/sss 0755 sssd sssd -
+d /run/sss/db 0700 sssd sssd -
+d /run/sss/mc 0755 sssd sssd -
+d /run/sss/pipes 0755 sssd sssd -
+d /run/sss/pipes/private 0700 sssd sssd -
