@@ -1,3 +1,9 @@
+sssd (1.16.3-3danos2) unstable; urgency=medium
+
+  * Move DBs, memcache, and pipes to /run
+
+ -- Duncan Eastoe <duncan.eastoe@att.com>  Tue, 28 Jul 2020 11:19:48 +0100
+
 sssd (1.16.3-3danos1) unstable; urgency=medium
 
   * Use pidpath substitution in sssd.service.in
