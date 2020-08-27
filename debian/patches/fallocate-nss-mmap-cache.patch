@@ -1,0 +1,16 @@
+--- a/src/responder/nss/nsssrv_mmap_cache.c
++++ b/src/responder/nss/nsssrv_mmap_cache.c
+@@ -1293,10 +1293,9 @@
+         goto done;
+     }
+ 
+-    ret = ftruncate(mc_ctx->fd, mc_ctx->mmap_size);
+-    if (ret == -1) {
+-        ret = errno;
+-        DEBUG(SSSDBG_CRIT_FAILURE, "Failed to resize file %s: %d(%s)\n",
++    ret = posix_fallocate(mc_ctx->fd, 0, mc_ctx->mmap_size);
++    if (ret) {
++        DEBUG(SSSDBG_CRIT_FAILURE, "Failed to allocate file %s: %d(%s)\n",
+                                     mc_ctx->file, ret, strerror(ret));
+         goto done;
+     }
