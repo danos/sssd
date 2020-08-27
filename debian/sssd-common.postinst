@@ -32,6 +32,7 @@ case "$1" in
         fi
         chown sssd:sssd \
             $HOME/gpo_cache \
+            $HOME/mc \
             $HOME/pubconf \
             $HOME/secrets \
             /etc/sssd \
@@ -39,7 +40,7 @@ case "$1" in
         chown root:sssd $LIBDIR/p11_child
 
         chmod 4754 $LIBDIR/p11_child
-        chmod 755 $HOME/gpo_cache $HOME/pubconf
+        chmod 755 $HOME/gpo_cache $HOME/mc $HOME/pubconf
 	chmod 751 $HOME/deskprofile
         chmod 750 /var/log/sssd
         chmod 711 /etc/sssd

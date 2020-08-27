@@ -37,7 +37,6 @@ override_dh_auto_configure:
 	--datadir=/usr/share/ \
 	--with-db-path=/run/sss/db \
 	--with-pipe-path=/run/sss/pipes \
-	--with-mcache-path=/run/sss/mc \
 	--with-environment-file=/etc/default/sssd \
 	--with-ldb-lib-dir=/usr/lib/$(DEB_HOST_MULTIARCH)/ldb/modules/ldb \
 	--with-krb5-plugin-path=/usr/lib/$(DEB_HOST_MULTIARCH)/krb5/plugins/libkrb5 \

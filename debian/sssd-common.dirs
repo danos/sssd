@@ -3,6 +3,7 @@ etc/sssd/conf.d
 var/lib/sss
 var/lib/sss/deskprofile
 var/lib/sss/gpo_cache
+var/lib/sss/mc
 var/lib/sss/pubconf
 var/lib/sss/secrets
 var/log/sssd
