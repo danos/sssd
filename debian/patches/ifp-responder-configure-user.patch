@@ -1,0 +1,186 @@
+--- /dev/null
++++ b/src/responder/ifp/org.freedesktop.sssd.infopipe.conf.in
+@@ -0,0 +1,47 @@
++<?xml version="1.0"?> <!--*-nxml-*-->
++<!DOCTYPE busconfig PUBLIC
++ "-//freedesktop//DTD D-BUS Bus Configuration 1.0//EN"
++ "http://www.freedesktop.org/standards/dbus/1.0/busconfig.dtd">
++<busconfig>
++
++  <!-- This configuration file specifies the required security policies
++       for the SSSD InfoPipe to work. -->
++
++  <!-- Only @SSSD_USER@ can own (provide) the SSSD service -->
++  <policy user="@SSSD_USER@">
++    <allow own="org.freedesktop.sssd.infopipe"/>
++  </policy>
++
++  <!-- Allow all methods on the interface -->
++  <!-- Right now, this will be handled by a limited ACL
++       within the InfoPipe Daemon. -->
++  <policy context="default">
++    <allow send_destination="org.freedesktop.sssd.infopipe"
++           send_interface="org.freedesktop.DBus.Introspectable"/>
++
++    <allow send_destination="org.freedesktop.sssd.infopipe"
++           send_interface="org.freedesktop.DBus.Properties"
++           send_member="GetAll"/>
++    <allow send_destination="org.freedesktop.sssd.infopipe"
++           send_interface="org.freedesktop.DBus.Properties"
++           send_member="Get"/>
++    <allow send_destination="org.freedesktop.sssd.infopipe"
++           send_interface="org.freedesktop.DBus.Properties"
++           send_member="Set"/>
++
++    <allow send_interface="org.freedesktop.sssd.infopipe"/>
++    <allow send_interface="org.freedesktop.sssd.infopipe.Domains"/>
++    <allow send_interface="org.freedesktop.sssd.infopipe.Domains.Domain"/>
++    <allow send_interface="org.freedesktop.sssd.infopipe.Users"/>
++    <allow send_interface="org.freedesktop.sssd.infopipe.Users.User"/>
++    <allow send_interface="org.freedesktop.sssd.infopipe.Groups"/>
++    <allow send_interface="org.freedesktop.sssd.infopipe.Groups.Group"/>
++    <allow send_interface="org.freedesktop.sssd.infopipe.Cache"/>
++    <allow send_interface="org.freedesktop.sssd.infopipe.Cache.Object"/>
++  </policy>
++
++  <policy user="root">
++    <allow send_interface="org.freedesktop.sssd.infopipe.Components"/>
++  </policy>
++
++</busconfig>
+--- a/src/responder/ifp/org.freedesktop.sssd.infopipe.conf
++++ /dev/null
+@@ -1,47 +0,0 @@
+-<?xml version="1.0"?> <!--*-nxml-*-->
+-<!DOCTYPE busconfig PUBLIC
+- "-//freedesktop//DTD D-BUS Bus Configuration 1.0//EN"
+- "http://www.freedesktop.org/standards/dbus/1.0/busconfig.dtd">
+-<busconfig>
+-
+-  <!-- This configuration file specifies the required security policies
+-       for the SSSD InfoPipe to work. -->
+-
+-  <!-- Only root can own (provide) the SSSD service -->
+-  <policy user="root">
+-    <allow own="org.freedesktop.sssd.infopipe"/>
+-  </policy>
+-
+-  <!-- Allow all methods on the interface -->
+-  <!-- Right now, this will be handled by a limited ACL
+-       within the InfoPipe Daemon. -->
+-  <policy context="default">
+-    <allow send_destination="org.freedesktop.sssd.infopipe"
+-           send_interface="org.freedesktop.DBus.Introspectable"/>
+-
+-    <allow send_destination="org.freedesktop.sssd.infopipe"
+-           send_interface="org.freedesktop.DBus.Properties"
+-           send_member="GetAll"/>
+-    <allow send_destination="org.freedesktop.sssd.infopipe"
+-           send_interface="org.freedesktop.DBus.Properties"
+-           send_member="Get"/>
+-    <allow send_destination="org.freedesktop.sssd.infopipe"
+-           send_interface="org.freedesktop.DBus.Properties"
+-           send_member="Set"/>
+-
+-    <allow send_interface="org.freedesktop.sssd.infopipe"/>
+-    <allow send_interface="org.freedesktop.sssd.infopipe.Domains"/>
+-    <allow send_interface="org.freedesktop.sssd.infopipe.Domains.Domain"/>
+-    <allow send_interface="org.freedesktop.sssd.infopipe.Users"/>
+-    <allow send_interface="org.freedesktop.sssd.infopipe.Users.User"/>
+-    <allow send_interface="org.freedesktop.sssd.infopipe.Groups"/>
+-    <allow send_interface="org.freedesktop.sssd.infopipe.Groups.Group"/>
+-    <allow send_interface="org.freedesktop.sssd.infopipe.Cache"/>
+-    <allow send_interface="org.freedesktop.sssd.infopipe.Cache.Object"/>
+-  </policy>
+-
+-  <policy user="root">
+-    <allow send_interface="org.freedesktop.sssd.infopipe.Components"/>
+-  </policy>
+-
+-</busconfig>
+--- a/src/responder/ifp/org.freedesktop.sssd.infopipe.service.in
++++ b/src/responder/ifp/org.freedesktop.sssd.infopipe.service.in
+@@ -1,5 +1,5 @@
+ [D-BUS Service]
+ Name=org.freedesktop.sssd.infopipe
+ Exec=@ifp_exec_cmd@
+-User=root
++User=@SSSD_USER@
+ @ifp_systemdservice@
+--- a/Makefile.am
++++ b/Makefile.am
+@@ -91,7 +91,7 @@
+ deskprofilepath = $(sss_statedir)/deskprofile
+ 
+ if HAVE_SYSTEMD_UNIT
+-ifp_exec_cmd = $(sssdlibexecdir)/sssd_ifp --uid 0 --gid 0 --dbus-activated
++ifp_exec_cmd = $(sssdlibexecdir)/sssd_ifp --dbus-activated
+ ifp_systemdservice = SystemdService=sssd-ifp.service
+ ifp_restart = Restart=on-failure
+ else
+@@ -1492,13 +1492,15 @@
+     src/responder/ifp/org.freedesktop.sssd.infopipe.service
+ 
+ EXTRA_DIST += \
++    src/responder/ifp/org.freedesktop.sssd.infopipe.conf.in \
+     src/responder/ifp/org.freedesktop.sssd.infopipe.service.in \
+     $(NULL)
+ 
+ ifp_edit_cmd = $(edit_cmd) \
+         -e 's|@ifp_exec_cmd[@]|$(ifp_exec_cmd)|g' \
+         -e 's|@ifp_systemdservice[@]|$(ifp_systemdservice)|g' \
+-        -e 's|@ifp_restart[@]|$(ifp_restart)|g'
++        -e 's|@ifp_restart[@]|$(ifp_restart)|g' \
++        -e 's|@SSSD_USER[@]|$(SSSD_USER)|g'
+ 
+ ifp_replace_script = \
+     @rm -f $@ $@.tmp; \
+@@ -1507,6 +1509,9 @@
+         $(ifp_edit_cmd) $${srcdir}$@.in >$@.tmp; \
+     mv $@.tmp $@
+ 
++src/responder/ifp/org.freedesktop.sssd.infopipe.conf: src/responder/ifp/org.freedesktop.sssd.infopipe.conf.in Makefile
++	$(ifp_replace_script)
++
+ src/responder/ifp/org.freedesktop.sssd.infopipe.service: src/responder/ifp/org.freedesktop.sssd.infopipe.service.in Makefile
+ 	$(ifp_replace_script)
+ 
+--- a/src/util/server.c
++++ b/src/util/server.c
+@@ -477,7 +477,7 @@
+               sss_strerror(ret), ret);
+     }
+ 
+-    if (!is_socket_activated()) {
++    if (!is_socket_activated() && !is_dbus_activated()) {
+         ret = chown_debug_file(NULL, uid, gid);
+         if (ret != EOK) {
+             DEBUG(SSSDBG_MINOR_FAILURE,
+--- a/src/sysv/systemd/sssd-ifp.service.in
++++ b/src/sysv/systemd/sssd-ifp.service.in
+@@ -9,5 +9,8 @@
+ EnvironmentFile=-@environment_file@
+ Type=dbus
+ BusName=org.freedesktop.sssd.infopipe
++ExecStartPre=!-/bin/chown @SSSD_USER@:@SSSD_USER@ @logpath@/sssd_ifp.log
+ ExecStart=@ifp_exec_cmd@ ${DEBUG_LOGGER}
+ @ifp_restart@
++User=@SSSD_USER@
++Group=@SSSD_USER@
+--- a/src/responder/ifp/ifpsrv.c
++++ b/src/responder/ifp/ifpsrv.c
+@@ -358,14 +358,11 @@
+     char *opt_logger = NULL;
+     struct main_context *main_ctx;
+     int ret;
+-    uid_t uid;
+-    gid_t gid;
+ 
+     struct poptOption long_options[] = {
+         POPT_AUTOHELP
+         SSSD_MAIN_OPTS
+         SSSD_LOGGER_OPTS
+-        SSSD_SERVER_OPTS(uid, gid)
+         SSSD_RESPONDER_OPTS
+         POPT_TABLEEND
+     };

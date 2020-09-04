@@ -10,6 +10,7 @@ fix-pidpath-in-systemd-unit.patch
 vyatta-werror.patch
 stay_offline_except_link_changes.patch
 fallocate-nss-mmap-cache.patch
+ifp-responder-configure-user.patch
 
 # Required to support tacplus provider, but not specific to it
 offline-timeout-max.patch
