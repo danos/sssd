@@ -60,12 +60,6 @@ case "$1" in
                 deb-systemd-helper unmask sssd-nss.service >/dev/null
                 deb-systemd-helper purge sssd-nss.socket >/dev/null
                 deb-systemd-helper unmask sssd-nss.socket >/dev/null
-                deb-systemd-helper purge sssd-pam.service >/dev/null
-                deb-systemd-helper unmask sssd-pam.service >/dev/null
-                deb-systemd-helper purge sssd-pam.socket >/dev/null
-                deb-systemd-helper unmask sssd-pam.socket >/dev/null
-                deb-systemd-helper purge sssd-pam-priv.socket >/dev/null
-                deb-systemd-helper unmask sssd-pam-priv.socket >/dev/null
                 deb-systemd-helper purge sssd-sudo.service >/dev/null
                 deb-systemd-helper unmask sssd-sudo.service >/dev/null
                 deb-systemd-helper purge sssd-sudo.socket >/dev/null

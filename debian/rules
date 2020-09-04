@@ -87,7 +87,7 @@ override_dh_install:
 	# match nn/nn/nnnn, replace with the date from changelog
 	sed -i 's/[0-1][0-9]\/[0-3][0-9]\/[0-9][0-9][0-9][0-9]/${PKGDATE}/g' $(CURDIR)/debian/tmp/usr/share/man/man*/*
 
-	for responder in autofs nss pac pam-priv pam ssh sudo; do \
+	for responder in autofs nss pac ssh sudo; do \
 		rm -f $(CURDIR)/debian/tmp/lib/systemd/system/sssd-$$responder.service \
 		      $(CURDIR)/debian/tmp/lib/systemd/system/sssd-$$responder.socket; \
 	done

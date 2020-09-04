@@ -8,9 +8,9 @@ lib/systemd/system/sssd-secrets.socket
 #lib/systemd/system/sssd-ssh.socket
 #lib/systemd/system/sssd-autofs.service
 #lib/systemd/system/sssd-autofs.socket
-#lib/systemd/system/sssd-pam.service
-#lib/systemd/system/sssd-pam.socket
-#lib/systemd/system/sssd-pam-priv.socket
+lib/systemd/system/sssd-pam.service
+lib/systemd/system/sssd-pam.socket
+lib/systemd/system/sssd-pam-priv.socket
 #lib/systemd/system/sssd-nss.service
 #lib/systemd/system/sssd-nss.socket
 usr/bin/sss_ssh_authorizedkeys
