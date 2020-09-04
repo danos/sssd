@@ -1,0 +1,102 @@
+--- a/src/config/SSSDConfigTest.py
++++ b/src/config/SSSDConfigTest.py
+@@ -354,6 +354,7 @@
+             'full_name_format',
+             'krb5_rcache_dir',
+             'user',
++            'switch_user',
+             'default_domain_suffix',
+             'debug',
+             'debug_level',
+--- a/src/config/cfg_rules.ini
++++ b/src/config/cfg_rules.ini
+@@ -43,6 +43,7 @@
+ option = full_name_format
+ option = krb5_rcache_dir
+ option = user
++option = switch_user
+ option = default_domain_suffix
+ option = certificate_verification
+ option = override_space
+--- a/src/config/etc/sssd.api.conf
++++ b/src/config/etc/sssd.api.conf
+@@ -27,6 +27,7 @@
+ full_name_format = str, None, false
+ krb5_rcache_dir = str, None, false
+ user = str, None, false
++switch_user = bool, None, false
+ default_domain_suffix = str, None, false
+ certificate_verification = str, None, false
+ override_space = str, None, false
+--- a/src/confdb/confdb.h
++++ b/src/confdb/confdb.h
+@@ -71,6 +71,7 @@
+ #define CONFDB_MONITOR_DEFAULT_DOMAIN "default_domain_suffix"
+ #define CONFDB_MONITOR_OVERRIDE_SPACE "override_space"
+ #define CONFDB_MONITOR_USER_RUNAS "user"
++#define CONFDB_MONITOR_SWITCH_USER "switch_user"
+ #define CONFDB_MONITOR_CERT_VERIFICATION "certificate_verification"
+ #define CONFDB_MONITOR_DISABLE_NETLINK "disable_netlink"
+ #define CONFDB_MONITOR_ENABLE_FILES_DOM "enable_files_domain"
+--- a/src/monitor/monitor.c
++++ b/src/monitor/monitor.c
+@@ -180,6 +180,7 @@
+     /* For running unprivileged services */
+     uid_t uid;
+     gid_t gid;
++    bool switch_user;
+ };
+ 
+ static int start_service(struct mt_svc *mt_svc);
+@@ -991,6 +992,15 @@
+         return ret;
+     }
+ 
++    ret = confdb_get_bool(ctx->cdb, CONFDB_MONITOR_CONF_ENTRY,
++                          CONFDB_MONITOR_SWITCH_USER,
++                          false, &ctx->switch_user);
++    if (ret != EOK) {
++        DEBUG(SSSDBG_FATAL_FAILURE,
++              "Failed to get %s config\n", CONFDB_MONITOR_SWITCH_USER);
++        return ret;
++    }
++
+     return EOK;
+ }
+ 
+@@ -1332,6 +1342,14 @@
+             return ENOMEM;
+         }
+ 
++        if (ctx->switch_user) {
++            svc->command = talloc_asprintf_append(svc->command, " --init-as-user");
++            if (!svc->command) {
++                talloc_free(svc);
++                return ENOMEM;
++            }
++        }
++
+         if (cmdline_debug_level != SSSDBG_UNRESOLVED) {
+             svc->command = talloc_asprintf_append(
+                 svc->command, " -d %#.4x", cmdline_debug_level
+@@ -2659,7 +2677,9 @@
+     ret = close(STDIN_FILENO);
+     if (ret != EOK) return 6;
+ 
+-    ret = server_setup(MONITOR_NAME, flags, 0, 0,
++    ret = server_setup(MONITOR_NAME, flags,
++                       monitor->switch_user ? monitor->uid : 0,
++                       monitor->switch_user ? monitor->gid : 0,
+                        monitor->conf_path, &main_ctx);
+     if (ret != EOK) return 2;
+ 
+--- a/src/sysv/systemd/sssd.service.in
++++ b/src/sysv/systemd/sssd.service.in
+@@ -7,6 +7,7 @@
+ [Service]
+ Environment=DEBUG_LOGGER=--logger=files
+ EnvironmentFile=-@environment_file@
++ExecStartPre=!-/bin/chown -R @SSSD_USER@:@SSSD_USER@ @logpath@
+ ExecStart=@sbindir@/sssd -i ${DEBUG_LOGGER}
+ Type=notify
+ NotifyAccess=main

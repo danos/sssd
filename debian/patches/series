@@ -18,6 +18,7 @@ propagate-provider-error.patch
 cache-req-propagate-dp-error.patch
 propagate-initgroup-dp-failure-to-pam.patch
 be-init-as-user.patch
+monitor-switch-user.patch
 
 # tacplus provider implementation/specific patches
 tacplus/allow-tacplus-id-gen.patch
