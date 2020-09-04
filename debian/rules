@@ -30,7 +30,12 @@ DANOS_EXTRA_ARGS += --without-samba
 DANOS_EXTRA_ARGS += --without-semanage
 DANOS_EXTRA_ARGS += --disable-krb5-locator-plugin
 
-DANOS_EXTRA_ARGS += --with-pid-path=/run
+# A polkit rules file is generated when using --with-sssd-user, however
+# it is only needed for smartcard support, so we can disable it.
+DANOS_EXTRA_ARGS += --with-sssd-user=sssd --disable-polkit-rules-path
+
+# PID file must be created in a directory writable by the sssd user
+DANOS_EXTRA_ARGS += --with-pid-path=/run/sss
 
 override_dh_auto_configure:
 	dh_auto_configure -- --enable-krb5-locator-plugin \

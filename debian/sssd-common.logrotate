@@ -6,6 +6,6 @@
 	compress
 	delaycompress
 	postrotate
-		kill -HUP `cat /var/run/sssd.pid` > /dev/null 2>&1 || true
+		kill -HUP `cat /run/sss/sssd.pid` > /dev/null 2>&1 || true
 	endscript
 }
