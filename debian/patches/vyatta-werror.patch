@@ -1,8 +1,6 @@
-diff --git a/Makefile.am b/Makefile.am
-index 89c32c4..7854723 100644
 --- a/Makefile.am
 +++ b/Makefile.am
-@@ -115,6 +115,7 @@ if WANT_AUX_INFO
+@@ -115,6 +115,7 @@
      AM_CFLAGS += -aux-info $@.X
  endif
  if HAVE_GCC

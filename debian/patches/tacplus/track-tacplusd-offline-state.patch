@@ -477,7 +477,7 @@
  
 --- a/src/monitor/monitor.c
 +++ b/src/monitor/monitor.c
-@@ -217,7 +217,11 @@
+@@ -218,7 +218,11 @@
      for (iter = ctx->svc_list; iter; iter = iter->next) {
          /* Don't signal services, only providers */
          if (iter->provider) {
