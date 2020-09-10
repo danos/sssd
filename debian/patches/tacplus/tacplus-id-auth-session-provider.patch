@@ -1473,7 +1473,7 @@
 +}
 --- /dev/null
 +++ b/src/providers/tacplus/tacplus_session.c
-@@ -0,0 +1,250 @@
+@@ -0,0 +1,262 @@
 +/*
 +    Copyright (c) 2014-2017 Brocade Communications Systems, Inc.
 +    Copyright (c) 2018-2020 AT&T Intellectual Property.
@@ -1527,6 +1527,8 @@
 +    const char *tty = pd->tty;
 +    const char *rhost = pd->rhost;
 +    const char *sig = "{ss}";
++    const char *task_id_k = "task_id";
++    const char *task_id_v;
 +    const char *start_time_k = "start_time";
 +    const char *stop_time_k = "stop_time";
 +    const char *time_v = timestamp;
@@ -1545,6 +1547,10 @@
 +    ret = sss_parse_internal_fqname(ctx, pd->user, &username, NULL);
 +    if (ret)
 +        return ret;
++
++    task_id_v = talloc_asprintf(ctx, "%u", ctx->pd->cli_pid);
++    if (!task_id_v)
++        return ENOMEM;
 +
 +    snprintf(timestamp, TIMESTAMP_LEN, "%lu", time(NULL));
 +
@@ -1588,6 +1594,12 @@
 +    dbus_message_iter_append_basic(&iter, DBUS_TYPE_STRING, &rhost);
 +
 +    dbus_message_iter_open_container (&iter, DBUS_TYPE_ARRAY, sig, &array);
++
++    /* append task ID (PID of requesting process) */
++    dbus_message_iter_open_container (&array, DBUS_TYPE_DICT_ENTRY, NULL, &dict);
++    dbus_message_iter_append_basic (&dict, DBUS_TYPE_STRING, &task_id_k);
++    dbus_message_iter_append_basic (&dict, DBUS_TYPE_STRING, &task_id_v);
++    dbus_message_iter_close_container(&array, &dict);
 +
 +    /* append (start|stop)_time... */
 +    dbus_message_iter_open_container (&array, DBUS_TYPE_DICT_ENTRY, NULL, &dict);
