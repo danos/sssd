@@ -5,6 +5,7 @@ fix_authdata_krb5_1.17.diff
 
 # Backported fixes from upstream
 fix-pidpath-in-systemd-unit.patch
+PAM-client-only-require-UID-0-for-private-socket.patch
 
 # General fixes/enhancements
 vyatta-werror.patch

@@ -1,0 +1,32 @@
+From 37780b895199bab991edae6b1eeb91b7b3966bcf Mon Sep 17 00:00:00 2001
+From: Sumit Bose <sbose@redhat.com>
+Date: Thu, 6 Feb 2020 14:50:23 +0100
+Subject: [PATCH] PAM client: only require UID 0 for private socket
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Some privileged services like e.g. gdm might only call with UID 0 but
+with a different GID. This patch removes the GID 0 requirement to access
+to private PAM socket so that e.g. gdm can use the wait-for-card option.
+
+Resolves: https://pagure.io/SSSD/sssd/issue/4159
+
+Reviewed-by: Pavel Březina <pbrezina@redhat.com>
+---
+ src/sss_client/common.c |    4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+--- a/src/sss_client/common.c
++++ b/src/sss_client/common.c
+@@ -909,8 +909,8 @@ int sss_pam_make_request(enum sss_cli_co
+         goto out;
+     }
+ 
+-    /* only root shall use the privileged pipe */
+-    if (getuid() == 0 && getgid() == 0) {
++    /* only UID 0 shall use the privileged pipe */
++    if (getuid() == 0) {
+         socket_name = SSS_PAM_PRIV_SOCKET_NAME;
+         statret = stat(socket_name, &stat_buf);
+         if (statret != 0) {
