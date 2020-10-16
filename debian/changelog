@@ -1,8 +1,13 @@
-sssd (1.16.3-3danos4) UNRELEASED; urgency=medium
+sssd (1.16.3-3danos4) unstable; urgency=medium
 
-  *
+  * monitor: Add "switch_user" configuration
+  * IFP: Allow responder to run as non-root user
+  * debian: package sssd-pam* units
+  * debian: configure SSSD for non-root execution
+  * Refresh patches
+  * tacplus: use client PID as accounting task_id
 
- -- Duncan Eastoe <duncan.eastoe@att.com>  Fri, 04 Sep 2020 11:48:16 +0100
+ -- Duncan Eastoe <duncan.eastoe@att.com>  Fri, 16 Oct 2020 16:56:20 +0100
 
 sssd (1.16.3-3danos3) unstable; urgency=medium
 
