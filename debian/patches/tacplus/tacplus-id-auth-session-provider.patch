@@ -1473,7 +1473,7 @@
 +}
 --- /dev/null
 +++ b/src/providers/tacplus/tacplus_session.c
-@@ -0,0 +1,262 @@
+@@ -0,0 +1,265 @@
 +/*
 +    Copyright (c) 2014-2017 Brocade Communications Systems, Inc.
 +    Copyright (c) 2018-2020 AT&T Intellectual Property.
@@ -1525,7 +1525,7 @@
 +    char timestamp[TIMESTAMP_LEN];
 +    struct pam_data *pd = ctx->pd;
 +    const char *tty = pd->tty;
-+    const char *rhost = pd->rhost;
++    const char *rhost;
 +    const char *sig = "{ss}";
 +    const char *task_id_k = "task_id";
 +    const char *task_id_v;
@@ -1586,6 +1586,9 @@
 +        ret = ENOMEM;
 +        goto done;
 +    }
++
++    if ((rhost = pam_data_get_conn_src_addr(pd)) == NULL)
++        rhost = pd->rhost;
 +
 +    dbus_message_iter_init_append(dmsg, &iter);
 +    dbus_message_iter_append_basic(&iter, DBUS_TYPE_INT32, &type);
