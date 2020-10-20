@@ -1,0 +1,231 @@
+---
+ src/providers/data_provider.h           |   15 +++++++++++++++
+ src/providers/dp_auth_util.c            |    4 ++++
+ src/providers/dp_pam_data_util.c        |   20 ++++++++++++++++++++
+ src/providers/tacplus/tacplus_session.c |    6 +++++-
+ src/responder/pam/pamsrv_cmd.c          |   23 ++++++++++++++++++++++-
+ src/sss_client/pam_message.c            |    5 +++++
+ src/sss_client/pam_message.h            |    2 ++
+ src/sss_client/pam_sss.c                |    4 ++++
+ src/sss_client/sss_cli.h                |    1 +
+ src/tests/cmocka/test_pam_srv.c         |    2 ++
+ 10 files changed, 80 insertions(+), 2 deletions(-)
+
+--- a/src/providers/data_provider.h
++++ b/src/providers/data_provider.h
+@@ -156,6 +156,11 @@
+     struct response_data *next;
+ };
+ 
++enum pam_conn_info_type {
++    PAM_CONN_INFO_UNKNOWN = 0,
++    PAM_CONN_INFO_SSH,
++};
++
+ struct pam_data {
+     int cmd;
+     char *domain;
+@@ -164,6 +169,8 @@
+     char *tty;
+     char *ruser;
+     char *rhost;
++    enum pam_conn_info_type conn_info_type;
++    char *conn_info;
+     char **requested_domains;
+     struct sss_auth_token *authtok;
+     struct sss_auth_token *newauthtok;
+@@ -209,6 +216,7 @@
+ errno_t copy_pam_data(TALLOC_CTX *mem_ctx, struct pam_data *old_pd,
+                       struct pam_data **new_pd);
+ void pam_print_data(int l, struct pam_data *pd);
++char *pam_data_get_conn_src_addr(const struct pam_data *pd);
+ int pam_add_response(struct pam_data *pd,
+                      enum response_type type,
+                      int len, const uint8_t *data);
+--- a/src/providers/dp_auth_util.c
++++ b/src/providers/dp_auth_util.c
+@@ -28,6 +28,8 @@
+     const char *tty;
+     const char *ruser;
+     const char *rhost;
++    uint32_t conn_info_type;
++    const char *conn_info;
+     uint32_t authtok_type;
+     int authtok_length;
+     uint8_t *authtok_data;
+@@ -42,6 +44,8 @@
+     tty = pd->tty ? pd->tty : "";
+     ruser = pd->ruser ? pd->ruser : "";
+     rhost = pd->rhost ? pd->rhost : "";
++    conn_info_type = pd->conn_info_type;
++    conn_info = pd->conn_info ? pd->conn_info : "";
+     authtok_type = (uint32_t)sss_authtok_get_type(pd->authtok);
+     authtok_data = sss_authtok_get_data(pd->authtok);
+     authtok_length = sss_authtok_get_size(pd->authtok);
+@@ -59,6 +63,8 @@
+                                       DBUS_TYPE_STRING, &tty,
+                                       DBUS_TYPE_STRING, &ruser,
+                                       DBUS_TYPE_STRING, &rhost,
++                                      DBUS_TYPE_UINT32, &conn_info_type,
++                                      DBUS_TYPE_STRING, &conn_info,
+                                       DBUS_TYPE_UINT32, &authtok_type,
+                                       DBUS_TYPE_ARRAY, DBUS_TYPE_BYTE,
+                                       &authtok_data, authtok_length,
+@@ -97,6 +103,8 @@
+                                    DBUS_TYPE_STRING, &(pd.tty),
+                                    DBUS_TYPE_STRING, &(pd.ruser),
+                                    DBUS_TYPE_STRING, &(pd.rhost),
++                                   DBUS_TYPE_UINT32, &(pd.conn_info_type),
++                                   DBUS_TYPE_STRING, &(pd.conn_info),
+                                    DBUS_TYPE_UINT32, &authtok_type,
+                                    DBUS_TYPE_ARRAY, DBUS_TYPE_BYTE,
+                                    &authtok_data, &authtok_length,
+--- a/src/providers/dp_pam_data_util.c
++++ b/src/providers/dp_pam_data_util.c
+@@ -151,6 +151,15 @@
+         }
+     }
+ 
++    pd->conn_info_type = src->conn_info_type;
++    if (src->conn_info) {
++        pd->conn_info = talloc_strdup(pd, src->conn_info);
++        if (pd->conn_info == NULL) {
++            ret = ENOMEM;
++            goto failed;
++        }
++    }
++
+     *dst = pd;
+ 
+     return EOK;
+@@ -171,6 +180,7 @@
+     DEBUG(l, "tty: %s\n", PAM_SAFE_ITEM(pd->tty));
+     DEBUG(l, "ruser: %s\n", PAM_SAFE_ITEM(pd->ruser));
+     DEBUG(l, "rhost: %s\n", PAM_SAFE_ITEM(pd->rhost));
++    DEBUG(l, "connection info: %s\n", PAM_SAFE_ITEM(pd->conn_info));
+     DEBUG(l, "authtok type: %d\n", sss_authtok_get_type(pd->authtok));
+     DEBUG(l, "newauthtok type: %d\n", sss_authtok_get_type(pd->newauthtok));
+     DEBUG(l, "priv: %d\n", pd->priv);
+@@ -178,6 +188,27 @@
+     DEBUG(l, "logon name: %s\n", PAM_SAFE_ITEM(pd->logon_name));
+ }
+ 
++char *
++pam_data_get_conn_src_addr(const struct pam_data *pd)
++{
++    char *temp;
++
++    switch (pd->conn_info_type) {
++    case PAM_CONN_INFO_SSH:
++        /*
++         * SSH_CONNECTION format as described in ssh(1):
++         *   <client-addr> <client-port> <local-addr> <local-port>
++         */
++        if (pd->conn_info && (temp = strchr(pd->conn_info, ' ')))
++            return talloc_strndup(pd, pd->conn_info, (temp - pd->conn_info));
++        break;
++    default:
++        break;
++    }
++
++    return NULL;
++}
++
+ int pam_add_response(struct pam_data *pd, enum response_type type,
+                      int len, const uint8_t *data)
+ {
+--- a/src/responder/pam/pamsrv_cmd.c
++++ b/src/responder/pam/pamsrv_cmd.c
+@@ -317,6 +317,11 @@
+                                              size, body, blen, &c);
+                     if (ret != EOK) return ret;
+                     break;
++                case SSS_PAM_ITEM_SSH_CONN_INFO:
++                    ret = extract_string(&pd->conn_info, size, body, blen, &c);
++                    if (ret != EOK) return ret;
++                    pd->conn_info_type = PAM_CONN_INFO_SSH;
++                    break;
+                 default:
+                     DEBUG(SSSDBG_CRIT_FAILURE,
+                           "Ignoring unknown data type [%d].\n", type);
+--- a/src/sss_client/pam_message.c
++++ b/src/sss_client/pam_message.c
+@@ -119,6 +119,8 @@
+                 2*sizeof(uint32_t) + pi->pam_ruser_size : 0;
+     len += *pi->pam_rhost != '\0' ?
+                 2*sizeof(uint32_t) + pi->pam_rhost_size : 0;
++    len += *pi->ssh_conn_info != '\0' ?
++                2*sizeof(uint32_t) + pi->ssh_conn_info_size : 0;
+     len += pi->pam_authtok != NULL ?
+                 3*sizeof(uint32_t) + pi->pam_authtok_size : 0;
+     len += pi->pam_newauthtok != NULL ?
+@@ -151,6 +153,9 @@
+     rp += add_string_item(SSS_PAM_ITEM_RHOST, pi->pam_rhost, pi->pam_rhost_size,
+                           &buf[rp]);
+ 
++    rp += add_string_item(SSS_PAM_ITEM_SSH_CONN_INFO, pi->ssh_conn_info,
++                          pi->ssh_conn_info_size, &buf[rp]);
++
+     rp += add_string_item(SSS_PAM_ITEM_REQUESTED_DOMAINS, pi->requested_domains, pi->requested_domains_size,
+                           &buf[rp]);
+ 
+--- a/src/sss_client/pam_message.h
++++ b/src/sss_client/pam_message.h
+@@ -37,6 +37,7 @@
+     const char *pam_tty;
+     const char *pam_ruser;
+     const char *pam_rhost;
++    const char *ssh_conn_info;
+     char *pam_authtok;
+     char *pam_newauthtok;
+     const char *pamstack_authtok;
+@@ -46,6 +47,7 @@
+     size_t pam_tty_size;
+     size_t pam_ruser_size;
+     size_t pam_rhost_size;
++    size_t ssh_conn_info_size;
+     enum sss_authtok_type pam_authtok_type;
+     size_t pam_authtok_size;
+     enum sss_authtok_type pam_newauthtok_type;
+--- a/src/sss_client/pam_sss.c
++++ b/src/sss_client/pam_sss.c
+@@ -1256,6 +1256,11 @@
+     pi->cert_list = NULL;
+     pi->selected_cert = NULL;
+ 
++    pi->ssh_conn_info = pam_getenv(pamh, "SSH_CONNECTION");
++    if (pi->ssh_conn_info == NULL)
++        pi->ssh_conn_info = "";
++    pi->ssh_conn_info_size = strlen(pi->ssh_conn_info) + 1;
++
+     return PAM_SUCCESS;
+ }
+ 
+--- a/src/sss_client/sss_cli.h
++++ b/src/sss_client/sss_cli.h
+@@ -358,6 +358,7 @@
+     SSS_PAM_ITEM_TTY,
+     SSS_PAM_ITEM_RUSER,
+     SSS_PAM_ITEM_RHOST,
++    SSS_PAM_ITEM_SSH_CONN_INFO,
+     SSS_PAM_ITEM_AUTHTOK,
+     SSS_PAM_ITEM_NEWAUTHTOK,
+     SSS_PAM_ITEM_CLI_LOCALE,
+--- a/src/tests/cmocka/test_pam_srv.c
++++ b/src/tests/cmocka/test_pam_srv.c
+@@ -633,6 +633,7 @@
+     pi.pam_ruser_size = strlen(pi.pam_ruser) + 1;
+     pi.pam_rhost = "remhost";
+     pi.pam_rhost_size = strlen(pi.pam_rhost) + 1;
++    pi.ssh_conn_info = "";
+     pi.requested_domains = "";
+     pi.cli_pid = 12345;
+ 
+@@ -716,6 +717,7 @@
+     pi.pam_ruser_size = strlen(pi.pam_ruser) + 1;
+     pi.pam_rhost = "remhost";
+     pi.pam_rhost_size = strlen(pi.pam_rhost) + 1;
++    pi.ssh_conn_info = "";
+     pi.requested_domains = "";
+     pi.cli_pid = 12345;
+ 

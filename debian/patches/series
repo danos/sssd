@@ -20,6 +20,7 @@ cache-req-propagate-dp-error.patch
 propagate-initgroup-dp-failure-to-pam.patch
 be-init-as-user.patch
 monitor-switch-user.patch
+pam-pass-ssh-connection-from-env.patch
 
 # tacplus provider implementation/specific patches
 tacplus/allow-tacplus-id-gen.patch
