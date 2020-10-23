@@ -1,3 +1,10 @@
+sssd (1.16.3-3danos5) unstable; urgency=medium
+
+  * PAM: pass SSH_CONNECTION to responder and DPs
+  * tacplus: Use pam_data->conn_info for rem_addr
+
+ -- Duncan Eastoe <duncan.eastoe@att.com>  Fri, 23 Oct 2020 14:54:46 +0100
+
 sssd (1.16.3-3danos4) unstable; urgency=medium
 
   * monitor: Add "switch_user" configuration
