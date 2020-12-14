@@ -1,0 +1,24 @@
+---
+ src/tests/whitespace_test |    4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+--- a/src/tests/whitespace_test
++++ b/src/tests/whitespace_test
+@@ -4,7 +4,7 @@
+ 
+ # An AWK regex matching tracked file paths to be excluded from the search.
+ # Example: '.*\.po|README'
+-PATH_EXCLUDE_REGEX='.*\.po|.*\.patch|.*\.diff|\/debian\/.*'
++PATH_EXCLUDE_REGEX='.*\.po|.*\.patch|.*\.diff|debian\/.*'
+ 
+ export GIT_DIR="$ABS_TOP_SRCDIR/.git"
+ export GIT_WORK_TREE="$ABS_TOP_SRCDIR"
+@@ -16,7 +16,7 @@
+ 
+ {
+     # Look for lines with trailing whitespace in all files tracked by Git
+-    git grep -n -I '\s\+$' -- "$(git rev-parse --show-toplevel)" ||
++    git grep --full-name -n -I '\s\+$' -- "$(git rev-parse --show-toplevel)" ||
+         # Don't fail if no such lines were found anywhere
+         [[ $? == 1 ]]
+ } |
