@@ -1,3 +1,11 @@
+sssd (1.16.3-3danos6) unstable; urgency=medium
+
+  [ Duncan Eastoe ]
+  * pam_sss: Only require UID 0 to use privileged pipe
+  * whitespace_test: fix exclusion of debian directory
+
+ -- Daniel Gollub <dgollub@att.com>  Tue, 23 Feb 2021 21:23:47 +0100
+
 sssd (1.16.3-3danos5) unstable; urgency=medium
 
   * PAM: pass SSH_CONNECTION to responder and DPs
