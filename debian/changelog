@@ -1,3 +1,9 @@
+sssd (1.16.3-3danos7) unstable; urgency=medium
+
+  * debian: silence lintian on older Debian releases
+
+ -- Daniel Gollub <dgollub@att.com>  Wed, 17 Mar 2021 20:08:00 +0100
+
 sssd (1.16.3-3danos6) unstable; urgency=medium
 
   [ Duncan Eastoe ]
