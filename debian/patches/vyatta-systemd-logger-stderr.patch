@@ -1,0 +1,122 @@
+--- a/src/sysv/systemd/sssd-autofs.service.in
++++ b/src/sysv/systemd/sssd-autofs.service.in
+@@ -9,9 +9,8 @@
+ Also=sssd-autofs.socket
+ 
+ [Service]
+-Environment=DEBUG_LOGGER=--logger=files
++Environment=DEBUG_LOGGER=--logger=stderr
+ EnvironmentFile=-@environment_file@
+-ExecStartPre=-/bin/chown @SSSD_USER@:@SSSD_USER@ @logpath@/sssd_autofs.log
+ ExecStart=@libexecdir@/sssd/sssd_autofs ${DEBUG_LOGGER} --socket-activated
+ Restart=on-failure
+ User=@SSSD_USER@
+--- a/src/sysv/systemd/sssd-ifp.service.in
++++ b/src/sysv/systemd/sssd-ifp.service.in
+@@ -5,11 +5,10 @@
+ BindsTo=sssd.service
+ 
+ [Service]
+-Environment=DEBUG_LOGGER=--logger=files
++Environment=DEBUG_LOGGER=--logger=stderr
+ EnvironmentFile=-@environment_file@
+ Type=dbus
+ BusName=org.freedesktop.sssd.infopipe
+-ExecStartPre=!-/bin/chown @SSSD_USER@:@SSSD_USER@ @logpath@/sssd_ifp.log
+ ExecStart=@ifp_exec_cmd@ ${DEBUG_LOGGER}
+ @ifp_restart@
+ User=@SSSD_USER@
+--- a/src/sysv/systemd/sssd-kcm.service.in
++++ b/src/sysv/systemd/sssd-kcm.service.in
+@@ -8,5 +8,5 @@
+ Also=sssd-kcm.socket
+ 
+ [Service]
+-Environment=DEBUG_LOGGER=--logger=files
++Environment=DEBUG_LOGGER=--logger=stderr
+ ExecStart=@libexecdir@/sssd/sssd_kcm --uid 0 --gid 0 ${DEBUG_LOGGER}
+--- a/src/sysv/systemd/sssd-nss.service.in
++++ b/src/sysv/systemd/sssd-nss.service.in
+@@ -9,7 +9,7 @@
+ Also=sssd-nss.socket
+ 
+ [Service]
+-Environment=DEBUG_LOGGER=--logger=files
++Environment=DEBUG_LOGGER=--logger=stderr
+ EnvironmentFile=-@environment_file@
+ ExecStart=@libexecdir@/sssd/sssd_nss ${DEBUG_LOGGER} --socket-activated
+ Restart=on-failure
+--- a/src/sysv/systemd/sssd-pac.service.in
++++ b/src/sysv/systemd/sssd-pac.service.in
+@@ -9,9 +9,8 @@
+ Also=sssd-pac.socket
+ 
+ [Service]
+-Environment=DEBUG_LOGGER=--logger=files
++Environment=DEBUG_LOGGER=--logger=stderr
+ EnvironmentFile=-@environment_file@
+-ExecStartPre=-/bin/chown @SSSD_USER@:@SSSD_USER@ @logpath@/sssd_pac.log
+ ExecStart=@libexecdir@/sssd/sssd_pac ${DEBUG_LOGGER} --socket-activated
+ Restart=on-failure
+ User=@SSSD_USER@
+--- a/src/sysv/systemd/sssd-pam.service.in
++++ b/src/sysv/systemd/sssd-pam.service.in
+@@ -9,9 +9,8 @@
+ Also=sssd-pam.socket sssd-pam-priv.socket
+ 
+ [Service]
+-Environment=DEBUG_LOGGER=--logger=files
++Environment=DEBUG_LOGGER=--logger=stderr
+ EnvironmentFile=-@environment_file@
+-ExecStartPre=-/bin/chown @SSSD_USER@:@SSSD_USER@ @logpath@/sssd_pam.log
+ ExecStart=@libexecdir@/sssd/sssd_pam ${DEBUG_LOGGER} --socket-activated
+ Restart=on-failure
+ User=@SSSD_USER@
+--- a/src/sysv/systemd/sssd-secrets.service.in
++++ b/src/sysv/systemd/sssd-secrets.service.in
+@@ -8,5 +8,5 @@
+ Also=sssd-secrets.socket
+ 
+ [Service]
+-Environment=DEBUG_LOGGER=--logger=files
++Environment=DEBUG_LOGGER=--logger=stderr
+ ExecStart=@libexecdir@/sssd/sssd_secrets --uid 0 --gid 0 ${DEBUG_LOGGER}
+--- a/src/sysv/systemd/sssd-ssh.service.in
++++ b/src/sysv/systemd/sssd-ssh.service.in
+@@ -9,9 +9,8 @@
+ Also=sssd-ssh.socket
+ 
+ [Service]
+-Environment=DEBUG_LOGGER=--logger=files
++Environment=DEBUG_LOGGER=--logger=stderr
+ EnvironmentFile=-@environment_file@
+-ExecStartPre=-/bin/chown @SSSD_USER@:@SSSD_USER@ @logpath@/sssd_ssh.log
+ ExecStart=@libexecdir@/sssd/sssd_ssh ${DEBUG_LOGGER} --socket-activated
+ Restart=on-failure
+ User=@SSSD_USER@
+--- a/src/sysv/systemd/sssd-sudo.service.in
++++ b/src/sysv/systemd/sssd-sudo.service.in
+@@ -9,9 +9,8 @@
+ Also=sssd-sudo.socket
+ 
+ [Service]
+-Environment=DEBUG_LOGGER=--logger=files
++Environment=DEBUG_LOGGER=--logger=stderr
+ EnvironmentFile=-@environment_file@
+-ExecStartPre=-/bin/chown @SSSD_USER@:@SSSD_USER@ @logpath@/sssd_sudo.log
+ ExecStart=@libexecdir@/sssd/sssd_sudo --socket-activated
+ Restart=on-failure
+ User=@SSSD_USER@
+--- a/src/sysv/systemd/sssd.service.in
++++ b/src/sysv/systemd/sssd.service.in
+@@ -5,9 +5,8 @@
+ Wants=nss-user-lookup.target
+ 
+ [Service]
+-Environment=DEBUG_LOGGER=--logger=files
++Environment=DEBUG_LOGGER=--logger=stderr
+ EnvironmentFile=-@environment_file@
+-ExecStartPre=!-/bin/chown -R @SSSD_USER@:@SSSD_USER@ @logpath@
+ ExecStart=@sbindir@/sssd -i ${DEBUG_LOGGER}
+ Type=notify
+ NotifyAccess=main
