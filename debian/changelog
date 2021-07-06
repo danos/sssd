@@ -1,3 +1,10 @@
+sssd (1.16.3-3danos8) unstable; urgency=medium
+
+  [ Nachiketa Prachanda ]
+  * systemd: change log output to stderr
+
+ -- Daniel Gollub <dgollub@att.com>  Tue, 06 Jul 2021 12:18:15 +0200
+
 sssd (1.16.3-3danos7) unstable; urgency=medium
 
   * debian: silence lintian on older Debian releases
