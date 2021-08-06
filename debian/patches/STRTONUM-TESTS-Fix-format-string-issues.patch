@@ -1,0 +1,27 @@
+From bae2b416e7d71da11305689ecf2be1ce28983c9f Mon Sep 17 00:00:00 2001
+From: Lukas Slebodnik <lslebodn@redhat.com>
+Date: Sat, 25 Jul 2020 13:18:04 +0000
+Subject: [PATCH] STRTONUM-TESTS: Fix format string issues
+
+---
+ src/tests/strtonum-tests.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/src/tests/strtonum-tests.c b/src/tests/strtonum-tests.c
+index eb7f1b58d..b726d2b20 100644
+--- a/src/tests/strtonum-tests.c
++++ b/src/tests/strtonum-tests.c
+@@ -38,8 +38,8 @@
+ 
+ #define CHECK_RESULT(expected, actual) \
+     do { \
+-        fail_unless(actual == expected, "Expected %ld, got %ld", \
+-                                        expected, actual); \
++        fail_unless(actual == expected, "Expected %jd, got %jd", \
++                                        (intmax_t)expected, (intmax_t)actual); \
+     } while(0)
+ 
+ #define CHECK_ERRNO(expected, actual) \
+-- 
+2.20.1
+
