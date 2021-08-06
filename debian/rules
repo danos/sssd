@@ -12,6 +12,9 @@ CFLAGS += -I/usr/include/samba-4.0
 # Silence Debian 11 build error due to selinux headers
 # marked some declarations as deprecated.
 CFLAGS += -Wno-deprecated-declarations
+# Silence Debian 11 build error due to discard const
+# qualifier in pyhbac.c
+CFLAGS += -Wno-discarded-qualifiers
 
 export CK_DEFAULT_TIMEOUT=30
 
