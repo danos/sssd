@@ -9,6 +9,10 @@ include /usr/share/dpkg/buildflags.mk
 CFLAGS = $(shell dpkg-buildflags --get CFLAGS)
 CFLAGS += -I/usr/include/samba-4.0
 
+# Silence Debian 11 build error due to selinux headers
+# marked some declarations as deprecated.
+CFLAGS += -Wno-deprecated-declarations
+
 export CK_DEFAULT_TIMEOUT=30
 
 DEB_HOST_MULTIARCH ?= $(shell dpkg-architecture -qDEB_HOST_MULTIARCH)
