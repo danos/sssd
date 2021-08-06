@@ -31,3 +31,4 @@ tacplus/track-tacplusd-offline-state.patch
 tacplus/check-online-call-tacplusd-can-connect.patch
 tacplus/uid-persistence.patch
 vyatta-systemd-logger-stderr.patch
+deb11-build.patch

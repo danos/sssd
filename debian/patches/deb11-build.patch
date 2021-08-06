@@ -1,0 +1,11 @@
+--- a/src/providers/proxy/proxy_id.c
++++ b/src/providers/proxy/proxy_id.c
+@@ -214,7 +214,7 @@
+ 
+     DEBUG(SSSDBG_TRACE_FUNC,
+           "User %s does not exist (or is invalid) on remote server,"
+-           " deleting!\n", name);
++           " deleting!\n", name ? name : "(nil)");
+     ret = sysdb_delete_user(domain, name, uid);
+     if (ret == ENOENT) {
+         ret = EOK;
