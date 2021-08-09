@@ -33,4 +33,6 @@ tacplus/uid-persistence.patch
 vyatta-systemd-logger-stderr.patch
 
 STRTONUM-TESTS-Fix-format-string-issues.patch
+BUILD-fix-libpython-handling-in-Python3.8.patch
+Fix-another-build-failure-with-python-3.8.patch
 deb11-build.patch

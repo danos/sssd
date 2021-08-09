@@ -1,0 +1,69 @@
+From 80fdef5fe0f8824fff1aa7e3a499238650366dc0 Mon Sep 17 00:00:00 2001
+From: Sumit Bose <sbose@redhat.com>
+Date: Fri, 24 May 2019 17:23:04 +0200
+Subject: [PATCH] BUILD: fix libpython handling in Python3.8
+
+Related to https://pagure.io/SSSD/sssd/issue/4016
+
+Reviewed-by: Jakub Hrozek <jhrozek@redhat.com>
+---
+ src/external/python.m4   | 26 ++++++++++++++++++++++++++
+ src/tests/dlopen-tests.c |  7 +++++++
+ 2 files changed, 33 insertions(+)
+
+--- a/src/external/python.m4
++++ b/src/external/python.m4
+@@ -18,6 +18,32 @@
+     PYTHON_CFLAGS="` $PYTHON_CONFIG --cflags`"
+     PYTHON_LIBS="` $PYTHON_CONFIG --libs`"
+     PYTHON_INCLUDES="` $PYTHON_CONFIG --includes`"
++    # With python3.8 it is expected that C extension do not link against
++    # libpythonX.Y anymore but only the application loading the extension links
++    # the library. pyhton3.8-config adds a new option --embed for this use
++    # case. See
++    # https://docs.python.org/dev/whatsnew/3.8.html#debug-build-uses-the-same-abi-as-release-build
++    # for details. Since the dlopen-test checks the python modules as well we
++    # have to make sure that it links libpythonX.Y.
++    #
++    # To build the Python modules PYTHON_LIBS must be used, python-config will
++    # take care that this does not include libpythonX.Y for Python3.8.
++    #
++    # For our dlopen-test PYTHON_DLOPEN_LIB must be used. It is either empty or
++    # contains libpythonX.Y if needed.
++
++    $PYTHON_CONFIG --libs --embed 1> /dev/null 2> /dev/null
++    if test $? -eq 0; then
++        PYTHON_DLOPEN_LIB="` $PYTHON_CONFIG --libs --embed | grep -o -- '-lpython@<:@^ @:>@*' |sed -e 's/^-l/lib/'`"
++        if test x"$PYTHON_DLOPEN_LIB" != x; then
++            python_lib_path="` $PYTHON_CONFIG --ldflags | grep -o -- '-L/@<:@^ @:>@*' | sed -e 's/^-L//'`"
++            if test x"$python_lib_path" != x; then
++                PYTHON_DLOPEN_LIB=$python_lib_path"/"$PYTHON_DLOPEN_LIB
++            fi
++            PYTHON_DLOPEN_LIB=$PYTHON_DLOPEN_LIB".so"
++            AC_DEFINE_UNQUOTED([PYTHON_DLOPEN_LIB], ["$PYTHON_DLOPEN_LIB"], [The path of libpython for dlopen-tests])
++        fi
++    fi
+ ])
+ 
+ dnl Taken from GNOME sources
+--- a/src/tests/dlopen-tests.c
++++ b/src/tests/dlopen-tests.c
+@@ -109,11 +109,18 @@
+     { "_py2sss_nss_idmap.so", { LIBPFX"_py2sss_nss_idmap.so", NULL } },
+ #endif
+ #ifdef HAVE_PYTHON3_BINDINGS
++#ifdef PYTHON_DLOPEN_LIB
++    { "_py3hbac.so", { PYTHON_DLOPEN_LIB, LIBPFX"_py3hbac.so", NULL } },
++    { "_py3sss.so", { PYTHON_DLOPEN_LIB, LIBPFX"_py3sss.so", NULL } },
++    { "_py3sss_murmur.so", { PYTHON_DLOPEN_LIB, LIBPFX"_py3sss_murmur.so", NULL } },
++    { "_py3sss_nss_idmap.so", { PYTHON_DLOPEN_LIB, LIBPFX"_py3sss_nss_idmap.so", NULL } },
++#else
+     { "_py3hbac.so", { LIBPFX"_py3hbac.so", NULL } },
+     { "_py3sss.so", { LIBPFX"_py3sss.so", NULL } },
+     { "_py3sss_murmur.so", { LIBPFX"_py3sss_murmur.so", NULL } },
+     { "_py3sss_nss_idmap.so", { LIBPFX"_py3sss_nss_idmap.so", NULL } },
+ #endif
++#endif
+ #ifdef BUILD_NFS_IDMAP
+     { "sss.so", { LIBPFX"sss.so", NULL } },
+ #endif
