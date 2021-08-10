@@ -1,3 +1,14 @@
+sssd (1.16.3-3danos9) unstable; urgency=medium
+
+  * debian: fix build of 1.16.x on Debian Bullseye
+  * proxy: fix compiler warnings on Debian Bullseye
+  * python: silence compiler warnings in Debian bullseye
+  * tests: fix build due to libcheck API changes
+  * tests: fix dl-opentest build against Python 3.8
+  * tests: fix test_copy_keytab with newer libkrb5
+
+ -- Daniel Gollub <dgollub@att.com>  Tue, 10 Aug 2021 19:23:25 +0200
+
 sssd (1.16.3-3danos8) unstable; urgency=medium
 
   [ Nachiketa Prachanda ]
